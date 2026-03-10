@@ -3,8 +3,40 @@ execute.py — Sends trade orders to Alpaca and fetches portfolio state.
 """
 
 import os
+import csv
 import requests
+from datetime import datetime
 from dotenv import load_dotenv
+
+TRADE_LOG = "trades.csv"
+
+
+def log_trades(decisions, portfolio):
+    """
+    Appends executed trades to trades.csv.
+    Skips HOLD decisions (nothing was executed).
+    """
+    file_exists = os.path.isfile(TRADE_LOG)
+
+    with open(TRADE_LOG, "a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["date", "ticker", "action", "qty", "portfolio_value", "rationale"])
+        if not file_exists:
+            writer.writeheader()
+
+        date = datetime.now().strftime("%Y-%m-%d")
+        for trade in decisions:
+            if trade.get("action", "").upper() == "HOLD":
+                continue
+            writer.writerow({
+                "date": date,
+                "ticker": trade.get("ticker", ""),
+                "action": trade.get("action", "").upper(),
+                "qty": trade.get("qty", 0),
+                "portfolio_value": f"{portfolio['total_value']:.2f}",
+                "rationale": trade.get("rationale", ""),
+            })
+
+    print(f"   📝 Trades logged to {TRADE_LOG}")
 
 load_dotenv()
 
