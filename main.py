@@ -4,11 +4,10 @@ Run this every day to fetch market data, get Claude's analysis, and execute trad
 Usage: python main.py
 """
 
-import schedule
-import time
+import os
 from market_data import get_market_snapshot
 from analysis import get_trade_decisions
-from execute import execute_trades, get_portfolio_summary
+from execute import execute_trades, get_portfolio_summary, log_trades
 
 def run_daily_cycle():
     print("\n" + "="*50)
@@ -42,22 +41,12 @@ def run_daily_cycle():
     # Step 4: Execute trades
     print("\n⚡ Step 4: Executing trades on Alpaca (paper)...")
     execute_trades(decisions)
+    log_trades(decisions, portfolio)
 
     print("\n✅ Daily cycle complete.")
     print("="*50 + "\n")
 
 
 if __name__ == "__main__":
-    print("🚀 AI Investor started. Running first cycle now...")
+    print("🚀 AI Investor — running cycle...")
     run_daily_cycle()
-
-    # Schedule to run every day at 9:45am (after market open)
-    schedule.every().day.at("09:45").do(run_daily_cycle)
-
-    print("⏰ Scheduled to run daily at 9:45 AM.")
-    print("   Leave this terminal open to keep it running.")
-    print("   Press Ctrl+C to stop.\n")
-
-    while True:
-        schedule.run_pending()
-        time.sleep(60)
