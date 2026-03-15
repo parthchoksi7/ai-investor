@@ -11,7 +11,7 @@ load_dotenv()
 
 POLYGON_KEY = os.getenv("POLYGON_API_KEY")
 
-# The universe of stocks Claude can choose from
+# Default tickers to fetch price data for
 WATCHLIST = [
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN",
     "META", "TSLA", "SPY", "QQQ", "AMD",

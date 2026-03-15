@@ -11,6 +11,21 @@ from dotenv import load_dotenv
 TRADE_LOG = "trades.csv"
 
 
+def get_trade_history(n=30):
+    """
+    Reads the last n rows from trades.csv and returns them as a list of dicts.
+    Returns an empty list if the file doesn't exist or is empty.
+    """
+    if not os.path.isfile(TRADE_LOG):
+        return []
+
+    with open(TRADE_LOG, newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+    return rows[-n:]
+
+
 def log_trades(decisions, portfolio):
     """
     Appends executed trades to trades.csv.
