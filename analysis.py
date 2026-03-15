@@ -30,7 +30,6 @@ STRATEGY:
 RULES:
 - No single position can exceed 40% of total portfolio value
 - Always keep at least $100 cash reserve
-- Only trade tickers from the provided watchlist
 - Actions: BUY (open/add to position), SELL (reduce/close position), HOLD (do nothing)
 
 BENCHMARK:
