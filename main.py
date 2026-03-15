@@ -7,7 +7,7 @@ Usage: python main.py
 import os
 from market_data import get_market_snapshot
 from analysis import get_trade_decisions
-from execute import execute_trades, get_portfolio_summary, log_trades
+from execute import execute_trades, get_portfolio_summary, log_trades, get_trade_history
 
 def run_daily_cycle():
     print("\n" + "="*50)
@@ -28,7 +28,8 @@ def run_daily_cycle():
 
     # Step 3: Ask Claude what to do
     print("\n🧠 Step 3: Asking Claude for trade decisions...")
-    decisions = get_trade_decisions(portfolio, market_data)
+    trade_history = get_trade_history()
+    decisions = get_trade_decisions(portfolio, market_data, trade_history)
 
     if not decisions:
         print("   No trades recommended today.")
