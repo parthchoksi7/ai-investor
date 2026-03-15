@@ -30,7 +30,7 @@ STRATEGY:
 RULES:
 - No single position can exceed 40% of total portfolio value
 - Always keep at least $100 cash reserve
-- Only trade tickers from the provided watchlist
+- Do not trade the same ticker on more than 2 consecutive days
 - Actions: BUY (open/add to position), SELL (reduce/close position), HOLD (do nothing)
 
 BENCHMARK:
@@ -52,7 +52,7 @@ If no trades are needed today, return an empty array: []
 """
 
 
-def get_trade_decisions(portfolio, market_data):
+def get_trade_decisions(portfolio, market_data, trade_history=None):
     """
     Sends current portfolio + market data to Claude.
     Returns a list of trade decisions.
@@ -62,7 +62,12 @@ def get_trade_decisions(portfolio, market_data):
     positions_text = ""
     if portfolio["positions"]:
         for p in portfolio["positions"]:
-            positions_text += f"  - {p['symbol']}: {p['qty']} shares @ avg ${p['avg_price']:.2f} (current: ${p['current_price']:.2f})\n"
+            pnl = p.get("unrealized_pnl", 0)
+            pnl_pct = (pnl / (p["avg_price"] * p["qty"])) * 100 if p["avg_price"] and p["qty"] else 0
+            positions_text += (
+                f"  - {p['symbol']}: {p['qty']} shares @ avg ${p['avg_price']:.2f} "
+                f"(current: ${p['current_price']:.2f}, P&L: ${pnl:+.2f} / {pnl_pct:+.1f}%)\n"
+            )
     else:
         positions_text = "  - No positions (all cash)\n"
 
@@ -73,6 +78,14 @@ def get_trade_decisions(portfolio, market_data):
 
     news_text = "\n".join([f"  - {h}" for h in market_data["news"][:5]])
 
+    history_text = ""
+    if trade_history:
+        history_text = "\nRECENT TRADE HISTORY (last 30 trades):\n"
+        for t in trade_history:
+            history_text += f"  - {t['date']} | {t['action']} {t['qty']}x {t['ticker']} | {t['rationale']}\n"
+    else:
+        history_text = "\nRECENT TRADE HISTORY:\n  - No prior trades on record\n"
+
     user_message = f"""
 Today's date: {market_data['date']}
 
@@ -81,7 +94,7 @@ CURRENT PORTFOLIO:
   Total value: ${portfolio['total_value']:.2f}
   Positions:
 {positions_text}
-
+{history_text}
 MARKET DATA:
 {prices_text}
 
