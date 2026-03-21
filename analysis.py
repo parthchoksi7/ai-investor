@@ -27,6 +27,8 @@ STRATEGY:
 - Rotate out of underperformers quickly — don't hold losers hoping they recover
 - Deploy cash aggressively when there is a clear opportunity. Sitting in cash is a missed return.
 - Consider recent news and macro conditions when making decisions
+- News-discovered stocks (not in the standard watchlist) may appear based on recent catalysts.
+  Consider them for short-term opportunistic trades when there is a clear news-driven edge (e.g. FDA approval, earnings beat, M&A, major contract win).
 
 RULES:
 - No single position can exceed 15% of total portfolio value
@@ -77,7 +79,8 @@ def get_trade_decisions(portfolio, market_data, trade_history=None):
     for ticker, data in market_data["prices"].items():
         prices_text += f"  - {ticker}: ${data['close']:.2f} (change: {data['change_pct']:+.2f}%)\n"
 
-    news_text = "\n".join([f"  - {h}" for h in market_data["news"][:5]])
+    articles = market_data.get("news", [])
+    news_text = "\n".join([f"  - {a['title']}" for a in articles[:10]])
 
     history_text = ""
     if trade_history:
@@ -86,6 +89,26 @@ def get_trade_decisions(portfolio, market_data, trade_history=None):
             history_text += f"  - {t['date']} | {t['action']} {t['qty']}x {t['ticker']} | {t['rationale']}\n"
     else:
         history_text = "\nRECENT TRADE HISTORY:\n  - No prior trades on record\n"
+
+    # Build news-discovered stocks section
+    news_discovered = market_data.get("news_discovered", {})
+    news_discovered_text = ""
+    if news_discovered:
+        # Build a map of ticker -> headlines that mentioned it
+        ticker_headlines = {}
+        for article in articles:
+            for t in article.get("tickers", []):
+                if t in news_discovered:
+                    ticker_headlines.setdefault(t, []).append(article["title"])
+
+        news_discovered_text = "\nNEWS-DISCOVERED STOCKS (not in standard watchlist, flagged by recent news):\n"
+        for ticker, data in news_discovered.items():
+            headlines = ticker_headlines.get(ticker, [])
+            headline_preview = f'"{headlines[0]}"' if headlines else "no headline"
+            news_discovered_text += (
+                f"  - {ticker}: ${data['close']:.2f} (change: {data['change_pct']:+.2f}%)"
+                f" — mentioned in: {headline_preview}\n"
+            )
 
     user_message = f"""
 Today's date: {market_data['date']}
@@ -98,7 +121,7 @@ CURRENT PORTFOLIO:
 {history_text}
 MARKET DATA:
 {prices_text}
-
+{news_discovered_text}
 RECENT NEWS:
 {news_text}
 
