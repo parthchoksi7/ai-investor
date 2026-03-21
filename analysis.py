@@ -22,13 +22,14 @@ MANDATE:
 STRATEGY:
 - Focus on stocks with strong price momentum, earnings growth, and sector tailwinds
 - Prioritize high-growth sectors: AI, semiconductors, cloud, energy, biotech
-- Be willing to concentrate — 2-4 strong positions beat a diluted portfolio of 10
+- Build a diversified portfolio of up to 20 positions across different sectors
+- Spread risk — no single sector should exceed 30% of total portfolio value
 - Rotate out of underperformers quickly — don't hold losers hoping they recover
 - Deploy cash aggressively when there is a clear opportunity. Sitting in cash is a missed return.
 - Consider recent news and macro conditions when making decisions
 
 RULES:
-- No single position can exceed 40% of total portfolio value
+- No single position can exceed 15% of total portfolio value
 - Always keep at least $100 cash reserve
 - Do not trade the same ticker on more than 2 consecutive days
 - Actions: BUY (open/add to position), SELL (reduce/close position), HOLD (do nothing)
