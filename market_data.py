@@ -13,9 +13,34 @@ POLYGON_KEY = os.getenv("POLYGON_API_KEY")
 
 # Default tickers to fetch price data for
 WATCHLIST = [
-    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN",
-    "META", "TSLA", "SPY", "QQQ", "AMD",
-    "NFLX", "CRM", "PLTR", "COIN", "MSTR"
+    # Mega-cap Tech / AI / Cloud (15)
+    "AAPL", "MSFT", "NVDA", "GOOGL", "GOOG", "AMZN", "META", "TSLA",
+    "ORCL", "IBM", "INTC", "QCOM", "TXN", "MU", "AMAT",
+    # Software / SaaS (12)
+    "CRM", "ADBE", "NOW", "SNOW", "DDOG", "ZS", "CRWD", "PANW",
+    "TEAM", "WDAY", "MDB", "NET",
+    # Semiconductors (5)
+    "AMD", "AVGO", "ARM", "MRVL", "SMCI",
+    # Consumer Tech / Internet (6)
+    "NFLX", "SPOT", "UBER", "ABNB", "BKNG", "EBAY",
+    # Financials (11)
+    "JPM", "BAC", "WFC", "GS", "MS", "C", "BLK", "AXP", "V", "MA", "PYPL",
+    # Healthcare / Biotech / Pharma (14)
+    "JNJ", "UNH", "LLY", "ABBV", "PFE", "MRK", "BMY", "GILD", "AMGN",
+    "REGN", "VRTX", "ISRG", "TMO", "DHR",
+    # Consumer Discretionary / Retail (11)
+    "HD", "LOW", "TGT", "WMT", "COST", "NKE", "SBUX", "MCD", "CMG",
+    "LULU", "TJX",
+    # Energy (7)
+    "XOM", "CVX", "COP", "EOG", "SLB", "OXY", "NEE",
+    # Industrials / Aerospace (8)
+    "CAT", "DE", "HON", "GE", "RTX", "LMT", "BA", "UPS",
+    # Materials / Real Estate (6)
+    "FCX", "NEM", "LIN", "AMT", "PLD", "EQIX",
+    # Crypto-adjacent (2)
+    "COIN", "MSTR",
+    # ETF Benchmarks (3)
+    "SPY", "QQQ", "PLTR",
 ]
 
 
