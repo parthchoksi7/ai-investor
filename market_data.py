@@ -71,19 +71,24 @@ def get_price(ticker):
 
 
 def get_news_summary():
-    """Get recent market news headlines."""
+    """Get recent market news headlines with associated tickers."""
     url = "https://api.polygon.io/v2/reference/news"
     params = {
         "apiKey": POLYGON_KEY,
-        "limit": 10,
+        "limit": 20,
         "order": "desc"
     }
 
     try:
         r = requests.get(url, params=params, timeout=10)
         data = r.json()
-        headlines = [item["title"] for item in data.get("results", [])]
-        return headlines
+        articles = []
+        for item in data.get("results", []):
+            articles.append({
+                "title": item.get("title", ""),
+                "tickers": item.get("tickers", []),
+            })
+        return articles
     except Exception as e:
         print(f"   ⚠ Could not fetch news: {e}")
         return []
@@ -93,7 +98,8 @@ def get_market_snapshot():
     """
     Returns a full snapshot of the market:
     - Price data for all tickers in the watchlist
-    - Recent news headlines
+    - Recent news articles with associated tickers
+    - Price data for non-watchlist tickers mentioned in news (news-discovered stocks)
     """
     prices = {}
     for ticker in WATCHLIST:
@@ -101,10 +107,27 @@ def get_market_snapshot():
         if data:
             prices[ticker] = data
 
-    news = get_news_summary()
+    articles = get_news_summary()
+
+    # Discover non-watchlist tickers mentioned in news and fetch their prices
+    news_tickers = set()
+    for article in articles:
+        for t in article.get("tickers", []):
+            if t and t not in WATCHLIST and t not in prices:
+                news_tickers.add(t)
+
+    news_discovered = {}
+    for ticker in sorted(news_tickers):
+        data = get_price(ticker)
+        if data:
+            news_discovered[ticker] = data
+
+    if news_discovered:
+        print(f"   📰 News-discovered tickers: {', '.join(news_discovered.keys())}")
 
     return {
         "prices": prices,
-        "news": news,
+        "news": articles,
+        "news_discovered": news_discovered,
         "date": date.today().strftime("%Y-%m-%d")
     }
