@@ -26,23 +26,26 @@ def run_daily_cycle():
     market_data = get_market_snapshot()
     print(f"   Loaded data for {len(market_data)} tickers")
 
-    # Step 3: Ask Claude what to do
-    print("\n🧠 Step 3: Asking Claude for trade decisions...")
+    # Step 3: Portfolio manager — asking Claude...
+    print("\n🧠 Step 3: Portfolio manager — asking Claude...")
     trade_history = get_trade_history()
     decisions = get_trade_decisions(portfolio, market_data, trade_history)
+    if decisions:
+        print(f"   {len(decisions)} trade(s):")
+        for d in decisions:
+            print(f"   → {d['action']} {d['qty']}x {d['ticker']} — {d['rationale']}")
+    else:
+        print("   No trades today.")
 
     if not decisions:
-        print("   No trades recommended today.")
+        print("\n   Nothing to execute today.")
+        print("="*50 + "\n")
         return
 
-    print(f"   Claude recommends {len(decisions)} trades:")
-    for d in decisions:
-        print(f"   → {d['action']} {d['qty']} shares of {d['ticker']} — {d['rationale']}")
-
-    # Step 4: Execute trades
+    # Step 4: Execute all trades
     print("\n⚡ Step 4: Executing trades on Alpaca (paper)...")
     execute_trades(decisions)
-    log_trades(decisions, portfolio)
+    log_trades(decisions, portfolio, strategy="institutional")
 
     print("\n✅ Daily cycle complete.")
     print("="*50 + "\n")
