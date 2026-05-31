@@ -43,6 +43,21 @@ WATCHLIST = [
     "SPY", "QQQ", "PLTR",
 ]
 
+# Top S&P 500 holdings with approximate index weights (sum ~50%)
+# Used to mimic S&P 500 via individual stocks
+SP500_HOLDINGS = {
+    "AAPL":  0.070,
+    "MSFT":  0.065,
+    "NVDA":  0.060,
+    "AMZN":  0.040,
+    "GOOGL": 0.035,
+    "META":  0.030,
+    "TSLA":  0.018,
+    "AVGO":  0.018,
+    "JPM":   0.015,
+    "LLY":   0.013,
+}
+
 
 def get_price(ticker):
     """Get the latest closing price for a ticker."""
@@ -101,8 +116,9 @@ def get_market_snapshot():
     - Recent news articles with associated tickers
     - Price data for non-watchlist tickers mentioned in news (news-discovered stocks)
     """
+    all_tickers = list(set(WATCHLIST) | set(SP500_HOLDINGS.keys()))
     prices = {}
-    for ticker in WATCHLIST:
+    for ticker in all_tickers:
         data = get_price(ticker)
         if data:
             prices[ticker] = data

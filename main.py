@@ -24,7 +24,12 @@ def run_daily_cycle():
     # Step 2: Get market data
     print("\n📈 Step 2: Fetching market data...")
     market_data = get_market_snapshot()
-    print(f"   Loaded data for {len(market_data)} tickers")
+    print(f"   Loaded data for {len(market_data['prices'])} tickers ({len(market_data['news'])} news articles)")
+
+    if not market_data["prices"]:
+        print("\n   No price data available (market may be closed). Skipping.")
+        print("="*50 + "\n")
+        return
 
     # Step 3: Portfolio manager — asking Claude...
     print("\n🧠 Step 3: Portfolio manager — asking Claude...")
