@@ -26,7 +26,7 @@ def get_trade_history(n=30):
     return rows[-n:]
 
 
-def log_trades(decisions, portfolio):
+def log_trades(decisions, portfolio, strategy="institutional"):
     """
     Appends executed trades to trades.csv.
     Skips HOLD decisions (nothing was executed).
@@ -34,7 +34,7 @@ def log_trades(decisions, portfolio):
     file_exists = os.path.isfile(TRADE_LOG)
 
     with open(TRADE_LOG, "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["date", "ticker", "action", "qty", "portfolio_value", "rationale"])
+        writer = csv.DictWriter(f, fieldnames=["date", "strategy", "ticker", "action", "qty", "portfolio_value", "rationale"])
         if not file_exists:
             writer.writeheader()
 
@@ -44,6 +44,7 @@ def log_trades(decisions, portfolio):
                 continue
             writer.writerow({
                 "date": date,
+                "strategy": strategy,
                 "ticker": trade.get("ticker", ""),
                 "action": trade.get("action", "").upper(),
                 "qty": trade.get("qty", 0),
