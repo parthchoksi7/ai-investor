@@ -240,7 +240,18 @@ def get_market_snapshot() -> dict:
     - news:           [recent headlines with tickers]
     - news_discovered:{ticker: price snapshot} for non-watchlist tickers in the news
     - date:           today's date string
+
+    If market_snapshot.json exists and is dated today, loads it directly
+    (written by the GitHub Actions market data job at 9:40 AM ET).
     """
+    snapshot_path = "market_snapshot.json"
+    if os.path.isfile(snapshot_path):
+        with open(snapshot_path) as f:
+            cached = json.load(f)
+        if cached.get("date") == date.today().isoformat():
+            print(f"   📦 Loaded market_snapshot.json ({len(cached.get('prices', {}))} tickers)")
+            return cached
+
     all_tickers = list(set(WATCHLIST) | set(SP500_HOLDINGS.keys()))
     prices:  dict = {}
     history: dict = {}
