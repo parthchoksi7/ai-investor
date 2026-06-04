@@ -18,7 +18,20 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+def _make_client() -> anthropic.Anthropic:
+    """Create Anthropic client, supporting both API key and Claude Code OAuth token."""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if api_key:
+        return anthropic.Anthropic(api_key=api_key)
+    # Cloud execution: read session ingress token
+    token_file = os.getenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", "")
+    if token_file and os.path.isfile(token_file):
+        with open(token_file) as _tf:
+            token = _tf.read().strip()
+        return anthropic.Anthropic(auth_token=token)
+    return anthropic.Anthropic()
+
+client = _make_client()
 
 MODEL_FAST  = "claude-haiku-4-5-20251001"  # per-ticker agents
 MODEL_SMART = "claude-sonnet-4-6"          # portfolio-level agents
