@@ -286,6 +286,18 @@ def get_market_snapshot() -> dict:
     if news_discovered:
         print(f"   📰 News-discovered: {', '.join(news_discovered.keys())}")
 
+    # Fallback: load MCP-injected market data when Polygon/yfinance are blocked
+    if not prices:
+        mcp_path = "mcp_market_data.json"
+        if os.path.isfile(mcp_path):
+            with open(mcp_path) as _f:
+                mcp_data = json.load(_f)
+            prices = mcp_data.get("prices", {})
+            history = mcp_data.get("history", {})
+            print(f"   📡 Loaded {len(prices)} tickers from mcp_market_data.json")
+            # Reload fundamentals cache so quant scores use cached data
+            fundamentals = get_all_fundamentals(list(prices.keys()))
+
     return {
         "date":           date.today().strftime("%Y-%m-%d"),
         "prices":         prices,
