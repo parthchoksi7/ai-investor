@@ -18,6 +18,9 @@ TRADE_LOG = "trades.csv"
 DRY_RUN   = os.getenv("DRY_RUN", "false").lower() == "true"
 AGENTIC_ACCOUNT = os.getenv("ROBINHOOD_ACCOUNT_NUMBER")
 
+# Hard-blocked tickers — never bought or sold under any circumstances
+BLOCKED_TICKERS = {"TSLA"}
+
 _logged_in = False
 
 
@@ -170,6 +173,10 @@ def get_portfolio_summary() -> dict:
 
 def place_order(ticker: str, action: str, qty: int) -> dict:
     """Places a market order on the Robinhood Agentic account."""
+    if ticker in BLOCKED_TICKERS:
+        print(f"   🚫 BLOCKED: {ticker} is on the hard-block list — order rejected")
+        return {"blocked": True}
+
     if DRY_RUN:
         print(f"   🔵 [DRY RUN] Would place: {action} {qty}x {ticker}")
         return {"dry_run": True}

@@ -582,6 +582,7 @@ RECENT TRADES:
 
 CONSTRAINTS:
   Holdings target: 8–15 | Max position: 10% | Max sector: 25% | Cash: 0–10%
+  Hard-blocked (NEVER propose): TSLA
 
 OUTPUT: Return ONLY a JSON array. Each element:
 {{
