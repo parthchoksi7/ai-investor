@@ -1,5 +1,6 @@
 """
-market_data.py — Fetches stock prices, history, fundamentals, and news from Polygon.io
+market_data.py — Fetches stock prices, history, fundamentals, and news.
+Primary: Polygon.io (local). Fallback: yfinance (cloud, no API key needed).
 """
 
 import json
@@ -58,28 +59,70 @@ SP500_HOLDINGS = {
 }
 
 
-def get_extended_history(ticker: str, days: int = 210) -> list[dict]:
-    """Returns up to `days` trading days of daily OHLCV bars, oldest first."""
-    to_date   = date.today().strftime("%Y-%m-%d")
-    from_date = (date.today() - timedelta(days=days + 90)).strftime("%Y-%m-%d")
-    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{from_date}/{to_date}"
-    params = {"apiKey": POLYGON_KEY, "sort": "asc", "limit": days}
+def _history_yfinance(ticker: str, days: int = 210) -> list[dict]:
+    """Fetch OHLCV history from Yahoo Finance (no API key, used when Polygon is blocked)."""
     try:
-        r = requests.get(url, params=params, timeout=10)
+        import yfinance as yf
+        df = yf.Ticker(ticker).history(period=f"{days + 60}d", auto_adjust=True)
+        if df.empty:
+            return []
         return [
             {
-                "date":   res["t"],
-                "open":   res["o"],
-                "high":   res["h"],
-                "low":    res["l"],
-                "close":  res["c"],
-                "volume": res["v"],
+                "date":   int(idx.timestamp() * 1000),
+                "open":   float(row["Open"]),
+                "high":   float(row["High"]),
+                "low":    float(row["Low"]),
+                "close":  float(row["Close"]),
+                "volume": float(row["Volume"]),
             }
-            for res in r.json().get("results", [])
-        ]
+            for idx, row in df.iterrows()
+        ][-days:]
     except Exception as e:
-        print(f"   ⚠ History fetch failed for {ticker}: {e}")
+        print(f"   ⚠ yfinance failed for {ticker}: {e}")
         return []
+
+
+def _fundamentals_yfinance(ticker: str) -> dict | None:
+    """Fetch basic fundamentals from Yahoo Finance as fallback."""
+    try:
+        import yfinance as yf
+        info = yf.Ticker(ticker).info
+        result = {}
+        if info.get("grossMargins")     is not None: result["gross_margin"]     = round(float(info["grossMargins"]), 4)
+        if info.get("operatingMargins") is not None: result["operating_margin"] = round(float(info["operatingMargins"]), 4)
+        rev = info.get("totalRevenue")
+        fcf = info.get("freeCashflow")
+        if rev and fcf: result["fcf_margin"] = round(float(fcf) / float(rev), 4)
+        if info.get("debtToEquity") is not None: result["debt_to_equity"] = round(float(info["debtToEquity"]) / 100, 4)
+        if info.get("trailingPE")   is not None: result["pe_ratio"]       = round(float(info["trailingPE"]), 2)
+        if info.get("enterpriseToEbitda") is not None: result["ev_ebitda"] = round(float(info["enterpriseToEbitda"]), 2)
+        return result or None
+    except Exception:
+        return None
+
+
+def get_extended_history(ticker: str, days: int = 210) -> list[dict]:
+    """Returns up to `days` trading days of daily OHLCV bars, oldest first.
+    Tries Polygon first; falls back to yfinance if Polygon is unavailable or blocked.
+    """
+    if POLYGON_KEY:
+        to_date   = date.today().strftime("%Y-%m-%d")
+        from_date = (date.today() - timedelta(days=days + 90)).strftime("%Y-%m-%d")
+        url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{from_date}/{to_date}"
+        params = {"apiKey": POLYGON_KEY, "sort": "asc", "limit": days}
+        try:
+            r = requests.get(url, params=params, timeout=10)
+            results = r.json().get("results", [])
+            if results:
+                return [
+                    {"date": res["t"], "open": res["o"], "high": res["h"],
+                     "low": res["l"], "close": res["c"], "volume": res["v"]}
+                    for res in results
+                ]
+        except Exception as e:
+            print(f"   ⚠ Polygon history failed for {ticker}: {e}")
+
+    return _history_yfinance(ticker, days)
 
 
 def get_price(ticker: str) -> dict | None:
@@ -105,7 +148,10 @@ def get_price(ticker: str) -> dict | None:
 
 
 def _fetch_fundamentals(ticker: str) -> dict | None:
-    """Fetch annual financial metrics from Polygon. Returns None if unavailable."""
+    """Fetch annual financial metrics. Tries Polygon first, falls back to yfinance."""
+    if not POLYGON_KEY:
+        return _fundamentals_yfinance(ticker)
+
     url = "https://api.polygon.io/vX/reference/financials"
     params = {"apiKey": POLYGON_KEY, "ticker": ticker, "timeframe": "annual", "limit": 1}
     try:
@@ -142,7 +188,7 @@ def _fetch_fundamentals(ticker: str) -> dict | None:
 
         return result if result else None
     except Exception:
-        return None
+        return _fundamentals_yfinance(ticker)
 
 
 def get_all_fundamentals(tickers: list[str]) -> dict:
