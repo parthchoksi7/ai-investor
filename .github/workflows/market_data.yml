@@ -1,0 +1,36 @@
+name: Market Data Fetch
+
+on:
+  schedule:
+    # 9:40 AM EDT (UTC-4) on weekdays — runs 5 min before the Anthropic routine
+    - cron: '40 13 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch market snapshot
+        env:
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+        run: python fetch_snapshot.py
+
+      - name: Commit snapshot
+        run: |
+          git config user.name "Market Data Bot"
+          git config user.email "market-data-bot@users.noreply.github.com"
+          git add market_snapshot.json
+          git diff --staged --quiet || git commit -m "chore: market snapshot [skip ci]"
+          git push
