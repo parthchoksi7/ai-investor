@@ -114,8 +114,30 @@ The Portfolio Manager outputs `target_weight` (0.0–0.10) rather than share cou
 }
 ```
 
+## Cloud Environment (Scheduled Routine)
+
+Anthropic's cloud environment blocks all external HTTP except Robinhood MCP and the Anthropic API. Specifically:
+- `api.polygon.io` → **blocked** (HTTP 403)
+- `query1.finance.yahoo.com` (yfinance) → **blocked** (HTTP 403)
+
+As a result, the cloud routine uses a different data path than local:
+
+| | Local (`python main.py`) | Cloud (scheduled routine) |
+|---|---|---|
+| Portfolio | `robin_stocks` | Robinhood MCP |
+| Market data | Polygon (210-day OHLCV) | Robinhood MCP `get_equity_quotes` → `mcp_market_data.json` |
+| Fundamentals | Polygon financials | Not available (quant scores default to 50) |
+| News | Polygon news API | Not available |
+| Auth | `ANTHROPIC_API_KEY` | `CLAUDE_SESSION_INGRESS_TOKEN_FILE` (OAuth token, auto-injected) |
+
+**Quant scores in cloud:** All scores default to 50 (neutral) because no historical data is available. The 7 LLM agents still run fully and can apply their training knowledge about each company.
+
+**`mcp_market_data.json`:** Written by the routine from Robinhood MCP quotes. `get_market_snapshot()` loads it as a fallback when both Polygon and yfinance return empty.
+
+**`mcp_portfolio.json`:** Written by the routine from Robinhood MCP. `get_portfolio_summary()` reads it instead of calling `robin_stocks` when the file exists.
+
 ## Known Limitations
 
-- `market_data.py` makes ~90 API calls per run (one per ticker for 210-day history). Can be slow (~2–3 min) and may hit Polygon free-tier rate limits.
-- The scheduled routine uses `get_equity_quotes` via Robinhood MCP for market data (no Polygon key needed in cloud). The local `main.py` uses Polygon.
-- DST: the cron doesn't auto-adjust. Update manually in November and March.
+- Cloud quant scores are always 50 (no historical data). Agents work from LLM knowledge only.
+- `market_data.py` makes ~90 API calls per run locally (one per ticker for 210-day history). Can be slow (~2–3 min) and may hit Polygon free-tier rate limits.
+- DST: the cron doesn't auto-adjust. Update manually in November (`45 14 * * 1-5`) and March (`45 13 * * 1-5`).
