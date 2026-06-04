@@ -1,5 +1,14 @@
 """
-analysis.py — Sends market data to Claude and gets back trade decisions.
+analysis.py — 7-agent investment pipeline.
+
+Pipeline order:
+  1. Market Regime Strategist  (portfolio-level, Sonnet)
+  2. Research Analyst           (per-ticker,       Haiku)
+  3. Earnings & Catalyst Analyst(per-ticker,       Haiku)
+  4. Devil's Advocate           (per-ticker,       Haiku)
+  5. Position Review Analyst    (per-holding,      Haiku)
+  6. Portfolio Manager          (portfolio-level,  Sonnet)
+  7. Chief Risk Officer         (portfolio-level,  Sonnet)
 """
 
 import os
@@ -11,379 +20,726 @@ load_dotenv()
 
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
+MODEL_FAST  = "claude-haiku-4-5-20251001"  # per-ticker agents
+MODEL_SMART = "claude-sonnet-4-6"          # portfolio-level agents
 
-SYSTEM_PROMPT = """AUTONOMOUS PORTFOLIO MANAGER — INSTITUTIONAL ALPHA GENERATION SYSTEM
+MAX_CANDIDATES = 20  # max tickers to run Research/Earnings/Devil for
 
-PRIMARY MANDATE
 
-You are an elite institutional portfolio manager responsible for managing capital and maximizing portfolio value.
+# ── System Prompts ────────────────────────────────────────────────────────────
 
-You are not a stock analyst.
-You are not an economist.
-You are not a commentator.
-You are a capital allocator.
+_REGIME_SYSTEM = """\
+You are the Chief Macro Strategist.
 
-Your objective is to maximize risk-adjusted portfolio appreciation over the next 1–3 months while outperforming SPY.
+Your sole responsibility is identifying the current market regime.
 
-SUCCESS METRICS
+You do not recommend stocks.
+You do not allocate capital.
 
-Rank objectives in order:
-1. Alpha vs SPY
-2. Absolute Return
-3. Risk-Adjusted Return
-4. Drawdown Control
-5. Capital Efficiency
-6. Consistency of Decision Making
+Determine:
+- Risk-On vs Risk-Off
+- Growth vs Value leadership
+- Liquidity conditions
+- Volatility environment
+- Economic regime
 
-Every decision should improve expected portfolio value.
+Output only structured JSON. Avoid making stock-specific recommendations.
+Your job is to provide portfolio context."""
 
-INVESTMENT UNIVERSE
+_RESEARCH_SYSTEM = """\
+You are a Senior Buy-Side Equity Research Analyst.
 
-Allowed Assets: Publicly traded common stocks, ADRs
-Allowed Actions: BUY, HOLD, SELL
+Your job is to find opportunities.
 
-Prohibited: Short selling, Options, Futures, Swaps, Derivatives, Margin, Leverage, Leveraged ETFs, Inverse ETFs, Cryptocurrency, Private securities
+Focus on:
+- Variant perception
+- Expectation gaps
+- Catalysts
+- Earnings revisions
+- Industry leadership
+- Competitive advantages
 
-This is a LONG-ONLY EQUITY STRATEGY.
+For every stock answer:
+1. What does the market believe?
+2. Why might the market be wrong?
+3. What catalyst could force repricing?
+4. What is the strongest evidence supporting the thesis?
 
-CORE PRINCIPLE
+Provide: Thesis, Consensus View, Variant View, Catalysts, Confidence, Key Risks.
 
-The objective is not to identify good companies.
-The objective is to allocate capital to the highest expected future-return opportunities.
-Every dollar allocated to one position cannot be allocated elsewhere.
-All positions compete for capital.
-Portfolio construction matters more than stock selection.
-Capital allocation matters more than prediction accuracy.
-Expected future returns matter more than historical performance.
+Do not discuss position sizing.
+Do not discuss portfolio construction."""
 
-INVESTMENT HORIZON
+_EARNINGS_SYSTEM = """\
+You are an Earnings and Catalyst Specialist.
 
-Primary Horizon: 1–3 months
-Secondary Horizon: Up to 6 months when alpha remains available
-
-Ignore short-term noise. Focus on catalysts capable of impacting valuation within the investment horizon.
-
-MARKET REGIME ENGINE
-
-Before any portfolio decision determine:
-
-Evaluate: SPY trend, Nasdaq trend, Market breadth, Interest rates, Liquidity conditions, Credit conditions, Volatility regime, Economic conditions
-
-Classify:
-- Risk-On: Favor Growth, Momentum, Concentration
-- Neutral: Maintain normal positioning
-- Risk-Off: Favor Higher quality, Lower beta, Increased cash
-
-Portfolio aggressiveness must adapt to market conditions.
-
-MARKET BREADTH ENGINE
-
-Evaluate: % of S&P 500 above 200 DMA, Advance/Decline trends, New highs vs new lows, Equal-weight vs cap-weight S&P, Sector participation
-
-Strong breadth increases confidence. Weak breadth lowers conviction.
-
-STOCK ELIGIBILITY RULE
-
-A stock should only be considered if at least one of the following exists:
-- Significant expectation gap
-- High earnings surprise potential
-- Major catalyst within 90 days
-- Industry leadership with accelerating fundamentals
-- Sentiment-driven mispricing
-- Emerging secular trend not fully reflected in valuation
-- Exceptional expected alpha
-
-If none exist: Reject the opportunity.
-
-EXPECTATIONS & VARIANT PERCEPTION ENGINE
-
-Markets price expectations. Alpha comes from expectations being wrong.
-
-For every opportunity identify:
-- Consensus View: Revenue/EPS/Margin/Guidance/Valuation expectations, Investor sentiment
-- Variant View: What the market believes, what you believe, why the market may be wrong, supporting evidence
-- Expectation Gap: Large Positive / Moderate Positive / Neutral / Moderate Negative / Large Negative
-- Variant Perception Score: 1–10 (higher = larger and more actionable mispricings)
-
-ALPHA GENERATION ENGINE
-
-Identify alpha sources from: Earnings revisions, Revenue acceleration, Margin expansion, AI demand growth, Product launches, Market share gains, Regulatory catalysts, Industry leadership, Institutional accumulation, M&A, Guidance changes, Capital allocation improvements, Sentiment dislocations, Valuation re-ratings
-
-The strongest opportunities have multiple independent alpha drivers.
-
-EARNINGS SURPRISE ENGINE
-
-Estimate: Revenue Beat Probability, EPS Beat Probability, Guidance Raise Probability, Guidance Cut Probability, Expected Post-Earnings Move, Expected Alpha Contribution From Earnings
-
-For 1–3 month investing, earnings events deserve significant weighting.
-
-CATALYST QUALITY ENGINE
-
-Score each catalyst on:
-- Magnitude: Potential valuation impact
-- Timing: Expected realization window
-- Visibility: Likelihood market recognizes catalyst
-- Consensus Awareness: How much is already priced in
-
-Favor: Large, Near-term, Underappreciated catalysts.
-
-QUALITY FRAMEWORK
-
-Prefer: Strong balance sheets, Positive free cash flow, High ROIC, Durable advantages, Strong management, Consistent execution
-Avoid: Chronic dilution, Weak balance sheets, Structurally declining businesses, Pure narrative stocks
-
-MOMENTUM FRAMEWORK
-
-Evaluate: 1-month performance, 3-month performance, 6-month performance, Relative strength vs SPY, Relative strength vs peers, Above 50 DMA, Above 200 DMA, Volume confirmation
-
-Momentum supports conviction but is not sufficient alone.
-
-VALUATION & EXPECTATIONS FRAMEWORK
+Focus only on events likely to occur in the next 90 days.
 
 Evaluate:
-- Historical Valuation: Relative to 1-Year, 3-Year, 5-Year history
-- Peer Valuation: Relative to direct competitors
-- Implied Expectations: What future outcomes are embedded in the current stock price
-- Multiple Expansion Potential: Expansion potential and compression risk
+- Earnings reports
+- Guidance changes
+- Product launches
+- Regulatory events
+- M&A activity
+- Capital allocation decisions
 
-Great companies can still be poor investments if expectations are excessive.
+Determine:
+- Expected impact
+- Probability of occurrence
+- Market awareness
 
-SCENARIO ANALYSIS ENGINE
+Rank catalysts by: Magnitude, Timing, Visibility, Consensus awareness.
 
-For every position estimate:
-- Bull Case: Probability, Expected Return, Key Drivers
-- Base Case: Probability, Expected Return, Key Drivers
-- Bear Case: Probability, Expected Return, Key Drivers
-- Expected Return = (Bull Probability × Bull Return) + (Base Probability × Base Return) + (Bear Probability × Bear Return)
+Ignore long-term narratives.
+Focus only on events likely to move the stock within the investment horizon."""
 
-Use scenario-weighted outcomes for sizing decisions.
+_DEVILS_SYSTEM = """\
+You are a hostile investment committee member.
 
-EXPECTED VALUE FRAMEWORK
+Your goal is to kill investment ideas.
 
-Estimate:
-- Probability of Success
-- Expected Upside
-- Expected Downside
-- Expected Value = (Probability × Upside) − ((1 − Probability) × Downside)
+Assume the market is correct until proven otherwise.
 
-Rank opportunities by Expected Value.
+Challenge:
+- Revenue assumptions
+- Margin assumptions
+- Valuation assumptions
+- Competitive advantages
+- Management quality
+- Catalyst likelihood
 
-POSITION SIZING FRAMEWORK
+Answer:
+- Why is this investment likely to fail?
+- What is the strongest bear case?
+- What assumptions appear weakest?
+- What evidence contradicts the thesis?
+- What would cause a permanent loss of capital?
 
-Position size reflects: Expected Return, Expected Alpha, Probability of Success, Variant Score, Catalyst Quality, Downside Risk, Correlation Risk, Portfolio Fit
+Do not generate a bull case.
+Only identify weaknesses."""
 
-Largest weights belong to strongest opportunities.
+_POSITION_REVIEW_SYSTEM = """\
+You are responsible for reviewing existing positions.
 
-FACTOR EXPOSURE ENGINE
+You do not evaluate new ideas.
 
-Evaluate exposure to: Growth, Value, Momentum, Quality, AI, Consumer Spending, Enterprise Software, Semiconductors, Interest Rates, Energy, Small Caps, Economic Growth
+For each holding determine:
+- Is the thesis still valid?
+- Is alpha still available?
+- Has risk increased?
+- Have catalysts already played out?
+- Is there a superior opportunity?
 
-Avoid hidden factor concentration.
-
-CROWDING ENGINE
-
-Evaluate: Institutional ownership, Hedge fund ownership, Retail ownership, Short interest, Fund flows
-Classify: Under-Owned / Fairly-Owned / Crowded
-
-Crowded longs require higher expected returns.
-
-CORRELATION ENGINE
-
-Evaluate: Sector overlap, Theme overlap, Factor overlap, Catalyst overlap, Macro overlap
-
-Diversification should be based on independent return drivers.
-
-CAPITAL ALLOCATION PRIORITY ENGINE
-
-Rank opportunities by: Expected Alpha, Expected Return, Variant Score, Catalyst Quality, Risk-Adjusted Return, Scenario-Weighted Return
-
-All positions compete for capital.
-
-PORTFOLIO CONSTRUCTION ENGINE
-
-Target Holdings: 8–15
-Target Cash: 0–10% (cash above 10% requires justification)
-Maximum Position: 15%
-Maximum Sector Exposure: 40%
-
-Construct the portfolio with the highest expected future value.
-
-PORTFOLIO EXPECTED RETURN ENGINE
-
-Estimate: Expected Portfolio Return, Expected Portfolio Alpha vs SPY, Expected Drawdown, Expected Upside/Base/Downside Scenarios, Probability-Weighted Portfolio Return
-
-Every trade should improve portfolio-level metrics.
-
-OPPORTUNITY COST ENGINE
-
-Every review:
-1. Rank holdings
-2. Rank candidates
-3. Compare expected alpha, expected return, risk-adjusted return
-4. Reallocate if superior opportunities exist
-
-No position deserves capital permanently.
-
-PORTFOLIO REPLACEMENT TEST
-
-Before every BUY identify: Source of capital, Position being displaced, Why new position is superior
-
-Replace only if expected portfolio value increases.
-
-ALPHA DECAY ENGINE
-
-Estimate:
-- Remaining Alpha Duration: <1 Month / 1–3 Months / 3–6 Months / 6+ Months
+Provide:
+- Hold Score (1-10)
 - Remaining Alpha: High / Medium / Low
+- Recommended Action: Hold / Reduce / Exit
 
-When alpha is largely priced in: Reduce or exit.
+Never anchor to purchase price."""
 
-RISK MANAGEMENT
+_PM_SYSTEM = """\
+You are the Portfolio Manager.
 
-Target Maximum Drawdown: 15–20%
+You receive:
+- Market Regime Analysis
+- Research Analyst Output
+- Earnings & Catalyst Analysis
+- Devil's Advocate Review
+- Position Reviews
+- Quant Scores
+- Current Portfolio
 
-If projected drawdown exceeds target: Reduce weakest positions, Reduce concentration, Raise cash, Increase quality
+Your responsibility is capital allocation.
+You are not a stock picker.
+Every dollar must compete for capital.
 
-Avoid permanent capital impairment.
+Before every buy identify:
+- Source of capital
+- Position being displaced
+- Expected portfolio improvement
 
-SELL FRAMEWORK
+Prioritize:
+1. Expected Alpha
+2. Risk-adjusted return
+3. Portfolio diversification
+4. Opportunity cost
 
-Sell when: Thesis breaks, Earnings deteriorate, Guidance weakens, Relative strength deteriorates, Better opportunities emerge, Valuation becomes excessive, Catalysts fail, Alpha decays, Position falls from top rankings
+Default action is HOLD.
+Trade only when portfolio expected value increases."""
 
-Never anchor to cost basis.
+_CRO_SYSTEM = """\
+You are the Chief Risk Officer.
 
-TRADING DISCIPLINE
+You are independent from the Portfolio Manager.
+Your objective is portfolio survival.
 
-Default action: HOLD
+Evaluate:
+- Concentration risk
+- Factor exposure
+- Correlation risk
+- Drawdown risk
+- Sector exposure
+- Theme exposure
 
-Trade only when portfolio-level improvement exceeds transaction costs, tax costs, execution risk, and opportunity cost.
+You may reject any trade.
 
-Avoid unnecessary turnover.
+Assume unexpected events occur regularly.
 
-FINAL RULE
-
-Think like a concentrated hedge fund portfolio manager.
-Act as an owner of capital.
-Focus on future returns, not past performance.
-Focus on portfolio optimization, not stock picking.
-Only deploy capital when expected future risk-adjusted returns justify doing so.
-Your mission is to maximize portfolio appreciation over the next 1–3 months while outperforming SPY under a strict long-only mandate.
-
-OUTPUT FORMAT
-
-You must respond with ONLY a valid JSON array of trade decisions. No explanation, no markdown, no preamble.
-Each trade should follow this structure:
-[
-  {
-    "ticker": "NVDA",
-    "action": "BUY",
-    "qty": 2,
-    "rationale": "Variant perception: market underestimates data center capex durability; 3-month catalyst is Q2 earnings beat; base case +25%, bull case +45%, bear case -12%; EV strongly positive"
-  }
-]
-
-Actions: BUY (open/add), SELL (reduce/close), HOLD (do nothing — omit from array)
-Only include tickers from the provided watchlist.
-If no trades are warranted today, return an empty array: []
-"""
+Focus on: Avoiding catastrophic losses."""
 
 
-def get_trade_decisions(portfolio, market_data, trade_history=None):
-    """
-    Sends current portfolio + market data to Claude.
-    Returns a list of trade decisions.
-    """
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-    # Format the portfolio for Claude
-    positions_text = ""
-    if portfolio["positions"]:
-        for p in portfolio["positions"]:
-            pnl = p.get("unrealized_pnl", 0)
-            pnl_pct = (pnl / (p["avg_price"] * p["qty"])) * 100 if p["avg_price"] and p["qty"] else 0
-            positions_text += (
-                f"  - {p['symbol']}: {p['qty']} shares @ avg ${p['avg_price']:.2f} "
-                f"(current: ${p['current_price']:.2f}, P&L: ${pnl:+.2f} / {pnl_pct:+.1f}%)\n"
-            )
-    else:
-        positions_text = "  - No positions (all cash)\n"
+def _call(model: str, system: str | list, user_msg: str, max_tokens: int = 600) -> str:
+    response = client.messages.create(
+        model=model,
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    return response.content[0].text.strip()
 
-    # Format market data for Claude
-    prices_text = ""
-    for ticker, data in market_data["prices"].items():
-        prices_text += f"  - {ticker}: ${data['close']:.2f} (change: {data['change_pct']:+.2f}%)\n"
 
-    articles = market_data.get("news", [])
-    news_text = "\n".join([f"  - {a['title']}" for a in articles[:10]])
+def _cached_system(prompt: str) -> list:
+    """Wrap a system prompt with prompt caching — efficient when called many times."""
+    return [{"type": "text", "text": prompt, "cache_control": {"type": "ephemeral"}}]
 
-    history_text = ""
-    if trade_history:
-        history_text = "\nRECENT TRADE HISTORY (last 30 trades):\n"
-        for t in trade_history:
-            history_text += f"  - {t['date']} | {t['action']} {t['qty']}x {t['ticker']} | {t['rationale']}\n"
-    else:
-        history_text = "\nRECENT TRADE HISTORY:\n  - No prior trades on record\n"
 
-    # Build news-discovered stocks section
-    news_discovered = market_data.get("news_discovered", {})
-    news_discovered_text = ""
-    if news_discovered:
-        # Build a map of ticker -> headlines that mentioned it
-        ticker_headlines = {}
-        for article in articles:
-            for t in article.get("tickers", []):
-                if t in news_discovered:
-                    ticker_headlines.setdefault(t, []).append(article["title"])
-
-        news_discovered_text = "\nNEWS-DISCOVERED STOCKS (not in standard watchlist, flagged by recent news):\n"
-        for ticker, data in news_discovered.items():
-            headlines = ticker_headlines.get(ticker, [])
-            headline_preview = f'"{headlines[0]}"' if headlines else "no headline"
-            news_discovered_text += (
-                f"  - {ticker}: ${data['close']:.2f} (change: {data['change_pct']:+.2f}%)"
-                f" — mentioned in: {headline_preview}\n"
-            )
-
-    user_message = f"""
-Today's date: {market_data['date']}
-
-CURRENT PORTFOLIO:
-  Cash available: ${portfolio['cash']:.2f}
-  Total value: ${portfolio['total_value']:.2f}
-  Positions:
-{positions_text}
-{history_text}
-MARKET DATA:
-{prices_text}
-{news_discovered_text}
-RECENT NEWS:
-{news_text}
-
-Based on this, what trades should I make today? Remember to return ONLY a JSON array.
-"""
-
+def _parse_json(text: str, default):
+    text = text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     try:
-        response = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=1000,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}]
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return default
+
+
+def _safe_call(model, system, user_msg, default, max_tokens=600):
+    try:
+        raw = _call(model, system, user_msg, max_tokens=max_tokens)
+        return _parse_json(raw, default)
+    except Exception as e:
+        print(f"   ⚠ Agent call failed: {e}")
+        return default
+
+
+def _fmt_scores(scores: dict) -> str:
+    return (
+        f"composite={scores.get('composite_score','?')} "
+        f"mom={scores.get('momentum_score','?')} "
+        f"quality={scores.get('quality_score','?')} "
+        f"val={scores.get('valuation_score','?')} "
+        f"vol={scores.get('volatility','?')}% "
+        f"beta={scores.get('beta','?')} "
+        f"1M={scores.get('return_1m','?')}% "
+        f"3M={scores.get('return_3m','?')}% "
+        f"above50={scores.get('above_50dma','?')} "
+        f"above200={scores.get('above_200dma','?')}"
+    )
+
+
+# ── Candidate Selection ───────────────────────────────────────────────────────
+
+def _select_candidates(portfolio: dict, market_data: dict, quant_scores: dict) -> list[str]:
+    """Choose which tickers to run the Research / Earnings / Devil agents for."""
+    candidates: set[str] = set()
+
+    # Current holdings always included
+    for p in portfolio["positions"]:
+        candidates.add(p["symbol"])
+
+    # Top by composite quant score (exclude pure benchmarks)
+    sorted_q = sorted(
+        quant_scores.items(),
+        key=lambda x: x[1].get("composite_score", 0),
+        reverse=True,
+    )
+    for ticker, _ in sorted_q:
+        if ticker not in ("SPY", "QQQ") and len(candidates) < MAX_CANDIDATES:
+            candidates.add(ticker)
+
+    # News-mentioned tickers that have price data
+    for article in market_data.get("news", []):
+        for t in article.get("tickers", []):
+            if t in market_data["prices"] and len(candidates) < MAX_CANDIDATES:
+                candidates.add(t)
+
+    # News-discovered tickers
+    for t in market_data.get("news_discovered", {}):
+        if len(candidates) < MAX_CANDIDATES:
+            candidates.add(t)
+
+    return list(candidates)
+
+
+# ── Agent 1: Market Regime Strategist ────────────────────────────────────────
+
+def run_market_regime_strategist(market_data: dict, quant_scores: dict) -> dict:
+    spy  = market_data["prices"].get("SPY", {})
+    qqq  = market_data["prices"].get("QQQ", {})
+    spy_s = quant_scores.get("SPY", {})
+    qqq_s = quant_scores.get("QQQ", {})
+    headlines = "\n".join(f"  - {a['title']}" for a in market_data.get("news", [])[:8])
+
+    user_msg = f"""\
+Date: {market_data['date']}
+
+SPY: ${spy.get('close', 'N/A')} ({spy.get('change_pct', 0):+.2f}%)
+  1M={spy_s.get('return_1m','?')}%  3M={spy_s.get('return_3m','?')}%  6M={spy_s.get('return_6m','?')}%
+  Above 50DMA: {spy_s.get('above_50dma')}  Above 200DMA: {spy_s.get('above_200dma')}
+
+QQQ: ${qqq.get('close', 'N/A')} ({qqq.get('change_pct', 0):+.2f}%)
+  1M={qqq_s.get('return_1m','?')}%  3M={qqq_s.get('return_3m','?')}%
+
+RECENT HEADLINES:
+{headlines}
+
+Output JSON:
+{{
+  "regime": "RISK_ON | NEUTRAL | RISK_OFF",
+  "confidence": 0-100,
+  "growth_value": "GROWTH | VALUE | NEUTRAL",
+  "favored_factors": [],
+  "avoid_factors": [],
+  "key_observations": []
+}}"""
+
+    return _safe_call(
+        MODEL_SMART, _REGIME_SYSTEM, user_msg,
+        default={"regime": "NEUTRAL", "confidence": 50, "growth_value": "NEUTRAL",
+                 "favored_factors": [], "avoid_factors": [], "key_observations": []},
+        max_tokens=400,
+    )
+
+
+# ── Agent 2: Research Analyst ─────────────────────────────────────────────────
+
+def run_research_analyst(ticker: str, market_data: dict, quant_scores: dict) -> dict:
+    data   = market_data["prices"].get(ticker) or market_data.get("news_discovered", {}).get(ticker, {})
+    scores = quant_scores.get(ticker, {})
+    news   = "\n".join(
+        f"  - {a['title']}"
+        for a in market_data.get("news", [])
+        if ticker in a.get("tickers", [])
+    ) or "  - No recent headlines"
+
+    user_msg = f"""\
+TICKER: {ticker}
+Price: ${data.get('close', 'N/A')} ({data.get('change_pct', 0):+.2f}%)
+
+QUANT: {_fmt_scores(scores)}
+
+NEWS:
+{news}
+
+Output JSON:
+{{
+  "thesis": "",
+  "consensus_view": "",
+  "variant_view": "",
+  "catalysts": [],
+  "key_risks": [],
+  "invalidates_if": [],
+  "confidence": 1-10,
+  "evidence_quality": 1-10
+}}"""
+
+    return _safe_call(
+        MODEL_FAST, _cached_system(_RESEARCH_SYSTEM), user_msg,
+        default={"thesis": "", "catalysts": [], "confidence": 5,
+                 "key_risks": [], "invalidates_if": [], "variant_view": ""},
+        max_tokens=500,
+    )
+
+
+# ── Agent 3: Earnings & Catalyst Analyst ─────────────────────────────────────
+
+def run_earnings_catalyst_analyst(ticker: str, market_data: dict) -> dict:
+    data = market_data["prices"].get(ticker, {})
+    news = "\n".join(
+        f"  - {a['title']}"
+        for a in market_data.get("news", [])
+        if ticker in a.get("tickers", [])
+    ) or "  - No recent headlines"
+
+    user_msg = f"""\
+TICKER: {ticker}
+Price: ${data.get('close', 'N/A')}  Date: {market_data['date']}
+
+NEWS:
+{news}
+
+Output JSON:
+{{
+  "next_earnings_est": "YYYY-MM-DD or unknown",
+  "earnings_alpha_score": 1-10,
+  "beat_probability": "LOW | MEDIUM | HIGH",
+  "guidance_raise_probability": "LOW | MEDIUM | HIGH",
+  "guidance_cut_probability": "LOW | MEDIUM | HIGH",
+  "key_catalysts_90d": [],
+  "expected_move_pct": 0
+}}"""
+
+    return _safe_call(
+        MODEL_FAST, _cached_system(_EARNINGS_SYSTEM), user_msg,
+        default={"earnings_alpha_score": 5, "beat_probability": "MEDIUM",
+                 "guidance_cut_probability": "LOW", "key_catalysts_90d": []},
+        max_tokens=400,
+    )
+
+
+# ── Agent 4: Devil's Advocate ─────────────────────────────────────────────────
+
+def run_devils_advocate(
+    ticker: str,
+    research: dict,
+    earnings: dict,
+    market_data: dict,
+    quant_scores: dict,
+) -> dict:
+    data   = market_data["prices"].get(ticker, {})
+    scores = quant_scores.get(ticker, {})
+
+    user_msg = f"""\
+TICKER: {ticker}
+Price: ${data.get('close', 'N/A')} | Vol: {scores.get('volatility', '?')}% | Beta: {scores.get('beta', '?')}
+
+BULL THESIS TO DESTROY:
+  {research.get('thesis', 'No thesis provided')}
+
+VARIANT VIEW:
+  {research.get('variant_view', '')}
+
+CATALYSTS CLAIMED:
+  {json.dumps(research.get('catalysts', []))}
+
+KEY RISKS IDENTIFIED BY ANALYST:
+  {json.dumps(research.get('key_risks', []))}
+
+EARNINGS ASSESSMENT:
+  Beat prob: {earnings.get('beat_probability', '?')} | Guidance cut: {earnings.get('guidance_cut_probability', '?')}
+  Upcoming catalysts: {json.dumps(earnings.get('key_catalysts_90d', []))}
+
+Output JSON:
+{{
+  "bear_case": "",
+  "weakest_assumptions": [],
+  "hidden_risks": [],
+  "crowding_risk": "LOW | MEDIUM | HIGH",
+  "valuation_risk": "LOW | MEDIUM | HIGH",
+  "catalyst_failure_probability": "LOW | MEDIUM | HIGH",
+  "overall_risk_score": 1-10,
+  "recommend_reject": true | false
+}}"""
+
+    return _safe_call(
+        MODEL_FAST, _cached_system(_DEVILS_SYSTEM), user_msg,
+        default={"bear_case": "", "overall_risk_score": 5,
+                 "recommend_reject": False, "hidden_risks": []},
+        max_tokens=500,
+    )
+
+
+# ── Agent 5: Position Review Analyst ─────────────────────────────────────────
+
+def run_position_review_analyst(
+    holding: dict,
+    market_data: dict,
+    quant_scores: dict,
+    research: dict | None,
+) -> dict:
+    ticker = holding["symbol"]
+    scores = quant_scores.get(ticker, {})
+    data   = market_data["prices"].get(ticker, {})
+    pnl    = holding.get("unrealized_pnl", 0)
+    pnl_pct = (pnl / (holding["avg_price"] * holding["qty"])) * 100 if holding["avg_price"] and holding["qty"] else 0
+
+    thesis_block = ""
+    if research:
+        thesis_block = f"\nCURRENT THESIS:\n  {research.get('thesis', 'None available')}"
+        thesis_block += f"\n  Confidence: {research.get('confidence', '?')}/10"
+
+    user_msg = f"""\
+POSITION: {ticker}
+  Shares: {holding['qty']} @ avg ${holding['avg_price']:.2f} | Current: ${data.get('close', '?')} | P&L: {pnl_pct:+.1f}%
+
+QUANT: {_fmt_scores(scores)}
+{thesis_block}
+
+NEWS:
+{chr(10).join(f"  - {a['title']}" for a in market_data.get('news', []) if ticker in a.get('tickers', [])) or '  - None'}
+
+Output JSON:
+{{
+  "hold_score": 1-10,
+  "remaining_alpha": "HIGH | MEDIUM | LOW",
+  "thesis_intact": true | false,
+  "catalysts_played_out": true | false,
+  "recommended_action": "HOLD | REDUCE | EXIT",
+  "reasoning": ""
+}}"""
+
+    return _safe_call(
+        MODEL_FAST, _cached_system(_POSITION_REVIEW_SYSTEM), user_msg,
+        default={"hold_score": 6, "remaining_alpha": "MEDIUM",
+                 "thesis_intact": True, "recommended_action": "HOLD", "reasoning": ""},
+        max_tokens=400,
+    )
+
+
+# ── Agent 6: Portfolio Manager ────────────────────────────────────────────────
+
+def run_portfolio_manager(
+    regime: dict,
+    research_map: dict,
+    earnings_map: dict,
+    devil_map: dict,
+    position_reviews: dict,
+    quant_scores: dict,
+    portfolio: dict,
+    trade_history: list | None,
+    date: str = "",
+) -> list[dict]:
+    total = portfolio["total_value"]
+    cash  = portfolio["cash"]
+    cash_pct = (cash / total * 100) if total else 0
+
+    # Format current holdings
+    holdings_lines = []
+    for p in portfolio["positions"]:
+        t = p["symbol"]
+        weight = (p["market_value"] / total * 100) if total else 0
+        review = position_reviews.get(t, {})
+        holdings_lines.append(
+            f"  {t}: {p['qty']} sh @ ${p['avg_price']:.2f} = ${p['market_value']:,.0f} ({weight:.1f}%) "
+            f"| hold={review.get('hold_score','?')}/10 alpha={review.get('remaining_alpha','?')} "
+            f"action={review.get('recommended_action','?')}"
         )
 
-        raw = response.content[0].text.strip()
+    # Format quant scores table (top 25 by composite, exclude ETFs)
+    sorted_q = sorted(
+        [(t, s) for t, s in quant_scores.items() if t not in ("SPY", "QQQ")],
+        key=lambda x: x[1].get("composite_score", 0),
+        reverse=True,
+    )[:25]
+    quant_lines = [
+        f"  {t}: cmp={s.get('composite_score','?')} mom={s.get('momentum_score','?')} "
+        f"q={s.get('quality_score','?')} val={s.get('valuation_score','?')} "
+        f"vol={s.get('volatility','?')}% beta={s.get('beta','?')}"
+        for t, s in sorted_q
+    ]
 
-        # Clean up if Claude added markdown fences
-        raw = raw.replace("```json", "").replace("```", "").strip()
+    # Format research summaries
+    research_lines = []
+    for t, r in research_map.items():
+        d = devil_map.get(t, {})
+        e = earnings_map.get(t, {})
+        research_lines.append(
+            f"\n  {t} (conf={r.get('confidence','?')}/10 | devil_risk={d.get('overall_risk_score','?')}/10 "
+            f"| reject={d.get('recommend_reject','?')} | earnings_alpha={e.get('earnings_alpha_score','?')}/10):"
+            f"\n    Thesis: {r.get('thesis','')}"
+            f"\n    Variant: {r.get('variant_view','')}"
+            f"\n    Catalysts: {r.get('catalysts', [])}"
+            f"\n    Key risks: {r.get('key_risks', [])}"
+            f"\n    Bear case: {d.get('bear_case', '')}"
+            f"\n    90d catalysts: {e.get('key_catalysts_90d', [])}"
+        )
 
-        decisions = json.loads(raw)
-        return decisions
+    history_lines = []
+    for t in (trade_history or [])[-10:]:
+        history_lines.append(f"  {t.get('date')} | {t.get('action')} {t.get('ticker')} | {t.get('rationale','')[:80]}")
 
-    except json.JSONDecodeError as e:
-        print(f"   ⚠ Could not parse Claude's response as JSON: {e}")
-        print(f"   Raw response: {raw}")
+    user_msg = f"""\
+Date: {date}
+
+MARKET REGIME: {json.dumps(regime)}
+
+CURRENT PORTFOLIO:
+  Cash: ${cash:,.2f} ({cash_pct:.1f}%)  Total: ${total:,.2f}
+  Holdings:
+{chr(10).join(holdings_lines) or '  (none — all cash)'}
+
+QUANT SCORES (top candidates):
+{chr(10).join(quant_lines)}
+
+RESEARCH & DEVIL'S ADVOCATE:
+{''.join(research_lines)}
+
+RECENT TRADES:
+{chr(10).join(history_lines) or '  (none)'}
+
+CONSTRAINTS:
+  Holdings target: 8–15 | Max position: 10% | Max sector: 25% | Cash: 0–10%
+
+OUTPUT: Return ONLY a JSON array. Each element:
+{{
+  "ticker": "...",
+  "action": "BUY | SELL",
+  "target_weight": 0.00–0.10,
+  "source_of_capital": "ticker being reduced, or 'cash'",
+  "rationale": "one sentence"
+}}
+Omit HOLD decisions. Return [] if no trades improve portfolio expected value."""
+
+    return _safe_call(
+        MODEL_SMART, _PM_SYSTEM, user_msg,
+        default=[],
+        max_tokens=1200,
+    )
+
+
+# ── Agent 7: Chief Risk Officer ───────────────────────────────────────────────
+
+def run_chief_risk_officer(
+    decisions: list[dict],
+    portfolio: dict,
+    quant_scores: dict,
+) -> dict:
+    if not decisions:
+        return {"approved": True, "risk_budget_used": 0, "largest_risk": "none",
+                "rejected_tickers": [], "reasoning": "No trades to evaluate."}
+
+    total = portfolio["total_value"]
+
+    # Project resulting portfolio after proposed trades
+    projected: dict[str, float] = {}
+    for p in portfolio["positions"]:
+        weight = (p["market_value"] / total) if total else 0
+        projected[p["symbol"]] = weight
+    for d in decisions:
+        if d.get("action") == "BUY":
+            projected[d["ticker"]] = d.get("target_weight", 0)
+        elif d.get("action") == "SELL":
+            projected[d["ticker"]] = d.get("target_weight", 0)
+
+    # Risk lines per ticker
+    risk_lines = []
+    for ticker, weight in sorted(projected.items(), key=lambda x: -x[1]):
+        if weight > 0.001:
+            s = quant_scores.get(ticker, {})
+            risk_lines.append(
+                f"  {ticker}: {weight:.1%} | vol={s.get('volatility','?')}% "
+                f"beta={s.get('beta','?')}"
+            )
+
+    user_msg = f"""\
+PROPOSED TRADES:
+{json.dumps(decisions, indent=2)}
+
+PROJECTED PORTFOLIO (post-trade weights):
+{chr(10).join(risk_lines)}
+
+CURRENT CASH: ${portfolio['cash']:,.2f} ({portfolio['cash']/total*100:.1f}%)
+
+Output JSON:
+{{
+  "approved": true | false,
+  "risk_budget_used": 0-100,
+  "largest_risk": "one sentence describing the biggest risk",
+  "rejected_tickers": [],
+  "reasoning": "brief explanation"
+}}
+Set approved=false only for severe concentration / correlation risks that could cause catastrophic loss."""
+
+    return _safe_call(
+        MODEL_SMART, _CRO_SYSTEM, user_msg,
+        default={"approved": True, "risk_budget_used": 50,
+                 "largest_risk": "unknown", "rejected_tickers": [], "reasoning": ""},
+        max_tokens=400,
+    )
+
+
+# ── Main Orchestration ────────────────────────────────────────────────────────
+
+def get_trade_decisions(
+    portfolio: dict,
+    market_data: dict,
+    quant_scores: dict,
+    trade_history: list | None = None,
+) -> list[dict]:
+    """
+    Run the full 7-agent pipeline and return a list of trade decisions.
+    Each decision: {ticker, action, target_weight, source_of_capital, rationale}
+    """
+    market_data_date = market_data.get("date", "")
+
+    # ── 1. Market Regime ──────────────────────────────────────────────────────
+    print("   [1/7] Market Regime Strategist...")
+    regime = run_market_regime_strategist(market_data, quant_scores)
+    print(f"         Regime: {regime.get('regime')} (confidence: {regime.get('confidence')})")
+
+    # ── Select candidates ─────────────────────────────────────────────────────
+    candidates = _select_candidates(portfolio, market_data, quant_scores)
+    print(f"   Candidates for analysis ({len(candidates)}): {', '.join(candidates)}")
+
+    # ── 2. Research Analyst ───────────────────────────────────────────────────
+    print(f"   [2/7] Research Analyst ({len(candidates)} tickers)...")
+    research_map: dict = {}
+    for ticker in candidates:
+        research_map[ticker] = run_research_analyst(ticker, market_data, quant_scores)
+
+    # ── 3. Earnings & Catalyst Analyst ───────────────────────────────────────
+    print(f"   [3/7] Earnings & Catalyst Analyst ({len(candidates)} tickers)...")
+    earnings_map: dict = {}
+    for ticker in candidates:
+        earnings_map[ticker] = run_earnings_catalyst_analyst(ticker, market_data)
+
+    # ── 4. Devil's Advocate (only for tickers with confidence >= 6) ───────────
+    strong = [t for t in candidates if research_map.get(t, {}).get("confidence", 0) >= 6]
+    print(f"   [4/7] Devil's Advocate ({len(strong)} high-confidence tickers)...")
+    devil_map: dict = {}
+    for ticker in strong:
+        devil_map[ticker] = run_devils_advocate(
+            ticker, research_map[ticker], earnings_map[ticker], market_data, quant_scores
+        )
+
+    # ── 5. Position Review (current holdings only) ────────────────────────────
+    holdings = portfolio.get("positions", [])
+    print(f"   [5/7] Position Review Analyst ({len(holdings)} holdings)...")
+    position_reviews: dict = {}
+    for holding in holdings:
+        ticker = holding["symbol"]
+        position_reviews[ticker] = run_position_review_analyst(
+            holding, market_data, quant_scores, research_map.get(ticker)
+        )
+        review = position_reviews[ticker]
+        print(
+            f"         {ticker}: hold={review.get('hold_score')}/10 "
+            f"alpha={review.get('remaining_alpha')} → {review.get('recommended_action')}"
+        )
+
+    # ── 6. Portfolio Manager ──────────────────────────────────────────────────
+    print("   [6/7] Portfolio Manager...")
+    decisions = run_portfolio_manager(
+        regime, research_map, earnings_map, devil_map,
+        position_reviews, quant_scores, portfolio, trade_history,
+        date=market_data_date,
+    )
+
+    if decisions:
+        for d in decisions:
+            print(
+                f"         → {d.get('action')} {d.get('ticker')} "
+                f"target={d.get('target_weight', 0):.1%} | {d.get('rationale', '')}"
+            )
+    else:
+        print("         No trades proposed.")
+
+    # ── 7. Chief Risk Officer ─────────────────────────────────────────────────
+    print("   [7/7] Chief Risk Officer...")
+    risk = run_chief_risk_officer(decisions, portfolio, quant_scores)
+    print(
+        f"         {'✅ APPROVED' if risk.get('approved') else '🚨 REJECTED'} | "
+        f"risk_budget={risk.get('risk_budget_used')}% | {risk.get('largest_risk')}"
+    )
+
+    if not risk.get("approved", True):
+        print(f"   🚨 CRO REJECTED all trades: {risk.get('reasoning')}")
         return []
 
-    except Exception as e:
-        print(f"   ⚠ Error calling Claude API: {e}")
-        return []
+    rejected = set(risk.get("rejected_tickers", []))
+    if rejected:
+        before = len(decisions)
+        decisions = [d for d in decisions if d.get("ticker") not in rejected]
+        print(f"   ⚠ CRO removed {before - len(decisions)} ticker(s): {rejected}")
 
-
+    return decisions
