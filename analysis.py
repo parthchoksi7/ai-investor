@@ -669,10 +669,11 @@ def get_trade_decisions(
     market_data: dict,
     quant_scores: dict,
     trade_history: list | None = None,
-) -> list[dict]:
+) -> tuple[list[dict], dict]:
     """
-    Run the full 7-agent pipeline and return a list of trade decisions.
-    Each decision: {ticker, action, target_weight, source_of_capital, rationale}
+    Run the full 7-agent pipeline.
+    Returns (decisions, pipeline_state) where pipeline_state is the full paper trail
+    of every agent's output for this run.
     """
     market_data_date = market_data.get("date", "")
 
@@ -746,9 +747,11 @@ def get_trade_decisions(
         f"risk_budget={risk.get('risk_budget_used')}% | {risk.get('largest_risk')}"
     )
 
+    decisions_proposed = list(decisions)  # PM's output before CRO filtering
+
     if not risk.get("approved", True):
         print(f"   🚨 CRO REJECTED all trades: {risk.get('reasoning')}")
-        return []
+        decisions = []
 
     rejected = set(risk.get("rejected_tickers", []))
     if rejected:
@@ -756,4 +759,21 @@ def get_trade_decisions(
         decisions = [d for d in decisions if d.get("ticker") not in rejected]
         print(f"   ⚠ CRO removed {before - len(decisions)} ticker(s): {rejected}")
 
-    return decisions
+    pipeline_state = {
+        "date": market_data_date,
+        "regime": regime,
+        "candidates": candidates,
+        "quant_scores": {
+            t: {k: v for k, v in s.items() if k != "history"}
+            for t, s in quant_scores.items()
+            if t in candidates
+        },
+        "research": research_map,
+        "earnings": earnings_map,
+        "devils_advocate": devil_map,
+        "position_reviews": position_reviews,
+        "portfolio_manager_proposed": decisions_proposed,
+        "cro": risk,
+        "final_decisions": decisions,
+    }
+    return decisions, pipeline_state

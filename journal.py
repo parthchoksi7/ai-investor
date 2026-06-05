@@ -10,6 +10,8 @@ from datetime import datetime
 
 JOURNAL_FILE = "decision_journal.json"
 PEAK_FILE = "portfolio_peak.json"
+AGENT_LOG_FILE = "agent_log.json"
+TRANSACTIONS_FILE = "transactions.json"
 KILL_DRAWDOWN_THRESHOLD = 0.20
 
 
@@ -57,6 +59,20 @@ def record_trade(
     })
     _save(JOURNAL_FILE, journal)
     return trade_id
+
+
+def record_run(run_id: str, pipeline_state: dict) -> None:
+    """Append a full agent pipeline run to agent_log.json (every run, including no-trade days)."""
+    log = _load(AGENT_LOG_FILE, [])
+    log.append({"run_id": run_id, **pipeline_state})
+    _save(AGENT_LOG_FILE, log)
+
+
+def record_transaction(tx: dict) -> None:
+    """Append a detailed executed transaction to transactions.json."""
+    txs = _load(TRANSACTIONS_FILE, [])
+    txs.append(tx)
+    _save(TRANSACTIONS_FILE, txs)
 
 
 def get_recent_decisions(n: int = 20) -> list:

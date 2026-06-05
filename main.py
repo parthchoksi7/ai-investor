@@ -8,20 +8,27 @@ Pipeline:
   4. Compute quant scores (deterministic)
   5. Run 7-agent pipeline (Claude)
   6. Execute trades (Robinhood)
-  7. Log to CSV + decision journal
+  7. Log to CSV + decision journal + agent log + transaction history
 """
 
-from market_data import get_market_snapshot
-from analysis   import get_trade_decisions
+import json as _json
+import uuid as _uuid
+from datetime import datetime, timezone
+
+from market_data  import get_market_snapshot
+from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
-from execute    import execute_trades, get_portfolio_summary, log_trades, get_trade_history
-from journal    import check_kill_switches, record_trade
+from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty
+from journal      import check_kill_switches, record_trade, record_run, record_transaction
 
 
 def run_daily_cycle():
     print("\n" + "=" * 60)
     print("🤖  AI INVESTOR V3 — DAILY CYCLE STARTING")
     print("=" * 60)
+
+    run_id    = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    run_start = datetime.now(timezone.utc).isoformat()
 
     # ── Step 1: Portfolio ─────────────────────────────────────────────────────
     print("\n📊  Step 1: Fetching portfolio...")
@@ -67,7 +74,23 @@ def run_daily_cycle():
     # ── Step 5: 7-agent pipeline ──────────────────────────────────────────────
     print("\n🧠  Step 5: Running 7-agent pipeline...")
     trade_history = get_trade_history()
-    decisions = get_trade_decisions(portfolio, market_data, quant_scores, trade_history)
+    decisions, pipeline_state = get_trade_decisions(portfolio, market_data, quant_scores, trade_history)
+
+    # ── Agent log (written every run, even no-trade days) ────────────────────
+    pipeline_state["run_id"]            = run_id
+    pipeline_state["timestamp"]         = run_start
+    pipeline_state["kill_switch_active"] = kill_active
+    pipeline_state["portfolio_snapshot"] = {
+        "cash":        portfolio["cash"],
+        "total_value": portfolio["total_value"],
+        "positions":   portfolio["positions"],
+    }
+    record_run(run_id, pipeline_state)
+    print(f"   📋 Agent log written (run_id={run_id})")
+
+    # Always write pending_decisions.json (routine reads this)
+    with open("pending_decisions.json", "w") as _f:
+        _json.dump(decisions, _f, indent=2)
 
     if not decisions:
         print("\n   No trades today.")
@@ -82,11 +105,6 @@ def run_daily_cycle():
             f"source={d.get('source_of_capital', '?')} | {d.get('rationale', '')}"
         )
 
-    # Write decisions for external consumers (e.g. scheduled routine executing via MCP)
-    import json as _json
-    with open("pending_decisions.json", "w") as _f:
-        _json.dump(decisions, _f, indent=2)
-
     # ── Step 6: Execute ───────────────────────────────────────────────────────
     if kill_active:
         print("\n⛔  Step 6: Kill switch active — skipping execution.")
@@ -98,20 +116,55 @@ def run_daily_cycle():
     print("\n📝  Step 7: Logging decisions...")
     log_trades(decisions, portfolio, market_data["prices"])
 
+    today   = datetime.now().strftime("%Y-%m-%d")
+    regime  = pipeline_state.get("regime", {}).get("regime", "")
+
     for d in decisions:
-        if d.get("action") in ("BUY", "SELL"):
-            trade_id = record_trade(
-                ticker         = d["ticker"],
-                action         = d["action"],
-                target_weight  = d.get("target_weight", 0),
-                thesis         = d.get("rationale", ""),
-                anti_thesis    = d.get("anti_thesis", ""),
-                catalysts      = d.get("catalysts", []),
-                confidence     = d.get("confidence", 5),
-                expected_return = d.get("expected_return", 0),
-                invalidates_if = d.get("invalidates_if", []),
-            )
-            print(f"   📔 Journal entry: {trade_id} ({d['action']} {d['ticker']})")
+        if d.get("action") not in ("BUY", "SELL"):
+            continue
+
+        ticker        = d["ticker"]
+        action        = d["action"]
+        target_weight = d.get("target_weight", 0)
+        price         = market_data["prices"].get(ticker, {}).get("close", 0)
+        qty           = _compute_qty(target_weight, action, ticker, portfolio, market_data["prices"])
+        total_value   = round(qty * price, 2) if qty and price else None
+
+        # Detailed transaction history (for public performance display)
+        record_transaction({
+            "transaction_id":        str(_uuid.uuid4())[:8],
+            "run_id":                run_id,
+            "date":                  today,
+            "timestamp":             datetime.now(timezone.utc).isoformat(),
+            "ticker":                ticker,
+            "action":                action,
+            "qty":                   qty,
+            "price":                 round(price, 4) if price else None,
+            "total_value":           total_value,
+            "target_weight":         target_weight,
+            "portfolio_value_before": portfolio["total_value"],
+            "source_of_capital":     d.get("source_of_capital", ""),
+            "regime":                regime,
+            "regime_confidence":     pipeline_state.get("regime", {}).get("confidence"),
+            "rationale":             d.get("rationale", ""),
+            "research_confidence":   pipeline_state.get("research", {}).get(ticker, {}).get("confidence"),
+            "earnings_alpha_score":  pipeline_state.get("earnings", {}).get(ticker, {}).get("earnings_alpha_score"),
+            "cro_risk_budget":       pipeline_state.get("cro", {}).get("risk_budget_used"),
+        })
+
+        # Decision journal (thesis tracking)
+        trade_id = record_trade(
+            ticker          = ticker,
+            action          = action,
+            target_weight   = target_weight,
+            thesis          = pipeline_state.get("research", {}).get(ticker, {}).get("thesis", d.get("rationale", "")),
+            anti_thesis     = pipeline_state.get("devils_advocate", {}).get(ticker, {}).get("bear_case", ""),
+            catalysts       = pipeline_state.get("research", {}).get(ticker, {}).get("catalysts", []),
+            confidence      = pipeline_state.get("research", {}).get(ticker, {}).get("confidence", 5),
+            expected_return = d.get("expected_return", 0),
+            invalidates_if  = pipeline_state.get("research", {}).get(ticker, {}).get("invalidates_if", []),
+        )
+        print(f"   📔 Journal entry: {trade_id} ({action} {ticker})")
 
     print("\n✅  Daily cycle complete.")
     print("=" * 60 + "\n")
