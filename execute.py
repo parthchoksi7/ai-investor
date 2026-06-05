@@ -98,7 +98,7 @@ def _compute_qty(
 def log_trades(decisions: list[dict], portfolio: dict, prices: dict | None = None, strategy: str = "institutional") -> None:
     """Appends executed trades to trades.csv."""
     file_exists = os.path.isfile(TRADE_LOG)
-    fieldnames  = ["date", "strategy", "ticker", "action", "qty", "target_weight", "portfolio_value", "rationale"]
+    fieldnames  = ["date", "strategy", "ticker", "action", "qty", "price", "total_value", "target_weight", "portfolio_value", "rationale"]
 
     with open(TRADE_LOG, "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
@@ -113,10 +113,12 @@ def log_trades(decisions: list[dict], portfolio: dict, prices: dict | None = Non
             ticker        = trade.get("ticker", "")
             target_weight = trade.get("target_weight")
             qty           = trade.get("qty")
+            price         = prices.get(ticker, {}).get("close", 0) if prices else 0
 
-            # Compute qty from target_weight if not already present
             if qty is None and target_weight is not None and prices:
                 qty = _compute_qty(target_weight, action, ticker, portfolio, prices)
+
+            total_value = round(qty * price, 2) if qty and price else None
 
             writer.writerow({
                 "date":            today,
@@ -124,6 +126,8 @@ def log_trades(decisions: list[dict], portfolio: dict, prices: dict | None = Non
                 "ticker":          ticker,
                 "action":          action,
                 "qty":             qty or "",
+                "price":           f"{price:.4f}" if price else "",
+                "total_value":     f"{total_value:.2f}" if total_value is not None else "",
                 "target_weight":   f"{target_weight:.4f}" if target_weight is not None else "",
                 "portfolio_value": f"{portfolio['total_value']:.2f}",
                 "rationale":       trade.get("rationale", ""),
