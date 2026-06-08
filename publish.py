@@ -15,7 +15,7 @@ import json
 import os
 import urllib.request
 import urllib.error
-from datetime import datetime
+from datetime import date, datetime
 
 from dotenv import load_dotenv
 
@@ -73,7 +73,36 @@ def _get_spy_cumulative(supabase_client, spy_close: float | None) -> float | Non
         return None
 
 
-def publish_to_supabase(portfolio: dict | None = None) -> None:
+def _publish_quant_scores(client, quant_scores: dict, today: str) -> None:
+    sorted_tickers = sorted(
+        [(t, s) for t, s in quant_scores.items() if s.get("data_available", False)],
+        key=lambda x: x[1].get("composite_score", 0),
+        reverse=True,
+    )
+    rows = [
+        {
+            "date":       today,
+            "ticker":     ticker,
+            "rank":       rank + 1,
+            "composite":  scores.get("composite_score"),
+            "momentum":   scores.get("momentum_score"),
+            "quality":    scores.get("quality_score"),
+            "valuation":  scores.get("valuation_score"),
+            "volatility": scores.get("volatility_score"),
+            "return_1m":  scores.get("return_1m"),
+            "return_3m":  scores.get("return_3m"),
+            "return_6m":  scores.get("return_6m"),
+            "ann_vol":    scores.get("volatility"),
+            "beta":       scores.get("beta"),
+        }
+        for rank, (ticker, scores) in enumerate(sorted_tickers)
+    ]
+    if rows:
+        client.table("quant_scores").upsert(rows, on_conflict="date,ticker").execute()
+        print(f"   📊 {len(rows)} quant score(s) synced.")
+
+
+def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None = None) -> None:
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
     if not supabase_url or not supabase_key:
@@ -199,5 +228,12 @@ def publish_to_supabase(portfolio: dict | None = None) -> None:
         if trade_rows:
             client.table("trades").upsert(trade_rows).execute()
             print(f"   📋 {len(trade_rows)} trade(s) synced.")
+
+    # ── Quant scores ───────────────────────────────────────────────────────────
+    if quant_scores:
+        try:
+            _publish_quant_scores(client, quant_scores, date.today().isoformat())
+        except Exception as e:
+            print(f"   ⚠️  Quant scores publish failed — {e}")
 
     print("   ✅ Supabase publish complete.")

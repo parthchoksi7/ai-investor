@@ -244,13 +244,31 @@ def get_market_snapshot() -> dict:
     If market_snapshot.json exists and is dated today, loads it directly
     (written by the GitHub Actions market data job at 9:40 AM ET).
     """
+    today_str = date.today().isoformat()
+
+    # Check 1: local file (written by fetch_snapshot.py in dev, or as fallback)
     snapshot_path = "market_snapshot.json"
     if os.path.isfile(snapshot_path):
         with open(snapshot_path) as f:
             cached = json.load(f)
-        if cached.get("date") == date.today().isoformat():
+        if cached.get("date") == today_str:
             print(f"   📦 Loaded market_snapshot.json ({len(cached.get('prices', {}))} tickers)")
             return cached
+
+    # Check 2: Supabase (written by GitHub Actions fetch_snapshot.py at 9:20 AM ET)
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
+    if supabase_url and supabase_key:
+        try:
+            from supabase import create_client
+            _sb = create_client(supabase_url, supabase_key)
+            res = _sb.table("market_snapshots").select("snapshot").eq("date", today_str).execute()
+            if res.data:
+                cached = json.loads(res.data[0]["snapshot"])
+                print(f"   ☁️  Loaded market_snapshot from Supabase ({len(cached.get('prices', {}))} tickers)")
+                return cached
+        except Exception:
+            pass  # fall through to Polygon fetch
 
     all_tickers = list(set(WATCHLIST) | set(SP500_HOLDINGS.keys()))
     prices:  dict = {}

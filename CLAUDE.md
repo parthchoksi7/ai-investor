@@ -168,4 +168,46 @@ As a result, the cloud routine uses a different data path than local:
 
 - Cloud quant scores are always 50 (no historical data). Agents work from LLM knowledge only.
 - `market_data.py` makes ~90 API calls per run locally (one per ticker for 210-day history). Can be slow (~2–3 min) and may hit Polygon free-tier rate limits.
-- DST: the cron doesn't auto-adjust. Update manually in November (`45 14 * * 1-5`) and March (`45 13 * * 1-5`).
+- DST: GitHub Actions crons (`market_data.yml`, `health_check.yml`) are auto-updated by `.github/workflows/update_dst.yml` on March 1 and November 1. The Anthropic routine cron (`45 13 * * 1-5`) still requires a manual update — change to `45 14 * * 1-5` in November and back in March.
+
+## Manual Execution Runbook
+
+Use this when the scheduled routine fails or you need to intervene.
+
+### Scenario A — Routine failed before placing orders
+
+`pending_decisions.json` exists, `executed_at` is `null`.
+
+1. Check `pending_decisions["date"] == today`. If stale (yesterday's file), **stop** — wait for tomorrow's run.
+2. Read `pending_decisions["decisions"]`. If `[]`, nothing to execute.
+3. For each BUY or SELL decision (**never TSLA**):
+   - Get current price: `get_equity_quotes` for the ticker
+   - Compute qty: `round(target_weight × total_value / current_price, 6)` — `total_value` from `mcp_portfolio.json`
+   - Place: `place_equity_order(account_number='YOUR_ACCOUNT_NUMBER', symbol=ticker, side='buy'|'sell', quantity=qty, type='market', time_in_force='gfd')`
+   - Skip HOLD decisions entirely. Do not skip if qty < 1 (Robinhood supports fractional shares); only skip if qty == 0.
+4. After **all** orders are placed, stamp execution:
+   ```
+   python -c "from journal import mark_pending_executed; mark_pending_executed('<run_id>')"
+   ```
+   Replace `<run_id>` with `pending_decisions["run_id"]`.
+
+### Scenario B — Routine failed after partial orders
+
+`executed_at` is already set (not `null`).
+
+1. **Do NOT re-run** `pending_decisions.json` — it is marked executed. Placing orders again would double-fill.
+2. Fetch actual positions via `get_equity_positions`. Compare to expected target weights.
+3. Place any missing orders individually via `place_equity_order` (same params as Scenario A).
+4. Do **not** call `mark_pending_executed` again.
+
+### Scenario C — Kill switch is active (drawdown > 20%)
+
+1. Confirm: open `portfolio_peak.json` and compare `peak` vs current `total_value`.
+2. Only SELLs are allowed — the pipeline blocks all BUYs automatically.
+3. To resume after recovery: edit `portfolio_peak.json` and set `"peak"` to current portfolio value. The next run will then allow BUYs again.
+
+### Scenario D — Full re-run needed (e.g., pipeline error before pending_decisions.json was written)
+
+1. Ensure `pending_decisions.json` either doesn't exist or has `executed_at = null` and `date = today`.
+2. Run the pipeline: `DRY_RUN=true python main.py`
+3. Follow Scenario A.

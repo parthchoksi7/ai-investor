@@ -19,7 +19,7 @@ from market_data  import get_market_snapshot
 from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, DRY_RUN
-from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed
+from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, get_recent_decisions
 from publish      import publish_to_supabase
 
 
@@ -76,7 +76,16 @@ def run_daily_cycle():
     # ── Step 5: 7-agent pipeline ──────────────────────────────────────────────
     print("\n🧠  Step 5: Running 7-agent pipeline...")
     trade_history = get_trade_history()
-    decisions, pipeline_state = get_trade_decisions(portfolio, market_data, quant_scores, trade_history)
+
+    # Build per-ticker map of the most recent open journal entry so Agent 5
+    # (Position Review) can check whether original invalidation conditions fired.
+    prior_journal: dict = {}
+    for entry in get_recent_decisions(n=200):
+        t = entry.get("ticker")
+        if t and t not in prior_journal and entry.get("status") == "open":
+            prior_journal[t] = entry
+
+    decisions, pipeline_state = get_trade_decisions(portfolio, market_data, quant_scores, trade_history, prior_journal)
 
     # ── Agent log (written every run, even no-trade days) ────────────────────
     pipeline_state["run_id"]            = run_id
@@ -106,7 +115,7 @@ def run_daily_cycle():
         print("\n   No trades today.")
         # ── Step 8: Publish snapshot even on no-trade days ────────────────────
         print("\n🌐  Step 8: Publishing to Supabase...")
-        publish_to_supabase(portfolio)
+        publish_to_supabase(portfolio, quant_scores=quant_scores)
         print("\n✅  Daily cycle complete.")
         print("=" * 60 + "\n")
         return
