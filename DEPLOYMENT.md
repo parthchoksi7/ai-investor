@@ -1115,19 +1115,22 @@ After any live execution (not dry-run), check that `transactions.json` has a non
 
 ## Sign-Off
 
-Before pushing any P0/P1 change to a live scheduled run, complete this sign-off:
+**Where this goes:** Copy this sign-off into your PR description (using the template in Section 13) or into the commit message if you are working alone. It is not a private checklist — it is a record that the process was followed.
+
+Before pushing any P0/P1 change to a live scheduled run:
 
 ```
 Change description: ___________________________________
 Changed files: ________________________________________
 Change class (P0/P1/P2/P3/P4): _______________________
-Code review completed by: _____________________________
+Code review completed by: _____________________________ (or: self-review after 24h cooling period)
+Common mistakes checked (Section 14): [ ] YES
 All Section 3 regression tests passed: [ ] YES
 New QA tests added for new functionality (Section 12): [ ] YES / [ ] N/A
 Dry-run completed without errors: [ ] YES
 Agent log inspected (Section 4.1): [ ] YES
-pending_decisions.json looks correct: [ ] YES
-Position reconciliation baseline recorded (Section 5.1): [ ] YES
+pending_decisions.json executed_at is null: [ ] YES
+Position reconciliation baseline recorded and pasted in PR (Section 5.1): [ ] YES
 DST schedule verified (if near transition): [ ] YES / [ ] N/A
 Date: _______________
 ```
