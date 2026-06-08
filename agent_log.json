@@ -1,0 +1,649 @@
+[
+  {
+    "run_id": "20260608-134656",
+    "date": "2026-06-08",
+    "regime": {
+      "regime": "NEUTRAL",
+      "confidence": 25,
+      "growth_value": "NEUTRAL",
+      "favored_factors": [],
+      "avoid_factors": [],
+      "key_observations": [
+        "Insufficient data to determine market regime with confidence",
+        "SPY showing modest positive return (+0.41%) while QQQ slightly negative (-0.28%), suggesting mild large-cap value leadership over growth intraday",
+        "No moving average context available (50DMA/200DMA positioning unknown)",
+        "No historical return windows (1M/3M/6M) available to assess trend or momentum",
+        "No macro headlines provided to inform economic or liquidity regime assessment",
+        "QQQ underperforming SPY on this date may hint at mild rotation away from tech/growth, but single-day divergence is insufficient for regime classification",
+        "Absolute price levels (SPY ~$757, QQQ ~$742) provide no regime signal without historical context",
+        "Confidence set to 25 reflecting extreme data scarcity \u2014 regime classification is unreliable and should not be acted upon"
+      ]
+    },
+    "candidates": [
+      "GOOGL",
+      "AAPL",
+      "MSFT",
+      "QCOM",
+      "MU",
+      "TSLA",
+      "AMAT",
+      "CRM",
+      "NVDA",
+      "ORCL",
+      "NOW",
+      "GOOG",
+      "ADBE",
+      "AMZN",
+      "TXN",
+      "IBM",
+      "DDOG",
+      "SNOW",
+      "META",
+      "INTC"
+    ],
+    "quant_scores": {
+      "AAPL": {
+        "ticker": "AAPL",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "MSFT": {
+        "ticker": "MSFT",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "NVDA": {
+        "ticker": "NVDA",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "GOOGL": {
+        "ticker": "GOOGL",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "GOOG": {
+        "ticker": "GOOG",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "AMZN": {
+        "ticker": "AMZN",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "META": {
+        "ticker": "META",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "TSLA": {
+        "ticker": "TSLA",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "ORCL": {
+        "ticker": "ORCL",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "IBM": {
+        "ticker": "IBM",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "INTC": {
+        "ticker": "INTC",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "QCOM": {
+        "ticker": "QCOM",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "TXN": {
+        "ticker": "TXN",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "MU": {
+        "ticker": "MU",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "AMAT": {
+        "ticker": "AMAT",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "CRM": {
+        "ticker": "CRM",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "ADBE": {
+        "ticker": "ADBE",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "NOW": {
+        "ticker": "NOW",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "SNOW": {
+        "ticker": "SNOW",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "DDOG": {
+        "ticker": "DDOG",
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      }
+    },
+    "research": {
+      "GOOGL": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "AAPL": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "MSFT": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "QCOM": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "MU": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "TSLA": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "AMAT": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "CRM": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "NVDA": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "ORCL": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "NOW": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "GOOG": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "ADBE": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "AMZN": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "TXN": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "IBM": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "DDOG": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "SNOW": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "META": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "INTC": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      }
+    },
+    "earnings": {
+      "GOOGL": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "AAPL": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "MSFT": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "QCOM": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "MU": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "TSLA": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "AMAT": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "CRM": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "NVDA": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "ORCL": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "NOW": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "GOOG": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "ADBE": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "AMZN": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "TXN": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "IBM": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "DDOG": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "SNOW": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "META": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "INTC": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      }
+    },
+    "devils_advocate": {},
+    "position_reviews": {},
+    "portfolio_manager_proposed": [],
+    "cro": {
+      "approved": true,
+      "risk_budget_used": 0,
+      "largest_risk": "none",
+      "rejected_tickers": [],
+      "reasoning": "No trades to evaluate."
+    },
+    "final_decisions": [],
+    "timestamp": "2026-06-08T13:46:56.861554+00:00",
+    "kill_switch_active": false,
+    "portfolio_snapshot": {
+      "cash": 500.0,
+      "total_value": 500.0,
+      "positions": []
+    }
+  }
+]
