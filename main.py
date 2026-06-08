@@ -18,8 +18,8 @@ from datetime import datetime, timezone
 from market_data  import get_market_snapshot
 from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
-from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty
-from journal      import check_kill_switches, record_trade, record_run, record_transaction
+from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, DRY_RUN
+from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed
 from publish      import publish_to_supabase
 
 
@@ -30,6 +30,7 @@ def run_daily_cycle():
 
     run_id    = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     run_start = datetime.now(timezone.utc).isoformat()
+    today     = datetime.now().strftime("%Y-%m-%d")
 
     # ── Step 1: Portfolio ─────────────────────────────────────────────────────
     print("\n📊  Step 1: Fetching portfolio...")
@@ -89,9 +90,17 @@ def run_daily_cycle():
     record_run(run_id, pipeline_state)
     print(f"   📋 Agent log written (run_id={run_id})")
 
-    # Always write pending_decisions.json (routine reads this)
+    # Always write pending_decisions.json (routine reads this).
+    # Wrap in a metadata envelope so the routine can verify freshness and
+    # stamp executed_at after completing MCP orders to prevent double-execution.
     with open("pending_decisions.json", "w") as _f:
-        _json.dump(decisions, _f, indent=2)
+        _json.dump({
+            "run_id":      run_id,
+            "date":        today,
+            "generated_at": run_start,
+            "executed_at": None,
+            "decisions":   decisions,
+        }, _f, indent=2)
 
     if not decisions:
         print("\n   No trades today.")
@@ -111,20 +120,38 @@ def run_daily_cycle():
         )
 
     # ── Step 6: Execute ───────────────────────────────────────────────────────
+    order_results: dict = {}
+    executed_decisions: list = []
+
     if kill_active:
-        print("\n⛔  Step 6: Kill switch active — skipping execution.")
+        # SELLs always execute — kill switch only blocks new BUYs.
+        sell_only = [d for d in decisions if d.get("action", "").upper() == "SELL"]
+        blocked   = [d for d in decisions if d.get("action", "").upper() == "BUY"]
+        if blocked:
+            print(f"\n⛔  Step 6: Kill switch active — blocking {len(blocked)} BUY(s).")
+        if sell_only:
+            print(f"\n⚡  Step 6: Executing {len(sell_only)} SELL(s) (kill switch active)...")
+            order_results      = execute_trades(sell_only, portfolio, market_data["prices"])
+            executed_decisions = sell_only
+            if not DRY_RUN:
+                mark_pending_executed(run_id)
+        else:
+            print("\n⛔  Step 6: Kill switch active — no SELL orders to execute.")
     else:
         print("\n⚡  Step 6: Executing trades...")
-        execute_trades(decisions, portfolio, market_data["prices"])
+        order_results      = execute_trades(decisions, portfolio, market_data["prices"])
+        executed_decisions = decisions
+        if not DRY_RUN:
+            mark_pending_executed(run_id)
 
     # ── Step 7: Log ───────────────────────────────────────────────────────────
+    # Log only what was actually sent to the broker — blocked BUYs are omitted.
     print("\n📝  Step 7: Logging decisions...")
-    log_trades(decisions, portfolio, market_data["prices"])
+    log_trades(executed_decisions, portfolio, market_data["prices"], broker_order_ids=order_results)
 
-    today   = datetime.now().strftime("%Y-%m-%d")
-    regime  = pipeline_state.get("regime", {}).get("regime", "")
+    regime = pipeline_state.get("regime", {}).get("regime", "")
 
-    for d in decisions:
+    for d in executed_decisions:
         if d.get("action") not in ("BUY", "SELL"):
             continue
 
@@ -135,9 +162,12 @@ def run_daily_cycle():
         qty           = _compute_qty(target_weight, action, ticker, portfolio, market_data["prices"])
         total_value   = round(qty * price, 2) if qty and price else None
 
+        broker_order  = order_results.get(ticker, {})
+        broker_id     = broker_order.get("id") if isinstance(broker_order, dict) else None
+
         # Detailed transaction history (for public performance display)
         record_transaction({
-            "transaction_id":        str(_uuid.uuid4())[:8],
+            "transaction_id":        str(_uuid.uuid4()),
             "run_id":                run_id,
             "date":                  today,
             "timestamp":             datetime.now(timezone.utc).isoformat(),
@@ -155,6 +185,8 @@ def run_daily_cycle():
             "research_confidence":   pipeline_state.get("research", {}).get(ticker, {}).get("confidence"),
             "earnings_alpha_score":  pipeline_state.get("earnings", {}).get(ticker, {}).get("earnings_alpha_score"),
             "cro_risk_budget":       pipeline_state.get("cro", {}).get("risk_budget_used"),
+            "broker_order_id":       broker_id,
+            "dry_run":               DRY_RUN,
         })
 
         # Decision journal (thesis tracking)

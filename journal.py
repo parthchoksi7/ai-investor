@@ -5,13 +5,14 @@ journal.py — Decision journal and portfolio kill-switch management.
 import json
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 JOURNAL_FILE = "decision_journal.json"
 PEAK_FILE = "portfolio_peak.json"
 AGENT_LOG_FILE = "agent_log.json"
 TRANSACTIONS_FILE = "transactions.json"
+PENDING_FILE = "pending_decisions.json"
 KILL_DRAWDOWN_THRESHOLD = 0.20
 
 
@@ -40,7 +41,7 @@ def record_trade(
 ) -> str:
     """Append a trade decision to the journal. Returns the generated trade_id."""
     journal = _load(JOURNAL_FILE, [])
-    trade_id = str(uuid.uuid4())[:8]
+    trade_id = str(uuid.uuid4())
     journal.append({
         "trade_id": trade_id,
         "date": datetime.now().strftime("%Y-%m-%d"),
@@ -73,6 +74,21 @@ def record_transaction(tx: dict) -> None:
     txs = _load(TRANSACTIONS_FILE, [])
     txs.append(tx)
     _save(TRANSACTIONS_FILE, txs)
+
+
+def mark_pending_executed(run_id: str) -> None:
+    """Stamp pending_decisions.json as executed to prevent double-execution on retry."""
+    if not os.path.isfile(PENDING_FILE):
+        return
+    with open(PENDING_FILE) as f:
+        pending = json.load(f)
+    if not isinstance(pending, dict):
+        return  # old bare-list format — can't stamp
+    if pending.get("run_id") != run_id:
+        return  # stale file from a different run
+    pending["executed_at"] = datetime.now(timezone.utc).isoformat()
+    _save(PENDING_FILE, pending)
+    print(f"   🔒 Execution lock set (run_id={run_id})")
 
 
 def get_recent_decisions(n: int = 20) -> list:

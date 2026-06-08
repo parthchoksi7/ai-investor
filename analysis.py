@@ -236,6 +236,10 @@ def _safe_call(model, system, user_msg, default, max_tokens=600):
 
 
 def _fmt_scores(scores: dict) -> str:
+    # data_available=False is set by score_all_tickers when history is empty (cloud mode).
+    # Default True so old cached scores without the flag are treated as having data.
+    if not scores.get("data_available", True):
+        return "QUANT DATA UNAVAILABLE (no historical prices — scores are not real)"
     return (
         f"composite={scores.get('composite_score','?')} "
         f"mom={scores.get('momentum_score','?')} "
@@ -656,8 +660,10 @@ Set approved=false only for severe concentration / correlation risks that could 
 
     return _safe_call(
         MODEL_SMART, _CRO_SYSTEM, user_msg,
-        default={"approved": True, "risk_budget_used": 50,
-                 "largest_risk": "unknown", "rejected_tickers": [], "reasoning": ""},
+        default={"approved": False, "risk_budget_used": 0,
+                 "largest_risk": "CRO call failed",
+                 "rejected_tickers": [],
+                 "reasoning": "CRO unavailable — all trades blocked as precaution."},
         max_tokens=400,
     )
 
@@ -698,11 +704,12 @@ def get_trade_decisions(
     for ticker in candidates:
         earnings_map[ticker] = run_earnings_catalyst_analyst(ticker, market_data)
 
-    # ── 4. Devil's Advocate (only for tickers with confidence >= 6) ───────────
-    strong = [t for t in candidates if research_map.get(t, {}).get("confidence", 0) >= 6]
-    print(f"   [4/7] Devil's Advocate ({len(strong)} high-confidence tickers)...")
+    # ── 4. Devil's Advocate (all candidates — confidence filter was backwards) ──
+    # High-confidence Haiku output is exactly the case most likely to need adversarial review.
+    devil_candidates = candidates
+    print(f"   [4/7] Devil's Advocate ({len(devil_candidates)} tickers)...")
     devil_map: dict = {}
-    for ticker in strong:
+    for ticker in devil_candidates:
         devil_map[ticker] = run_devils_advocate(
             ticker, research_map[ticker], earnings_map[ticker], market_data, quant_scores
         )
@@ -749,7 +756,7 @@ def get_trade_decisions(
 
     decisions_proposed = list(decisions)  # PM's output before CRO filtering
 
-    if not risk.get("approved", True):
+    if not risk.get("approved", False):
         print(f"   🚨 CRO REJECTED all trades: {risk.get('reasoning')}")
         decisions = []
 

@@ -2,8 +2,9 @@ name: Market Data Fetch
 
 on:
   schedule:
-    # 9:40 AM EDT (UTC-4) on weekdays — runs 5 min before the Anthropic routine
-    - cron: '40 13 * * 1-5'
+    # 9:20 AM EDT (UTC-4) on weekdays — 25 min buffer before Anthropic routine at 9:45
+    # In winter (EST = UTC-5): update to '20 14 * * 1-5'
+    - cron: '20 13 * * 1-5'
   workflow_dispatch:
 
 jobs:

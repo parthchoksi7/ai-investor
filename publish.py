@@ -136,36 +136,47 @@ def publish_to_supabase(portfolio: dict | None = None) -> None:
     print(f"   📊 Snapshot published: value=${total_value:,.2f} return={cumulative_return:+.2f}%"
           + (f" spy={spy_cumulative:+.2f}%" if spy_cumulative is not None else ""))
 
-    # ── Upsert positions (replace wholesale) ──────────────────────────────────
-    client.table("positions").delete().neq("ticker", "___never___").execute()
-    if positions:
-        pos_rows = []
-        for p in positions:
-            ticker        = p.get("symbol", "")
-            qty           = float(p.get("qty", 0))
-            avg_cost      = float(p.get("avg_price", 0))
-            current_price = float(p.get("current_price", 0))
-            market_value  = float(p.get("market_value", 0))
+    # ── Upsert positions (atomic: upsert current, then delete stale) ─────────
+    # Avoids the delete-all + insert pattern which leaves the table empty if
+    # the insert fails after the delete has already committed.
+    pos_rows = []
+    for p in positions:
+        ticker        = p.get("symbol", "")
+        qty           = float(p.get("qty", 0))
+        avg_cost      = float(p.get("avg_price", 0))
+        current_price = float(p.get("current_price", 0))
+        market_value  = float(p.get("market_value", 0))
 
-            unrealized_pct = 0.0
-            if avg_cost > 0:
-                unrealized_pct = round((current_price - avg_cost) / avg_cost * 100, 4)
+        unrealized_pct = 0.0
+        if avg_cost > 0:
+            unrealized_pct = round((current_price - avg_cost) / avg_cost * 100, 4)
 
-            weight_pct = round(market_value / total_value * 100, 4) if total_value > 0 else 0.0
+        weight_pct = round(market_value / total_value * 100, 4) if total_value > 0 else 0.0
 
-            pos_rows.append({
-                "ticker":         ticker,
-                "weight_pct":     weight_pct,
-                "quantity":       qty,
-                "avg_cost":       avg_cost,
-                "current_price":  current_price,
-                "unrealized_pct": unrealized_pct,
-                "updated_at":     datetime.now().isoformat(),
-            })
-        client.table("positions").insert(pos_rows).execute()
+        pos_rows.append({
+            "ticker":         ticker,
+            "weight_pct":     weight_pct,
+            "quantity":       qty,
+            "avg_cost":       avg_cost,
+            "current_price":  current_price,
+            "unrealized_pct": unrealized_pct,
+            "updated_at":     datetime.now().isoformat(),
+        })
+
+    if pos_rows:
+        client.table("positions").upsert(pos_rows, on_conflict="ticker").execute()
+        current_tickers = [r["ticker"] for r in pos_rows]
+        try:
+            client.table("positions").delete().not_.in_("ticker", current_tickers).execute()
+        except Exception as e:
+            print(f"   ⚠️  Warning: could not delete stale positions — {e}. Stale rows may persist.")
+    else:
+        # Portfolio is all-cash — clear any stale position rows
+        client.table("positions").delete().neq("ticker", "___never___").execute()
 
     # ── Upsert trades from transactions.json ──────────────────────────────────
-    transactions = _load(TRANSACTIONS_FILE, [])
+    # Exclude dry-run records — they were never actually executed.
+    transactions = [tx for tx in _load(TRANSACTIONS_FILE, []) if not tx.get("dry_run")]
     if transactions:
         trade_rows = [
             {
@@ -180,6 +191,7 @@ def publish_to_supabase(portfolio: dict | None = None) -> None:
                 "regime":              tx.get("regime"),
                 "rationale":           tx.get("rationale"),
                 "research_confidence": tx.get("research_confidence"),
+                "broker_order_id":     tx.get("broker_order_id"),
             }
             for tx in transactions
             if tx.get("transaction_id")

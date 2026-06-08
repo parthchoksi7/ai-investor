@@ -56,3 +56,7 @@ alter table public.positions           enable row level security;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.portfolio_snapshots TO service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.trades               TO service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.positions            TO service_role;
+
+-- Migration: add broker_order_id to trades (run once if table already exists)
+-- ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS broker_order_id text;
+-- ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS dry_run boolean default false;

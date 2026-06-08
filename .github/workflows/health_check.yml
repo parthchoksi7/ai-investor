@@ -1,0 +1,39 @@
+name: Health Check — Daily Pipeline
+
+on:
+  schedule:
+    # 11:00 AM EDT (UTC-4) on weekdays — 75 min after pipeline should have run
+    # In winter (EST = UTC-5): update to '0 16 * * 1-5'
+    - cron: '0 15 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify today's portfolio snapshot exists in Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_KEY" ]; then
+            echo "⚠️  SUPABASE_URL or SUPABASE_SERVICE_KEY secret is not configured."
+            echo "Add both secrets to Settings → Secrets → Actions for this check to work."
+            exit 1
+          fi
+
+          TODAY=$(date -u +%Y-%m-%d)
+          RESULT=$(curl -sf \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            "$SUPABASE_URL/rest/v1/portfolio_snapshots?date=eq.$TODAY&select=date")
+
+          COUNT=$(echo "$RESULT" | python3 -c "import sys, json; print(len(json.load(sys.stdin)))" 2>/dev/null || echo "0")
+
+          if [ "$COUNT" -eq "0" ]; then
+            echo "❌ No portfolio snapshot for $TODAY — pipeline did not run or Supabase publish failed."
+            echo "Check routine: https://claude.ai/code/routines/trig_01Avvj5aBf3sXbDqUB3g4rTm"
+            exit 1
+          fi
+
+          echo "✅ Snapshot confirmed for $TODAY (pipeline ran successfully)."

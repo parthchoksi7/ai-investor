@@ -95,10 +95,19 @@ def _compute_qty(
     return 0.0
 
 
-def log_trades(decisions: list[dict], portfolio: dict, prices: dict | None = None, strategy: str = "institutional") -> None:
+def log_trades(
+    decisions: list[dict],
+    portfolio: dict,
+    prices: dict | None = None,
+    strategy: str = "institutional",
+    broker_order_ids: dict | None = None,
+) -> None:
     """Appends executed trades to trades.csv."""
     file_exists = os.path.isfile(TRADE_LOG)
-    fieldnames  = ["date", "strategy", "ticker", "action", "qty", "price", "total_value", "target_weight", "portfolio_value", "rationale"]
+    fieldnames  = [
+        "date", "strategy", "ticker", "action", "qty", "price", "total_value",
+        "target_weight", "portfolio_value", "rationale", "broker_order_id", "dry_run",
+    ]
 
     with open(TRADE_LOG, "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
@@ -120,6 +129,10 @@ def log_trades(decisions: list[dict], portfolio: dict, prices: dict | None = Non
 
             total_value = round(qty * price, 2) if qty and price else None
 
+            # Extract Robinhood order ID from execution results if available
+            raw_result  = (broker_order_ids or {}).get(ticker, {})
+            order_id    = raw_result.get("id", "") if isinstance(raw_result, dict) else ""
+
             writer.writerow({
                 "date":            today,
                 "strategy":        strategy,
@@ -131,6 +144,8 @@ def log_trades(decisions: list[dict], portfolio: dict, prices: dict | None = Non
                 "target_weight":   f"{target_weight:.4f}" if target_weight is not None else "",
                 "portfolio_value": f"{portfolio['total_value']:.2f}",
                 "rationale":       trade.get("rationale", ""),
+                "broker_order_id": order_id,
+                "dry_run":         str(DRY_RUN),
             })
 
     print(f"   📝 Trades logged to {TRADE_LOG}")
@@ -199,11 +214,13 @@ def place_order(ticker: str, action: str, qty: float) -> dict:
     return result or {}
 
 
-def execute_trades(decisions: list[dict], portfolio: dict, prices: dict) -> None:
-    """Execute trade decisions. Converts target_weight to share count before ordering."""
+def execute_trades(decisions: list[dict], portfolio: dict, prices: dict) -> dict[str, dict]:
+    """Execute trade decisions. Returns {ticker: broker_result} for reconciliation."""
+    order_results: dict[str, dict] = {}
+
     if not decisions:
         print("   Nothing to execute.")
-        return
+        return order_results
 
     if DRY_RUN:
         print("   ⚠️  DRY_RUN=true — decisions logged but no orders placed.")
@@ -225,4 +242,7 @@ def execute_trades(decisions: list[dict], portfolio: dict, prices: dict) -> None
             print(f"   ⏸  Skipping {action} {ticker} — computed qty {qty} ≤ 0")
             continue
 
-        place_order(ticker, action, qty)
+        result = place_order(ticker, action, qty)
+        order_results[ticker] = result
+
+    return order_results
