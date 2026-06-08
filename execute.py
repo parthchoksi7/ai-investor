@@ -62,11 +62,11 @@ def _compute_qty(
     ticker: str,
     portfolio: dict,
     prices: dict,
-) -> int:
-    """Convert a target portfolio weight to a share count to buy or sell."""
+) -> float:
+    """Convert a target portfolio weight to a share count (fractional) to buy or sell."""
     current_price = prices.get(ticker, {}).get("close", 0)
     if not current_price:
-        return 0
+        return 0.0
 
     total_value    = portfolio["total_value"]
     target_dollars = target_weight * total_value
@@ -82,17 +82,17 @@ def _compute_qty(
 
     if action == "BUY":
         if delta_dollars <= 0:
-            return 0  # already at or above target weight
-        return max(1, int(round(delta_dollars / current_price)))
+            return 0.0  # already at or above target weight
+        return round(delta_dollars / current_price, 6)
 
     if action == "SELL":
         if target_weight == 0:
-            return int(current_qty)  # exit entire position (truncate, never exceed held shares)
+            return current_qty  # exit entire position
         if delta_dollars >= 0:
-            return 0  # already at or below target weight
-        return max(1, int(abs(delta_dollars) / current_price))
+            return 0.0  # already at or below target weight
+        return round(abs(delta_dollars) / current_price, 6)
 
-    return 0
+    return 0.0
 
 
 def log_trades(decisions: list[dict], portfolio: dict, prices: dict | None = None, strategy: str = "institutional") -> None:
@@ -175,7 +175,7 @@ def get_portfolio_summary() -> dict:
     }
 
 
-def place_order(ticker: str, action: str, qty: int) -> dict:
+def place_order(ticker: str, action: str, qty: float) -> dict:
     """Places a market order on the Robinhood Agentic account."""
     if ticker in BLOCKED_TICKERS:
         print(f"   🚫 BLOCKED: {ticker} is on the hard-block list — order rejected")
