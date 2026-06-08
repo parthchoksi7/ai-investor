@@ -60,3 +60,23 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.positions            TO service_r
 -- Migration: add broker_order_id to trades (run once if table already exists)
 -- ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS broker_order_id text;
 -- ALTER TABLE public.trades ADD COLUMN IF NOT EXISTS dry_run boolean default false;
+
+-- Daily quant scores for all tickers (one row per date × ticker, for backtesting comparison)
+-- Run once in Supabase SQL Editor to create the table:
+-- CREATE TABLE IF NOT EXISTS public.quant_scores (
+--   date        date          NOT NULL,
+--   ticker      text          NOT NULL,
+--   rank        integer,
+--   composite   numeric(5,1),
+--   momentum    numeric(5,1),
+--   quality     numeric(5,1),
+--   valuation   numeric(5,1),
+--   volatility  numeric(5,1),
+--   return_1m   numeric(6,2),
+--   return_3m   numeric(6,2),
+--   return_6m   numeric(6,2),
+--   ann_vol     numeric(5,1),
+--   beta        numeric(5,2),
+--   PRIMARY KEY (date, ticker)
+-- );
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON public.quant_scores TO service_role;

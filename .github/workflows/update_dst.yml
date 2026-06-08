@@ -1,0 +1,63 @@
+name: DST Cron Update
+
+on:
+  schedule:
+    # March 1 at 07:00 UTC — clocks spring forward (EST → EDT, UTC-5 → UTC-4)
+    - cron: '0 7 1 3 *'
+    # November 1 at 07:00 UTC — clocks fall back (EDT → EST, UTC-4 → UTC-5)
+    - cron: '0 7 1 11 *'
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect UTC offset and update cron expressions
+        run: |
+          python3 - <<'EOF'
+          import re
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          tz = ZoneInfo("America/New_York")
+          offset_hours = int(datetime.now(tz).utcoffset().total_seconds() / 3600)  # -4 or -5
+
+          # Target local times (ET) → UTC hour
+          mkt_utc_hour = 9  - offset_hours   # 9:20 AM ET market data fetch
+          hc_utc_hour  = 11 - offset_hours   # 11:00 AM ET health check
+
+          updates = {
+              ".github/workflows/market_data.yml": (
+                  r"cron: '20 \d+ \* \* 1-5'",
+                  f"cron: '20 {mkt_utc_hour} * * 1-5'",
+              ),
+              ".github/workflows/health_check.yml": (
+                  r"cron: '0 \d+ \* \* 1-5'",
+                  f"cron: '0 {hc_utc_hour} * * 1-5'",
+              ),
+          }
+
+          changed = False
+          for path, (pattern, replacement) in updates.items():
+              text = open(path).read()
+              new_text = re.sub(pattern, replacement, text)
+              if new_text != text:
+                  open(path, "w").write(new_text)
+                  changed = True
+                  print(f"Updated {path} → {replacement}")
+
+          if not changed:
+              print("No changes needed — crons already correct for current offset.")
+          EOF
+
+      - name: Commit if changed
+        run: |
+          git config user.name "DST Bot"
+          git config user.email "dst-bot@users.noreply.github.com"
+          git add .github/workflows/market_data.yml .github/workflows/health_check.yml
+          git diff --staged --quiet || git commit -m "chore: DST cron update [skip ci]"
+          git push

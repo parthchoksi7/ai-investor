@@ -463,6 +463,7 @@ def run_position_review_analyst(
     market_data: dict,
     quant_scores: dict,
     research: dict | None,
+    prior_journal_entry: dict | None = None,
 ) -> dict:
     ticker = holding["symbol"]
     scores = quant_scores.get(ticker, {})
@@ -475,12 +476,24 @@ def run_position_review_analyst(
         thesis_block = f"\nCURRENT THESIS:\n  {research.get('thesis', 'None available')}"
         thesis_block += f"\n  Confidence: {research.get('confidence', '?')}/10"
 
+    prior_block = ""
+    if prior_journal_entry:
+        invalidates = prior_journal_entry.get("invalidates_if") or []
+        prior_block = (
+            f"\nORIGINAL ENTRY THESIS (entered {prior_journal_entry.get('date', '?')}):\n"
+            f"  {prior_journal_entry.get('thesis', 'N/A')}\n"
+            f"  Anti-thesis: {prior_journal_entry.get('anti_thesis', 'N/A')}\n"
+            f"  Invalidates if:\n"
+            + "\n".join(f"    - {c}" for c in invalidates)
+        )
+
     user_msg = f"""\
 POSITION: {ticker}
   Shares: {holding['qty']} @ avg ${holding['avg_price']:.2f} | Current: ${data.get('close', '?')} | P&L: {pnl_pct:+.1f}%
 
 QUANT: {_fmt_scores(scores)}
 {thesis_block}
+{prior_block}
 
 NEWS:
 {chr(10).join(f"  - {a['title']}" for a in market_data.get('news', []) if ticker in a.get('tickers', [])) or '  - None'}
@@ -675,6 +688,7 @@ def get_trade_decisions(
     market_data: dict,
     quant_scores: dict,
     trade_history: list | None = None,
+    prior_journal: dict | None = None,
 ) -> tuple[list[dict], dict]:
     """
     Run the full 7-agent pipeline.
@@ -721,7 +735,8 @@ def get_trade_decisions(
     for holding in holdings:
         ticker = holding["symbol"]
         position_reviews[ticker] = run_position_review_analyst(
-            holding, market_data, quant_scores, research_map.get(ticker)
+            holding, market_data, quant_scores, research_map.get(ticker),
+            (prior_journal or {}).get(ticker),
         )
         review = position_reviews[ticker]
         print(
