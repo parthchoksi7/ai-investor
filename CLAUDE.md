@@ -114,6 +114,34 @@ The Portfolio Manager outputs `target_weight` (0.0–0.10) rather than share cou
 }
 ```
 
+## `pending_decisions.json` — Idempotency Envelope
+
+`main.py` wraps decisions in a metadata envelope to prevent double-execution on retry:
+
+```json
+{
+  "run_id": "20260608-145656",
+  "date": "2026-06-08",
+  "generated_at": "2026-06-08T13:56:00Z",
+  "executed_at": null,
+  "decisions": [ ... ]
+}
+```
+
+**Cloud routine MUST follow this protocol every run:**
+
+1. **Read decisions** from `pending_decisions["decisions"]` (not the root — it's no longer a bare list).
+2. **Verify freshness** — check `pending_decisions["date"] == today`. If it's yesterday's file, DO NOT execute. Stop and log a warning.
+3. **Check idempotency** — if `pending_decisions["executed_at"]` is not `null`, this run was already executed. DO NOT place orders again. Stop immediately.
+4. **Execute orders** via Robinhood MCP.
+5. **Stamp execution** after all MCP orders are placed:
+   ```
+   python -c "from journal import mark_pending_executed; mark_pending_executed('RUN_ID')"
+   ```
+   Replace `RUN_ID` with the value from `pending_decisions["run_id"]`.
+
+Steps 3 and 5 together prevent double-execution if the routine retries after a partial failure.
+
 ## Cloud Environment (Scheduled Routine)
 
 Anthropic's cloud environment blocks all external HTTP except Robinhood MCP and the Anthropic API. Specifically:

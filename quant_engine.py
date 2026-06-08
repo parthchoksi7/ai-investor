@@ -155,6 +155,7 @@ def score_all_tickers(market_data: dict) -> dict:
 
         scores[ticker] = {
             "ticker": ticker,
+            "data_available": len(history) > 0,
             "composite_score": round(composite, 1),
             **momentum,
             **quality,
