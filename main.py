@@ -20,6 +20,7 @@ from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty
 from journal      import check_kill_switches, record_trade, record_run, record_transaction
+from publish      import publish_to_supabase
 
 
 def run_daily_cycle():
@@ -94,6 +95,10 @@ def run_daily_cycle():
 
     if not decisions:
         print("\n   No trades today.")
+        # ── Step 8: Publish snapshot even on no-trade days ────────────────────
+        print("\n🌐  Step 8: Publishing to Supabase...")
+        publish_to_supabase(portfolio)
+        print("\n✅  Daily cycle complete.")
         print("=" * 60 + "\n")
         return
 
@@ -165,6 +170,10 @@ def run_daily_cycle():
             invalidates_if  = pipeline_state.get("research", {}).get(ticker, {}).get("invalidates_if", []),
         )
         print(f"   📔 Journal entry: {trade_id} ({action} {ticker})")
+
+    # ── Step 8: Publish to Supabase ───────────────────────────────────────────
+    print("\n🌐  Step 8: Publishing to Supabase...")
+    publish_to_supabase(portfolio)
 
     print("\n✅  Daily cycle complete.")
     print("=" * 60 + "\n")
