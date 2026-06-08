@@ -1,0 +1,23 @@
+name: Keepalive
+
+on:
+  schedule:
+    # Every Sunday at 1 PM UTC — re-enables the market data workflow before Monday's run
+    - cron: '0 13 * * 0'
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Re-enable market data workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.enableWorkflow({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'market_data.yml'
+            });
