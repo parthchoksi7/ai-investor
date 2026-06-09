@@ -5,8 +5,9 @@ Primary: Polygon.io (local). Fallback: yfinance (cloud, no API key needed).
 
 import json
 import os
+import re
 import requests
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -299,12 +300,15 @@ def get_market_snapshot() -> dict:
 
     articles = get_news_summary()
 
-    # Discover non-watchlist tickers mentioned in news
+    # Discover non-watchlist tickers mentioned in news.
+    # Skip preferred share tickers (Polygon format: BASE + "P" + SERIES, e.g. JPMPC = JPM pref C).
+    # They're not common equity and yfinance can't resolve them.
+    _pref_re = re.compile(r'^[A-Z]{2,5}P[A-Z]$')
     news_tickers = {
         t
         for article in articles
         for t in article.get("tickers", [])
-        if t and t not in prices
+        if t and t not in prices and not _pref_re.match(t)
     }
     news_discovered: dict = {}
     for ticker in sorted(news_tickers):
@@ -328,10 +332,11 @@ def get_market_snapshot() -> dict:
             fundamentals = get_all_fundamentals(list(prices.keys()))
 
     return {
-        "date":           date.today().strftime("%Y-%m-%d"),
-        "prices":         prices,
-        "history":        history,
-        "fundamentals":   fundamentals,
-        "news":           articles,
+        "date":            date.today().strftime("%Y-%m-%d"),
+        "fetched_at":      datetime.now(timezone.utc).isoformat(),
+        "prices":          prices,
+        "history":         history,
+        "fundamentals":    fundamentals,
+        "news":            articles,
         "news_discovered": news_discovered,
     }

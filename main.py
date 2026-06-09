@@ -56,6 +56,18 @@ def run_daily_cycle():
         f"{len(market_data.get('news_discovered', {}))} news-discovered"
     )
 
+    # Guard: warn loudly if snapshot is from a prior trading day.
+    # Stale data means the 9:20 AM fetch job failed; agents will work from
+    # LLM knowledge only (quant scores default to 50). Recorded in the audit log.
+    market_data_stale = market_data.get("date") != today
+    if market_data_stale:
+        print(
+            f"\n   ⚠️  WARNING: market data is stale "
+            f"(snapshot date={market_data.get('date')}, today={today}). "
+            f"Quant scores will default to 50 (neutral). "
+            f"Agents will rely on LLM knowledge only."
+        )
+
     if not market_data["prices"]:
         print("\n   No price data available (market may be closed). Skipping.")
         print("=" * 60 + "\n")
@@ -100,6 +112,8 @@ def run_daily_cycle():
     pipeline_state["run_id"]            = run_id
     pipeline_state["timestamp"]         = run_start
     pipeline_state["kill_switch_active"] = kill_active
+    pipeline_state["market_data_stale"] = market_data_stale
+    pipeline_state["market_data_date"]  = market_data.get("date")
     pipeline_state["portfolio_snapshot"] = {
         "cash":        portfolio["cash"],
         "total_value": portfolio["total_value"],
