@@ -147,7 +147,7 @@ The Portfolio Manager outputs `target_weight` (0.0–0.10) rather than share cou
 1. **Read decisions** from `pending_decisions["decisions"]` (not the root — it's no longer a bare list).
 2. **Verify freshness** — check `pending_decisions["date"] == today`. If it's yesterday's file, DO NOT execute. Stop and log a warning.
 3. **Check idempotency** — if `pending_decisions["executed_at"]` is not `null`, this run was already executed. DO NOT place orders again. Stop immediately.
-4. **Execute orders** via Robinhood MCP.
+4. **Execute orders** via Robinhood MCP. Each decision includes a pre-computed `qty` (fractional shares) — **use it directly, do NOT round to whole shares**. Robinhood supports fractional orders. Skip a decision only if `qty == 0`; a qty of 0.648 is a valid, placeable order.
 5. **Stamp execution** after all MCP orders are placed:
    ```
    python -c "from journal import mark_pending_executed; mark_pending_executed('RUN_ID')"
@@ -217,10 +217,10 @@ Use this when the scheduled routine fails or you need to intervene.
 1. Check `pending_decisions["date"] == today`. If stale (yesterday's file), **stop** — wait for tomorrow's run.
 2. Read `pending_decisions["decisions"]`. If `[]`, nothing to execute.
 3. For each BUY or SELL decision (**never TSLA**):
-   - Get current price: `get_equity_quotes` for the ticker
-   - Compute qty: `round(target_weight × total_value / current_price, 6)` — `total_value` from `mcp_portfolio.json`
+   - Use `decision["qty"]` directly — it is pre-computed fractional shares. **Do NOT round to whole shares.**
+   - If `qty` is missing (old file), fall back to: `round(target_weight × total_value / current_price, 6)` — `total_value` from `mcp_portfolio.json`
    - Place: `place_equity_order(account_number='994046696', symbol=ticker, side='buy'|'sell', quantity=qty, type='market', time_in_force='gfd')`
-   - Skip HOLD decisions entirely. Do not skip if qty < 1 (Robinhood supports fractional shares); only skip if qty == 0.
+   - Skip HOLD decisions entirely. Skip a trade only if `qty == 0`. A qty of 0.648 is a valid fractional order — place it.
 4. After **all** orders are placed, stamp execution:
    ```
    python -c "from journal import mark_pending_executed; mark_pending_executed('<run_id>')"
