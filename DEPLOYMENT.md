@@ -642,29 +642,36 @@ EOF
 
 ## 6. DST / Schedule Verification
 
-The cron schedule does not auto-adjust for Daylight Saving Time.
+Neither cron auto-adjusts for Daylight Saving Time. Both must be updated manually at DST transitions (2nd Sunday March, 1st Sunday November).
 
-| Period | UTC schedule | ET time |
-|--------|--------------|---------|
+### Daily Trading Cycle — `YOUR_ROUTINE_ID_DAILY`
+
+| Period | UTC cron | ET time |
+|--------|----------|---------|
 | EDT (Mar–Nov) | `45 13 * * 1-5` | 9:45 AM EDT |
 | EST (Nov–Mar) | `45 14 * * 1-5` | 9:45 AM EST |
 
-**Check before deploying near DST transitions (2nd Sunday March, 1st Sunday November):**
+View/manage: https://claude.ai/code/routines/YOUR_ROUTINE_ID_DAILY
+
+### EOD Close Snapshot — `YOUR_ROUTINE_ID_EOD`
+
+| Period | UTC cron | ET time |
+|--------|----------|---------|
+| EDT (Mar–Nov) | `0 20 * * 1-5` | 4:00 PM EDT |
+| EST (Nov–Mar) | `0 21 * * 1-5` | 4:00 PM EST |
+
+View/manage: https://claude.ai/code/routines/YOUR_ROUTINE_ID_EOD
+
+**Check before deploying near DST transitions:**
 ```bash
 python3 - <<'EOF'
 from datetime import datetime, timezone
-import subprocess
-result = subprocess.run(["python3", "-c", "from datetime import datetime; print(datetime.now().strftime('%Z'))"], capture_output=True, text=True)
 now_utc = datetime.now(timezone.utc)
-print(f"Current UTC hour: {now_utc.hour}")
-print(f"Cron fires at UTC 13:45 (EDT) or 14:45 (EST)")
-print("Verify the routine schedule matches the current period.")
+print(f"Current UTC hour: {now_utc.hour}:{now_utc.minute:02d}")
+print(f"Daily cycle fires at UTC 13:45 (EDT) or 14:45 (EST)")
+print(f"EOD snapshot fires at UTC 20:00 (EDT) or 21:00 (EST)")
+print("Verify both routine schedules match the current period.")
 EOF
-```
-
-To view the current routine schedule:
-```
-https://claude.ai/code/routines/YOUR_ROUTINE_ID_DAILY
 ```
 
 ---
