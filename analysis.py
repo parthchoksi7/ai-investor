@@ -13,25 +13,32 @@ Pipeline order:
 
 import os
 import json
-import anthropic
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
-load_dotenv()
+_client = None
 
-def _make_client() -> anthropic.Anthropic:
-    """Create Anthropic client, supporting both API key and Claude Code OAuth token."""
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if api_key:
-        return anthropic.Anthropic(api_key=api_key)
-    # Cloud execution: read session ingress token
-    token_file = os.getenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", "")
-    if token_file and os.path.isfile(token_file):
-        with open(token_file) as _tf:
-            token = _tf.read().strip()
-        return anthropic.Anthropic(auth_token=token)
-    return anthropic.Anthropic()
 
-client = _make_client()
+def _get_client():
+    """Return (and lazily create) the shared Anthropic client."""
+    global _client
+    if _client is None:
+        import anthropic  # deferred so tests can import this module without the package
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if api_key:
+            _client = anthropic.Anthropic(api_key=api_key)
+        else:
+            token_file = os.getenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", "")
+            if token_file and os.path.isfile(token_file):
+                with open(token_file) as _tf:
+                    token = _tf.read().strip()
+                _client = anthropic.Anthropic(auth_token=token)
+            else:
+                _client = anthropic.Anthropic()
+    return _client
 
 MODEL_FAST  = "claude-haiku-4-5-20251001"  # per-ticker agents
 MODEL_SMART = "claude-sonnet-4-6"          # portfolio-level agents
@@ -204,7 +211,7 @@ Focus on: Avoiding catastrophic losses."""
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _call(model: str, system: str | list, user_msg: str, max_tokens: int = 600) -> str:
-    response = client.messages.create(
+    response = _get_client().messages.create(
         model=model,
         max_tokens=max_tokens,
         system=system,
@@ -226,25 +233,37 @@ def _parse_json(text: str, default):
     text = re.sub(r'\s*```$', '', text)
     text = text.strip()
     try:
-        return json.loads(text)
+        result = json.loads(text)
     except json.JSONDecodeError:
         # Model wrapped JSON in prose — extract the first {...} or [...] block
         match = re.search(r'(\{[\s\S]*\}|\[[\s\S]*\])', text)
         if match:
             try:
-                return json.loads(match.group(1))
+                result = json.loads(match.group(1))
             except json.JSONDecodeError:
-                pass
-        return default
+                return default
+        else:
+            return default
+    # Unwrap [{...}] → {...} when a dict is expected (model occasionally wraps in array)
+    if isinstance(result, list) and len(result) == 1 and isinstance(result[0], dict) and isinstance(default, dict):
+        return result[0]
+    return result
 
 
-def _safe_call(model, system, user_msg, default, max_tokens=600):
-    try:
-        raw = _call(model, system, user_msg, max_tokens=max_tokens)
-        return _parse_json(raw, default)
-    except Exception as e:
-        print(f"   ⚠ Agent call failed: {e}")
-        return default
+def _safe_call(model, system, user_msg, default, max_tokens=600, retries=0):
+    import time
+    for attempt in range(retries + 1):
+        try:
+            raw = _call(model, system, user_msg, max_tokens=max_tokens)
+            return _parse_json(raw, default)
+        except Exception as e:
+            if attempt < retries:
+                delay = 2 ** attempt
+                print(f"   ⚠ Agent call failed (attempt {attempt + 1}/{retries + 1}), retrying in {delay}s: {e}")
+                time.sleep(delay)
+            else:
+                print(f"   ⚠ Agent call failed: {e}")
+                return default
 
 
 def _fmt_scores(scores: dict) -> str:
@@ -337,6 +356,7 @@ Output JSON:
         default={"regime": "NEUTRAL", "confidence": 50, "growth_value": "NEUTRAL",
                  "favored_factors": [], "avoid_factors": [], "key_observations": []},
         max_tokens=400,
+        retries=1,
     )
 
 
@@ -638,6 +658,7 @@ Omit HOLD decisions. Return [] if no trades improve portfolio expected value."""
         MODEL_SMART, _PM_SYSTEM, user_msg,
         default=[],
         max_tokens=1200,
+        retries=1,
     )
 
 
@@ -701,6 +722,7 @@ Set approved=false only for severe concentration / correlation risks that could 
                  "rejected_tickers": [],
                  "reasoning": "CRO unavailable — all trades blocked as precaution."},
         max_tokens=400,
+        retries=1,
     )
 
 
