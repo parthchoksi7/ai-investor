@@ -86,6 +86,8 @@ def mark_pending_executed(run_id: str) -> None:
         return  # old bare-list format — can't stamp
     if pending.get("run_id") != run_id:
         return  # stale file from a different run
+    if pending.get("executed_at") is not None:
+        return  # already stamped — preserve original execution timestamp
     pending["executed_at"] = datetime.now(timezone.utc).isoformat()
     _save(PENDING_FILE, pending)
     print(f"   🔒 Execution lock set (run_id={run_id})")
