@@ -241,7 +241,13 @@ def _parse_json(text: str, default):
 def _safe_call(model, system, user_msg, default, max_tokens=600):
     try:
         raw = _call(model, system, user_msg, max_tokens=max_tokens)
-        return _parse_json(raw, default)
+        result = _parse_json(raw, default)
+        # Unwrap a single-element list when a dict is expected
+        if isinstance(default, dict) and isinstance(result, list):
+            if result and isinstance(result[0], dict):
+                return result[0]
+            return default
+        return result
     except Exception as e:
         print(f"   ⚠ Agent call failed: {e}")
         return default
