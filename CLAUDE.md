@@ -67,11 +67,21 @@ Two scheduled routines run every weekday. Both use the **Robinhood Trading MCP c
 - **View/manage:** https://claude.ai/code/routines/YOUR_ROUTINE_ID_DAILY
 - **DST note:** In winter (EST = UTC-5), update to `45 14 * * 1-5` in November, back to `45 13 * * 1-5` in March.
 
-The routine runs the **full Python pipeline** (`main.py`) with `DRY_RUN=false`, executes trades via the Robinhood MCP, and publishes a portfolio snapshot to Supabase.
+The routine runs the **full Python pipeline** (`main.py`) with `DRY_RUN=false`, executes trades via the Robinhood MCP, then commits and pushes updated files to GitHub.
 
 Portfolio data is injected via `mcp_portfolio.json` (written by the routine from MCP data), so `execute.py` never needs to call `robin_stocks` in the cloud.
 
 `POLYGON_API_KEY` is embedded in the routine prompt (stored privately in Anthropic's systems). `ANTHROPIC_API_KEY` is expected to be auto-injected by Anthropic's cloud environment.
+
+**After `main.py` completes**, the routine MUST commit and push the following files:
+```
+git config user.name "AI Investor Bot"
+git config user.email "ai-investor-bot@users.noreply.github.com"
+git add portfolio_snapshot.json system_health.json pending_decisions.json agent_log.json trades.csv decision_journal.json transactions.json
+git commit -m "chore: daily cycle [skip ci]"
+git push
+```
+The push of `portfolio_snapshot.json` triggers `publish.yml` in GitHub Actions, which runs `publish.py` with Supabase access (Supabase is blocked in the Anthropic cloud — 403).
 
 ### EOD Close Snapshot
 
@@ -84,6 +94,17 @@ This routine does **not** run the trading pipeline and places **no orders**. It:
 1. Fetches portfolio state from Robinhood MCP
 2. Writes `mcp_portfolio.json`
 3. Runs `python publish.py --close`
+   - `publish.py` writes `portfolio_snapshot.json` (with `is_close: true`) before attempting Supabase
+   - Supabase call fails (403 — blocked in cloud), but the file is written
+4. Commits and pushes `portfolio_snapshot.json`:
+   ```
+   git config user.name "AI Investor Bot"
+   git config user.email "ai-investor-bot@users.noreply.github.com"
+   git add portfolio_snapshot.json
+   git commit -m "chore: eod portfolio snapshot [skip ci]"
+   git push
+   ```
+   This push triggers `publish.yml` in GitHub Actions, which runs `publish.py` with Supabase access and writes `close_value` to the `portfolio_snapshots` table.
 
 The `--close` flag writes both `total_value` (latest) **and** `close_value` + `close_at` (the official 4:00 PM closing price). `close_value` is immutable once written — it is the authoritative daily close used for the performance chart on the website.
 
@@ -187,8 +208,8 @@ The portfolio dashboard at `https://www.parth-choksi.com/work/ai-investor` reads
 
 ### Data freshness
 Portfolio value on the website updates at two points each weekday:
-- **9:45 AM ET** — daily trading cycle (`publish.py` called by `main.py`)
-- **4:00 PM ET** — EOD Close Snapshot routine (`publish.py --close`)
+- **9:45 AM ET** — daily trading cycle → `main.py` → `portfolio_snapshot.json` committed → `publish.yml` (GH Actions) → Supabase
+- **4:00 PM ET** — EOD routine → `publish.py --close` → `portfolio_snapshot.json` committed → `publish.yml` (GH Actions) → Supabase (`close_value`)
 
 The refresh button (↻) on the page re-reads the latest Supabase snapshot. It does not call any external price API. The timestamp shown ("Data as of …") reflects when `publish.py` last ran, not when the user clicked refresh.
 
