@@ -1,0 +1,143 @@
+name: Pipeline Health Alert
+
+on:
+  push:
+    paths:
+      - 'system_health.json'
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read health status
+        id: health
+        run: |
+          STATUS=$(python3 -c "import json; d=json.load(open('system_health.json')); print(d['overall_status'])")
+          RUN_ID=$(python3 -c "import json; d=json.load(open('system_health.json')); print(d['run_id'])")
+          DATE=$(python3 -c "import json; d=json.load(open('system_health.json')); print(d['date'])")
+          echo "status=$STATUS"  >> $GITHUB_OUTPUT
+          echo "run_id=$RUN_ID"  >> $GITHUB_OUTPUT
+          echo "date=$DATE"      >> $GITHUB_OUTPUT
+          echo "Health status: $STATUS (run=$RUN_ID)"
+
+      - name: Open or update GitHub Issue on failure
+        if: steps.health.outputs.status != 'OK'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs   = require('fs');
+            const h    = JSON.parse(fs.readFileSync('system_health.json', 'utf8'));
+            const icon = { DEGRADED: '⚠️', FAILED: '🔴', ABORTED: '🚫' }[h.overall_status] || '❓';
+
+            // Ensure the health-alert label exists (create idempotently)
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner, repo: context.repo.repo, name: 'health-alert',
+              });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  name: 'health-alert', color: 'd93f0b', description: 'Automated pipeline health alert',
+                });
+              }
+            }
+
+            const checksTable = Object.entries(h.checks)
+              .map(([name, c]) => {
+                const si = { OK: '✅', DEGRADED: '⚠️', FAILED: '❌', ABORTED: '🚫' }[c.status] || '❓';
+                const msg = c.message ? ` — ${c.message}` : '';
+                return `| ${si} \`${name}\` | ${c.status}${msg} |`;
+              })
+              .join('\n');
+
+            const body = `## ${icon} AI Investor — Pipeline Health Alert
+
+**Run ID:** \`${h.run_id}\`
+**Date:** ${h.date}
+**Status:** **${h.overall_status}**
+**Timestamp:** ${h.timestamp}
+
+## Alerts
+${h.alerts.length ? h.alerts.map(a => `- ${a}`).join('\n') : '_No alerts_'}
+
+## Check Results
+| Check | Status |
+|-------|--------|
+${checksTable}
+
+<details>
+<summary>Full check details (JSON)</summary>
+
+\`\`\`json
+${JSON.stringify(h.checks, null, 2)}
+\`\`\`
+</details>
+
+---
+[View routine](https://claude.ai/code/routines/trig_01Avvj5aBf3sXbDqUB3g4rTm) · [View agent log](../../blob/main/agent_log.json) · [View system health](../../blob/main/system_health.json)`;
+
+            // Find any existing open health-alert issue
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              state: 'open',
+              labels: 'health-alert',
+            });
+
+            if (existing.data.length > 0) {
+              // Add a comment to the existing issue rather than opening duplicates
+              await github.rest.issues.createComment({
+                owner:        context.repo.owner,
+                repo:         context.repo.repo,
+                issue_number: existing.data[0].number,
+                body,
+              });
+              console.log(`Updated existing issue #${existing.data[0].number}`);
+            } else {
+              const title = `${icon} Pipeline health alert — ${h.date} [${h.overall_status}]`;
+              const issue = await github.rest.issues.create({
+                owner:  context.repo.owner,
+                repo:   context.repo.repo,
+                title,
+                body,
+                labels: ['health-alert'],
+              });
+              console.log(`Created issue #${issue.data.number}: ${title}`);
+            }
+
+      - name: Close health issue when pipeline recovers
+        if: steps.health.outputs.status == 'OK'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const h  = JSON.parse(fs.readFileSync('system_health.json', 'utf8'));
+
+            const existing = await github.rest.issues.listForRepo({
+              owner:  context.repo.owner,
+              repo:   context.repo.repo,
+              state:  'open',
+              labels: 'health-alert',
+            });
+
+            for (const issue of existing.data) {
+              await github.rest.issues.createComment({
+                owner:        context.repo.owner,
+                repo:         context.repo.repo,
+                issue_number: issue.number,
+                body: `✅ Pipeline recovered — run \`${h.run_id}\` on ${h.date} completed with status **OK**. Auto-closing.`,
+              });
+              await github.rest.issues.update({
+                owner:        context.repo.owner,
+                repo:         context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+              });
+              console.log(`Closed issue #${issue.number} — pipeline healthy`);
+            }

@@ -247,14 +247,18 @@ def get_market_snapshot() -> dict:
     """
     today_str = date.today().isoformat()
 
-    # Check 1: local file (written by fetch_snapshot.py in dev, or as fallback)
+    # Check 1: local file (written by fetch_snapshot.py / GitHub Actions at 9:20 AM ET)
     snapshot_path = "market_snapshot.json"
     if os.path.isfile(snapshot_path):
         with open(snapshot_path) as f:
             cached = json.load(f)
         if cached.get("date") == today_str:
+            cached["_source"]    = "market_snapshot_file"
+            cached["_data_date"] = cached.get("date")
             print(f"   📦 Loaded market_snapshot.json ({len(cached.get('prices', {}))} tickers)")
             return cached
+        else:
+            print(f"   ⚠ market_snapshot.json is stale (date={cached.get('date')}, today={today_str}) — skipping")
 
     # Check 2: Supabase (written by GitHub Actions fetch_snapshot.py at 9:20 AM ET)
     supabase_url = os.getenv("SUPABASE_URL")
@@ -266,6 +270,8 @@ def get_market_snapshot() -> dict:
             res = _sb.table("market_snapshots").select("snapshot").eq("date", today_str).execute()
             if res.data:
                 cached = json.loads(res.data[0]["snapshot"])
+                cached["_source"]    = "supabase"
+                cached["_data_date"] = cached.get("date")
                 print(f"   ☁️  Loaded market_snapshot from Supabase ({len(cached.get('prices', {}))} tickers)")
                 return cached
         except Exception:
@@ -319,21 +325,32 @@ def get_market_snapshot() -> dict:
     if news_discovered:
         print(f"   📰 News-discovered: {', '.join(news_discovered.keys())}")
 
-    # Fallback: load MCP-injected market data when Polygon/yfinance are blocked
+    # Fallback: load MCP-injected market data when Polygon/yfinance are blocked.
+    # WARNING: mcp_market_data.json only contains 2 history bars (current quotes, not
+    # historical OHLCV). Quant scores will all default to 50. Pipeline should abort.
+    mcp_source = None
     if not prices:
         mcp_path = "mcp_market_data.json"
         if os.path.isfile(mcp_path):
             with open(mcp_path) as _f:
                 mcp_data = json.load(_f)
-            prices = mcp_data.get("prices", {})
-            history = mcp_data.get("history", {})
-            print(f"   📡 Loaded {len(prices)} tickers from mcp_market_data.json")
+            prices    = mcp_data.get("prices", {})
+            history   = mcp_data.get("history", {})
+            mcp_source = "mcp_fallback"
+            mcp_date   = mcp_data.get("date", "unknown")
+            print(f"   📡 Loaded {len(prices)} tickers from mcp_market_data.json (date={mcp_date})")
+            print(f"   ⚠ mcp_market_data.json has only 2 history bars — quant scores will be 50")
             # Reload fundamentals cache so quant scores use cached data
             fundamentals = get_all_fundamentals(list(prices.keys()))
 
+    source    = mcp_source or "live_polygon_yfinance"
+    data_date = mcp_data.get("date", "unknown") if mcp_source else today_str
+
     return {
-        "date":            date.today().strftime("%Y-%m-%d"),
+        "date":            today_str,
         "fetched_at":      datetime.now(timezone.utc).isoformat(),
+        "_source":         source,
+        "_data_date":      data_date,
         "prices":          prices,
         "history":         history,
         "fundamentals":    fundamentals,

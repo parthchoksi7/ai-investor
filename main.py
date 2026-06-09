@@ -4,11 +4,13 @@ AI Investor V3 — Main Entry Point
 Pipeline:
   1. Kill-switch check
   2. Fetch portfolio (Robinhood)
-  3. Fetch market data (Polygon)
+  3. Fetch market data — ABORT if today's snapshot isn't ready
   4. Compute quant scores (deterministic)
   5. Run 7-agent pipeline (Claude)
   6. Execute trades (Robinhood)
   7. Log to CSV + decision journal + agent log + transaction history
+  8. Publish to Supabase
+  9. Write system_health.json (triggers alert.yml if any failures)
 """
 
 import json as _json
@@ -21,6 +23,7 @@ from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, DRY_RUN
 from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, get_recent_decisions
 from publish      import publish_to_supabase
+from health       import HealthTracker, OK, DEGRADED, FAILED, ABORTED
 
 
 def run_daily_cycle():
@@ -32,6 +35,8 @@ def run_daily_cycle():
     run_start = datetime.now(timezone.utc).isoformat()
     today     = datetime.now().strftime("%Y-%m-%d")
 
+    health = HealthTracker(run_id, today)
+
     # ── Step 1: Portfolio ─────────────────────────────────────────────────────
     print("\n📊  Step 1: Fetching portfolio...")
     portfolio = get_portfolio_summary()
@@ -39,37 +44,93 @@ def run_daily_cycle():
     print(f"   Positions: {len(portfolio['positions'])}")
     print(f"   Total Value: ${portfolio['total_value']:,.2f}")
 
+    if portfolio.get("total_value", 0) > 0:
+        health.record("portfolio", OK,
+                      total_value=portfolio["total_value"],
+                      cash=portfolio["cash"],
+                      positions=len(portfolio["positions"]))
+    else:
+        health.record("portfolio", FAILED,
+                      message="Portfolio fetch returned zero total value — Robinhood MCP may be unavailable")
+
     # ── Step 2: Kill switches ─────────────────────────────────────────────────
     print("\n🛡️   Step 2: Checking kill switches...")
     kill_active, kill_reason = check_kill_switches(portfolio)
     if kill_active:
         print(f"   🛑 KILL SWITCH ACTIVE: {kill_reason}")
+        health.record("kill_switch", DEGRADED,
+                      message=f"Kill switch active: {kill_reason}",
+                      reason=kill_reason)
     else:
         print("   ✅ All clear.")
+        health.record("kill_switch", OK)
 
     # ── Step 3: Market data ───────────────────────────────────────────────────
     print("\n📈  Step 3: Fetching market data...")
     market_data = get_market_snapshot()
+    source    = market_data.get("_source", "unknown")
+    data_date = market_data.get("_data_date", market_data.get("date", "unknown"))
+    prices    = market_data.get("prices", {})
+    history   = market_data.get("history", {})
     print(
-        f"   {len(market_data['prices'])} tickers | "
-        f"{len(market_data['news'])} news articles | "
-        f"{len(market_data.get('news_discovered', {}))} news-discovered"
+        f"   {len(prices)} tickers | "
+        f"{len(market_data.get('news', []))} news articles | "
+        f"source={source} | data_date={data_date}"
     )
 
-    # Guard: warn loudly if snapshot is from a prior trading day.
-    # Stale data means the 9:20 AM fetch job failed; agents will work from
-    # LLM knowledge only (quant scores default to 50). Recorded in the audit log.
-    market_data_stale = market_data.get("date") != today
-    if market_data_stale:
-        print(
-            f"\n   ⚠️  WARNING: market data is stale "
-            f"(snapshot date={market_data.get('date')}, today={today}). "
-            f"Quant scores will default to 50 (neutral). "
-            f"Agents will rely on LLM knowledge only."
-        )
+    # Measure history depth
+    history_depths = [len(h) for h in history.values()] if history else []
+    min_depth = min(history_depths) if history_depths else 0
+    avg_depth = round(sum(history_depths) / len(history_depths), 1) if history_depths else 0
 
-    if not market_data["prices"]:
+    # ── PRE-FLIGHT ABORT: market data must be from today with enough history ──
+    # If data isn't ready, running agents produces all-50 quant scores, empty
+    # research, and a guaranteed no-trade outcome.  Better to abort and alert.
+    abort_reasons = []
+    if data_date != today:
+        abort_reasons.append(f"data is from {data_date}, not today ({today})")
+    if min_depth < 22:
+        abort_reasons.append(f"history depth is {min_depth} bars — need 22+ for any quant calculation")
+
+    if abort_reasons:
+        msg = " | ".join(abort_reasons)
+        print(f"\n   🚨 PIPELINE ABORTED: {msg}")
+        print("   Waiting for GitHub Actions market data job (market_data.yml) to complete.")
+        print("   The routine should not re-run until market_snapshot.json is updated for today.")
+
+        health.record("market_data", FAILED,
+                      message=msg,
+                      source=source,
+                      data_date=data_date,
+                      history_min_bars=min_depth)
+        health.record("pipeline", ABORTED,
+                      message=f"Aborted before agents ran — market data not ready. {msg}")
+        health.save()
+        print(f"\n   📋 system_health.json written (overall={health.overall_status})")
+        print("=" * 60 + "\n")
+        return
+
+    # Data is fresh — record quality level
+    if min_depth >= 126:
+        health.record("market_data", OK,
+                      source=source, data_date=data_date,
+                      tickers=len(prices),
+                      history_min_bars=min_depth, history_avg_bars=avg_depth)
+    elif min_depth >= 63:
+        health.record("market_data", DEGRADED,
+                      message=f"History depth {min_depth} bars — 6M momentum unavailable (need 127+)",
+                      source=source, data_date=data_date,
+                      history_min_bars=min_depth)
+    else:
+        health.record("market_data", DEGRADED,
+                      message=f"History depth {min_depth} bars — only 1M momentum available (need 64+ for 3M)",
+                      source=source, data_date=data_date,
+                      history_min_bars=min_depth)
+
+    if not prices:
         print("\n   No price data available (market may be closed). Skipping.")
+        health.record("pipeline", ABORTED, message="No price data — market may be closed")
+        health.save()
         print("=" * 60 + "\n")
         return
 
@@ -85,12 +146,26 @@ def run_daily_cycle():
             f"val={s.get('valuation_score')} vol={s.get('volatility')}%)"
         )
 
+    all_scores  = [s.get("composite_score", 50) for s in quant_scores.values()]
+    real_count  = sum(1 for s in all_scores if s != 50.0)
+    all_neutral = real_count == 0
+
+    if all_neutral:
+        health.record("quant_scores", FAILED,
+                      message="All quant scores are 50.0 — no historical data reached the engine",
+                      real_scores=0, total=len(all_scores))
+        print("   🚨 WARNING: All quant scores are 50.0 — no historical data")
+    elif real_count < len(all_scores) * 0.5:
+        health.record("quant_scores", DEGRADED,
+                      message=f"Only {real_count}/{len(all_scores)} tickers have real quant scores",
+                      real_scores=real_count, total=len(all_scores))
+    else:
+        health.record("quant_scores", OK, real_scores=real_count, total=len(all_scores))
+
     # ── Step 5: 7-agent pipeline ──────────────────────────────────────────────
     print("\n🧠  Step 5: Running 7-agent pipeline...")
     trade_history = get_trade_history()
 
-    # Build per-ticker map of the most recent open journal entry so Agent 5
-    # (Position Review) can check whether original invalidation conditions fired.
     prior_journal: dict = {}
     for entry in get_recent_decisions(n=200):
         t = entry.get("ticker")
@@ -99,8 +174,7 @@ def run_daily_cycle():
 
     decisions, pipeline_state = get_trade_decisions(portfolio, market_data, quant_scores, trade_history, prior_journal)
 
-    # Pre-compute fractional qty for each BUY/SELL so the cloud routine uses
-    # the exact value and never needs to round to whole shares.
+    # Pre-compute fractional qty
     for _d in decisions:
         _action = _d.get("action", "").upper()
         if _action in ("BUY", "SELL") and "target_weight" in _d:
@@ -108,12 +182,110 @@ def run_daily_cycle():
                 _d["target_weight"], _action, _d["ticker"], portfolio, market_data["prices"]
             )
 
+    # ── Agent health checks ───────────────────────────────────────────────────
+
+    # Agent 1: Market Regime
+    regime = pipeline_state.get("regime", {})
+    if not regime:
+        health.record("agent_1_regime", FAILED, message="No regime output returned")
+    elif regime.get("confidence", 0) < 25:
+        health.record("agent_1_regime", DEGRADED,
+                      message=f"Low confidence: {regime.get('confidence')}/100 — insufficient market data",
+                      regime=regime.get("regime"), confidence=regime.get("confidence"))
+    else:
+        health.record("agent_1_regime", OK,
+                      regime=regime.get("regime"), confidence=regime.get("confidence"))
+
+    # Agent 2: Research
+    research    = pipeline_state.get("research", {})
+    empty_rsrch = sum(1 for v in research.values() if not v.get("thesis", "").strip())
+    if not research:
+        health.record("agent_2_research", FAILED, message="No research output")
+    elif empty_rsrch == len(research):
+        health.record("agent_2_research", FAILED,
+                      message=f"All {empty_rsrch}/{len(research)} research responses returned empty thesis",
+                      empty=empty_rsrch, total=len(research))
+    elif empty_rsrch > 0:
+        health.record("agent_2_research", DEGRADED,
+                      message=f"{empty_rsrch}/{len(research)} research responses had empty thesis",
+                      empty=empty_rsrch, total=len(research))
+    else:
+        health.record("agent_2_research", OK, total=len(research))
+
+    # Agent 3: Earnings
+    earnings      = pipeline_state.get("earnings", {})
+    default_earn  = sum(1 for v in earnings.values()
+                        if v.get("earnings_alpha_score") == 5 and not v.get("key_catalysts_90d"))
+    if not earnings:
+        health.record("agent_3_earnings", FAILED, message="No earnings output")
+    elif default_earn == len(earnings):
+        health.record("agent_3_earnings", FAILED,
+                      message=f"All {default_earn}/{len(earnings)} earnings responses returned defaults",
+                      default=default_earn, total=len(earnings))
+    elif default_earn > len(earnings) * 0.8:
+        health.record("agent_3_earnings", DEGRADED,
+                      message=f"{default_earn}/{len(earnings)} earnings responses are defaults",
+                      default=default_earn, total=len(earnings))
+    else:
+        health.record("agent_3_earnings", OK, total=len(earnings))
+
+    # Agent 4: Devil's Advocate
+    da       = pipeline_state.get("devils_advocate", {})
+    empty_da = sum(1 for v in da.values() if not v.get("bear_case", "").strip())
+    if not da:
+        health.record("agent_4_devils_advocate", FAILED, message="No devil's advocate output")
+    elif empty_da == len(da):
+        health.record("agent_4_devils_advocate", FAILED,
+                      message=f"All {empty_da}/{len(da)} devil's advocate responses empty",
+                      empty=empty_da, total=len(da))
+    elif empty_da > 0:
+        health.record("agent_4_devils_advocate", DEGRADED,
+                      message=f"{empty_da}/{len(da)} devil's advocate responses empty",
+                      empty=empty_da, total=len(da))
+    else:
+        health.record("agent_4_devils_advocate", OK, total=len(da))
+
+    # Agent 5: Position Review
+    position_reviews  = pipeline_state.get("position_reviews", {})
+    existing_pos      = portfolio.get("positions", [])
+    if existing_pos and not position_reviews:
+        health.record("agent_5_position_review", FAILED,
+                      message=f"No reviews despite {len(existing_pos)} open positions",
+                      positions=len(existing_pos))
+    else:
+        reduces = sum(1 for v in position_reviews.values()
+                      if v.get("recommended_action") in ("REDUCE", "EXIT"))
+        health.record("agent_5_position_review", OK,
+                      reviewed=len(position_reviews), reduce_exit_recommended=reduces)
+
+    # Agent 6: Portfolio Manager
+    pm_proposed = pipeline_state.get("portfolio_manager_proposed", [])
+    reduces     = sum(1 for v in position_reviews.values()
+                      if v.get("recommended_action") in ("REDUCE", "EXIT"))
+    if reduces > 0 and len(pm_proposed) == 0 and not decisions:
+        health.record("agent_6_portfolio_manager", DEGRADED,
+                      message=f"PM proposed 0 trades despite {reduces} REDUCE/EXIT from position review — likely data starvation",
+                      position_review_reduce_exit=reduces, proposed=0)
+    else:
+        health.record("agent_6_portfolio_manager", OK,
+                      proposed=len(pm_proposed), final_decisions=len(decisions))
+
+    # Agent 7: CRO
+    cro = pipeline_state.get("cro", {})
+    if not cro:
+        health.record("agent_7_cro", FAILED, message="No CRO output")
+    else:
+        health.record("agent_7_cro", OK,
+                      approved=cro.get("approved"),
+                      vetoed=cro.get("rejected_tickers", []),
+                      risk_budget=cro.get("risk_budget_used"))
+
     # ── Agent log (written every run, even no-trade days) ────────────────────
-    pipeline_state["run_id"]            = run_id
-    pipeline_state["timestamp"]         = run_start
+    pipeline_state["run_id"]             = run_id
+    pipeline_state["timestamp"]          = run_start
     pipeline_state["kill_switch_active"] = kill_active
-    pipeline_state["market_data_stale"] = market_data_stale
-    pipeline_state["market_data_date"]  = market_data.get("date")
+    pipeline_state["market_data_source"] = source
+    pipeline_state["market_data_date"]   = data_date
     pipeline_state["portfolio_snapshot"] = {
         "cash":        portfolio["cash"],
         "total_value": portfolio["total_value"],
@@ -122,26 +294,29 @@ def run_daily_cycle():
     record_run(run_id, pipeline_state)
     print(f"   📋 Agent log written (run_id={run_id})")
 
-    # Always write pending_decisions.json (routine reads this).
-    # Wrap in a metadata envelope so the routine can verify freshness and
-    # stamp executed_at after completing MCP orders to prevent double-execution.
     with open("pending_decisions.json", "w") as _f:
         _json.dump({
-            "run_id":      run_id,
-            "date":        today,
+            "run_id":       run_id,
+            "date":         today,
             "generated_at": run_start,
-            "executed_at": None,
-            "decisions":   decisions,
+            "executed_at":  None,
+            "decisions":    decisions,
         }, _f, indent=2)
 
     if not decisions:
         print("\n   No trades today.")
-        # ── Step 8: Publish snapshot even on no-trade days ────────────────────
+
+        # ── Step 8: Publish ───────────────────────────────────────────────────
         print("\n🌐  Step 8: Publishing to Supabase...")
         try:
             publish_to_supabase(portfolio, quant_scores=quant_scores)
+            health.record("supabase_publish", OK)
         except Exception as e:
+            health.record("supabase_publish", FAILED,
+                          message=str(e)[:200])
             print(f"   ⚠ Supabase publish skipped: {e}")
+
+        _write_health(health)
         print("\n✅  Daily cycle complete.")
         print("=" * 60 + "\n")
         return
@@ -155,11 +330,11 @@ def run_daily_cycle():
         )
 
     # ── Step 6: Execute ───────────────────────────────────────────────────────
-    order_results: dict = {}
-    executed_decisions: list = []
+    order_results: dict       = {}
+    executed_decisions: list  = []
+    execution_errors: list    = []
 
     if kill_active:
-        # SELLs always execute — kill switch only blocks new BUYs.
         sell_only = [d for d in decisions if d.get("action", "").upper() == "SELL"]
         blocked   = [d for d in decisions if d.get("action", "").upper() == "BUY"]
         if blocked:
@@ -174,17 +349,30 @@ def run_daily_cycle():
             print("\n⛔  Step 6: Kill switch active — no SELL orders to execute.")
     else:
         print("\n⚡  Step 6: Executing trades...")
-        order_results      = execute_trades(decisions, portfolio, market_data["prices"])
-        executed_decisions = decisions
-        if not DRY_RUN:
-            mark_pending_executed(run_id)
+        try:
+            order_results      = execute_trades(decisions, portfolio, market_data["prices"])
+            executed_decisions = decisions
+            if not DRY_RUN:
+                mark_pending_executed(run_id)
+        except Exception as e:
+            execution_errors.append(str(e))
+            print(f"   ❌ Execution error: {e}")
+
+    if execution_errors:
+        health.record("execution", FAILED,
+                      message=f"Trade execution errors: {'; '.join(execution_errors)}",
+                      decisions=len(decisions), errors=execution_errors, dry_run=DRY_RUN)
+    else:
+        health.record("execution", OK,
+                      decisions=len(decisions),
+                      executed=len(executed_decisions),
+                      dry_run=DRY_RUN)
 
     # ── Step 7: Log ───────────────────────────────────────────────────────────
-    # Log only what was actually sent to the broker — blocked BUYs are omitted.
     print("\n📝  Step 7: Logging decisions...")
     log_trades(executed_decisions, portfolio, market_data["prices"], broker_order_ids=order_results)
 
-    regime = pipeline_state.get("regime", {}).get("regime", "")
+    regime_str = pipeline_state.get("regime", {}).get("regime", "")
 
     for d in executed_decisions:
         if d.get("action") not in ("BUY", "SELL"):
@@ -196,35 +384,32 @@ def run_daily_cycle():
         price         = market_data["prices"].get(ticker, {}).get("close", 0)
         qty           = _compute_qty(target_weight, action, ticker, portfolio, market_data["prices"])
         total_value   = round(qty * price, 2) if qty and price else None
-
         broker_order  = order_results.get(ticker, {})
         broker_id     = broker_order.get("id") if isinstance(broker_order, dict) else None
 
-        # Detailed transaction history (for public performance display)
         record_transaction({
-            "transaction_id":        str(_uuid.uuid4()),
-            "run_id":                run_id,
-            "date":                  today,
-            "timestamp":             datetime.now(timezone.utc).isoformat(),
-            "ticker":                ticker,
-            "action":                action,
-            "qty":                   qty,
-            "price":                 round(price, 4) if price else None,
-            "total_value":           total_value,
-            "target_weight":         target_weight,
+            "transaction_id":         str(_uuid.uuid4()),
+            "run_id":                 run_id,
+            "date":                   today,
+            "timestamp":              datetime.now(timezone.utc).isoformat(),
+            "ticker":                 ticker,
+            "action":                 action,
+            "qty":                    qty,
+            "price":                  round(price, 4) if price else None,
+            "total_value":            total_value,
+            "target_weight":          target_weight,
             "portfolio_value_before": portfolio["total_value"],
-            "source_of_capital":     d.get("source_of_capital", ""),
-            "regime":                regime,
-            "regime_confidence":     pipeline_state.get("regime", {}).get("confidence"),
-            "rationale":             d.get("rationale", ""),
-            "research_confidence":   pipeline_state.get("research", {}).get(ticker, {}).get("confidence"),
-            "earnings_alpha_score":  pipeline_state.get("earnings", {}).get(ticker, {}).get("earnings_alpha_score"),
-            "cro_risk_budget":       pipeline_state.get("cro", {}).get("risk_budget_used"),
-            "broker_order_id":       broker_id,
-            "dry_run":               DRY_RUN,
+            "source_of_capital":      d.get("source_of_capital", ""),
+            "regime":                 regime_str,
+            "regime_confidence":      pipeline_state.get("regime", {}).get("confidence"),
+            "rationale":              d.get("rationale", ""),
+            "research_confidence":    pipeline_state.get("research", {}).get(ticker, {}).get("confidence"),
+            "earnings_alpha_score":   pipeline_state.get("earnings", {}).get(ticker, {}).get("earnings_alpha_score"),
+            "cro_risk_budget":        pipeline_state.get("cro", {}).get("risk_budget_used"),
+            "broker_order_id":        broker_id,
+            "dry_run":                DRY_RUN,
         })
 
-        # Decision journal (thesis tracking)
         trade_id = record_trade(
             ticker          = ticker,
             action          = action,
@@ -242,11 +427,26 @@ def run_daily_cycle():
     print("\n🌐  Step 8: Publishing to Supabase...")
     try:
         publish_to_supabase(portfolio)
+        health.record("supabase_publish", OK)
     except Exception as e:
+        health.record("supabase_publish", FAILED, message=str(e)[:200])
         print(f"   ⚠ Supabase publish skipped: {e}")
+
+    # ── Step 9: Write system_health.json ─────────────────────────────────────
+    _write_health(health)
 
     print("\n✅  Daily cycle complete.")
     print("=" * 60 + "\n")
+
+
+def _write_health(health: HealthTracker):
+    data = health.save()
+    status = data["overall_status"]
+    icon   = {"OK": "✅", "DEGRADED": "⚠️", "FAILED": "❌", "ABORTED": "🚫"}.get(status, "❓")
+    print(f"\n{icon}  system_health.json written — overall_status={status}")
+    if data["alerts"]:
+        for alert in data["alerts"]:
+            print(f"   {alert}")
 
 
 if __name__ == "__main__":
