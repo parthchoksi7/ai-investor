@@ -71,6 +71,15 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.positions            TO service_r
 -- ALTER TABLE public.portfolio_snapshots ADD COLUMN IF NOT EXISTS close_value numeric;
 -- ALTER TABLE public.portfolio_snapshots ADD COLUMN IF NOT EXISTS close_at timestamptz;
 
+-- Market snapshots (one row per trading day — written by GitHub Actions, read by cloud routine)
+CREATE TABLE IF NOT EXISTS public.market_snapshots (
+  date      date    PRIMARY KEY,
+  snapshot  jsonb   NOT NULL,
+  created_at timestamptz default now()
+);
+ALTER TABLE public.market_snapshots ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.market_snapshots TO service_role;
+
 -- Daily quant scores for all tickers (one row per date × ticker, for backtesting comparison)
 -- Run once in Supabase SQL Editor to create the table:
 -- CREATE TABLE IF NOT EXISTS public.quant_scores (

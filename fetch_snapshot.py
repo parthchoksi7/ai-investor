@@ -30,9 +30,8 @@ if supabase_url and supabase_key:
         ).execute()
         print(f"Uploaded to Supabase market_snapshots (date={snapshot['date']})")
     except Exception as e:
-        print(f"Warning: Supabase upload failed — {e}. Falling back to local file.")
-        with open("market_snapshot.json", "w") as f:
-            json.dump(snapshot, f)
+        print(f"ERROR: Supabase upload failed — {e}")
+        raise  # fail the workflow so GitHub Actions alerts on it
 else:
     # No Supabase credentials — write local file (dev fallback)
     with open("market_snapshot.json", "w") as f:

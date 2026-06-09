@@ -232,14 +232,17 @@ def execute_trades(decisions: list[dict], portfolio: dict, prices: dict) -> dict
         if action == "HOLD" or not ticker:
             continue
 
-        # Resolve quantity
-        if "target_weight" in trade:
+        # Resolve quantity — prefer pre-computed fractional qty, fall back to weight-based calc.
+        # Never round to whole shares; Robinhood supports fractional orders.
+        if trade.get("qty") is not None:
+            qty = float(trade["qty"])
+        elif "target_weight" in trade:
             qty = _compute_qty(trade["target_weight"], action, ticker, portfolio, prices)
         else:
-            qty = int(trade.get("qty", 0))
+            qty = 0.0
 
-        if qty <= 0:
-            print(f"   ⏸  Skipping {action} {ticker} — computed qty {qty} ≤ 0")
+        if qty == 0:
+            print(f"   ⏸  Skipping {action} {ticker} — qty is 0")
             continue
 
         result = place_order(ticker, action, qty)

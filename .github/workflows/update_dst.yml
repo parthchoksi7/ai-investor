@@ -2,10 +2,10 @@ name: DST Cron Update
 
 on:
   schedule:
-    # March 1 at 07:00 UTC — clocks spring forward (EST → EDT, UTC-5 → UTC-4)
-    - cron: '0 7 1 3 *'
-    # November 1 at 07:00 UTC — clocks fall back (EDT → EST, UTC-4 → UTC-5)
-    - cron: '0 7 1 11 *'
+    # March 15 at 12:00 UTC — after DST spring forward (second Sunday of March, ~Mar 8-14)
+    - cron: '0 12 15 3 *'
+    # November 8 at 07:00 UTC — after DST fall back (first Sunday of November, Nov 1–7)
+    - cron: '0 7 8 11 *'
   workflow_dispatch:
 
 jobs:
@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
 

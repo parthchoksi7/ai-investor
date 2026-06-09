@@ -87,6 +87,15 @@ def run_daily_cycle():
 
     decisions, pipeline_state = get_trade_decisions(portfolio, market_data, quant_scores, trade_history, prior_journal)
 
+    # Pre-compute fractional qty for each BUY/SELL so the cloud routine uses
+    # the exact value and never needs to round to whole shares.
+    for _d in decisions:
+        _action = _d.get("action", "").upper()
+        if _action in ("BUY", "SELL") and "target_weight" in _d:
+            _d["qty"] = _compute_qty(
+                _d["target_weight"], _action, _d["ticker"], portfolio, market_data["prices"]
+            )
+
     # ── Agent log (written every run, even no-trade days) ────────────────────
     pipeline_state["run_id"]            = run_id
     pipeline_state["timestamp"]         = run_start
