@@ -26,6 +26,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Restore fundamentals cache
+        uses: actions/cache@v4
+        with:
+          path: fundamentals_cache.json
+          key: fundamentals-${{ runner.os }}-${{ github.run_number }}
+          restore-keys: |
+            fundamentals-${{ runner.os }}-
+
       - name: Fetch market snapshot
         env:
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
