@@ -15,7 +15,7 @@ import json
 import os
 import urllib.request
 import urllib.error
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from dotenv import load_dotenv
 
@@ -155,6 +155,7 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
         "cumulative_return_pct":     cumulative_return,
         "drawdown_pct":              round(drawdown, 4),
         "regime":                    regime or None,
+        "updated_at":                datetime.now(timezone.utc).isoformat(),
     }
     if spy_close is not None:
         snapshot["spy_close"] = round(spy_close, 4)
@@ -237,3 +238,7 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
             print(f"   ⚠️  Quant scores publish failed — {e}")
 
     print("   ✅ Supabase publish complete.")
+
+
+if __name__ == "__main__":
+    publish_to_supabase()
