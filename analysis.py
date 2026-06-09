@@ -219,10 +219,22 @@ def _cached_system(prompt: str) -> list:
 
 
 def _parse_json(text: str, default):
-    text = text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    import re
+    text = text.strip()
+    # Strip markdown code fences wherever they appear
+    text = re.sub(r'^```(?:json)?\s*', '', text)
+    text = re.sub(r'\s*```$', '', text)
+    text = text.strip()
     try:
         return json.loads(text)
     except json.JSONDecodeError:
+        # Model wrapped JSON in prose — extract the first {...} or [...] block
+        match = re.search(r'(\{[\s\S]*\}|\[[\s\S]*\])', text)
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
+                pass
         return default
 
 
@@ -348,23 +360,26 @@ QUANT: {_fmt_scores(scores)}
 NEWS:
 {news}
 
-Output JSON:
+Draw on your training knowledge of {ticker}'s business model, competitive position, \
+and sector dynamics. All fields below must be non-empty — do not return blank strings.
+
+Output JSON (fill in every field):
 {{
-  "thesis": "",
-  "consensus_view": "",
-  "variant_view": "",
-  "catalysts": [],
-  "key_risks": [],
-  "invalidates_if": [],
-  "confidence": 1-10,
-  "evidence_quality": 1-10
+  "thesis": "bull thesis in one sentence",
+  "consensus_view": "what the market currently believes",
+  "variant_view": "where you disagree with consensus",
+  "catalysts": ["catalyst 1", "catalyst 2"],
+  "key_risks": ["risk 1", "risk 2"],
+  "invalidates_if": ["condition that would break the thesis"],
+  "confidence": 6,
+  "evidence_quality": 5
 }}"""
 
     return _safe_call(
         MODEL_FAST, _cached_system(_RESEARCH_SYSTEM), user_msg,
         default={"thesis": "", "catalysts": [], "confidence": 5,
                  "key_risks": [], "invalidates_if": [], "variant_view": ""},
-        max_tokens=500,
+        max_tokens=600,
     )
 
 
@@ -385,15 +400,18 @@ Price: ${data.get('close', 'N/A')}  Date: {market_data['date']}
 NEWS:
 {news}
 
-Output JSON:
+Use your training knowledge of {ticker}'s typical earnings calendar and business cycle. \
+All fields must be filled in — do not return empty arrays or placeholder values.
+
+Output JSON (fill in every field):
 {{
   "next_earnings_est": "YYYY-MM-DD or unknown",
-  "earnings_alpha_score": 1-10,
-  "beat_probability": "LOW | MEDIUM | HIGH",
-  "guidance_raise_probability": "LOW | MEDIUM | HIGH",
-  "guidance_cut_probability": "LOW | MEDIUM | HIGH",
-  "key_catalysts_90d": [],
-  "expected_move_pct": 0
+  "earnings_alpha_score": 6,
+  "beat_probability": "MEDIUM",
+  "guidance_raise_probability": "LOW",
+  "guidance_cut_probability": "LOW",
+  "key_catalysts_90d": ["catalyst 1", "catalyst 2"],
+  "expected_move_pct": 4
 }}"""
 
     return _safe_call(
@@ -416,15 +434,17 @@ def run_devils_advocate(
     data   = market_data["prices"].get(ticker, {})
     scores = quant_scores.get(ticker, {})
 
+    bull_thesis = research.get('thesis', '') or f"{ticker} — no explicit thesis provided"
+
     user_msg = f"""\
 TICKER: {ticker}
 Price: ${data.get('close', 'N/A')} | Vol: {scores.get('volatility', '?')}% | Beta: {scores.get('beta', '?')}
 
 BULL THESIS TO DESTROY:
-  {research.get('thesis', 'No thesis provided')}
+  {bull_thesis}
 
 VARIANT VIEW:
-  {research.get('variant_view', '')}
+  {research.get('variant_view', '') or 'Not provided'}
 
 CATALYSTS CLAIMED:
   {json.dumps(research.get('catalysts', []))}
@@ -436,16 +456,19 @@ EARNINGS ASSESSMENT:
   Beat prob: {earnings.get('beat_probability', '?')} | Guidance cut: {earnings.get('guidance_cut_probability', '?')}
   Upcoming catalysts: {json.dumps(earnings.get('key_catalysts_90d', []))}
 
-Output JSON:
+Use your training knowledge of {ticker} to construct a rigorous bear case. \
+All fields must be non-empty — do not return blank strings or empty arrays.
+
+Output JSON (fill in every field):
 {{
-  "bear_case": "",
-  "weakest_assumptions": [],
-  "hidden_risks": [],
-  "crowding_risk": "LOW | MEDIUM | HIGH",
-  "valuation_risk": "LOW | MEDIUM | HIGH",
-  "catalyst_failure_probability": "LOW | MEDIUM | HIGH",
-  "overall_risk_score": 1-10,
-  "recommend_reject": true | false
+  "bear_case": "the strongest argument against owning this stock",
+  "weakest_assumptions": ["assumption 1", "assumption 2"],
+  "hidden_risks": ["risk 1"],
+  "crowding_risk": "MEDIUM",
+  "valuation_risk": "MEDIUM",
+  "catalyst_failure_probability": "MEDIUM",
+  "overall_risk_score": 5,
+  "recommend_reject": false
 }}"""
 
     return _safe_call(
