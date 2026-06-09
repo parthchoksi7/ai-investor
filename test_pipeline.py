@@ -34,6 +34,42 @@ def _trend(start: float, end: float, n: int) -> list[dict]:
     return _make_history([start + i * step for i in range(n)])
 
 
+# ── analysis._parse_json ──────────────────────────────────────────────────────
+
+class TestParseJson:
+    def _parse(self, text, default):
+        from analysis import _parse_json
+        return _parse_json(text, default)
+
+    def test_plain_dict(self):
+        assert self._parse('{"a": 1}', {}) == {"a": 1}
+
+    def test_code_fence(self):
+        assert self._parse('```json\n{"a": 1}\n```', {}) == {"a": 1}
+
+    def test_prose_wrapped(self):
+        result = self._parse('Here is the JSON: {"a": 1} done.', {})
+        assert result == {"a": 1}
+
+    def test_singleton_list_unwrap_to_dict(self):
+        """Model returns [{...}] when we expect {...} — should unwrap."""
+        result = self._parse('[{"thesis": "bull", "confidence": 7}]', {"thesis": ""})
+        assert result == {"thesis": "bull", "confidence": 7}
+
+    def test_multi_element_list_not_unwrapped(self):
+        """Multi-element list expected as list — keep as list."""
+        result = self._parse('[{"a": 1}, {"a": 2}]', [])
+        assert result == [{"a": 1}, {"a": 2}]
+
+    def test_singleton_list_kept_when_default_is_list(self):
+        """If default is a list, keep a singleton list as-is."""
+        result = self._parse('[{"a": 1}]', [])
+        assert result == [{"a": 1}]
+
+    def test_invalid_json_returns_default(self):
+        assert self._parse('not json at all', {"x": 0}) == {"x": 0}
+
+
 # ── health.py ─────────────────────────────────────────────────────────────────
 
 class TestHealthTracker:
