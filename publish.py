@@ -102,7 +102,7 @@ def _publish_quant_scores(client, quant_scores: dict, today: str) -> None:
         print(f"   📊 {len(rows)} quant score(s) synced.")
 
 
-def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None = None) -> None:
+def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None = None, is_close: bool = False) -> None:
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
     if not supabase_url or not supabase_key:
@@ -157,6 +157,9 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
         "regime":                    regime or None,
         "updated_at":                datetime.now(timezone.utc).isoformat(),
     }
+    if is_close:
+        snapshot["close_value"] = round(total_value, 2)
+        snapshot["close_at"]    = datetime.now(timezone.utc).isoformat()
     if spy_close is not None:
         snapshot["spy_close"] = round(spy_close, 4)
     if spy_cumulative is not None:
@@ -241,4 +244,8 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
 
 
 if __name__ == "__main__":
-    publish_to_supabase()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--close", action="store_true", help="Write close_value (4 PM EOD snapshot)")
+    args = parser.parse_args()
+    publish_to_supabase(is_close=args.close)
