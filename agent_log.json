@@ -4044,5 +4044,2071 @@
         }
       ]
     }
+  },
+  {
+    "run_id": "20260609-143151",
+    "date": "2026-06-09",
+    "regime": {
+      "regime": "NEUTRAL",
+      "confidence": 20,
+      "growth_value": "NEUTRAL",
+      "favored_factors": [],
+      "avoid_factors": [],
+      "key_observations": [
+        "Insufficient data to determine market regime with confidence",
+        "SPY showing marginal positive performance (+0.41%) while QQQ slightly negative (-0.28%), suggesting mild large-cap growth underperformance on this session",
+        "No moving average positioning data available (50DMA/200DMA relationships unknown)",
+        "No historical return windows available (1M, 3M, 6M all null) \u2014 trend context is absent",
+        "No macro headlines or economic data provided to contextualize regime",
+        "Mild SPY/QQQ divergence could hint at rotation away from mega-cap tech, but sample size is a single day \u2014 inconclusive",
+        "Regime classification defaulting to NEUTRAL given extreme data scarcity",
+        "Confidence score set at 20 (minimum viable) to reflect near-total uncertainty",
+        "Recommend re-running analysis with complete data inputs: moving averages, return windows, credit spreads, yield curve, VIX, and macro headlines"
+      ]
+    },
+    "candidates": [
+      "MS",
+      "GOOGL",
+      "AAPL",
+      "EQIX",
+      "JPM",
+      "NVDA",
+      "MRK",
+      "MSFT",
+      "BAC",
+      "TSLA",
+      "META",
+      "JNJ",
+      "ORCL",
+      "AMZN",
+      "PLD",
+      "LIN",
+      "TJX",
+      "EOG",
+      "GOOG",
+      "ABBV"
+    ],
+    "quant_scores": {
+      "AAPL": {
+        "ticker": "AAPL",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "MSFT": {
+        "ticker": "MSFT",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "NVDA": {
+        "ticker": "NVDA",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "GOOGL": {
+        "ticker": "GOOGL",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "GOOG": {
+        "ticker": "GOOG",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "AMZN": {
+        "ticker": "AMZN",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "META": {
+        "ticker": "META",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "TSLA": {
+        "ticker": "TSLA",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "ORCL": {
+        "ticker": "ORCL",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "JPM": {
+        "ticker": "JPM",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "BAC": {
+        "ticker": "BAC",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "MS": {
+        "ticker": "MS",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "JNJ": {
+        "ticker": "JNJ",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "ABBV": {
+        "ticker": "ABBV",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "MRK": {
+        "ticker": "MRK",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "TJX": {
+        "ticker": "TJX",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "EOG": {
+        "ticker": "EOG",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "LIN": {
+        "ticker": "LIN",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "PLD": {
+        "ticker": "PLD",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "EQIX": {
+        "ticker": "EQIX",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      }
+    },
+    "research": {
+      "MS": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "GOOGL": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "AAPL": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "EQIX": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "JPM": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "NVDA": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "MRK": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "MSFT": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "BAC": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "TSLA": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "META": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "JNJ": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "ORCL": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "AMZN": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "PLD": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "LIN": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "TJX": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "EOG": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "GOOG": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "ABBV": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      }
+    },
+    "earnings": {
+      "MS": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "GOOGL": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "AAPL": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "EQIX": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "JPM": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "NVDA": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "MRK": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "MSFT": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "BAC": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "TSLA": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "META": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "JNJ": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "ORCL": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "AMZN": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "PLD": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "LIN": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "TJX": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "EOG": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "GOOG": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "ABBV": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      }
+    },
+    "devils_advocate": {
+      "MS": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "GOOGL": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "AAPL": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "EQIX": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "JPM": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "NVDA": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "MRK": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "MSFT": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "BAC": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "TSLA": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "META": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "JNJ": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "ORCL": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "AMZN": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "PLD": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "LIN": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "TJX": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "EOG": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "GOOG": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "ABBV": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      }
+    },
+    "position_reviews": {
+      "AAPL": {
+        "hold_score": 4,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "REDUCE",
+        "reasoning": "AAPL shows concerning signals: (1) Thesis confidence is already low at 5/10, indicating weak conviction at entry. (2) Composite quant score of 50.0 is neutral/mediocre\u2014no momentum, quality, or value advantage detected. (3) Position is underwater -7.1% with no positive technicals to justify holding. (4) All four quant pillars (mom/quality/val/comp) at exactly 50 suggests no alpha generation. (5) No pending catalysts identified; lack of news combined with weak fundamentals suggests catalysts may have already been priced in or failed to materialize. (6) At current risk/reward with neutral technicals and low conviction thesis, capital is better deployed elsewhere. Recommend reducing to cut losses and redeploy to higher-conviction ideas with better quant signals and clearer catalysts."
+      },
+      "EQIX": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "recommended_action": "HOLD",
+        "reasoning": ""
+      },
+      "MS": {
+        "hold_score": 3,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "REDUCE",
+        "reasoning": "MS presents a weak conviction position with multiple red flags: (1) Low confidence thesis (5/10) indicates unclear or deteriorating investment rationale; (2) Quant scores are uniformly mediocre at 50.0 across momentum, quality, value\u2014no alpha drivers evident; (3) Missing critical momentum/performance data (1M, 3M returns) suggests weak recent performance; (4) Position is underwater (-1.0% P&L) with no clear catalyst or catalyst visibility to recover; (5) No news/developments provide renewed conviction; (6) Portfolio weighting (0.16 shares) indicates this is already a small position, making it a candidate for reallocation. The lack of any quantitative edge or clear thesis is the primary concern. Recommend reducing position size and redeploy capital to opportunities with higher alpha potential and stronger thesis conviction."
+      },
+      "BAC": {
+        "hold_score": 3,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "REDUCE",
+        "reasoning": "BAC presents a weak risk/reward at current levels. Composite quant score at exactly 50.0 across all dimensions (momentum, quality, value) indicates no directional edge\u2014the position sits at perfect neutrality with no quantitative support. The 5/10 thesis confidence was already low, and the near-flat P&L (+0.2%) despite holding suggests the trade has stalled with no clear catalyst ahead. Absence of price momentum (1M/3M data missing but momentum score at 50 suggests neutral trend) combined with flat valuation metrics indicates limited remaining alpha. The small position size (0.646 shares) suggests this was either a conviction trade that has deteriorated or a test that failed to validate. With no news catalyst, deteriorating conviction, and neutral technicals/fundamentals, capital is better deployed elsewhere. Reduce to free up capital for higher-conviction opportunities rather than hold a thesis you only have 50% confidence in."
+      },
+      "MRK": {
+        "hold_score": 3,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": false,
+        "recommended_action": "REDUCE",
+        "reasoning": "MRK presents a weak conviction holding with critical concerns: (1) Baseline confidence of only 5/10 indicates insufficient conviction to maintain position; (2) Composite quantitative score of 50.0 is exactly median\u2014no edge, no differentiation; (3) All four quant pillars (momentum, quality, valuation, volatility) score at 50, suggesting the stock offers no meaningful factor advantage; (4) Missing critical performance data (1M, 3M returns, beta, above MA signals) prevents validation of thesis; (5) -1.7% drawdown on weak fundamentals is not a buying opportunity but rather confirmation of positioning error. The position lacks both quantitative support and stated alpha generation. With no positive catalysts identified and no factor edges evident, capital is better deployed elsewhere. Reduce position size and redeploy to holdings with clearer alpha and >6/10 conviction thesis."
+      },
+      "TJX": {
+        "hold_score": 4,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": false,
+        "recommended_action": "REDUCE",
+        "reasoning": "TJX presents a deteriorating risk/reward profile. The composite score of 50.0 indicates median performance across momentum, quality, and value metrics\u2014no meaningful edge. With only 5/10 confidence in your original thesis and a flat price (-1.5% unrealized loss on current), the position lacks conviction. The quant data shows no alpha catalysts (no momentum above 50, no directional tailwinds). While the modest position size (0.216928 shares) limits downside risk, capital is better deployed elsewhere given the lack of differentiated conviction. The absence of news removes near-term catalysts. Reduce to reallocate capital toward higher-conviction setups with clearer alpha paths."
+      },
+      "PLD": {
+        "hold_score": 3,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "REDUCE",
+        "reasoning": "PLD shows significant red flags across multiple dimensions: (1) Low thesis confidence (5/10) suggests weak conviction even at entry; (2) Quant composite at 50.0 indicates median quality across all factors\u2014no edge detected; (3) Balanced momentum/quality/value scores suggest no clear directional thesis or alpha driver; (4) Position is essentially flat (P&L +3.1%, price -$0.07)\u2014the minimal gain masks lack of conviction; (5) No recent news and balanced metrics suggest any thesis has already materialized or is invalid; (6) Small position size (0.24597 shares) indicates low conviction sizing; (7) Risk has not decreased\u2014holding an uncertain thesis without catalysts is a drag on portfolio efficiency. With 50.0 composite and no identified alpha, this appears to be a holding without edge. Reduce to redeploy capital toward positions with clearer theses (confidence >7/10) and stronger quantitative support."
+      },
+      "EOG": {
+        "hold_score": 3,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "EXIT",
+        "reasoning": "EOG presents a weak risk/reward at current levels. With only 50.0 composite score across all quantitative factors (momentum, quality, valuation all neutral), the position lacks conviction. The original thesis confidence of 5/10 was already marginal and appears deteriorated. No identified catalysts remain to drive appreciation, while the energy sector faces structural headwinds from renewable transition. The -2.4% loss coupled with lack of alpha generation suggests capital can be better deployed elsewhere. The small position size (0.247912 shares) and lack of recent bullish news indicate conviction has already eroded. Exit to redeploy capital toward higher-conviction opportunities with clearer catalysts."
+      },
+      "ABBV": {
+        "hold_score": 3,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "EXIT",
+        "reasoning": "ABBV presents a weak investment case: (1) Quant score of 50.0 across all dimensions (momentum, quality, value) indicates no meaningful edge\u2014essentially neutral across all factors; (2) Your stated confidence is already low (5/10), suggesting conviction erosion; (3) Near-flat P&L with no positive momentum to offset position risk; (4) No news catalysts in pipeline and no identified upcoming triggers; (5) The minimal position size (0.134 shares) suggests this was either a small speculative bet or a legacy holding; (6) With no compelling thesis remaining and balanced/neutral quant metrics, capital is better deployed elsewhere. The lack of any quantifiable outperformance signal combined with low conviction is the key issue\u2014this is not a 'hold and wait' situation. Exit and redeploy."
+      },
+      "JPM": {
+        "hold_score": 4,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "REDUCE",
+        "reasoning": "JPM presents a weak holding scenario: (1) Baseline confidence of 5/10 indicates the original thesis was marginal; (2) Composite quant score at median 50.0 with no distinguishing signals across momentum, quality, or valuation\u2014JPM appears fairly valued with no clear edge; (3) No recent catalysts and no momentum data suggests stagnation; (4) Position is micro-sized (0.096 shares), indicating low conviction at entry; (5) Near-flat P&L (+0.4%) offers no momentum to justify holding; (6) As a mega-cap bank, JPM offers limited alpha potential\u2014it is typically a defensive hold, not an opportunity. Given low remaining alpha, absence of catalysts, and weak initial thesis confidence, reduce position and redeploy capital to higher-conviction or higher-alpha opportunities. The size is already minimal, but elimination via reduction is justified."
+      },
+      "LIN": {
+        "hold_score": 3,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "EXIT",
+        "reasoning": "LIN shows critical red flags warranting exit: (1) Your stated confidence of only 5/10 indicates weak conviction in the thesis from inception; (2) Composite quant score of exactly 50.0 reflects median-level attractiveness with no differentiation; (3) All four pillars (momentum, quality, value, vol) at exactly 50 suggests generic positioning lacking edge; (4) Missing data on returns (1M, 3M) and missing volatility/beta metrics prevent risk assessment; (5) Position size (0.069516 shares) is minimal, indicating you already lack conviction; (6) No catalysts mentioned and flat recent performance (+1.6%) with no momentum suggests the thesis has run its course. This appears to be a default holding rather than an alpha-generating conviction trade. Reallocate capital to higher-conviction positions with clear thesis, >6/10 confidence, and identifiable catalysts."
+      },
+      "JNJ": {
+        "hold_score": 4,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": false,
+        "recommended_action": "REDUCE",
+        "reasoning": "JNJ presents a challenged thesis with multiple red flags. The composite quant score of 50.0 indicates median positioning across momentum, quality, and value metrics\u2014no clear conviction drivers. Most concerning: your own confidence is already low at 5/10, suggesting uncertainty about thesis validity. The stock trades flat to slightly negative, with no news catalysts to reignite performance. As a large-cap defensive play, JNJ typically offers low alpha generation; current quant parity across dimensions confirms this. The position size is modest (0.15 shares), which limits downside, but the low confidence combined with lack of differentiated alpha warrants reduction. Redeploy capital to positions with stronger thesis conviction (7+/10) and clearer alpha generation. JNJ is better suited as a core holding when you have 8+/10 conviction; current positioning suggests this is a 'holding by default' rather than active conviction."
+      }
+    },
+    "portfolio_manager_proposed": [
+      {
+        "ticker": "EOG",
+        "action": "SELL",
+        "target_weight": 0.0,
+        "source_of_capital": "EOG",
+        "rationale": "EOG is flagged for EXIT with hold=3/10, alpha=LOW, and no research thesis or catalysts to justify retention; proceeds move to cash to reduce portfolio noise.",
+        "qty": 0.247912
+      },
+      {
+        "ticker": "ABBV",
+        "action": "SELL",
+        "target_weight": 0.0,
+        "source_of_capital": "ABBV",
+        "rationale": "ABBV is flagged for EXIT with hold=3/10, alpha=LOW, and zero differentiated thesis; exiting frees capital from a low-conviction name.",
+        "qty": 0.133894
+      },
+      {
+        "ticker": "LIN",
+        "action": "SELL",
+        "target_weight": 0.0,
+        "source_of_capital": "LIN",
+        "rationale": "LIN is flagged for EXIT with hold=3/10, alpha=LOW, and no identifiable near-term catalysts; removing to reduce position count toward target range.",
+        "qty": 0.069516
+      },
+      {
+        "ticker": "MS",
+        "action": "SELL",
+        "target_weight": 0.0,
+        "source_of_capital": "MS",
+        "rationale": "MS carries hold=3/10, alpha=LOW, action=REDUCE with no variant thesis; full exit eliminates redundant financials exposure alongside BAC and JPM.",
+        "qty": 0.162508
+      },
+      {
+        "ticker": "BAC",
+        "action": "SELL",
+        "target_weight": 0.0,
+        "source_of_capital": "BAC",
+        "rationale": "BAC is hold=3/10, alpha=LOW, action=REDUCE; with MS and JPM also held, the financials sector is over-represented and BAC is the weakest-scored of the three.",
+        "qty": 0.646234
+      },
+      {
+        "ticker": "MRK",
+        "action": "SELL",
+        "target_weight": 0.0,
+        "source_of_capital": "MRK",
+        "rationale": "MRK is hold=3/10, alpha=LOW, action=REDUCE with no research thesis or catalysts; exiting reduces healthcare dead weight with proceeds held as cash pending higher-conviction opportunities.",
+        "qty": 0.28935
+      }
+    ],
+    "cro": {
+      "approved": true,
+      "risk_budget_used": 42,
+      "largest_risk": "The post-trade portfolio is heavily concentrated in just 6 positions with the top holding (EQIX) at 8% and significant real estate exposure (EQIX + PLD = ~15.3%), both of which are highly interest-rate sensitive and could suffer simultaneous drawdowns in a rate-spike scenario.",
+      "rejected_tickers": [],
+      "reasoning": "All six proposed trades are defensive exits of low-conviction, low-alpha positions, which reduces portfolio noise and frees capital \u2014 this is consistent with risk management objectives. The resulting portfolio has 16% cash as a buffer and no single position exceeds 8%. However, I flag the following structural risks for monitoring: (1) EQIX and PLD together represent ~15.3% in rate-sensitive REITs/data center infrastructure \u2014 correlated drawdown risk in a rising-rate or credit-stress environment is material; (2) with only 6 equity positions shown, concentration risk is elevated and any idiosyncratic shock to a single name has outsized impact; (3) the portfolio loses sector diversification by exiting Energy (EOG), Healthcare (ABBV, MRK), Industrials/Materials (LIN), and two Financials (MS, BAC), leaving remaining sector exposure unclear beyond what is shown. None of these risks rise to the level of catastrophic/systemic concern given the cash buffer and the quality of retained names. Trades are approved, but the Portfolio Manager should prioritize deploying cash into names that reduce REIT concentration and restore sector breadth."
+    },
+    "final_decisions": [
+      {
+        "ticker": "EOG",
+        "action": "SELL",
+        "target_weight": 0.0,
+        "source_of_capital": "EOG",
+        "rationale": "EOG is flagged for EXIT with hold=3/10, alpha=LOW, and no research thesis or catalysts to justify retention; proceeds move to cash to reduce portfolio noise.",
+        "qty": 0.247912
+      },
+      {
+        "ticker": "ABBV",
+        "action": "SELL",
+        "target_weight": 0.0,
+        "source_of_capital": "ABBV",
+        "rationale": "ABBV is flagged for EXIT with hold=3/10, alpha=LOW, and zero differentiated thesis; exiting frees capital from a low-conviction name.",
+        "qty": 0.133894
+      },
+      {
+        "ticker": "LIN",
+        "action": "SELL",
+        "target_weight": 0.0,
+        "source_of_capital": "LIN",
+        "rationale": "LIN is flagged for EXIT with hold=3/10, alpha=LOW, and no identifiable near-term catalysts; removing to reduce position count toward target range.",
+        "qty": 0.069516
+      },
+      {
+        "ticker": "MS",
+        "action": "SELL",
+        "target_weight": 0.0,
+        "source_of_capital": "MS",
+        "rationale": "MS carries hold=3/10, alpha=LOW, action=REDUCE with no variant thesis; full exit eliminates redundant financials exposure alongside BAC and JPM.",
+        "qty": 0.162508
+      },
+      {
+        "ticker": "BAC",
+        "action": "SELL",
+        "target_weight": 0.0,
+        "source_of_capital": "BAC",
+        "rationale": "BAC is hold=3/10, alpha=LOW, action=REDUCE; with MS and JPM also held, the financials sector is over-represented and BAC is the weakest-scored of the three.",
+        "qty": 0.646234
+      },
+      {
+        "ticker": "MRK",
+        "action": "SELL",
+        "target_weight": 0.0,
+        "source_of_capital": "MRK",
+        "rationale": "MRK is hold=3/10, alpha=LOW, action=REDUCE with no research thesis or catalysts; exiting reduces healthcare dead weight with proceeds held as cash pending higher-conviction opportunities.",
+        "qty": 0.28935
+      }
+    ],
+    "timestamp": "2026-06-09T14:31:51.919413+00:00",
+    "kill_switch_active": false,
+    "market_data_stale": false,
+    "market_data_date": "2026-06-09",
+    "portfolio_snapshot": {
+      "cash": 79.63,
+      "total_value": 497.0957673,
+      "positions": [
+        {
+          "symbol": "AAPL",
+          "qty": 0.127061,
+          "avg_price": 314.89,
+          "current_price": 292.665,
+          "market_value": 37.186308,
+          "unrealized_pnl": -2.823831
+        },
+        {
+          "symbol": "EQIX",
+          "qty": 0.037203,
+          "avg_price": 1076.79,
+          "current_price": 1063.77,
+          "market_value": 39.575435,
+          "unrealized_pnl": -0.484363
+        },
+        {
+          "symbol": "MS",
+          "qty": 0.162508,
+          "avg_price": 215.44,
+          "current_price": 213.2,
+          "market_value": 34.646706,
+          "unrealized_pnl": -0.364018
+        },
+        {
+          "symbol": "BAC",
+          "qty": 0.646234,
+          "avg_price": 54.22,
+          "current_price": 54.31,
+          "market_value": 35.096969,
+          "unrealized_pnl": 0.058161
+        },
+        {
+          "symbol": "MRK",
+          "qty": 0.28935,
+          "avg_price": 121.06,
+          "current_price": 119.025,
+          "market_value": 34.439884,
+          "unrealized_pnl": -0.588827
+        },
+        {
+          "symbol": "TJX",
+          "qty": 0.216928,
+          "avg_price": 161.48,
+          "current_price": 163.98,
+          "market_value": 35.571853,
+          "unrealized_pnl": 0.54232
+        },
+        {
+          "symbol": "PLD",
+          "qty": 0.24597,
+          "avg_price": 142.46,
+          "current_price": 146.87,
+          "market_value": 36.125614,
+          "unrealized_pnl": 1.084737
+        },
+        {
+          "symbol": "EOG",
+          "qty": 0.247912,
+          "avg_price": 141.14,
+          "current_price": 137.785,
+          "market_value": 34.158555,
+          "unrealized_pnl": -0.831744
+        },
+        {
+          "symbol": "ABBV",
+          "qty": 0.133894,
+          "avg_price": 224.43,
+          "current_price": 224.095,
+          "market_value": 30.004976,
+          "unrealized_pnl": -0.044854
+        },
+        {
+          "symbol": "JPM",
+          "qty": 0.095754,
+          "avg_price": 313.72,
+          "current_price": 315.05,
+          "market_value": 30.167298,
+          "unrealized_pnl": 0.127353
+        },
+        {
+          "symbol": "LIN",
+          "qty": 0.069516,
+          "avg_price": 503.91,
+          "current_price": 512.14,
+          "market_value": 35.601924,
+          "unrealized_pnl": 0.572017
+        },
+        {
+          "symbol": "JNJ",
+          "qty": 0.150539,
+          "avg_price": 232.76,
+          "current_price": 232.01,
+          "market_value": 34.926553,
+          "unrealized_pnl": -0.112904
+        }
+      ]
+    }
+  },
+  {
+    "run_id": "20260609-144011",
+    "date": "2026-06-09",
+    "regime": {
+      "regime": "NEUTRAL",
+      "confidence": 25,
+      "growth_value": "NEUTRAL",
+      "favored_factors": [],
+      "avoid_factors": [],
+      "key_observations": [
+        "Insufficient data to determine market regime with confidence",
+        "SPY showing marginal positive momentum (+0.41%) while QQQ is slightly negative (-0.28%), suggesting mild large-cap growth underperformance on the day",
+        "No moving average context available (50DMA/200DMA position unknown), preventing trend confirmation",
+        "No 1M/3M/6M return data available, preventing momentum or trend regime classification",
+        "No macroeconomic headlines or news flow provided to assess sentiment or catalysts",
+        "The slight divergence between SPY and QQQ (SPY positive, QQQ negative) could hint at mild rotation away from mega-cap tech, but sample size is too small to confirm",
+        "Confidence level set to 25 reflecting near-total data insufficiency \u2014 regime assessment is inconclusive",
+        "Recommend sourcing: yield curve shape, credit spreads (HY vs IG), VIX level, USD trend, and commodity prices before making any regime determination"
+      ]
+    },
+    "candidates": [
+      "LIN",
+      "EQIX",
+      "META",
+      "MSFT",
+      "BAC",
+      "JPM",
+      "ORCL",
+      "AMZN",
+      "TSLA",
+      "GOOGL",
+      "TJX",
+      "EOG",
+      "MRK",
+      "MS",
+      "AAPL",
+      "JNJ",
+      "NVDA",
+      "PLD",
+      "GOOG",
+      "ABBV"
+    ],
+    "quant_scores": {
+      "AAPL": {
+        "ticker": "AAPL",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "MSFT": {
+        "ticker": "MSFT",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "NVDA": {
+        "ticker": "NVDA",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "GOOGL": {
+        "ticker": "GOOGL",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "GOOG": {
+        "ticker": "GOOG",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "AMZN": {
+        "ticker": "AMZN",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "META": {
+        "ticker": "META",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "TSLA": {
+        "ticker": "TSLA",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "ORCL": {
+        "ticker": "ORCL",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "JPM": {
+        "ticker": "JPM",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "BAC": {
+        "ticker": "BAC",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "MS": {
+        "ticker": "MS",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "JNJ": {
+        "ticker": "JNJ",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "ABBV": {
+        "ticker": "ABBV",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "MRK": {
+        "ticker": "MRK",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "TJX": {
+        "ticker": "TJX",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "EOG": {
+        "ticker": "EOG",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "LIN": {
+        "ticker": "LIN",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "PLD": {
+        "ticker": "PLD",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      },
+      "EQIX": {
+        "ticker": "EQIX",
+        "data_available": true,
+        "composite_score": 50.0,
+        "momentum_score": 50.0,
+        "return_1m": null,
+        "return_3m": null,
+        "return_6m": null,
+        "above_50dma": null,
+        "above_200dma": null,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": null,
+        "beta": null,
+        "volatility_score": 50
+      }
+    },
+    "research": {
+      "LIN": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "EQIX": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "META": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "MSFT": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "BAC": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "JPM": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "ORCL": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "AMZN": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "TSLA": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "GOOGL": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "TJX": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "EOG": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "MRK": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "MS": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "AAPL": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "JNJ": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "NVDA": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "PLD": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "GOOG": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "ABBV": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      }
+    },
+    "earnings": {
+      "LIN": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "EQIX": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "META": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "MSFT": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "BAC": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "JPM": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "ORCL": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "AMZN": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "TSLA": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "GOOGL": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "TJX": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "EOG": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "MRK": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "MS": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "AAPL": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "JNJ": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "NVDA": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "PLD": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "GOOG": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      },
+      "ABBV": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": []
+      }
+    },
+    "devils_advocate": {
+      "LIN": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "EQIX": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "META": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "MSFT": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "BAC": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "JPM": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "ORCL": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "AMZN": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "TSLA": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "GOOGL": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "TJX": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "EOG": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "MRK": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "MS": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "AAPL": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "JNJ": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "NVDA": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "PLD": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "GOOG": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "ABBV": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      }
+    },
+    "position_reviews": {
+      "AAPL": {
+        "hold_score": 3,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "REDUCE",
+        "reasoning": "AAPL position warrants reduction due to: (1) Quant composite at 50.0 indicates no directional edge\u2014perfectly neutral across momentum, quality, and valuation metrics; (2) Original thesis confidence was already weak at 5/10, and zero news catalysts provide no fundamental refresh; (3) -7.1% drawdown with no supporting thesis suggests this is a structural underweight relative to expectations; (4) Neutral quants offer no alpha opportunity\u2014position is essentially a market-weighted bet with execution risk; (5) Small position size (0.127 shares) and negative returns indicate this capital should be redeployed to higher-conviction setups. Continue holding only if AAPL is core portfolio allocation; otherwise liquidate and redeploy to positions with >60 composite quant scores and higher thesis confidence (7+/10)."
+      },
+      "EQIX": {
+        "hold_score": 4,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": false,
+        "recommended_action": "REDUCE",
+        "reasoning": "EQIX presents a problematic holding. The original thesis confidence was already weak at 5/10, now compounded by several red flags: (1) Composite quant score of 50.0 indicates median quality\u2014no structural advantage; (2) All four quant pillars (momentum, quality, value, volatility) score at exactly 50.0, suggesting the position lacks conviction across any dimension; (3) Absence of recent catalysts or news removes near-term drivers; (4) Position shows -1.2% loss with no clear alpha thesis to justify holding through drawdown. The lack of differentiation across metrics (all at 50th percentile) combined with low initial confidence suggests this was either a lower-conviction allocation or thesis degradation over time. With no momentum, no valuation edge, no quality advantage, and no volatility play evident, alpha remaining is LOW. Recommend reducing position to redeploy capital toward holdings with higher conviction scores and clear quant/fundamental theses. Consider EXIT if this represents capital that could fuel a higher-quality opportunity."
+      },
+      "MS": {
+        "hold_score": 3,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "REDUCE",
+        "reasoning": "MS presents weak conviction with only 5/10 confidence in thesis. Quant profile is mediocre across all dimensions (50.0 composite, 50.0 momentum, 50 quality, 50 valuation)\u2014all at midpoint suggests no meaningful edge. Position is slightly underwater (-1.0%) with minimal cushion. The absence of any news catalyst and lack of visible momentum/quality/value differentiation indicates the position lacks a clear driver. With low remaining alpha and stalled conviction, this holding does not merit full commitment. Recommend reducing exposure and redeploying capital to higher-conviction positions with better risk/reward asymmetry."
+      },
+      "BAC": {
+        "hold_score": 3,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "REDUCE",
+        "reasoning": "BAC presents a weak position requiring action: (1) Thesis confidence already low at 5/10 with no supporting conviction; (2) Quant composite at 50.0 is neutral/uninspiring\u2014no momentum (50.0), no quality edge (50), no valuation advantage (50); (3) Position near breakeven (+0.2% P&L) with no identified catalyst to drive returns; (4) Banking sector faces structural headwinds (margin compression, duration risk) without clear near-term catalysts; (5) Absence of positive news and weak quantitative signals suggest original rationale has eroded. The position lacks sufficient alpha potential to justify holding. Recommend reducing to free capital for higher-conviction opportunities with better risk/reward asymmetry."
+      },
+      "MRK": {
+        "hold_score": 3,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "EXIT",
+        "reasoning": "Merck presents a weak risk/reward at current levels. The 5/10 confidence threshold is already concerning, indicating low conviction on the thesis. Quantitative metrics are decidedly middling (all scoring 50.0 across composite, momentum, quality, and value), suggesting no compelling edge exists\u2014the stock appears fairly valued with neutral technical characteristics. The -1.7% P&L is immaterial, but the real issue is absence of catalysts and structural weakness: mature pharma with patent cliff risks, limited alpha generation visible in metrics, and no news momentum. With low remaining alpha potential and flat conviction scores, capital would be better deployed elsewhere. The position lacks the quant conviction or narrative catalyst needed to justify holding. Exit and reallocate to higher-conviction opportunities."
+      },
+      "TJX": {
+        "hold_score": 4,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "REDUCE",
+        "reasoning": "TJX shows significant deterioration across multiple dimensions. The composite score of 50.0 indicates no quantitative edge - sitting at median suggests the market has fairly priced the opportunity. All scoring metrics (momentum, quality, value, volatility) at 50 reflects a neutral, undifferentiated position with no directional conviction. The stated confidence of only 5/10 is a red flag suggesting the original thesis conviction has eroded substantially. Position is marginally positive (+1.5% P&L) but shows no evidence of remaining alpha generation. Without recent catalysts and with fundamentals appearing fairly valued, the risk/reward has shifted unfavorably. The small position size (0.216928 shares) suggests this may already be a reduced stake. Recommend trimming further to redeploy capital toward positions with clearer quantitative edges and higher conviction theses. This appears to be a 'hope and hold' situation rather than an active alpha position."
+      },
+      "PLD": {
+        "hold_score": 3,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "REDUCE",
+        "reasoning": "PLD presents significant concerns warranting reduction: (1) Thesis confidence is critically low at 5/10, suggesting the original investment rationale has substantially weakened or been invalidated; (2) Composite quant score of 50.0 is at neutral midpoint with no directional conviction\u2014all four factor pillars (momentum, quality, value, volatility) sit at 50, indicating zero differentiation or edge; (3) No recent news catalysts and flat price action (+3.1% P&L on a near-flatline) suggests the market has priced in available information; (4) The position lacks the quantitative support to justify holding through uncertainty; (5) Missing performance data (1M, 3M returns, beta) prevents assessment of relative outperformance. With low confidence, neutral quants, and no apparent catalysts ahead, capital would be better deployed elsewhere. Reduce position to free up capital for higher-conviction opportunities while limiting downside exposure."
+      },
+      "EOG": {
+        "hold_score": 4,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "REDUCE",
+        "reasoning": "EOG shows concerning deterioration across multiple dimensions. The composite score of 50.0 is at median with no positive momentum differentiation (mom=50.0), and all quality and value metrics are neutral (50 each). Most critically, your stated confidence is only 5/10\u2014acknowledging weak conviction in the thesis. The -2.4% P&L suggests the position has stalled with no near-term catalysts evident (no news, no positive quant signals). The lack of above-50/above-200 day readings and absence of meaningful momentum indicates this is not attracting institutional interest. With median-to-weak quant scores, deteriorating thesis conviction, and no visible catalysts, capital is likely better deployed elsewhere. Reduce position size to free capital for higher-conviction opportunities while limiting downside exposure."
+      },
+      "ABBV": {
+        "hold_score": 3,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": false,
+        "recommended_action": "REDUCE",
+        "reasoning": "ABBV presents a deteriorating risk/reward profile. The composite quant score of 50.0 is neutral at best, with momentum and valuation both at 50 (no edge). Quality metrics at 50 indicate no competitive advantage. Your stated confidence of 5/10 reflects genuine uncertainty\u2014this is a red flag for a core holding. The position is slightly underwater (-0.1%) with no compelling catalysts mentioned. Without visibility on what drove this thesis or what you're waiting for, holding a micro-position (0.13 shares) in a neutral-rated stock wastes portfolio real estate. The lack of recent news and neutral quant backdrop suggest catalysts have either already played out or are not materializing. Recommend reducing to free up capital for higher-conviction opportunities with clearer alpha sources."
+      },
+      "JPM": {
+        "hold_score": 4,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": false,
+        "recommended_action": "REDUCE",
+        "reasoning": "JPM presents a weak risk/reward at current levels. The 5/10 confidence thesis is already a red flag\u2014this position lacks a strong conviction narrative. Composite quant score of 50.0 is neutral at best, indicating no compelling quantitative edge across momentum, quality, or value dimensions. With negligible P&L (+0.4%), the position has failed to generate alpha despite holding. No catalysts appear imminent (no news), and the lack of directional momentum suggests this capital could be deployed more effectively elsewhere. The position size (0.095754 shares) is small enough to reduce without friction. Recommend trimming to redeploy into higher-conviction opportunities with stronger quant signals or clearer catalysts."
+      },
+      "LIN": {
+        "hold_score": 3,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "EXIT",
+        "reasoning": "LIN presents a weak risk/reward profile at current levels: (1) Your original confidence was already low at 5/10, indicating conviction issues from inception. (2) Quantitative signals are neutral across the board\u2014composite, momentum, quality, and value all at 50.0 midpoint with no directional edge. (3) No catalysts or news support forward movement, suggesting the position lacks near-term drivers. (4) Minimal unrealized gain (+1.6%) offers poor compensation for the low conviction thesis and neutral technicals. (5) Position size is small (0.069516 shares), so exit cost is negligible. Better to redeploy limited capital into positions with higher confidence and clearer alpha potential. The lack of conviction + neutral quantitative backdrop + absence of catalysts = no reason to hold."
+      },
+      "JNJ": {
+        "hold_score": 4,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "REDUCE",
+        "reasoning": "JNJ shows concerning signs across multiple dimensions. The composite quant score of 50.0 indicates baseline/neutral positioning with no directional conviction\u2014momentum, quality, and valuation metrics all sit at exactly 50, suggesting the stock lacks distinguishing characteristics that would justify an active position. The stated thesis confidence of only 5/10 is problematic; this represents minimal conviction and indicates the investment rationale may have deteriorated. With no recent catalysts and no meaningful alpha opportunity visible in the data, this position appears to be held primarily on inertia or diversification rather than active conviction. The small negative P&L (-0.3%) and modest position size (0.15 shares) suggest this could be a legacy holding. Given the low conviction, neutral quantitative profile, and absence of near-term catalysts, capital redeployment to higher-conviction opportunities would be prudent. Reduce position and reallocate to setups with clearer alpha potential."
+      }
+    },
+    "portfolio_manager_proposed": [],
+    "cro": {
+      "approved": true,
+      "risk_budget_used": 0,
+      "largest_risk": "none",
+      "rejected_tickers": [],
+      "reasoning": "No trades to evaluate."
+    },
+    "final_decisions": [],
+    "timestamp": "2026-06-09T14:40:11.600080+00:00",
+    "kill_switch_active": false,
+    "market_data_stale": false,
+    "market_data_date": "2026-06-09",
+    "portfolio_snapshot": {
+      "cash": 79.63,
+      "total_value": 497.0957673,
+      "positions": [
+        {
+          "symbol": "AAPL",
+          "qty": 0.127061,
+          "avg_price": 314.89,
+          "current_price": 292.665,
+          "market_value": 37.186308,
+          "unrealized_pnl": -2.823831
+        },
+        {
+          "symbol": "EQIX",
+          "qty": 0.037203,
+          "avg_price": 1076.79,
+          "current_price": 1063.77,
+          "market_value": 39.575435,
+          "unrealized_pnl": -0.484363
+        },
+        {
+          "symbol": "MS",
+          "qty": 0.162508,
+          "avg_price": 215.44,
+          "current_price": 213.2,
+          "market_value": 34.646706,
+          "unrealized_pnl": -0.364018
+        },
+        {
+          "symbol": "BAC",
+          "qty": 0.646234,
+          "avg_price": 54.22,
+          "current_price": 54.31,
+          "market_value": 35.096969,
+          "unrealized_pnl": 0.058161
+        },
+        {
+          "symbol": "MRK",
+          "qty": 0.28935,
+          "avg_price": 121.06,
+          "current_price": 119.025,
+          "market_value": 34.439884,
+          "unrealized_pnl": -0.588827
+        },
+        {
+          "symbol": "TJX",
+          "qty": 0.216928,
+          "avg_price": 161.48,
+          "current_price": 163.98,
+          "market_value": 35.571853,
+          "unrealized_pnl": 0.54232
+        },
+        {
+          "symbol": "PLD",
+          "qty": 0.24597,
+          "avg_price": 142.46,
+          "current_price": 146.87,
+          "market_value": 36.125614,
+          "unrealized_pnl": 1.084737
+        },
+        {
+          "symbol": "EOG",
+          "qty": 0.247912,
+          "avg_price": 141.14,
+          "current_price": 137.785,
+          "market_value": 34.158555,
+          "unrealized_pnl": -0.831744
+        },
+        {
+          "symbol": "ABBV",
+          "qty": 0.133894,
+          "avg_price": 224.43,
+          "current_price": 224.095,
+          "market_value": 30.004976,
+          "unrealized_pnl": -0.044854
+        },
+        {
+          "symbol": "JPM",
+          "qty": 0.095754,
+          "avg_price": 313.72,
+          "current_price": 315.05,
+          "market_value": 30.167298,
+          "unrealized_pnl": 0.127353
+        },
+        {
+          "symbol": "LIN",
+          "qty": 0.069516,
+          "avg_price": 503.91,
+          "current_price": 512.14,
+          "market_value": 35.601924,
+          "unrealized_pnl": 0.572017
+        },
+        {
+          "symbol": "JNJ",
+          "qty": 0.150539,
+          "avg_price": 232.76,
+          "current_price": 232.01,
+          "market_value": 34.926553,
+          "unrealized_pnl": -0.112904
+        }
+      ]
+    }
   }
 ]
