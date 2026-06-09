@@ -426,7 +426,7 @@ def run_daily_cycle():
     # ── Step 8: Publish to Supabase ───────────────────────────────────────────
     print("\n🌐  Step 8: Publishing to Supabase...")
     try:
-        publish_to_supabase(portfolio)
+        publish_to_supabase(portfolio, quant_scores=quant_scores)
         health.record("supabase_publish", OK)
     except Exception as e:
         health.record("supabase_publish", FAILED, message=str(e)[:200])
