@@ -14,7 +14,9 @@ create table public.portfolio_snapshots (
   regime                    text,
   run_id                    text,
   created_at                timestamptz default now(),
-  updated_at                timestamptz default now()
+  updated_at                timestamptz default now(),
+  close_value               numeric,
+  close_at                  timestamptz
 );
 
 -- All executed trades (append-only, one row per order)
@@ -64,6 +66,10 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.positions            TO service_r
 
 -- Migration: add updated_at to portfolio_snapshots (run once if table already exists)
 -- ALTER TABLE public.portfolio_snapshots ADD COLUMN IF NOT EXISTS updated_at timestamptz default now();
+
+-- Migration: add close_value and close_at to portfolio_snapshots (run once if table already exists)
+-- ALTER TABLE public.portfolio_snapshots ADD COLUMN IF NOT EXISTS close_value numeric;
+-- ALTER TABLE public.portfolio_snapshots ADD COLUMN IF NOT EXISTS close_at timestamptz;
 
 -- Daily quant scores for all tickers (one row per date × ticker, for backtesting comparison)
 -- Run once in Supabase SQL Editor to create the table:
