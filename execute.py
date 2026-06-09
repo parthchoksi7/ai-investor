@@ -241,8 +241,8 @@ def execute_trades(decisions: list[dict], portfolio: dict, prices: dict) -> dict
         else:
             qty = 0.0
 
-        if qty == 0:
-            print(f"   ⏸  Skipping {action} {ticker} — qty is 0")
+        if qty <= 0:
+            print(f"   ⏸  Skipping {action} {ticker} — qty {qty:.6f} ≤ 0")
             continue
 
         result = place_order(ticker, action, qty)
