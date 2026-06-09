@@ -55,20 +55,34 @@ Haiku runs for each of up to 20 candidates. Sonnet runs 3 times total. Prompt ca
 
 ## Automated Execution
 
-The daily cycle runs via a **Claude Code scheduled routine** (not GitHub Actions):
+Two scheduled routines run every weekday. Both use the **Robinhood Trading MCP connector** (UUID: `13b51fe0-3004-4fa1-ae70-f3535d95ab6f`) — no Robinhood credentials stored anywhere.
+
+### Daily Trading Cycle
 
 - **Routine ID:** `trig_01Avvj5aBf3sXbDqUB3g4rTm`
 - **Schedule:** `45 13 * * 1-5` (9:45 AM EDT, Mon–Fri)
 - **View/manage:** https://claude.ai/code/routines/trig_01Avvj5aBf3sXbDqUB3g4rTm
-- **DST note:** Cron is UTC. In winter (EST = UTC-5), update to `45 14 * * 1-5` in November, back to `45 13 * * 1-5` in March.
+- **DST note:** In winter (EST = UTC-5), update to `45 14 * * 1-5` in November, back to `45 13 * * 1-5` in March.
 
-The routine uses the **Robinhood Trading MCP connector** (connector UUID: `13b51fe0-3004-4fa1-ae70-f3535d95ab6f`) — no Robinhood credentials stored anywhere.
-
-The routine runs the **full Python pipeline** (`main.py`) with `DRY_RUN=true` — this skips `robin_stocks` execution but runs all 7 agents and writes `pending_decisions.json`. The routine then reads that file and executes orders via the Robinhood MCP directly.
+The routine runs the **full Python pipeline** (`main.py`) with `DRY_RUN=false`, executes trades via the Robinhood MCP, and publishes a portfolio snapshot to Supabase.
 
 Portfolio data is injected via `mcp_portfolio.json` (written by the routine from MCP data), so `execute.py` never needs to call `robin_stocks` in the cloud.
 
 `POLYGON_API_KEY` is embedded in the routine prompt (stored privately in Anthropic's systems). `ANTHROPIC_API_KEY` is expected to be auto-injected by Anthropic's cloud environment.
+
+### EOD Close Snapshot
+
+- **Routine ID:** `trig_01GtedgrYMGHYCJVLLHXZTCq`
+- **Schedule:** `0 20 * * 1-5` (4:00 PM EDT, Mon–Fri)
+- **View/manage:** https://claude.ai/code/routines/trig_01GtedgrYMGHYCJVLLHXZTCq
+- **DST note:** In winter (EST = UTC-5), update to `0 21 * * 1-5` in November, back to `0 20 * * 1-5` in March.
+
+This routine does **not** run the trading pipeline and places **no orders**. It:
+1. Fetches portfolio state from Robinhood MCP
+2. Writes `mcp_portfolio.json`
+3. Runs `python publish.py --close`
+
+The `--close` flag writes both `total_value` (latest) **and** `close_value` + `close_at` (the official 4:00 PM closing price). `close_value` is immutable once written — it is the authoritative daily close used for the performance chart on the website.
 
 ## Running Locally
 
@@ -164,11 +178,33 @@ As a result, the cloud routine uses a different data path than local:
 
 **`mcp_portfolio.json`:** Written by the routine from Robinhood MCP. `get_portfolio_summary()` reads it instead of calling `robin_stocks` when the file exists.
 
+## Website (parth-choksi.com)
+
+The portfolio dashboard at `https://www.parth-choksi.com/work/ai-investor` reads from Supabase. It does **not** fetch live prices on demand.
+
+### Data freshness
+Portfolio value on the website updates at two points each weekday:
+- **9:45 AM ET** — daily trading cycle (`publish.py` called by `main.py`)
+- **4:00 PM ET** — EOD Close Snapshot routine (`publish.py --close`)
+
+The refresh button (↻) on the page re-reads the latest Supabase snapshot. It does not call any external price API. The timestamp shown ("Data as of …") reflects when `publish.py` last ran, not when the user clicked refresh.
+
+### Why no live prices
+The Polygon free tier rate-limits at 5 API calls/minute. With 12+ positions, fetching all prices in a single web request would take 2+ minutes — not viable. The Robinhood MCP is only available in Claude Code sessions, not from Vercel serverless functions. Yahoo Finance now requires authentication (HTTP 401).
+
+### Supabase tables written by publish.py
+| Table | Written by | Contents |
+|-------|-----------|----------|
+| `portfolio_snapshots` | Both routines | `total_value`, `cumulative_return_pct`, `updated_at`, `close_value`, `close_at` |
+| `positions` | Daily cycle only | Per-ticker: `ticker`, `quantity`, `avg_cost`, `current_price`, `unrealized_pct` |
+| `trades` | Daily cycle only | Executed trade log |
+
 ## Known Limitations
 
 - Cloud quant scores are always 50 (no historical data). Agents work from LLM knowledge only.
 - `market_data.py` makes ~90 API calls per run locally (one per ticker for 210-day history). Can be slow (~2–3 min) and may hit Polygon free-tier rate limits.
-- DST: GitHub Actions crons (`market_data.yml`, `health_check.yml`) are auto-updated by `.github/workflows/update_dst.yml` on March 1 and November 1. The Anthropic routine cron (`45 13 * * 1-5`) still requires a manual update — change to `45 14 * * 1-5` in November and back in March.
+- DST: GitHub Actions crons (`market_data.yml`, `health_check.yml`) are auto-updated by `.github/workflows/update_dst.yml` on March 1 and November 1. Both Anthropic routine crons require manual updates — see the EOD note and Daily Cycle note under Automated Execution above.
+- Website shows no live intraday prices. Value is current as of the last routine run (9:45 AM or 4:00 PM ET).
 
 ## Manual Execution Runbook
 
