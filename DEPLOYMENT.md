@@ -225,26 +225,31 @@ python3 - <<'EOF'
 from execute import _compute_qty
 
 # Test: BUY into empty position
+# portfolio=$500, price=$100 → 8% target = $40 → 0.4 shares
 portfolio = {"total_value": 500.0, "cash": 500.0, "positions": []}
 prices = {"NVDA": {"close": 100.0}}
 qty = _compute_qty(0.08, "BUY", "NVDA", portfolio, prices)
-assert abs(qty - 4.0) < 0.01, f"Expected 4.0 shares, got {qty}"
+assert abs(qty - 0.4) < 0.001, f"Expected 0.4 shares, got {qty}"
 
 # Test: BUY to increase an existing position
-portfolio2 = {"total_value": 500.0, "cash": 300.0, "positions": [{"symbol": "NVDA", "qty": 1.0}]}
+# portfolio=$500, already hold 0.1 shares ($10), target=$40 → need $30 more → 0.3 shares
+portfolio2 = {"total_value": 500.0, "cash": 490.0, "positions": [{"symbol": "NVDA", "qty": 0.1}]}
 qty2 = _compute_qty(0.08, "BUY", "NVDA", portfolio2, prices)
-assert abs(qty2 - 3.0) < 0.01, f"Expected 3.0 additional shares, got {qty2}"
+assert abs(qty2 - 0.3) < 0.001, f"Expected 0.3 additional shares, got {qty2}"
 
 # Test: SELL full position
-portfolio3 = {"total_value": 500.0, "cash": 0.0, "positions": [{"symbol": "NVDA", "qty": 5.0}]}
+# hold 0.5 shares, target=0 → sell all 0.5
+portfolio3 = {"total_value": 500.0, "cash": 450.0, "positions": [{"symbol": "NVDA", "qty": 0.5}]}
 qty3 = _compute_qty(0.0, "SELL", "NVDA", portfolio3, prices)
-assert abs(qty3 - 5.0) < 0.01, f"Expected 5.0 (full exit), got {qty3}"
+assert abs(qty3 - 0.5) < 0.001, f"Expected 0.5 (full exit), got {qty3}"
 
 # Test: SELL partial
+# hold 0.5 shares ($50), target=4% ($20) → reduce by $30 → sell 0.3 shares
 qty4 = _compute_qty(0.04, "SELL", "NVDA", portfolio3, prices)
-assert abs(qty4 - 3.0) < 0.01, f"Expected 3.0 (reduce to 4%), got {qty4}"
+assert abs(qty4 - 0.3) < 0.001, f"Expected 0.3 (reduce to 4%), got {qty4}"
 
 # Test: BUY already above target → should be 0
+# hold 0.5 shares ($50 = 10%), target=2% ($10) → already above → 0
 qty5 = _compute_qty(0.02, "BUY", "NVDA", portfolio3, prices)
 assert qty5 == 0.0, f"Expected 0 (already above target), got {qty5}"
 
