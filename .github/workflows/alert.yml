@@ -34,6 +34,20 @@ jobs:
             const h    = JSON.parse(fs.readFileSync('system_health.json', 'utf8'));
             const icon = { DEGRADED: '⚠️', FAILED: '🔴', ABORTED: '🚫' }[h.overall_status] || '❓';
 
+            // Ensure the health-alert label exists (create idempotently)
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner, repo: context.repo.repo, name: 'health-alert',
+              });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  name: 'health-alert', color: 'd93f0b', description: 'Automated pipeline health alert',
+                });
+              }
+            }
+
             const checksTable = Object.entries(h.checks)
               .map(([name, c]) => {
                 const si = { OK: '✅', DEGRADED: '⚠️', FAILED: '❌', ABORTED: '🚫' }[c.status] || '❓';
