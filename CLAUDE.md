@@ -35,14 +35,17 @@ Haiku runs for each of up to 20 candidates. Sonnet runs 3 times total. Prompt ca
 
 | File | Purpose |
 |------|---------|
-| `main.py` | Entry point — 7-step orchestration |
+| `main.py` | Entry point — 9-step orchestration with full health tracking |
 | `market_data.py` | Polygon.io: prices, 210-day history, fundamentals, news |
 | `quant_engine.py` | Pure Python scoring (no LLM) |
 | `analysis.py` | 7-agent pipeline |
 | `execute.py` | Robinhood order execution via `robin_stocks` |
 | `journal.py` | `decision_journal.json` + kill switch |
+| `health.py` | `HealthTracker` — records every pipeline step to `system_health.json` |
+| `fetch_snapshot.py` | Run by GitHub Actions to pre-fetch and commit market data |
 | `trades.csv` | Trade log (committed to GitHub after each run) |
 | `decision_journal.json` | Full thesis + invalidation conditions per trade |
+| `system_health.json` | Written every run; push triggers `alert.yml` |
 | `fundamentals_cache.json` | Weekly fundamentals cache (avoid re-fetching daily) |
 | `portfolio_peak.json` | Tracks portfolio peak for drawdown kill switch |
 
@@ -199,12 +202,75 @@ The Polygon free tier rate-limits at 5 API calls/minute. With 12+ positions, fet
 | `positions` | Daily cycle only | Per-ticker: `ticker`, `quantity`, `avg_cost`, `current_price`, `unrealized_pct` |
 | `trades` | Daily cycle only | Executed trade log |
 
+## Health Monitoring & Alerting
+
+Every run — including aborted runs — writes `system_health.json` to the repo. Pushing this file triggers `.github/workflows/alert.yml`, which opens or updates a GitHub Issue (label: `health-alert`) when any check is non-OK, and auto-closes it on recovery.
+
+### Status levels
+
+| Status | Meaning |
+|--------|---------|
+| `OK` | Step completed normally |
+| `DEGRADED` | Step completed with reduced quality (e.g., shallow history, low confidence) |
+| `FAILED` | Step failed but pipeline continued |
+| `ABORTED` | Pipeline halted before running agents |
+
+### Checks recorded each run
+
+| Check key | Fails when |
+|-----------|-----------|
+| `portfolio` | Robinhood MCP returned zero total value |
+| `kill_switch` | Drawdown > 20% (DEGRADED — still runs SELLs) |
+| `market_data` | `data_date != today` OR `min_depth < 22 bars` → **ABORTED** |
+| `quant_scores` | All scores are 50.0 (no real history reached the engine) |
+| `agent_1_regime` | No output, or confidence < 25 |
+| `agent_2_research` | All or some empty thesis responses |
+| `agent_3_earnings` | All or most default responses (score=5, empty catalysts) |
+| `agent_4_devils_advocate` | All or some empty bear_case responses |
+| `agent_5_position_review` | Open positions exist but no reviews returned |
+| `agent_6_portfolio_manager` | 0 trades proposed despite REDUCE/EXIT signals (data starvation) |
+| `agent_7_cro` | No CRO output returned |
+| `execution` | Trade execution raised an exception |
+| `supabase_publish` | Supabase publish failed |
+
+### Pre-flight abort
+
+The pipeline aborts before running any agents if either condition is true:
+1. `market_data["_data_date"] != today` — snapshot is from a prior day
+2. `min(history_depths) < 22` — not enough bars for any quant calculation
+
+This prevents the silent all-50 quant score failure mode where agents run but produce no trades because they have no quantitative signal. When aborted, `system_health.json` is written immediately and the alert fires.
+
+The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
+
 ## Known Limitations
 
-- Cloud quant scores are always 50 (no historical data). Agents work from LLM knowledge only.
+- Cloud quant scores are always 50 if `market_snapshot.json` isn't available (GitHub Actions job delayed or failed). The pre-flight abort prevents silent no-trade runs.
 - `market_data.py` makes ~90 API calls per run locally (one per ticker for 210-day history). Can be slow (~2–3 min) and may hit Polygon free-tier rate limits.
 - DST: GitHub Actions crons (`market_data.yml`, `health_check.yml`) are auto-updated by `.github/workflows/update_dst.yml` on March 1 and November 1. Both Anthropic routine crons require manual updates — see the EOD note and Daily Cycle note under Automated Execution above.
 - Website shows no live intraday prices. Value is current as of the last routine run (9:45 AM or 4:00 PM ET).
+
+## Testing
+
+Unit tests cover the deterministic parts of the pipeline (no API keys required):
+
+```bash
+pip install pytest
+pytest test_pipeline.py -v
+```
+
+| Test class | Module | What it covers |
+|------------|--------|----------------|
+| `TestHealthTracker` | `health.py` | Status aggregation, severity ordering, alert list, JSON persistence |
+| `TestPctReturn` | `quant_engine.py` | Percentage return calculation edge cases |
+| `TestMomentumScore` | `quant_engine.py` | Uptrend/downtrend scoring, DMA detection, clamping |
+| `TestQualityScore` | `quant_engine.py` | Margin tier thresholds, partial fundamentals |
+| `TestValuationScore` | `quant_engine.py` | PE / FCF yield / EV-EBITDA thresholds, negative PE guard |
+| `TestRiskMetrics` | `quant_engine.py` | Volatility scoring, beta computation, insufficient data defaults |
+| `TestScoreAllTickers` | `quant_engine.py` | Composite weight formula, missing SPY, fundamentals integration |
+| `TestKillSwitches` | `journal.py` | 20% drawdown threshold, peak tracking, zero-value guard |
+| `TestMarkPendingExecuted` | `journal.py` | Idempotency, run_id mismatch guard, missing file safety |
+| `TestPreflightAbortConditions` | `main.py` logic | Stale date guard, min-depth guard, MCP 2-bar scenario |
 
 ## Manual Execution Runbook
 
