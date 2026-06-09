@@ -2,9 +2,10 @@ name: Market Data Fetch
 
 on:
   schedule:
-    # 9:20 AM EDT (UTC-4) on weekdays — 25 min buffer before Anthropic routine at 9:45
-    # In winter (EST = UTC-5): update to '20 14 * * 1-5'
-    - cron: '20 13 * * 1-5'
+    # 8:00 AM EDT (UTC-4) on weekdays — 105 min buffer before Anthropic routine at 9:45 AM.
+    # GitHub Actions queuing can add 30-60 min delay; 105 min ensures the file lands in time.
+    # In winter (EST = UTC-5): update to '0 13 * * 1-5'
+    - cron: '0 12 * * 1-5'
   workflow_dispatch:
 
 jobs:
@@ -23,9 +24,21 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Fetch and upload market snapshot
+      - name: Fetch market snapshot
         env:
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: python fetch_snapshot.py
+
+      - name: Commit market_snapshot.json to repo
+        run: |
+          git config user.name  "Market Data Bot"
+          git config user.email "market-data-bot@users.noreply.github.com"
+          git add market_snapshot.json
+          # Only commit if the file actually changed
+          git diff --staged --quiet && echo "No changes to commit" || \
+            git commit -m "chore: market snapshot [skip ci]"
+
+      - name: Push snapshot
+        run: git push
