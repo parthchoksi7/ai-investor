@@ -25,6 +25,7 @@ STARTING_CAPITAL = 500.0
 TRANSACTIONS_FILE = "transactions.json"
 PEAK_FILE = "portfolio_peak.json"
 AGENT_LOG_FILE = "agent_log.json"
+SNAPSHOT_FILE = "portfolio_snapshot.json"
 
 
 def _load(path: str, default):
@@ -103,6 +104,60 @@ def _publish_quant_scores(client, quant_scores: dict, today: str) -> None:
 
 
 def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None = None, is_close: bool = False) -> None:
+    # ── Load portfolio_snapshot.json (written by cloud routine, read by GH Actions) ─
+    file_snapshot = _load(SNAPSHOT_FILE, {})
+
+    # is_close: explicit arg wins; snapshot is the fallback when GH Actions reads it
+    if not is_close:
+        is_close = bool(file_snapshot.get("is_close", False))
+
+    # ── Portfolio state: arg → snapshot → mcp_portfolio.json ─────────────────
+    if portfolio is None:
+        portfolio = file_snapshot.get("portfolio") or _load(
+            "mcp_portfolio.json",
+            {"cash": STARTING_CAPITAL, "total_value": STARTING_CAPITAL, "positions": []},
+        )
+
+    # ── Quant scores: arg → snapshot ──────────────────────────────────────────
+    if quant_scores is None:
+        quant_scores = file_snapshot.get("quant_scores")
+
+    total_value = float(portfolio.get("total_value", STARTING_CAPITAL))
+    cash        = float(portfolio.get("cash", STARTING_CAPITAL))
+    positions   = portfolio.get("positions", [])
+
+    # ── Regime: snapshot → agent_log.json ─────────────────────────────────────
+    regime = file_snapshot.get("regime", "")
+    if not regime:
+        logs = _load(AGENT_LOG_FILE, [])
+        if logs:
+            last_log = logs[-1]
+            regime_data = last_log.get("regime", {})
+            if isinstance(regime_data, dict):
+                regime = regime_data.get("regime", "")
+
+    # ── Write portfolio_snapshot.json for GH Actions trigger ─────────────────
+    # Supabase is blocked in Anthropic's cloud, so the cloud routine writes this
+    # file and commits it. The push triggers publish.yml in GitHub Actions, which
+    # has Supabase access. GITHUB_ACTIONS guard prevents an infinite trigger loop.
+    if not os.environ.get("GITHUB_ACTIONS"):
+        try:
+            with open(SNAPSHOT_FILE, "w") as _sf:
+                json.dump(
+                    {
+                        "is_close":     is_close,
+                        "portfolio":    portfolio,
+                        "quant_scores": quant_scores,
+                        "regime":       regime,
+                        "written_at":   datetime.now(timezone.utc).isoformat(),
+                    },
+                    _sf,
+                    indent=2,
+                )
+        except Exception as _e:
+            print(f"   ⚠️  Could not write {SNAPSHOT_FILE}: {_e}")
+
+    # ── Supabase connection ────────────────────────────────────────────────────
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
     if not supabase_url or not supabase_key:
@@ -116,27 +171,10 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
         print("   supabase package not installed — skipping publish. Run: pip install supabase")
         return
 
-    # ── Portfolio state ────────────────────────────────────────────────────────
-    if portfolio is None:
-        portfolio = _load("mcp_portfolio.json", {"cash": STARTING_CAPITAL, "total_value": STARTING_CAPITAL, "positions": []})
-
-    total_value = float(portfolio.get("total_value", STARTING_CAPITAL))
-    cash        = float(portfolio.get("cash", STARTING_CAPITAL))
-    positions   = portfolio.get("positions", [])
-
     # ── Drawdown ───────────────────────────────────────────────────────────────
     peak_data = _load(PEAK_FILE, {})
     peak      = float(peak_data.get("peak", total_value))
     drawdown  = max(0.0, (peak - total_value) / peak * 100) if peak > 0 else 0.0
-
-    # ── Regime (from last agent log entry) ────────────────────────────────────
-    regime = ""
-    logs = _load(AGENT_LOG_FILE, [])
-    if logs:
-        last_log = logs[-1]
-        regime_data = last_log.get("regime", {})
-        if isinstance(regime_data, dict):
-            regime = regime_data.get("regime", "")
 
     # ── SPY benchmark ──────────────────────────────────────────────────────────
     polygon_key = os.getenv("POLYGON_API_KEY")
@@ -147,7 +185,7 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     today = datetime.now().strftime("%Y-%m-%d")
     cumulative_return = round((total_value - STARTING_CAPITAL) / STARTING_CAPITAL * 100, 4)
 
-    snapshot: dict = {
+    snapshot_row: dict = {
         "date":                      today,
         "total_value":               round(total_value, 2),
         "cash":                      round(cash, 2),
@@ -158,14 +196,14 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
         "updated_at":                datetime.now(timezone.utc).isoformat(),
     }
     if is_close:
-        snapshot["close_value"] = round(total_value, 2)
-        snapshot["close_at"]    = datetime.now(timezone.utc).isoformat()
+        snapshot_row["close_value"] = round(total_value, 2)
+        snapshot_row["close_at"]    = datetime.now(timezone.utc).isoformat()
     if spy_close is not None:
-        snapshot["spy_close"] = round(spy_close, 4)
+        snapshot_row["spy_close"] = round(spy_close, 4)
     if spy_cumulative is not None:
-        snapshot["spy_cumulative_return_pct"] = spy_cumulative
+        snapshot_row["spy_cumulative_return_pct"] = spy_cumulative
 
-    client.table("portfolio_snapshots").upsert(snapshot).execute()
+    client.table("portfolio_snapshots").upsert(snapshot_row).execute()
     print(f"   📊 Snapshot published: value=${total_value:,.2f} return={cumulative_return:+.2f}%"
           + (f" spy={spy_cumulative:+.2f}%" if spy_cumulative is not None else ""))
 

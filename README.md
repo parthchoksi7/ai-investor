@@ -118,12 +118,14 @@ Tests cover the quant engine (pure functions), health tracker, kill switch logic
 | `pending_decisions.json` | `main.py` | Cloud routine (idempotency) |
 | `decision_journal.json` | `journal.py` | `main.py` |
 | `fundamentals_cache.json` | `market_data.py` | `market_data.py` (weekly cache) |
+| `portfolio_snapshot.json` | Cloud routine (via `publish.py`) | `publish.yml` GitHub Action → Supabase |
 
 ## GitHub Actions
 
 | Workflow | Schedule | Purpose |
 |----------|----------|---------|
 | `market_data.yml` | 8:00 AM ET weekdays | Fetch snapshot, commit `market_snapshot.json` |
+| `publish.yml` | On `portfolio_snapshot.json` push | Publish portfolio to Supabase (Supabase is blocked in Anthropic cloud) |
 | `health_check.yml` | 11:00 AM ET weekdays | Verify Supabase has today's portfolio snapshot |
 | `alert.yml` | On `system_health.json` push | Open/close GitHub Issues on pipeline failure |
 | `update_dst.yml` | Mar 15, Nov 8 | Auto-update cron times for EDT↔EST |
