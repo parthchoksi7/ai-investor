@@ -92,7 +92,10 @@ def mark_pending_executed(run_id: str) -> None:
 
 
 def get_recent_decisions(n: int = 20) -> list:
-    return _load(JOURNAL_FILE, [])[-n:]
+    data = _load(JOURNAL_FILE, [])
+    if not isinstance(data, list):
+        data = []
+    return data[-n:]
 
 
 def check_kill_switches(portfolio: dict) -> tuple[bool, str]:

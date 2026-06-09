@@ -115,7 +115,10 @@ def run_daily_cycle():
         print("\n   No trades today.")
         # ── Step 8: Publish snapshot even on no-trade days ────────────────────
         print("\n🌐  Step 8: Publishing to Supabase...")
-        publish_to_supabase(portfolio, quant_scores=quant_scores)
+        try:
+            publish_to_supabase(portfolio, quant_scores=quant_scores)
+        except Exception as e:
+            print(f"   ⚠ Supabase publish skipped: {e}")
         print("\n✅  Daily cycle complete.")
         print("=" * 60 + "\n")
         return
@@ -214,7 +217,10 @@ def run_daily_cycle():
 
     # ── Step 8: Publish to Supabase ───────────────────────────────────────────
     print("\n🌐  Step 8: Publishing to Supabase...")
-    publish_to_supabase(portfolio)
+    try:
+        publish_to_supabase(portfolio)
+    except Exception as e:
+        print(f"   ⚠ Supabase publish skipped: {e}")
 
     print("\n✅  Daily cycle complete.")
     print("=" * 60 + "\n")
