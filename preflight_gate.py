@@ -78,11 +78,16 @@ def _check_api_health() -> tuple[bool, str]:
 
     try:
         client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
-        client.messages.create(
+        # Use 50 tokens (not 1) to simulate real agent load — under heavy API load,
+        # short requests succeed while 600-token requests silently return empty.
+        resp = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=1,
-            messages=[{"role": "user", "content": "ping"}],
+            max_tokens=50,
+            messages=[{"role": "user", "content": 'Reply with exactly: {"status":"ok"}'}],
         )
+        body = resp.content[0].text.strip() if resp.content else ""
+        if not body:
+            return False, "Anthropic API returned empty response under load — skipping run"
         return True, "API healthy"
     except Exception as e:
         err = str(e)
