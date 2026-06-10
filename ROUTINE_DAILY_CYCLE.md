@@ -196,6 +196,26 @@ git push || echo "WARNING: git push failed — trades executed but artifacts not
 
 ---
 
+## What changed — Jun 10 2026 (commits `7652b9d`, `8f0b2e9`)
+
+1. **STEP 1 — `available_qty` field added** to `mcp_portfolio.json`. Write
+   `shares_available_for_sells` from `get_equity_positions` as `available_qty` alongside `qty`.
+   `execute.py:_compute_qty` now caps SELL orders to `available_qty` to prevent oversell when
+   shares are held for options events or pending transfers.
+2. **STEP 3 validation** now reads `system_health.json` and reports any FAILED/DEGRADED agent
+   checks as informational warnings (not hard stops). Identifies 529 API overload failures vs.
+   genuine data problems.
+3. **Code changes in `analysis.py`** (pulled automatically via `git pull` in STEP 0):
+   - All 7 agents now retry up to 2× on failure (3 total attempts).
+   - 529/overloaded errors use 30s/60s backoff instead of 1s/2s.
+   - CRO default adds `api_failed: True` flag; health records DEGRADED (not OK) when CRO API fails.
+4. **Code changes in `main.py`** (pulled automatically):
+   - Circuit breaker: halts execution if SELL notional > 50% of portfolio value.
+   - All `date` stamps now use `America/New_York` explicitly (was UTC).
+5. **Code changes in `journal.py`** (pulled automatically):
+   - All JSON writes are now atomic (`.tmp` + `os.replace()`).
+   - `agent_log.json` capped at 90 entries.
+
 ## What changed vs. the previous prompt (Jun 9 2026)
 
 1. **Added STEP 0 pre-flight gate** + moved `git pull --ff-only` to STEP 0 (was in STEP 2). The

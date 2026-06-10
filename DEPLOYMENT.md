@@ -257,6 +257,11 @@ assert qty5 == 0.0, f"Expected 0 (already above target), got {qty5}"
 qty6 = _compute_qty(0.08, "BUY", "MISSING", portfolio, prices)
 assert qty6 == 0.0, f"Expected 0 (no price), got {qty6}"
 
+# Test: SELL capped by available_qty (shares_available_for_sells < qty)
+portfolio4 = {"total_value": 500.0, "cash": 450.0, "positions": [{"symbol": "NVDA", "qty": 0.5, "available_qty": 0.3}]}
+qty7 = _compute_qty(0.0, "SELL", "NVDA", portfolio4, prices)
+assert abs(qty7 - 0.3) < 0.001, f"Expected 0.3 (capped by available_qty), got {qty7}"
+
 print("✅ All quantity tests passed")
 EOF
 ```
@@ -879,12 +884,17 @@ These are documented risks in the current system. Any deployment that touches th
 |------|----------|----------|------------|
 | No `target_weight` bounds validation before execution | `execute.py:_compute_qty` | High | PM prompt constrains to 0.10; review PM output in dry-run |
 | Portfolio state is snapshot at pipeline time, not execution time | `main.py`, `execute.py` | Medium | Market orders; prices drift between analysis and execution. Acceptable for small portfolio |
-| `agent_log.json` grows unboundedly | `journal.py:record_run` | Low | File is committed to git; will slow clone over time |
+| `agent_log.json` grows unboundedly | `journal.py:record_run` | ~~Low~~ **Fixed `8f0b2e9`** | Capped at 90 entries (~3 months). Previously whole file loaded into memory each run |
 | No fill confirmation — broker order "placed" ≠ "filled" | `execute.py:place_order` | Medium | Manual reconciliation in Step 8.2 after each live run |
 | DST clock drift | Routine cron | Medium | Manual update in November/March; noted in CLAUDE.md |
 | mcp_portfolio.json staleness in cloud | `execute.py:get_portfolio_summary` | High | Cloud routine must write fresh mcp_portfolio.json at start of every run |
 | Cloud market data limited to MCP quotes only | `market_data.py` | Medium | Quant scores default to 50; agents use training knowledge |
-| No automated alerting on pipeline failure | All | High | Monitor manually after each deployment's first run |
+| No automated alerting on pipeline failure | All | ~~High~~ **Partially fixed** | `system_health.json` + `alert.yml` GitHub Issue alerts on FAILED/DEGRADED; 529 API retries prevent silent agent failures |
+| JSON files corruptible mid-write | `journal.py`, `health.py` | ~~High~~ **Fixed `8f0b2e9`** | All writes now atomic via `.tmp` + `os.replace()` |
+| UTC vs ET date mismatch in logs | `main.py`, `execute.py`, `journal.py` | ~~Medium~~ **Fixed `8f0b2e9`** | All date stamps now use `America/New_York` explicitly |
+| SELL qty not bounded by sellable shares | `execute.py:_compute_qty` | ~~Medium~~ **Fixed `8f0b2e9`** | `_compute_qty` now caps SELL to `available_qty` (from `shares_available_for_sells`) |
+| Full portfolio churn on bad PM output | `main.py` | ~~Medium~~ **Fixed `8f0b2e9`** | Circuit breaker halts execution if SELL notional > 50% of portfolio |
+| Transient Anthropic 529 overloads kill agent pipeline | `analysis.py` | ~~High~~ **Fixed `7652b9d`** | All agents retry 2× with 30s/60s backoff on 529 responses |
 
 ---
 
