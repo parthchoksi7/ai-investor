@@ -6,6 +6,9 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+_ET = ZoneInfo("America/New_York")
 
 
 JOURNAL_FILE = "decision_journal.json"
@@ -24,8 +27,12 @@ def _load(path: str, default):
 
 
 def _save(path: str, data) -> None:
-    with open(path, "w") as f:
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
         json.dump(data, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)  # atomic on POSIX and Windows
 
 
 def record_trade(
@@ -44,7 +51,7 @@ def record_trade(
     trade_id = str(uuid.uuid4())
     journal.append({
         "trade_id": trade_id,
-        "date": datetime.now().strftime("%Y-%m-%d"),
+        "date": datetime.now(_ET).strftime("%Y-%m-%d"),
         "ticker": ticker,
         "action": action,
         "target_weight": target_weight,
@@ -62,10 +69,14 @@ def record_trade(
     return trade_id
 
 
+_AGENT_LOG_MAX = 90  # ~3 months of trading days
+
 def record_run(run_id: str, pipeline_state: dict) -> None:
     """Append a full agent pipeline run to agent_log.json (every run, including no-trade days)."""
     log = _load(AGENT_LOG_FILE, [])
     log.append({"run_id": run_id, **pipeline_state})
+    if len(log) > _AGENT_LOG_MAX:
+        log = log[-_AGENT_LOG_MAX:]
     _save(AGENT_LOG_FILE, log)
 
 

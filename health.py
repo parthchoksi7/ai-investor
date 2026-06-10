@@ -64,7 +64,9 @@ class HealthTracker:
             "checks":         self.checks,
             "alerts":         self.alerts,
         }
-        Path(HEALTH_FILE).write_text(json.dumps(data, indent=2))
+        tmp = HEALTH_FILE + ".tmp"
+        Path(tmp).write_text(json.dumps(data, indent=2))
+        Path(tmp).replace(HEALTH_FILE)  # atomic
         return data
 
 
