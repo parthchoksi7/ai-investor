@@ -173,14 +173,24 @@ For each decision where action is BUY or SELL:
   4. LOG the result (ticker, qty, order id or error) to the session output.
 
 Skip HOLD decisions entirely.
-If pending_decisions["decisions"] is [], skip directly to the stamp step.
+If pending_decisions["decisions"] is [], skip order placement and go to the stamp step.
 
-AFTER ALL ORDERS ARE PLACED (or if decisions was empty), stamp the execution:
+AFTER ALL ORDERS ARE PLACED (or if decisions was empty), stamp the execution —
+BUT only if the CRO made a genuine decision. If the CRO itself failed due to API
+error (api_failed=True in system_health.json), do NOT stamp: the next retry should
+get a fresh run when the API recovers.
+
 python - <<'PY'
-import json
+import json, os
 from journal import mark_pending_executed
 p = json.load(open('pending_decisions.json'))
-mark_pending_executed(p['run_id'])
+h = json.load(open('system_health.json')) if os.path.exists('system_health.json') else {}
+cro_api_failed = h.get('checks', {}).get('agent_7_cro', {}).get('api_failed', False)
+if p['decisions'] or not cro_api_failed:
+    mark_pending_executed(p['run_id'])
+    print(f"Execution stamped: run_id={p['run_id']}")
+else:
+    print("Skipping execution stamp — CRO blocked trades due to API error, not a risk decision. Next retry will re-run.")
 PY
 
 ═══════════════════════════════════════════════
