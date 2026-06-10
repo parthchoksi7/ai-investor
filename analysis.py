@@ -244,9 +244,12 @@ def _parse_json(text: str, default):
                 return default
         else:
             return default
-    # Unwrap [{...}] → {...} when a dict is expected (model occasionally wraps in array)
-    if isinstance(result, list) and len(result) == 1 and isinstance(result[0], dict) and isinstance(default, dict):
-        return result[0]
+    # Unwrap list → dict when a dict is expected (model occasionally wraps in array)
+    if isinstance(result, list) and isinstance(default, dict):
+        for item in result:
+            if isinstance(item, dict):
+                return item
+        return default
     return result
 
 
