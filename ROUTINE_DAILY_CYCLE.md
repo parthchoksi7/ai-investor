@@ -115,10 +115,17 @@ if p.get('date') != today:
     print(f"ERROR: pending_decisions.json is dated {p.get('date')!r}, expected {today!r}")
     print("main.py exited early — market snapshot for today was not available.")
     sys.exit(1)
+h = json.load(open('system_health.json')) if __import__('os').path.exists('system_health.json') else {}
+checks = h.get('checks', {})
+agent_failures = [k for k,v in checks.items() if v.get('status') in ('FAILED','DEGRADED') and k.startswith('agent_')]
+if agent_failures:
+    print(f"WARNING: agent failures detected: {agent_failures}")
+    print("analysis.py retries up to 3 attempts with 30s/60s backoff on 529 errors — these are transient Anthropic API overloads.")
 print(f"Pipeline OK: {len(p['decisions'])} decision(s) for {today}")
 PY
 
-If this check fails, STOP. Do not attempt order execution.
+If this check fails (date mismatch), STOP. Do not attempt order execution.
+Agent warnings (FAILED/DEGRADED) are informational — the pipeline handles them with retries.
 
 ═══════════════════════════════════════════════
 STEP 4 — Execute trades via Robinhood MCP

@@ -274,6 +274,10 @@ def run_daily_cycle():
     cro = pipeline_state.get("cro", {})
     if not cro:
         health.record("agent_7_cro", FAILED, message="No CRO output")
+    elif cro.get("api_failed"):
+        health.record("agent_7_cro", DEGRADED, message="CRO API error — trades approved by default",
+                      approved=cro.get("approved"),
+                      vetoed=cro.get("rejected_tickers", []))
     else:
         health.record("agent_7_cro", OK,
                       approved=cro.get("approved"),
