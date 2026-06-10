@@ -3,7 +3,22 @@ quant_engine.py — Deterministic scoring. No LLM involved.
 """
 
 import math
-import statistics
+
+
+def _mean(values: list) -> float:
+    return sum(values) / len(values)
+
+
+def _variance(values: list) -> float:
+    n = len(values)
+    if n < 2:
+        return 0.0
+    m = _mean(values)
+    return sum((x - m) ** 2 for x in values) / (n - 1)
+
+
+def _stdev(values: list) -> float:
+    return math.sqrt(_variance(values))
 
 
 def _pct_return(closes: list[float], n: int) -> float | None:
@@ -22,15 +37,15 @@ def compute_momentum_score(history: list[dict]) -> dict:
             "above_50dma": None, "above_200dma": None,
         }
 
-    closes = [d["close"] for d in history]
+    closes = [float(d["close"]) for d in history]
     current = closes[-1]
 
     r1m = _pct_return(closes, 21)
     r3m = _pct_return(closes, 63)
     r6m = _pct_return(closes, 126)
 
-    dma50  = statistics.mean(closes[-50:])  if len(closes) >= 50  else None
-    dma200 = statistics.mean(closes[-200:]) if len(closes) >= 200 else None
+    dma50  = _mean(closes[-50:])  if len(closes) >= 50  else None
+    dma200 = _mean(closes[-200:]) if len(closes) >= 200 else None
     above_50  = bool(current > dma50)  if dma50  else None
     above_200 = bool(current > dma200) if dma200 else None
 
@@ -76,7 +91,7 @@ def compute_quality_score(fundamentals: dict | None) -> dict:
     if de is not None:
         scores.append(90 if de < 0.5 else 70 if de < 1.0 else 50 if de < 2.0 else 25)
 
-    return {"quality_score": round(statistics.mean(scores), 1) if scores else 50}
+    return {"quality_score": round(_mean(scores), 1) if scores else 50}
 
 
 def compute_valuation_score(fundamentals: dict | None) -> dict:
@@ -98,7 +113,7 @@ def compute_valuation_score(fundamentals: dict | None) -> dict:
     if ev_ebitda is not None and ev_ebitda > 0:
         scores.append(90 if ev_ebitda < 10 else 70 if ev_ebitda < 15 else 50 if ev_ebitda < 25 else 30 if ev_ebitda < 40 else 10)
 
-    return {"valuation_score": round(statistics.mean(scores), 1) if scores else 50}
+    return {"valuation_score": round(_mean(scores), 1) if scores else 50}
 
 
 def compute_risk_metrics(history: list[dict], spy_history: list[dict]) -> dict:
@@ -106,22 +121,22 @@ def compute_risk_metrics(history: list[dict], spy_history: list[dict]) -> dict:
     if len(history) < 22:
         return {"volatility": None, "beta": None, "volatility_score": 50}
 
-    closes = [d["close"] for d in history]
+    closes = [float(d["close"]) for d in history]
     daily_ret = [(closes[i] - closes[i - 1]) / closes[i - 1] for i in range(1, len(closes))]
     recent = daily_ret[-63:]  # 3-month window
 
-    vol = statistics.stdev(recent) * math.sqrt(252) * 100  # annualized %
+    vol = _stdev(recent) * math.sqrt(252) * 100  # annualized %
 
     beta = None
     if spy_history and len(spy_history) >= 22:
-        spy_closes = [d["close"] for d in spy_history]
+        spy_closes = [float(d["close"]) for d in spy_history]
         spy_ret = [(spy_closes[i] - spy_closes[i - 1]) / spy_closes[i - 1] for i in range(1, len(spy_closes))]
         n = min(len(recent), len(spy_ret))
         sr, mr = recent[-n:], spy_ret[-n:]
         if n > 2:
-            mean_s, mean_m = statistics.mean(sr), statistics.mean(mr)
+            mean_s, mean_m = _mean(sr), _mean(mr)
             cov = sum((s - mean_s) * (m - mean_m) for s, m in zip(sr, mr)) / (n - 1)
-            spy_var = statistics.variance(mr)
+            spy_var = _variance(mr)
             beta = round(cov / spy_var, 2) if spy_var > 0 else None
 
     # Normalize 15%–80% annualized vol range to 100→0 score
