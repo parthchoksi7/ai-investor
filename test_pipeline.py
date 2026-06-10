@@ -622,3 +622,73 @@ class TestPreflightAbortConditions:
         if min_depth < 22:
             abort_reasons.append(f"history depth is {min_depth} bars")
         assert len(abort_reasons) == 2
+
+
+# ── preflight_gate.py ─────────────────────────────────────────────────────────
+
+class TestPreflightGate:
+    """The morning gate that decides whether the routine should run at all.
+
+    Run as a subprocess against fixture files in a tmp cwd, since the script
+    reads fixed-name files and computes today's ET date at import time.
+    """
+
+    import os
+    import subprocess
+    import sys
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    GATE = os.path.join(os.path.dirname(__file__), "preflight_gate.py")
+
+    def _today_et(self):
+        return self.datetime.now(self.ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+
+    def _run(self, tmp_path):
+        return self.subprocess.run(
+            [self.sys.executable, self.GATE],
+            cwd=str(tmp_path), capture_output=True, text=True,
+        ).returncode
+
+    def _write(self, tmp_path, name, obj):
+        (tmp_path / name).write_text(json.dumps(obj))
+
+    def test_proceed_when_fresh_and_not_executed(self, tmp_path):
+        today = self._today_et()
+        self._write(tmp_path, "market_snapshot.json",
+                    {"date": today, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 200}})
+        self._write(tmp_path, "pending_decisions.json", {"date": today, "executed_at": None})
+        assert self._run(tmp_path) == 0  # PROCEED
+
+    def test_skip_done_when_already_executed_today(self, tmp_path):
+        today = self._today_et()
+        self._write(tmp_path, "market_snapshot.json",
+                    {"date": today, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 200}})
+        self._write(tmp_path, "pending_decisions.json",
+                    {"date": today, "run_id": "x", "executed_at": "2026-01-01T00:00:00Z"})
+        assert self._run(tmp_path) == 20  # SKIP/DONE — idempotency
+
+    def test_skip_retry_when_snapshot_stale(self, tmp_path):
+        today = self._today_et()
+        self._write(tmp_path, "market_snapshot.json",
+                    {"date": "2020-01-01", "prices": {}, "history": {"AAPL": [{}] * 200}})
+        self._write(tmp_path, "pending_decisions.json", {"date": today, "executed_at": None})
+        assert self._run(tmp_path) == 10  # SKIP/RETRY
+
+    def test_skip_retry_when_snapshot_missing(self, tmp_path):
+        assert self._run(tmp_path) == 10  # SKIP/RETRY — no data landed yet
+
+    def test_skip_retry_when_insufficient_history(self, tmp_path):
+        today = self._today_et()
+        self._write(tmp_path, "market_snapshot.json",
+                    {"date": today, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 5}})
+        assert self._run(tmp_path) == 10  # SKIP/RETRY — <22 bars
+
+    def test_done_takes_precedence_over_stale(self, tmp_path):
+        """If already executed, skip-done even if the snapshot looks stale."""
+        today = self._today_et()
+        self._write(tmp_path, "market_snapshot.json",
+                    {"date": "2020-01-01", "prices": {}, "history": {}})
+        self._write(tmp_path, "pending_decisions.json",
+                    {"date": today, "run_id": "x", "executed_at": "2026-01-01T00:00:00Z"})
+        assert self._run(tmp_path) == 20  # SKIP/DONE wins
