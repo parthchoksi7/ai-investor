@@ -258,7 +258,12 @@ def _safe_call(model, system, user_msg, default, max_tokens=600, retries=2):
     for attempt in range(retries + 1):
         try:
             raw = _call(model, system, user_msg, max_tokens=max_tokens)
-            return _parse_json(raw, default)
+            result = _parse_json(raw, default)
+            # If result is identical to the default, the response was likely empty/truncated
+            # under API load — treat as retryable rather than silently accepting blank fields.
+            if result == default and attempt < retries:
+                raise ValueError(f"Response parsed to default (raw_len={len(raw)}) — retrying")
+            return result
         except Exception as e:
             if attempt < retries:
                 err = str(e)
