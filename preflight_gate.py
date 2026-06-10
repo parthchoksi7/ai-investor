@@ -16,10 +16,11 @@ The gate is idempotent across the multiple daily attempts: it guarantees the
 pipeline executes at most once per day, only when data is fresh.
 
 Exit codes (the routine MUST branch on these):
-  0  → PROCEED:  fresh data, not yet executed today. Run ``main.py`` + execute.
-  10 → SKIP/RETRY: ``market_snapshot.json`` is not fresh for today. Do NOT run
+  0  → PROCEED:  fresh data, API healthy, not yet executed today. Run ``main.py``.
+  10 → SKIP/RETRY: data not fresh OR Anthropic API overloaded (529). Do NOT run
        the pipeline. Stop this attempt; the next scheduled attempt (+60 min)
-       will re-check. If all attempts see stale data, the day is simply skipped.
+       will re-check. If all attempts see stale data or a degraded API, the day
+       is simply skipped.
   20 → SKIP/DONE: today's pipeline already executed (idempotency). Do NOT run
        again — re-running would risk double-execution.
 
@@ -30,6 +31,7 @@ Usage in the routine (after ``git pull`` to get the latest pushed snapshot):
 """
 
 import json
+import os
 import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -52,6 +54,42 @@ def _read_json(path):
             return json.load(f)
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def _check_api_health() -> tuple[bool, str]:
+    """Make a minimal 1-token Anthropic API call to verify the API is not overloaded.
+    Returns (healthy: bool, message: str).
+    """
+    try:
+        import anthropic
+    except ImportError:
+        return True, "anthropic package not installed — skipping canary check"
+
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    # In the cloud routine the key is auto-injected; locally it comes from .env.
+    # If neither is available skip the check rather than blocking on a missing key.
+    if not api_key:
+        try:
+            token_file = os.getenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE")
+            if not token_file:
+                return True, "No API key available — skipping canary check"
+        except Exception:
+            return True, "No API key available — skipping canary check"
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
+        client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+        return True, "API healthy"
+    except Exception as e:
+        err = str(e)
+        if "529" in err or "overloaded" in err.lower():
+            return False, f"Anthropic API overloaded (529) — {err[:120]}"
+        # Non-529 errors (auth, network) — don't block on them; let main.py surface the real error.
+        return True, f"Canary check non-529 error (proceeding): {err[:120]}"
 
 
 def main() -> int:
@@ -95,10 +133,20 @@ def main() -> int:
         )
         return SKIP_RETRY
 
+    # 3. API health — canary call to catch Anthropic 529 overloads before burning
+    #    the full pipeline against a degraded API.
+    api_ok, api_msg = _check_api_health()
+    if not api_ok:
+        print(
+            f"SKIP/RETRY: {api_msg}. "
+            "Not running; the next scheduled attempt (+60 min) will re-check."
+        )
+        return SKIP_RETRY
+
     print(
         f"PROCEED: fresh market_snapshot.json (date={TODAY}, "
-        f"{len(snap.get('prices', {}))} tickers, min_depth={min_depth}) and not "
-        "yet executed today. Run main.py."
+        f"{len(snap.get('prices', {}))} tickers, min_depth={min_depth}), "
+        f"API healthy, and not yet executed today. Run main.py."
     )
     return PROCEED
 
