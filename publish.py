@@ -182,7 +182,14 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     spy_cumulative = _get_spy_cumulative(client, spy_close)
 
     # ── Upsert portfolio snapshot ──────────────────────────────────────────────
-    today = datetime.now().strftime("%Y-%m-%d")
+    # When GitHub Actions publishes a snapshot committed after midnight UTC,
+    # datetime.now() would return the wrong date. Use written_at from the
+    # snapshot file as the authoritative date when available.
+    snapshot_written_at = file_snapshot.get("written_at", "")
+    if snapshot_written_at and os.environ.get("GITHUB_ACTIONS"):
+        today = snapshot_written_at[:10]
+    else:
+        today = datetime.now().strftime("%Y-%m-%d")
     cumulative_return = round((total_value - STARTING_CAPITAL) / STARTING_CAPITAL * 100, 4)
 
     snapshot_row: dict = {
@@ -274,7 +281,7 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     # ── Quant scores ───────────────────────────────────────────────────────────
     if quant_scores:
         try:
-            _publish_quant_scores(client, quant_scores, date.today().isoformat())
+            _publish_quant_scores(client, quant_scores, today)
         except Exception as e:
             print(f"   ⚠️  Quant scores publish failed — {e}")
 
