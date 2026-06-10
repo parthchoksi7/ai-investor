@@ -290,9 +290,19 @@ This prevents the silent all-50 quant score failure mode where agents run but pr
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
 
-## Changelog — Jun 9 2026
+## Changelog — Jun 10 2026
 
 Every substantive fix that landed today, newest first:
+
+| Commit | Change | Why it mattered |
+|--------|--------|-----------------|
+| `8f0b2e9` | Atomic JSON writes (`journal.py`, `health.py`); ET timezone everywhere; SELL cap vs `available_qty`; 50% daily turnover circuit breaker (`main.py`) | Eliminates JSON corruption on process kill; UTC/ET date mismatch at year-end; oversell rejection from broker; full-portfolio churn on bad PM output |
+| `7652b9d` | `_safe_call` retries: 0→2 default; 529-specific 30s/60s backoff; all 7 agents at retries=2; CRO `api_failed` flag + DEGRADED health status | Today's 529 Anthropic API overloads killed all per-ticker agents and blocked CRO → 0 trades. Retries with long backoff survive transient load spikes |
+| `cc75b18` | Replace `statistics` stdlib with pure math (`quant_engine.py`); fix list-unwrap in `_parse_json` | Python 3.11 `statistics.stdev` `AttributeError` crash on non-Fraction float types; Devil's Advocate `list.get()` crash |
+
+## Changelog — Jun 9 2026
+
+Every substantive fix that landed in the prior day, newest first:
 
 | Commit | Change | Why it mattered |
 |--------|--------|-----------------|
