@@ -63,11 +63,33 @@ Two scheduled routines run every weekday. Both use the **Robinhood Trading MCP c
 ### Daily Trading Cycle
 
 - **Routine ID:** `trig_01Avvj5aBf3sXbDqUB3g4rTm`
-- **Schedule:** `45 13 * * 1-5` (9:45 AM EDT, Mon–Fri)
+- **Schedule:** `45 13,14,15,16 * * 1-5` (9:45 / 10:45 / 11:45 / 12:45 AM EDT, Mon–Fri) — **initial attempt + 3 hourly retries**.
 - **View/manage:** https://claude.ai/code/routines/trig_01Avvj5aBf3sXbDqUB3g4rTm
-- **DST note:** In winter (EST = UTC-5), update to `45 14 * * 1-5` in November, back to `45 13 * * 1-5` in March.
+- **DST note:** In winter (EST = UTC-5), update to `45 14,15,16,17 * * 1-5` in November, back to `45 13,14,15,16 * * 1-5` in March.
 
-The routine runs the **full Python pipeline** (`main.py`) with `DRY_RUN=false`, executes trades via the Robinhood MCP, then commits and pushes updated files to GitHub.
+#### Pre-flight gate (run FIRST, every attempt) — `preflight_gate.py`
+
+The routine depends on a fresh `market_snapshot.json` from the `market_data.yml` GitHub Actions job. GitHub's scheduled crons can be delayed by hours or skipped, so the routine fires up to **4 times** across the morning and each attempt must gate itself. Running the pipeline against stale data does nothing useful (it just aborts at preflight and wastes tokens), so the routine **must not** run `main.py` unless the gate says PROCEED.
+
+Protocol on **every** attempt:
+
+```bash
+git pull --rebase            # get the latest market_snapshot.json / pending_decisions.json
+python preflight_gate.py     # decide whether to run
+case $? in
+  0)  : run main.py + execute (continue with the normal protocol below) ;;
+  10) echo "stale data — skip this attempt; the next cron (+60 min) will retry"; exit 0 ;;
+  20) echo "already executed today — skip"; exit 0 ;;
+esac
+```
+
+- **Exit 0 (PROCEED):** fresh snapshot dated today (≥22 history bars) AND today's pipeline has not executed yet → run the full pipeline.
+- **Exit 10 (SKIP/RETRY):** `market_snapshot.json` is missing or not dated today → **do not run**. Stop cleanly; the next scheduled attempt re-checks. If all 4 attempts see stale data, the day is intentionally skipped (no trades — correct behavior).
+- **Exit 20 (SKIP/DONE):** `pending_decisions.json` shows today already executed → **do not run again** (idempotency across the 4 attempts; prevents double-execution).
+
+This is why the schedule has four fire times rather than one: the gate + the existing `pending_decisions` idempotency envelope guarantee the pipeline runs **at most once per day**, on the first attempt that sees fresh data. On Jun 9 the market_data job didn't land until 12:14 PM ET — the 12:45 retry would have caught it.
+
+When the gate returns 0, the routine runs the **full Python pipeline** (`main.py`) with `DRY_RUN=false`, executes trades via the Robinhood MCP, then commits and pushes updated files to GitHub.
 
 Portfolio data is injected via `mcp_portfolio.json` (written by the routine from MCP data), so `execute.py` never needs to call `robin_stocks` in the cloud.
 
@@ -263,6 +285,74 @@ The pipeline aborts before running any agents if either condition is true:
 This prevents the silent all-50 quant score failure mode where agents run but produce no trades because they have no quantitative signal. When aborted, `system_health.json` is written immediately and the alert fires.
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
+
+## Changelog — Jun 9 2026
+
+Every substantive fix that landed today, newest first:
+
+| Commit | Change | Why it mattered |
+|--------|--------|-----------------|
+| (this change) | `alert.yml` YAML block-scalar fix; CLAUDE.md failure-mode/QA docs | `alert.yml` was an invalid workflow → failed on every push (email flood) and health alerting was dead |
+| `630584a` | Removed redundant `publish_eod.yml` | `publish.yml` already handles both daily and EOD on `portfolio_snapshot.json` push |
+| `04f6a3f` | Fixed CRO transient failures + list-unwrap parsing bug (`analysis.py`) | Agent 7 (CRO) could crash/misparse and block the trade list |
+| `f192019` | Route Supabase publish through GitHub Actions (`publish.py`, `publish.yml`, `main.py`) | Anthropic cloud blocks Supabase (403); GH Actions has access |
+| `c57f9f4` | Fixed empty responses in agents 2–4; added fundamentals cache | Haiku agents were returning blank theses; cache cuts Polygon calls |
+| `02fc33c` | Granted `contents: write` to `market_data.yml` | Fixed the `git push` 403 (verified pushing) |
+| `6d52c05` | Health tracking, pre-flight abort, failure alerting | Prevents silent all-50 quant no-trade runs |
+| `0b5c53e` | Made `mark_pending_executed` idempotent | Prevents double-execution on routine retry |
+| `f1eaf4b` | Stale market-data guard + filter preferred-share news tickers | Stops stale snapshots and `JPMPC`-style yfinance 404 noise |
+| `e1eec67` | Guard against negative qty reaching the broker | Capital-integrity: never send a malformed order |
+| `05a0bf0` | Node.js 24 action compat + pre-computed fractional qty for cloud | Cloud routine places fractional orders directly from `qty` |
+
+## Operational Failure Modes — Jun 9 2026 Incident Log
+
+All observed failures, root cause, and verified status. Documented so the same symptoms are diagnosable on sight.
+
+| # | Symptom (what you saw) | Root cause | Status | Type |
+|---|------------------------|-----------|--------|------|
+| 1 | `Invalid workflow file: .github/workflows/alert.yml#L61` — and `alert.yml` "failing" on **every** push (even commits that don't touch `system_health.json`) | The issue-body markdown was a multi-line JS template literal whose lines sat at **column 0**, breaking out of the YAML `script: |` block scalar. YAML read the leading `*` of `**Run ID:**` as an alias token. An invalid workflow file is recorded as a failed run on every push (GitHub can't parse it to even apply the path filter) → **this was the source of the email flood, and health alerting was silently dead the whole time.** | **FIXED** — body rebuilt as an array of indented string literals joined with `\n`; all lines stay inside the block scalar. Validated with `yaml.safe_load`. | Code |
+| 2 | `remote: Write access to repository not granted` / `403` on the `git push` step (market_data.yml) | The pushing workflow lacked `permissions: contents: write`, so the built-in `GITHUB_TOKEN` was read-only. The repo default (`default_workflow_permissions`) is `read`, but a **per-workflow `permissions:` block overrides it** (verified). | **FIXED** by commit `02fc33c` adding `permissions: contents: write` to `market_data.yml`. **Verified working**: run `27227558840` pushed `8967ff3..1bf6ece main -> main`. `update_dst.yml` already has the same block. No repo-setting change required. | Code (already merged) |
+| 3 | `{'message': 'Invalid API key', 'code': 401}` (fetch_snapshot.py / publish.py) | `SUPABASE_SERVICE_KEY` returned 401 earlier in the day. | **CURRENTLY HEALTHY** — `publish.yml` run on `e1ff540` succeeded, so the secret is valid now. `fetch_snapshot.py` also now wraps the upload in try/except so a bad key no longer crashes the market-data job (the committed file is the authoritative path for the routine). Monitor; if it recurs, rotate the **service-role** key under Settings → Secrets → Actions. | Secret (transient) |
+| 4 | `❌ No portfolio snapshot for <date> … exit code 1` (health_check.yml) | Downstream symptom of #3: when Supabase publish hadn't written today's row, the 11:00 AM health check found nothing. Also fires if the routine/publish simply hasn't run by 11:00 AM. | Resolves once #3 is healthy. Note it is **timing-sensitive** — see the cron-delay risk below. | Symptom |
+
+Noise (non-fatal, safe to ignore): `$JPMPC: possibly delisted` and similar yfinance 404s for preferred-share tickers. The Polygon news-discovery path already filters `^[A-Z]{2,5}P[A-Z]$` (commit `f1eaf4b`); remaining warnings are yfinance probing tickers that return empty and do not affect the run.
+
+### ⚠️ The real standing risk: GitHub scheduled-cron delay
+
+`market_data.yml` is scheduled at `0 12 * * 1-5` (8:00 AM EDT), 105 min before the 9:45 AM routine. **GitHub Actions scheduled runs are best-effort and can be delayed by hours or skipped during high load.** On Jun 9 the *scheduled* run did not finish until **16:14 UTC (12:14 PM ET)** — well after the routine; the routine was rescued only by a **manual** `workflow_dispatch` at 13:46 UTC. If neither lands before 9:45 AM ET, `market_snapshot.json` is stale → routine **preflight-aborts** (`_data_date != today`) → zero trades.
+
+Mitigations (in order of robustness):
+1. **Safety dispatch**: trigger `market_data.yml` manually if the scheduled run hasn't gone green by ~9:15 AM ET: `gh workflow run market_data.yml --repo parthchoksi7/ai-investor` then confirm a fresh `chore: market snapshot` commit landed.
+2. Move the cron earlier (e.g. `0 11 * * 1-5` = 7:00 AM EDT) for a larger buffer, and rely on `keepalive.yml` to keep the schedule enabled.
+3. Longer term: have the routine itself dispatch `market_data.yml` and poll for the fresh commit before running `main.py`, rather than assuming the file is present.
+
+### Repository settings — current state (verified, no change required)
+
+- `default_workflow_permissions = read`. This is fine **because every workflow that pushes declares its own `permissions: contents: write`.** Flipping Settings → Actions → Workflow permissions to "Read and write" is optional defense-in-depth, not a fix.
+- Branch protection on `main`: not enabled (private repo on the free plan). Bot accounts push directly without obstruction.
+- Actions secrets present: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `POLYGON_API_KEY`, `ANTHROPIC_API_KEY`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`.
+
+## Pre-Run QA Checklist (run before market open or after any CI change)
+
+Fast verification that tomorrow's 9:45 AM cycle will succeed:
+
+```bash
+# 1. All workflow YAML parses (catches block-scalar / indentation bugs like alert.yml#L61)
+python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('.github/workflows/*.yml')]; print('workflows OK')"
+
+# 2. Unit tests pass (deterministic pipeline logic — no API keys needed)
+pytest test_pipeline.py -q
+
+# 3. Local pipeline dry run (requires .env with API keys; never places orders)
+DRY_RUN=true python main.py
+```
+
+Manual checks (GitHub UI / `gh`):
+- [ ] **`market_data.yml` is green today AND its `chore: market snapshot` commit landed on `main` before 9:45 AM ET** ← the single highest-signal check; if stale, the routine aborts regardless of everything else (see cron-delay risk). Verify: `python3 -c "import json;d=json.load(open('market_snapshot.json'));print(d['date'])"` == today after `git pull`.
+- [ ] **Actions secrets** `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` present and valid; last `Publish to Supabase` run green (failure modes #3/#4).
+- [ ] No open `health-alert` GitHub Issue from a prior aborted run masking a new one.
+- [ ] Both Anthropic routine crons match the current DST offset (EDT `45 13` / `0 20`; EST `45 14` / `0 21`).
+- [ ] (Optional) Settings → Actions → Workflow permissions = "Read and write" for defense-in-depth — not required since pushing workflows declare their own write permission.
 
 ## Known Limitations
 

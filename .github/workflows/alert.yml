@@ -56,31 +56,39 @@ jobs:
               })
               .join('\n');
 
-            const body = `## ${icon} AI Investor — Pipeline Health Alert
-
-**Run ID:** \`${h.run_id}\`
-**Date:** ${h.date}
-**Status:** **${h.overall_status}**
-**Timestamp:** ${h.timestamp}
-
-## Alerts
-${h.alerts.length ? h.alerts.map(a => `- ${a}`).join('\n') : '_No alerts_'}
-
-## Check Results
-| Check | Status |
-|-------|--------|
-${checksTable}
-
-<details>
-<summary>Full check details (JSON)</summary>
-
-\`\`\`json
-${JSON.stringify(h.checks, null, 2)}
-\`\`\`
-</details>
-
----
-[View routine](https://claude.ai/code/routines/trig_01Avvj5aBf3sXbDqUB3g4rTm) · [View agent log](../../blob/main/agent_log.json) · [View system health](../../blob/main/system_health.json)`;
+            // NOTE: build the body as an array of indented string literals joined by
+            // newlines. Do NOT use a multi-line template literal here — its content
+            // lines would sit at column 0, breaking out of the YAML `script: |` block
+            // scalar (YAML then reads a leading `*` as an alias and rejects the whole
+            // workflow as "invalid workflow file"). Keeping every line indented inside
+            // the block scalar is what makes this valid YAML.
+            const body = [
+              `## ${icon} AI Investor — Pipeline Health Alert`,
+              ``,
+              `**Run ID:** \`${h.run_id}\``,
+              `**Date:** ${h.date}`,
+              `**Status:** **${h.overall_status}**`,
+              `**Timestamp:** ${h.timestamp}`,
+              ``,
+              `## Alerts`,
+              h.alerts.length ? h.alerts.map(a => `- ${a}`).join('\n') : '_No alerts_',
+              ``,
+              `## Check Results`,
+              `| Check | Status |`,
+              `|-------|--------|`,
+              checksTable,
+              ``,
+              `<details>`,
+              `<summary>Full check details (JSON)</summary>`,
+              ``,
+              '```json',
+              JSON.stringify(h.checks, null, 2),
+              '```',
+              `</details>`,
+              ``,
+              `---`,
+              `[View routine](https://claude.ai/code/routines/trig_01Avvj5aBf3sXbDqUB3g4rTm) · [View agent log](../../blob/main/agent_log.json) · [View system health](../../blob/main/system_health.json)`,
+            ].join('\n');
 
             // Find any existing open health-alert issue
             const existing = await github.rest.issues.listForRepo({
