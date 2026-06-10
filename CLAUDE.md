@@ -43,6 +43,8 @@ Haiku runs for each of up to 20 candidates. Sonnet runs 3 times total. Prompt ca
 | `journal.py` | `decision_journal.json` + kill switch |
 | `health.py` | `HealthTracker` — records every pipeline step to `system_health.json` |
 | `fetch_snapshot.py` | Run by GitHub Actions to pre-fetch and commit market data |
+| `preflight_gate.py` | STEP 0 gate the routine runs first each attempt — PROCEED / SKIP-RETRY / SKIP-DONE (see below) |
+| `ROUTINE_DAILY_CYCLE.md` | Canonical, version-controlled copy of the daily routine prompt (secrets redacted) |
 | `trades.csv` | Trade log (committed to GitHub after each run) |
 | `decision_journal.json` | Full thesis + invalidation conditions per trade |
 | `system_health.json` | Written every run; push triggers `alert.yml` |
@@ -90,6 +92,8 @@ esac
 This is why the schedule has four fire times rather than one: the gate + the existing `pending_decisions` idempotency envelope guarantee the pipeline runs **at most once per day**, on the first attempt that sees fresh data. On Jun 9 the market_data job didn't land until 12:14 PM ET — the 12:45 retry would have caught it.
 
 When the gate returns 0, the routine runs the **full Python pipeline** (`main.py`) with `DRY_RUN=false`, executes trades via the Robinhood MCP, then commits and pushes updated files to GitHub.
+
+> 📄 The full, paste-ready routine prompt (with secrets redacted) is version-controlled at [`ROUTINE_DAILY_CYCLE.md`](ROUTINE_DAILY_CYCLE.md). Keep it in sync whenever you change the live routine. STEP 0 (gate) and the 4-fire schedule live there.
 
 Portfolio data is injected via `mcp_portfolio.json` (written by the routine from MCP data), so `execute.py` never needs to call `robin_stocks` in the cloud.
 
