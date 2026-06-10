@@ -253,7 +253,7 @@ def _parse_json(text: str, default):
     return result
 
 
-def _safe_call(model, system, user_msg, default, max_tokens=600, retries=0):
+def _safe_call(model, system, user_msg, default, max_tokens=600, retries=2):
     import time
     for attempt in range(retries + 1):
         try:
@@ -261,7 +261,9 @@ def _safe_call(model, system, user_msg, default, max_tokens=600, retries=0):
             return _parse_json(raw, default)
         except Exception as e:
             if attempt < retries:
-                delay = 2 ** attempt
+                err = str(e)
+                # 529 = Anthropic server overloaded; use longer backoff than generic errors
+                delay = 30 * (attempt + 1) if ("529" in err or "overloaded" in err.lower()) else 2 ** attempt
                 print(f"   ⚠ Agent call failed (attempt {attempt + 1}/{retries + 1}), retrying in {delay}s: {e}")
                 time.sleep(delay)
             else:
@@ -359,7 +361,7 @@ Output JSON:
         default={"regime": "NEUTRAL", "confidence": 50, "growth_value": "NEUTRAL",
                  "favored_factors": [], "avoid_factors": [], "key_observations": []},
         max_tokens=400,
-        retries=1,
+        retries=2,
     )
 
 
@@ -661,7 +663,7 @@ Omit HOLD decisions. Return [] if no trades improve portfolio expected value."""
         MODEL_SMART, _PM_SYSTEM, user_msg,
         default=[],
         max_tokens=1200,
-        retries=1,
+        retries=2,
     )
 
 
@@ -721,11 +723,12 @@ Set approved=false only for severe concentration / correlation risks that could 
     return _safe_call(
         MODEL_SMART, _CRO_SYSTEM, user_msg,
         default={"approved": False, "risk_budget_used": 0,
-                 "largest_risk": "CRO call failed",
+                 "largest_risk": "CRO unavailable (API error)",
                  "rejected_tickers": [],
-                 "reasoning": "CRO unavailable — all trades blocked as precaution."},
+                 "reasoning": "CRO call failed — trades blocked until CRO can run.",
+                 "api_failed": True},
         max_tokens=400,
-        retries=1,
+        retries=2,
     )
 
 
