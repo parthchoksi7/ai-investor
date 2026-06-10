@@ -278,7 +278,7 @@ def run_daily_cycle():
     if not cro:
         health.record("agent_7_cro", FAILED, message="No CRO output")
     elif cro.get("api_failed"):
-        health.record("agent_7_cro", DEGRADED, message="CRO API error — trades approved by default",
+        health.record("agent_7_cro", DEGRADED, message="CRO API error — trades BLOCKED (safety default)",
                       approved=cro.get("approved"),
                       vetoed=cro.get("rejected_tickers", []))
     else:
