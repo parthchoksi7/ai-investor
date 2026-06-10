@@ -10,6 +10,9 @@ import csv
 import pyotp
 import robin_stocks.robinhood as rh
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+_ET = ZoneInfo("America/New_York")
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -86,11 +89,17 @@ def _compute_qty(
         return round(delta_dollars / current_price, 6)
 
     if action == "SELL":
+        # Cap to available_qty (shares_available_for_sells from broker) when present
+        available_qty = current_qty
+        for p in portfolio["positions"]:
+            if p["symbol"] == ticker:
+                available_qty = float(p.get("available_qty", p.get("qty", current_qty)))
+                break
         if target_weight == 0:
-            return current_qty  # exit entire position
+            return available_qty  # exit entire position — never exceed available
         if delta_dollars >= 0:
             return 0.0  # already at or below target weight
-        return round(abs(delta_dollars) / current_price, 6)
+        return round(min(abs(delta_dollars) / current_price, available_qty), 6)
 
     return 0.0
 
@@ -114,7 +123,7 @@ def log_trades(
         if not file_exists:
             writer.writeheader()
 
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(_ET).strftime("%Y-%m-%d")
         for trade in decisions:
             action = trade.get("action", "").upper()
             if action == "HOLD":

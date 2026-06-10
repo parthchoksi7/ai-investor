@@ -16,6 +16,9 @@ Pipeline:
 import json as _json
 import uuid as _uuid
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+_ET = ZoneInfo("America/New_York")
 
 from market_data  import get_market_snapshot
 from analysis     import get_trade_decisions
@@ -33,7 +36,7 @@ def run_daily_cycle():
 
     run_id    = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     run_start = datetime.now(timezone.utc).isoformat()
-    today     = datetime.now().strftime("%Y-%m-%d")
+    today     = datetime.now(_ET).strftime("%Y-%m-%d")  # ET matches preflight_gate and pending_decisions date
 
     health = HealthTracker(run_id, today)
 
@@ -334,6 +337,22 @@ def run_daily_cycle():
         )
 
     # ── Step 6: Execute ───────────────────────────────────────────────────────
+    # Circuit breaker: total SELL-side notional > 50% of portfolio is anomalous.
+    # The PM should never churn more than half the book in a single day.
+    _sell_notional = sum(
+        d.get("qty", 0) * market_data["prices"].get(d["ticker"], {}).get("close", 0)
+        for d in decisions if d.get("action", "").upper() == "SELL"
+    )
+    _turnover_pct = _sell_notional / portfolio["total_value"] if portfolio["total_value"] else 0
+    if _turnover_pct > 0.50:
+        print(f"\n🚨 CIRCUIT BREAKER: proposed SELL notional ${_sell_notional:,.2f} = {_turnover_pct:.0%} of portfolio — exceeds 50% daily turnover limit. Halting execution.")
+        health.record("execution", FAILED,
+                      message=f"Circuit breaker: SELL notional {_turnover_pct:.0%} exceeds 50% daily limit",
+                      sell_notional=round(_sell_notional, 2), turnover_pct=round(_turnover_pct, 4))
+        _write_health(health)
+        print("=" * 60 + "\n")
+        return
+
     order_results: dict       = {}
     executed_decisions: list  = []
     execution_errors: list    = []

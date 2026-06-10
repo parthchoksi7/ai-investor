@@ -65,7 +65,8 @@ Write mcp_portfolio.json with this exact structure:
   "positions": [
     {
       "symbol": "TICKER",
-      "qty": <float>,
+      "qty": <float>,               ← from get_equity_positions: quantity
+      "available_qty": <float>,     ← from get_equity_positions: shares_available_for_sells (use this for SELL sizing)
       "avg_price": <float>,
       "current_price": <float>,
       "market_value": <float>,
