@@ -181,7 +181,7 @@ STEP 5 — Commit artifacts
 
 git config user.email 'ai-investor-bot@users.noreply.github.com'
 git config user.name 'AI Investor Bot'
-git add trades.csv decision_journal.json fundamentals_cache.json portfolio_peak.json pending_decisions.json agent_log.json transactions.json
+git add portfolio_snapshot.json system_health.json mcp_portfolio.json trades.csv decision_journal.json fundamentals_cache.json portfolio_peak.json pending_decisions.json agent_log.json transactions.json
 git diff --staged --quiet || git commit -m 'chore: daily cycle [skip ci]'
 git push || echo "WARNING: git push failed — trades executed but artifacts not committed to remote"
 ```
