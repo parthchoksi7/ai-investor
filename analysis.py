@@ -300,6 +300,30 @@ def _fmt_scores(scores: dict) -> str:
     )
 
 
+def _fmt_news(articles: list[dict], limit: int = 15) -> str:
+    """Format a list of news articles for an agent prompt, including descriptions."""
+    if not articles:
+        return "  - No recent headlines"
+    lines = []
+    for a in articles[:limit]:
+        date = (a.get("published_utc") or "")[:10]
+        desc = (a.get("description") or "").strip()
+        line = f"  - [{date}] {a['title']}"
+        if desc:
+            line += f"\n    {desc[:200]}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _ticker_news(ticker: str, market_data: dict, limit: int = 5) -> str:
+    """Return formatted news for a ticker: per-ticker feed first, global feed as fallback."""
+    specific = market_data.get("ticker_news", {}).get(ticker, [])
+    if specific:
+        return _fmt_news(specific, limit=limit)
+    filtered = [a for a in market_data.get("news", []) if ticker in a.get("tickers", [])]
+    return _fmt_news(filtered, limit=limit)
+
+
 # ── Candidate Selection ───────────────────────────────────────────────────────
 
 def _select_candidates(portfolio: dict, market_data: dict, quant_scores: dict) -> list[str]:
@@ -341,7 +365,7 @@ def run_market_regime_strategist(market_data: dict, quant_scores: dict) -> dict:
     qqq  = market_data["prices"].get("QQQ", {})
     spy_s = quant_scores.get("SPY", {})
     qqq_s = quant_scores.get("QQQ", {})
-    headlines = "\n".join(f"  - {a['title']}" for a in market_data.get("news", [])[:8])
+    headlines = _fmt_news(market_data.get("news", []), limit=15)
 
     user_msg = f"""\
 Date: {market_data['date']}
@@ -380,11 +404,7 @@ Output JSON:
 def run_research_analyst(ticker: str, market_data: dict, quant_scores: dict) -> dict:
     data   = market_data["prices"].get(ticker) or market_data.get("news_discovered", {}).get(ticker, {})
     scores = quant_scores.get(ticker, {})
-    news   = "\n".join(
-        f"  - {a['title']}"
-        for a in market_data.get("news", [])
-        if ticker in a.get("tickers", [])
-    ) or "  - No recent headlines"
+    news = _ticker_news(ticker, market_data)
 
     user_msg = f"""\
 TICKER: {ticker}
@@ -422,11 +442,7 @@ Output JSON (fill in every field):
 
 def run_earnings_catalyst_analyst(ticker: str, market_data: dict) -> dict:
     data = market_data["prices"].get(ticker, {})
-    news = "\n".join(
-        f"  - {a['title']}"
-        for a in market_data.get("news", [])
-        if ticker in a.get("tickers", [])
-    ) or "  - No recent headlines"
+    news = _ticker_news(ticker, market_data)
 
     user_msg = f"""\
 TICKER: {ticker}
@@ -554,7 +570,7 @@ QUANT: {_fmt_scores(scores)}
 {prior_block}
 
 NEWS:
-{chr(10).join(f"  - {a['title']}" for a in market_data.get('news', []) if ticker in a.get('tickers', [])) or '  - None'}
+{_ticker_news(ticker, market_data, limit=3)}
 
 Output JSON:
 {{
