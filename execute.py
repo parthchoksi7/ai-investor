@@ -133,6 +133,16 @@ def _migrate_trade_log() -> None:
     print(f"   🔁 Migrated {TRADE_LOG} header to current schema ({len(rows)} row(s) preserved)")
 
 
+def order_executed(result) -> bool:
+    """True when a broker response represents a placed order.
+
+    A placed order carries a broker order id (or is a dry run). Anything else —
+    rejection detail, hard-block marker, empty/None response — is NOT a fill
+    and must never be logged or reported as one.
+    """
+    return isinstance(result, dict) and bool(result.get("id") or result.get("dry_run"))
+
+
 def log_trades(
     decisions: list[dict],
     portfolio: dict,

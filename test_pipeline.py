@@ -577,6 +577,246 @@ class TestMarkPendingExecuted:
         mark_pending_executed("run-001")  # must not raise
 
 
+# ── journal._load_list — corrupt/foreign file-shape guards ───────────────────
+
+class TestLoadListGuards:
+    """A list-shaped JSON file that somehow becomes a dict ({} on first run,
+    manual edit, partial write) must coerce to [] instead of crashing the
+    appenders mid-run — record_trade fires AFTER orders are placed, so an
+    AttributeError there kills health reporting and the Supabase publish."""
+
+    def test_load_list_dict_file_coerces_to_empty(self, tmp_path):
+        from journal import _load_list
+        f = tmp_path / "journal.json"
+        f.write_text("{}")
+        assert _load_list(str(f)) == []
+
+    def test_load_list_missing_file_returns_empty(self, tmp_path):
+        from journal import _load_list
+        assert _load_list(str(tmp_path / "nonexistent.json")) == []
+
+    def test_load_list_valid_list_passes_through(self, tmp_path):
+        from journal import _load_list
+        f = tmp_path / "journal.json"
+        f.write_text('[{"a": 1}]')
+        assert _load_list(str(f)) == [{"a": 1}]
+
+    def test_record_trade_on_dict_journal_appends(self, tmp_path, monkeypatch):
+        import journal
+        jf = tmp_path / "decision_journal.json"
+        jf.write_text("{}")  # the corrupt shape that crashed the Jun 11 run
+        monkeypatch.setattr(journal, "JOURNAL_FILE", str(jf))
+        trade_id = journal.record_trade(
+            "NVDA", "BUY", 0.08, "thesis", "anti", [], 7, 0.10, [])
+        data = json.loads(jf.read_text())
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0]["trade_id"] == trade_id
+        assert data[0]["status"] == "open"
+
+    def test_record_transaction_on_dict_file_appends(self, tmp_path, monkeypatch):
+        import journal
+        tf = tmp_path / "transactions.json"
+        tf.write_text("{}")
+        monkeypatch.setattr(journal, "TRANSACTIONS_FILE", str(tf))
+        journal.record_transaction({"transaction_id": "tx-1", "ticker": "GS"})
+        data = json.loads(tf.read_text())
+        assert data == [{"transaction_id": "tx-1", "ticker": "GS"}]
+
+    def test_record_run_on_dict_file_appends(self, tmp_path, monkeypatch):
+        import journal
+        lf = tmp_path / "agent_log.json"
+        lf.write_text("{}")
+        monkeypatch.setattr(journal, "AGENT_LOG_FILE", str(lf))
+        journal.record_run("run-1", {"date": "2026-06-11"})
+        data = json.loads(lf.read_text())
+        assert len(data) == 1
+        assert data[0]["run_id"] == "run-1"
+
+
+# ── execute._migrate_trade_log — trades.csv schema migration ─────────────────
+
+class TestTradeLogMigration:
+    """DictWriter never rewrites an existing header, so appending 12-field rows
+    under the old 7-column header silently misaligned every new row. The
+    migration rewrites the file under the current schema, preserving old rows."""
+
+    OLD_HEADER = "date,strategy,ticker,action,qty,portfolio_value,rationale"
+
+    def _patch(self, tmp_path, monkeypatch):
+        import execute
+        log = tmp_path / "trades.csv"
+        monkeypatch.setattr(execute, "TRADE_LOG", str(log))
+        monkeypatch.setattr(execute, "DRY_RUN", True)
+        return execute, log
+
+    def test_old_header_rewritten_rows_preserved(self, tmp_path, monkeypatch):
+        import csv
+        execute, log = self._patch(tmp_path, monkeypatch)
+        log.write_text(self.OLD_HEADER + "\n"
+                       "2026-06-01,institutional,AAPL,BUY,1.5,500.00,old row\n")
+        execute._migrate_trade_log()
+        rows = list(csv.DictReader(log.open()))
+        with log.open() as f:
+            header = f.readline().strip().split(",")
+        assert header == execute.TRADE_LOG_FIELDS
+        assert len(rows) == 1
+        assert rows[0]["ticker"] == "AAPL"
+        assert rows[0]["rationale"] == "old row"
+        assert rows[0]["price"] == ""           # new column backfilled empty
+        assert rows[0]["broker_order_id"] == ""
+
+    def test_current_header_is_noop(self, tmp_path, monkeypatch):
+        execute, log = self._patch(tmp_path, monkeypatch)
+        original = ",".join(execute.TRADE_LOG_FIELDS) + "\n"
+        log.write_text(original)
+        execute._migrate_trade_log()
+        assert log.read_text() == original
+
+    def test_missing_file_is_noop(self, tmp_path, monkeypatch):
+        execute, log = self._patch(tmp_path, monkeypatch)
+        execute._migrate_trade_log()  # must not raise or create the file
+        assert not log.exists()
+
+    def test_append_after_migration_is_aligned(self, tmp_path, monkeypatch):
+        import csv
+        execute, log = self._patch(tmp_path, monkeypatch)
+        log.write_text(self.OLD_HEADER + "\n"
+                       "2026-06-01,institutional,AAPL,BUY,1.5,500.00,old row\n")
+        execute.log_trades(
+            [{"ticker": "MSFT", "action": "BUY", "target_weight": 0.05,
+              "qty": 0.1, "rationale": "new row"}],
+            {"total_value": 500.0, "positions": []},
+            prices={"MSFT": {"close": 400.0}},
+        )
+        rows = list(csv.DictReader(log.open()))
+        assert len(rows) == 2
+        assert rows[1]["ticker"] == "MSFT"
+        assert rows[1]["price"] == "400.0000"   # lands in the right column
+        assert rows[1]["total_value"] == "40.00"
+        assert rows[1]["target_weight"] == "0.0500"
+
+
+# ── execute.order_executed — broker result classification ────────────────────
+
+class TestOrderExecuted:
+    """An order counts as executed only when the broker returned an order id
+    (or DRY_RUN). Rejections must not be logged as fills or reported healthy."""
+
+    def test_broker_id_is_executed(self):
+        from execute import order_executed
+        assert order_executed({"id": "abc-123"}) is True
+
+    def test_dry_run_is_executed(self):
+        from execute import order_executed
+        assert order_executed({"dry_run": True}) is True
+
+    def test_rejection_detail_is_not_executed(self):
+        from execute import order_executed
+        assert order_executed({"detail": "insufficient buying power"}) is False
+
+    def test_hard_block_is_not_executed(self):
+        from execute import order_executed
+        assert order_executed({"blocked": True}) is False
+
+    def test_empty_or_none_is_not_executed(self):
+        from execute import order_executed
+        assert order_executed({}) is False
+        assert order_executed(None) is False
+        assert order_executed("error string") is False
+
+
+# ── execute.execute_trades — SELL-before-BUY ordering ────────────────────────
+
+class TestSellBeforeBuyOrdering:
+    """Cash account: a BUY funded by a same-day SELL is rejected by the broker
+    if placed before the sale proceeds exist. SELLs must go first."""
+
+    def _run(self, monkeypatch, decisions):
+        import execute
+        placed = []
+        monkeypatch.setattr(
+            execute, "place_order",
+            lambda ticker, action, qty: placed.append((action, ticker)) or {"dry_run": True},
+        )
+        results = execute.execute_trades(
+            decisions, {"total_value": 500.0, "positions": []}, {})
+        return placed, results
+
+    def test_sells_placed_before_buys(self, monkeypatch):
+        placed, _ = self._run(monkeypatch, [
+            {"ticker": "GS",   "action": "BUY",  "qty": 0.1},
+            {"ticker": "AAPL", "action": "SELL", "qty": 0.2},
+            {"ticker": "LIN",  "action": "BUY",  "qty": 0.3},
+            {"ticker": "JNJ",  "action": "SELL", "qty": 0.4},
+        ])
+        actions = [a for a, _ in placed]
+        assert actions == ["SELL", "SELL", "BUY", "BUY"]
+
+    def test_relative_order_within_side_preserved(self, monkeypatch):
+        # sorted() is stable — PM's ordering within each side is kept
+        placed, _ = self._run(monkeypatch, [
+            {"ticker": "GS",   "action": "BUY",  "qty": 0.1},
+            {"ticker": "AAPL", "action": "SELL", "qty": 0.2},
+            {"ticker": "LIN",  "action": "BUY",  "qty": 0.3},
+            {"ticker": "JNJ",  "action": "SELL", "qty": 0.4},
+        ])
+        assert placed == [("SELL", "AAPL"), ("SELL", "JNJ"),
+                          ("BUY", "GS"), ("BUY", "LIN")]
+
+    def test_hold_and_zero_qty_not_placed(self, monkeypatch):
+        placed, results = self._run(monkeypatch, [
+            {"ticker": "MRK",  "action": "HOLD"},
+            {"ticker": "EOG",  "action": "BUY", "qty": 0.0},
+            {"ticker": "EQIX", "action": "BUY", "qty": 0.1},
+        ])
+        assert placed == [("BUY", "EQIX")]
+        assert "MRK" not in results and "EOG" not in results
+
+
+# ── Execution stamp decision (main.py contract) ──────────────────────────────
+
+class TestExecutionStampDecision:
+    """Truth table for when main.py stamps pending_decisions.json as executed.
+
+    Contract: stamp as soon as ANY order was placed (a retry must never
+    double-fill), withhold when NOTHING was placed (every order rejected, or
+    execution crashed before the first order) so the next scheduled attempt
+    can retry the day. A run with nothing to place stamps vacuously.
+
+    Tests the expression in isolation, in the TestPreflightAbortConditions
+    style — main.py is not imported here.
+    """
+
+    @staticmethod
+    def _should_stamp(executed_decisions, order_results, execution_errors):
+        any_placed = bool(executed_decisions)
+        nothing_to_place = not order_results and not execution_errors
+        return any_placed or nothing_to_place
+
+    def test_all_orders_filled_stamps(self):
+        assert self._should_stamp(["d1", "d2"], {"GS": {"id": "x"}}, []) is True
+
+    def test_partial_fill_stamps(self):
+        # one fill + one rejection → stamp; retrying would double-fill GS
+        assert self._should_stamp(["d1"], {"GS": {"id": "x"}, "LIN": {}}, []) is True
+
+    def test_fill_then_crash_stamps(self):
+        # exception after the first order was placed → still stamp
+        assert self._should_stamp(["d1"], {"GS": {"id": "x"}}, ["boom"]) is True
+
+    def test_all_orders_rejected_does_not_stamp(self):
+        # nothing placed → next hourly attempt may retry the day
+        assert self._should_stamp([], {"GS": {}, "LIN": {}}, []) is False
+
+    def test_crash_before_first_order_does_not_stamp(self):
+        assert self._should_stamp([], {}, ["boom"]) is False
+
+    def test_nothing_to_place_stamps_vacuously(self):
+        # all decisions skipped (HOLD / qty 0) → no rerun needed
+        assert self._should_stamp([], {}, []) is True
+
+
 # ── Pre-flight abort conditions ───────────────────────────────────────────────
 
 class TestPreflightAbortConditions:
