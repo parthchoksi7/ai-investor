@@ -9,6 +9,7 @@ on:
   push:
     paths:
       - portfolio_snapshot.json
+  workflow_dispatch:
 
 jobs:
   publish:
