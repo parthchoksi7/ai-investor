@@ -104,7 +104,7 @@ Portfolio data is injected via `mcp_portfolio.json` (written by the routine from
 git config user.name "AI Investor Bot"
 git config user.email "ai-investor-bot@users.noreply.github.com"
 git add portfolio_snapshot.json system_health.json pending_decisions.json agent_log.json trades.csv decision_journal.json transactions.json
-git commit -m "chore: daily cycle [skip ci]"
+git commit -m "chore: daily cycle"
 git push
 ```
 The push of `portfolio_snapshot.json` triggers `publish.yml` in GitHub Actions, which runs `publish.py` with Supabase access (Supabase is blocked in the Anthropic cloud — 403).
@@ -127,7 +127,7 @@ This routine does **not** run the trading pipeline and places **no orders**. It:
    git config user.name "AI Investor Bot"
    git config user.email "ai-investor-bot@users.noreply.github.com"
    git add portfolio_snapshot.json
-   git commit -m "chore: eod portfolio snapshot [skip ci]"
+   git commit -m "chore: eod portfolio snapshot"
    git push
    ```
    This push triggers `publish.yml` in GitHub Actions, which runs `publish.py` with Supabase access and writes `close_value` to the `portfolio_snapshots` table.
