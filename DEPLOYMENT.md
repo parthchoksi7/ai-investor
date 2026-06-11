@@ -928,6 +928,8 @@ These are documented risks in the current system. Any deployment that touches th
 
 | Risk | Location | Severity | Mitigation |
 |------|----------|----------|------------|
+| SPY price in morning snapshot is intraday (not official close) | `publish.py` | Low | By design — user wants SPY synced with portfolio on every update. EOD run overwrites with official close via `is_close=True`. Chart labels the index as "indexed to 100" not "closing prices". |
+| `market_snapshot.json` missing or stale → SPY falls back to Polygon "prev" (previous day) | `publish.py:_fetch_spy_from_snapshot` | Low | Polygon fallback still gives valid SPY data; worst case is SPY lags by one day in the dashboard, identical to the pre-fix behavior. |
 | No `target_weight` bounds validation before execution | `execute.py:_compute_qty` | High | PM prompt constrains to 0.10; review PM output in dry-run |
 | Portfolio state is snapshot at pipeline time, not execution time | `main.py`, `execute.py` | Medium | Market orders; prices drift between analysis and execution. Acceptable for small portfolio |
 | `agent_log.json` grows unboundedly | `journal.py:record_run` | ~~Low~~ **Fixed `8f0b2e9`** | Capped at 90 entries (~3 months). Previously whole file loaded into memory each run |

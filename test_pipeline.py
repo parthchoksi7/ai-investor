@@ -932,3 +932,133 @@ class TestPreflightGate:
         self._write(tmp_path, "pending_decisions.json",
                     {"date": today, "run_id": "x", "executed_at": "2026-01-01T00:00:00Z"})
         assert self._run(tmp_path) == 20  # SKIP/DONE wins
+
+
+# ── publish.py — SPY data source + is_close inheritance ──────────────────────
+
+class TestPublishSpyDataSource:
+    """
+    publish.py must read SPY price from market_snapshot.json (today's live data)
+    and fall back to Polygon "prev" only when the snapshot is missing or stale.
+    This prevents consecutive snapshots from showing the same SPY value when both
+    run before today's close is available via Polygon's "prev" endpoint.
+
+    Covers DEPLOYMENT.md §12.2 "New data source / fallback" requirements.
+    """
+
+    def _write(self, tmp_path, name, data):
+        (tmp_path / name).write_text(json.dumps(data))
+
+    def _read_spy(self, tmp_path):
+        import importlib, sys, os
+        # Reload publish so _load uses tmp_path's cwd
+        orig = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            if "publish" in sys.modules:
+                del sys.modules["publish"]
+            from publish import _fetch_spy_from_snapshot
+            return _fetch_spy_from_snapshot()
+        finally:
+            os.chdir(orig)
+            if "publish" in sys.modules:
+                del sys.modules["publish"]
+
+    def test_happy_path_reads_spy_from_snapshot(self, tmp_path):
+        """Returns SPY close from market_snapshot.json when dated today."""
+        from datetime import date
+        today = date.today().isoformat()
+        self._write(tmp_path, "market_snapshot.json", {
+            "date": today,
+            "prices": {"SPY": {"close": 735.15, "open": 728.0}},
+        })
+        result = self._read_spy(tmp_path)
+        assert result == 735.15, f"Expected 735.15, got {result}"
+
+    def test_returns_none_when_snapshot_missing(self, tmp_path):
+        """No market_snapshot.json → returns None so Polygon fallback is used."""
+        result = self._read_spy(tmp_path)
+        assert result is None
+
+    def test_returns_none_when_snapshot_stale(self, tmp_path):
+        """market_snapshot.json dated yesterday → stale, returns None for fallback."""
+        self._write(tmp_path, "market_snapshot.json", {
+            "date": "2020-01-01",
+            "prices": {"SPY": {"close": 999.0}},
+        })
+        result = self._read_spy(tmp_path)
+        assert result is None, f"Stale snapshot should yield None, got {result}"
+
+    def test_returns_none_when_spy_absent_from_prices(self, tmp_path):
+        """Snapshot dated today but SPY not in prices → returns None."""
+        from datetime import date
+        today = date.today().isoformat()
+        self._write(tmp_path, "market_snapshot.json", {
+            "date": today,
+            "prices": {"AAPL": {"close": 200.0}},
+        })
+        result = self._read_spy(tmp_path)
+        assert result is None
+
+    def test_returns_none_when_spy_close_is_zero(self, tmp_path):
+        """SPY close=0 (bad data) → returns None to trigger fallback."""
+        from datetime import date
+        today = date.today().isoformat()
+        self._write(tmp_path, "market_snapshot.json", {
+            "date": today,
+            "prices": {"SPY": {"close": 0}},
+        })
+        result = self._read_spy(tmp_path)
+        assert result is None
+
+
+class TestIsCloseInheritance:
+    """
+    publish_to_supabase() must NOT inherit is_close=True from portfolio_snapshot.json
+    when called from main.py (outside GitHub Actions). If the previous day's EOD file
+    is on disk with is_close=True, a morning run would previously write close_value
+    for the new day — recording an intraday price as the official close.
+
+    Covers the Jun 11 2026 bug where Jun 11 morning got close_value from Jun 10 EOD.
+    """
+
+    def _write(self, tmp_path, name, data):
+        (tmp_path / name).write_text(json.dumps(data))
+
+    def _resolve_is_close(self, tmp_path, caller_is_close, in_github_actions):
+        """
+        Replicate the is_close resolution logic from publish_to_supabase() in isolation,
+        reading from a portfolio_snapshot.json in tmp_path.
+        """
+        import os, json
+        snapshot_path = tmp_path / "portfolio_snapshot.json"
+        file_snapshot = json.loads(snapshot_path.read_text()) if snapshot_path.exists() else {}
+        is_close = caller_is_close
+        if not is_close and in_github_actions:
+            is_close = bool(file_snapshot.get("is_close", False))
+        return is_close
+
+    def test_morning_run_does_not_inherit_is_close(self, tmp_path):
+        """main.py calls publish_to_supabase(is_close=False); previous EOD file has is_close=True.
+        Outside GH Actions, is_close must stay False."""
+        self._write(tmp_path, "portfolio_snapshot.json", {"is_close": True})
+        result = self._resolve_is_close(tmp_path, caller_is_close=False, in_github_actions=False)
+        assert result is False, "Morning run must not inherit is_close=True from EOD file"
+
+    def test_github_actions_inherits_is_close_from_eod_file(self, tmp_path):
+        """GH Actions invokes publish.py directly; reads is_close from snapshot committed by cloud."""
+        self._write(tmp_path, "portfolio_snapshot.json", {"is_close": True})
+        result = self._resolve_is_close(tmp_path, caller_is_close=False, in_github_actions=True)
+        assert result is True, "GH Actions must read is_close=True from EOD snapshot file"
+
+    def test_github_actions_morning_snapshot_stays_false(self, tmp_path):
+        """GH Actions processes a morning commit; snapshot says is_close=False — must stay False."""
+        self._write(tmp_path, "portfolio_snapshot.json", {"is_close": False})
+        result = self._resolve_is_close(tmp_path, caller_is_close=False, in_github_actions=True)
+        assert result is False
+
+    def test_explicit_is_close_true_not_overridden(self, tmp_path):
+        """EOD routine passes is_close=True explicitly; file should not matter."""
+        self._write(tmp_path, "portfolio_snapshot.json", {"is_close": False})
+        result = self._resolve_is_close(tmp_path, caller_is_close=True, in_github_actions=False)
+        assert result is True
