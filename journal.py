@@ -48,6 +48,8 @@ def record_trade(
 ) -> str:
     """Append a trade decision to the journal. Returns the generated trade_id."""
     journal = _load(JOURNAL_FILE, [])
+    if not isinstance(journal, list):
+        journal = []
     trade_id = str(uuid.uuid4())
     journal.append({
         "trade_id": trade_id,
