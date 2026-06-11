@@ -310,6 +310,11 @@ def get_market_snapshot() -> dict:
         except Exception:
             pass  # fall through to Polygon fetch
 
+    # Fetch news FIRST to guarantee it gets a fresh rate-limit budget (free tier: 5 calls/min).
+    # The history loop burns the Polygon budget immediately via 429s; fetching news afterward
+    # risks missing the reset window. News + 4 ticker-specific calls = 5 total Polygon calls.
+    articles = get_news_summary()  # 1 Polygon call
+
     all_tickers = list(set(WATCHLIST) | set(SP500_HOLDINGS.keys()))
     prices:  dict = {}
     history: dict = {}
@@ -337,16 +342,14 @@ def get_market_snapshot() -> dict:
 
     fundamentals = get_all_fundamentals(all_tickers)
 
-    articles = get_news_summary()
-
-    # Per-ticker deep-dive news for the top movers (|change_pct| > 3%, up to 10 tickers).
-    # Sorted by magnitude so the biggest movers get coverage first.
+    # Per-ticker deep-dive for top 4 movers (|change_pct| > 3%) — 4 Polygon calls.
+    # Cap at 4 so that together with get_news_summary() above we stay within 5 calls/min.
     ticker_news: dict = {}
     movers = sorted(
         [t for t, p in prices.items() if abs(p.get("change_pct", 0)) > 3 and t not in ("SPY", "QQQ")],
         key=lambda t: abs(prices[t].get("change_pct", 0)),
         reverse=True,
-    )[:10]
+    )[:4]
     for t in movers:
         tn = get_ticker_news(t, limit=5)
         if tn:
