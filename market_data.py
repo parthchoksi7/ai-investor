@@ -265,7 +265,7 @@ def get_ticker_news(ticker: str, limit: int = 5) -> list[dict]:
         return []
 
 
-def get_market_snapshot() -> dict:
+def get_market_snapshot(force: bool = False) -> dict:
     """
     Full market snapshot:
     - prices:         {ticker: current snapshot}
@@ -282,7 +282,7 @@ def get_market_snapshot() -> dict:
 
     # Check 1: local file (written by fetch_snapshot.py / GitHub Actions at 9:20 AM ET)
     snapshot_path = "market_snapshot.json"
-    if os.path.isfile(snapshot_path):
+    if not force and os.path.isfile(snapshot_path):
         with open(snapshot_path) as f:
             cached = json.load(f)
         if cached.get("date") == today_str:
@@ -296,7 +296,7 @@ def get_market_snapshot() -> dict:
     # Check 2: Supabase (written by GitHub Actions fetch_snapshot.py at 9:20 AM ET)
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
-    if supabase_url and supabase_key:
+    if not force and supabase_url and supabase_key:
         try:
             from supabase import create_client
             _sb = create_client(supabase_url, supabase_key)
