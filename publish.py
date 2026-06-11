@@ -111,12 +111,16 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     if not is_close:
         is_close = bool(file_snapshot.get("is_close", False))
 
-    # ── Portfolio state: arg → snapshot → mcp_portfolio.json ─────────────────
+    # ── Portfolio state: arg → mcp_portfolio.json → snapshot ─────────────────
+    # mcp_portfolio.json is written fresh by each routine run and always reflects
+    # the current broker state. The embedded snapshot portfolio is stale by the
+    # time the EOD routine calls publish.py — it was written at pipeline start.
+    # GitHub Actions never has mcp_portfolio.json (gitignored), so it falls
+    # through to the snapshot, which is correct for that path.
     if portfolio is None:
-        portfolio = file_snapshot.get("portfolio") or _load(
-            "mcp_portfolio.json",
-            {"cash": STARTING_CAPITAL, "total_value": STARTING_CAPITAL, "positions": []},
-        )
+        mcp = _load("mcp_portfolio.json", None)
+        portfolio = mcp or file_snapshot.get("portfolio") or \
+            {"cash": STARTING_CAPITAL, "total_value": STARTING_CAPITAL, "positions": []}
 
     # ── Quant scores: arg → snapshot ──────────────────────────────────────────
     if quant_scores is None:
