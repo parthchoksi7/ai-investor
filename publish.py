@@ -273,7 +273,7 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
                 "regime":              tx.get("regime"),
                 "rationale":           tx.get("rationale"),
                 "research_confidence": tx.get("research_confidence"),
-                "broker_order_id":     tx.get("broker_order_id"),
+                **({"broker_order_id": tx["broker_order_id"]} if tx.get("broker_order_id") else {}),
             }
             for tx in transactions
             if tx.get("transaction_id")
