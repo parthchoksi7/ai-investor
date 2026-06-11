@@ -65,8 +65,7 @@ Write mcp_portfolio.json with this exact structure:
   "positions": [
     {
       "symbol": "TICKER",
-      "qty": <float>,               ← from get_equity_positions: quantity
-      "available_qty": <float>,     ← from get_equity_positions: shares_available_for_sells (use this for SELL sizing)
+      "qty": <float>,
       "avg_price": <float>,
       "current_price": <float>,
       "market_value": <float>,
@@ -105,7 +104,7 @@ Position Review → Portfolio Manager → Chief Risk Officer), pre-computes frac
 for each decision, writes pending_decisions.json, logs to trades.csv / decision_journal.json /
 agent_log.json / transactions.json, and publishes a snapshot to Supabase.
 
-After main.py completes, validate the output (heredoc avoids shell-quoting issues; uses ET date):
+After main.py completes, validate the output:
 python - <<'PY'
 import json, sys
 from datetime import datetime
@@ -116,17 +115,10 @@ if p.get('date') != today:
     print(f"ERROR: pending_decisions.json is dated {p.get('date')!r}, expected {today!r}")
     print("main.py exited early — market snapshot for today was not available.")
     sys.exit(1)
-h = json.load(open('system_health.json')) if __import__('os').path.exists('system_health.json') else {}
-checks = h.get('checks', {})
-agent_failures = [k for k,v in checks.items() if v.get('status') in ('FAILED','DEGRADED') and k.startswith('agent_')]
-if agent_failures:
-    print(f"WARNING: agent failures detected: {agent_failures}")
-    print("analysis.py retries up to 3 attempts with 30s/60s backoff on 529 errors — these are transient Anthropic API overloads.")
 print(f"Pipeline OK: {len(p['decisions'])} decision(s) for {today}")
 PY
 
-If this check fails (date mismatch), STOP. Do not attempt order execution.
-Agent warnings (FAILED/DEGRADED) are informational — the pipeline handles them with retries.
+If this check fails, STOP. Do not attempt order execution.
 
 ═══════════════════════════════════════════════
 STEP 4 — Execute trades via Robinhood MCP
