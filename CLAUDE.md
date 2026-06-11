@@ -277,7 +277,7 @@ Every run — including aborted runs — writes `system_health.json` to the repo
 | `agent_5_position_review` | Open positions exist but no reviews returned |
 | `agent_6_portfolio_manager` | 0 trades proposed despite REDUCE/EXIT signals (data starvation) |
 | `agent_7_cro` | No CRO output returned |
-| `execution` | Trade execution raised an exception |
+| `execution` | Any order rejected by the broker (no order id returned) → DEGRADED (partial fills) or FAILED (none filled), with per-ticker `failed_orders` detail; also any execution exception |
 | `supabase_publish` | Supabase publish failed |
 
 ### Pre-flight abort
@@ -296,6 +296,8 @@ Every substantive fix that landed today, newest first:
 
 | Commit | Change | Why it mattered |
 |--------|--------|-----------------|
+| (this change) | `test_pipeline.py`: 24 new tests (`TestLoadListGuards`, `TestTradeLogMigration`, `TestOrderExecuted`, `TestSellBeforeBuyOrdering`, `TestExecutionStampDecision`); `execute.order_executed()` extracted to module level so main.py and tests share the real classifier; docs updated | Locks in the `fd9d56a` behavior with regression coverage per DEPLOYMENT.md §12 — execution-path changes must ship with tests |
+| `fd9d56a` | Broker order verification in `main.py` (an order counts as executed only if the broker returned an order id; rejections → health DEGRADED/FAILED with per-ticker detail, excluded from all logs); SELL-before-BUY ordering in `execute_trades` (cash account); `trades.csv` 12-column schema migration + Jun 10 backfill; `journal._load_list()` type guards on all list appenders; idempotency stamp now set when ANY order placed, withheld when NONE placed | Rejected orders (insufficient buying power, halted ticker) were logged as fills with `execution: OK`; BUYs funded by same-day SELLs could be rejected if placed first; trades.csv rows were misaligning under the stale 7-column header; a `{}`-shaped journal crashed Step 7 after orders were already placed |
 | `b8ec88d` | `journal.py`: guard `decision_journal.json` being `{}` (empty dict) on first run — `isinstance` check resets to `[]` before `.append()` | Cloud routine crashed with `AttributeError: 'dict' object has no attribute 'append'` on the very first trade because the file contained `{}` not `[]`; pipeline produced 0 trades |
 | `61ab95a` | `analysis.py`: `max_tokens` increased (Agent 1: 400→700, Agent 2: 600→1000, Agent 3: 400→600, Agent 4: 500→800); `_parse_json` truncation recovery (count open braces, strip trailing partial strings, append closing `}]`) | Richer news descriptions in prompts pushed verbose Haiku responses past the old ceiling; every parse failed mid-JSON → all 20 Research/DA/Earnings agents returned defaults → 0 trades |
 | `e2a18b3` | `market_data.py`: `get_news_summary()` and `get_ticker_news()` called BEFORE the history loop (not after) | Polygon free tier = 5 calls/minute. History loop exhaust the budget in <1 second; news calls 40 seconds later hit a grey zone. Moving news first guarantees a fresh 5-call budget |
@@ -408,6 +410,11 @@ pytest test_pipeline.py -v
 | `TestKillSwitches` | `journal.py` | 20% drawdown threshold, peak tracking, zero-value guard |
 | `TestMarkPendingExecuted` | `journal.py` | Idempotency, run_id mismatch guard, missing file safety |
 | `TestPreflightAbortConditions` | `main.py` logic | Stale date guard, min-depth guard, MCP 2-bar scenario |
+| `TestLoadListGuards` | `journal.py` | `_load_list` coercion; appenders survive a `{}`-shaped journal/transactions/agent-log file |
+| `TestTradeLogMigration` | `execute.py` | `trades.csv` old-header rewrite, row preservation, aligned appends post-migration |
+| `TestOrderExecuted` | `execute.py` | Broker result classification: order id / dry-run = fill; rejection / block / empty = not a fill |
+| `TestSellBeforeBuyOrdering` | `execute.py` | SELLs placed before BUYs (stable within side); HOLD and qty-0 never placed |
+| `TestExecutionStampDecision` | `main.py` logic | Idempotency stamp truth table: stamp on any fill, withhold when nothing placed |
 
 ## Manual Execution Runbook
 

@@ -216,7 +216,14 @@ The Portfolio Manager outputs `target_weight` 0.0–0.10. Verify there is no pat
 
 ## 3. Regression Test Suite
 
-Run all of the following before any deployment. These are manual smoke tests since there is no automated test suite.
+Run all of the following before any deployment. Start with the automated suite — it covers the deterministic pipeline logic and the execution-path guards (see 3.9):
+
+```bash
+source venv/bin/activate
+pytest test_pipeline.py -q     # must be a full pass; a partial pass is not a pass (§12.4)
+```
+
+The manual smoke tests below cover paths the automated suite cannot reach (live keys, full pipeline).
 
 ### 3.1 Quantity calculation correctness
 ```bash
@@ -517,6 +524,24 @@ Red flags — stop and investigate if you see:
 - No `[7/7]` line — the pipeline did not complete all 7 agents
 - Python traceback — an unhandled exception; the cycle did not finish cleanly
 
+### 3.9 Execution result verification, order routing, and log schema (automated)
+
+These P0 execution-path behaviors are covered by `test_pipeline.py` — run them directly when touching `execute.py` or the Step 6 block of `main.py`:
+
+```bash
+pytest test_pipeline.py -q -k "LoadListGuards or TradeLogMigration or OrderExecuted or SellBeforeBuy or ExecutionStampDecision"
+```
+
+| Class | Contract it locks in |
+|-------|----------------------|
+| `TestOrderExecuted` | An order counts as executed only if the broker returned an order id (or DRY_RUN). Rejections (`detail`, `blocked`, empty/None) are never fills. |
+| `TestSellBeforeBuyOrdering` | `execute_trades` places all SELLs before any BUY (cash account — BUYs funded by same-day SELLs are otherwise rejected). HOLD and qty-0 decisions are never sent to the broker. |
+| `TestExecutionStampDecision` | `pending_decisions.json` is stamped as soon as ANY order was placed (retry must never double-fill) and withheld when NOTHING was placed (next hourly attempt may retry the day). |
+| `TestTradeLogMigration` | `trades.csv` is rewritten under the current 12-column header before any append; old rows are preserved. |
+| `TestLoadListGuards` | `record_trade` / `record_transaction` / `record_run` survive a `{}`-shaped JSON file instead of crashing after orders are placed. |
+
+Expected output: all selected tests pass.
+
 ---
 
 ## 4. QA — Agent Pipeline Validation
@@ -707,9 +732,12 @@ EOF
 ## 7. Deployment Steps
 
 ### 7.1 Local validation (always)
+
+> ⚠️ **Never run the dry-run pipeline during market hours on a trading day.** `DRY_RUN=true python main.py` overwrites `pending_decisions.json` with `executed_at: null` and today's date. If that file is then committed/pushed (or the day's cycle already executed), a later routine attempt (10:45/11:45/12:45 ET) sees "not executed + fresh data" and **places the day's orders again — double-fill**. Run it after 4 PM ET or on a non-trading day, and never stage `pending_decisions.json` from a local run. If you must skip this step on a trading day, document the skip in the commit message.
+
 ```bash
-# 1. Run all regression tests from Section 3
-# 2. Run dry-run pipeline
+# 1. Run all regression tests from Section 3 (pytest suite first — see §3 intro)
+# 2. Run dry-run pipeline (subject to the trading-day warning above)
 DRY_RUN=true python main.py
 
 # 3. Verify pending_decisions.json is clean

@@ -23,7 +23,7 @@ _ET = ZoneInfo("America/New_York")
 from market_data  import get_market_snapshot
 from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
-from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, DRY_RUN
+from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, DRY_RUN
 from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, get_recent_decisions
 from publish      import publish_to_supabase
 from health       import HealthTracker, OK, DEGRADED, FAILED, ABORTED
@@ -381,14 +381,11 @@ def run_daily_cycle():
     # (or this is a dry run). Rejections — insufficient buying power, halted
     # ticker, hard-block — come back without an id and must not be logged as
     # fills or reported as healthy.
-    def _order_ok(r) -> bool:
-        return isinstance(r, dict) and bool(r.get("id") or r.get("dry_run"))
-
-    failed_orders = {t: r for t, r in order_results.items() if not _order_ok(r)}
+    failed_orders = {t: r for t, r in order_results.items() if not order_executed(r)}
     executed_decisions = [
         d for d in attempted
         if d.get("action", "").upper() in ("BUY", "SELL")
-        and _order_ok(order_results.get(d.get("ticker")))
+        and order_executed(order_results.get(d.get("ticker")))
     ]
 
     # Stamp the idempotency lock as soon as anything was placed — a retry must
