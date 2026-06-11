@@ -14,12 +14,9 @@ from market_data import get_market_snapshot
 
 
 print("Fetching market snapshot...")
-# Always delete the existing file before fetching so get_market_snapshot() doesn't
-# short-circuit and return stale cached data. fetch_snapshot.py exists to produce
-# fresh data — the file cache in get_market_snapshot() is for the cloud routine only.
-if os.path.isfile("market_snapshot.json"):
-    os.remove("market_snapshot.json")
-snapshot = get_market_snapshot()
+# force=True bypasses the local-file and Supabase caches so every GH Actions run
+# always fetches live from Polygon. Those caches exist for the cloud routine only.
+snapshot = get_market_snapshot(force=True)
 
 history_depths = [len(h) for h in snapshot.get("history", {}).values()]
 min_depth = min(history_depths) if history_depths else 0
