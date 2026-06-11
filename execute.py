@@ -104,6 +104,35 @@ def _compute_qty(
     return 0.0
 
 
+TRADE_LOG_FIELDS = [
+    "date", "strategy", "ticker", "action", "qty", "price", "total_value",
+    "target_weight", "portfolio_value", "rationale", "broker_order_id", "dry_run",
+]
+
+
+def _migrate_trade_log() -> None:
+    """Rewrite trades.csv under the current header if it carries an older schema.
+
+    DictWriter never rewrites an existing header, so appending 12-field rows
+    under an old 7-column header silently misaligns every new row.
+    """
+    if not os.path.isfile(TRADE_LOG):
+        return
+    with open(TRADE_LOG, newline="") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames == TRADE_LOG_FIELDS:
+            return
+        rows = list(reader)
+    tmp = TRADE_LOG + ".tmp"
+    with open(tmp, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=TRADE_LOG_FIELDS, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({k: row.get(k, "") for k in TRADE_LOG_FIELDS})
+    os.replace(tmp, TRADE_LOG)
+    print(f"   🔁 Migrated {TRADE_LOG} header to current schema ({len(rows)} row(s) preserved)")
+
+
 def log_trades(
     decisions: list[dict],
     portfolio: dict,
@@ -112,11 +141,9 @@ def log_trades(
     broker_order_ids: dict | None = None,
 ) -> None:
     """Appends executed trades to trades.csv."""
+    _migrate_trade_log()
     file_exists = os.path.isfile(TRADE_LOG)
-    fieldnames  = [
-        "date", "strategy", "ticker", "action", "qty", "price", "total_value",
-        "target_weight", "portfolio_value", "rationale", "broker_order_id", "dry_run",
-    ]
+    fieldnames  = TRADE_LOG_FIELDS
 
     with open(TRADE_LOG, "a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
@@ -234,7 +261,14 @@ def execute_trades(decisions: list[dict], portfolio: dict, prices: dict) -> dict
     if DRY_RUN:
         print("   ⚠️  DRY_RUN=true — decisions logged but no orders placed.")
 
-    for trade in decisions:
+    # SELLs first: this is a cash account, so a BUY funded by a same-day SELL
+    # is rejected by the broker if it lands before the sale proceeds exist.
+    ordered = sorted(
+        decisions,
+        key=lambda d: 0 if d.get("action", "").upper() == "SELL" else 1,
+    )
+
+    for trade in ordered:
         action = trade.get("action", "").upper()
         ticker = trade.get("ticker", "")
 

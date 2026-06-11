@@ -26,6 +26,12 @@ def _load(path: str, default):
     return default
 
 
+def _load_list(path: str) -> list:
+    """Load a JSON file that must be a list; coerce any other shape to []."""
+    data = _load(path, [])
+    return data if isinstance(data, list) else []
+
+
 def _save(path: str, data) -> None:
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
@@ -47,9 +53,7 @@ def record_trade(
     invalidates_if: list,
 ) -> str:
     """Append a trade decision to the journal. Returns the generated trade_id."""
-    journal = _load(JOURNAL_FILE, [])
-    if not isinstance(journal, list):
-        journal = []
+    journal = _load_list(JOURNAL_FILE)
     trade_id = str(uuid.uuid4())
     journal.append({
         "trade_id": trade_id,
@@ -75,7 +79,7 @@ _AGENT_LOG_MAX = 90  # ~3 months of trading days
 
 def record_run(run_id: str, pipeline_state: dict) -> None:
     """Append a full agent pipeline run to agent_log.json (every run, including no-trade days)."""
-    log = _load(AGENT_LOG_FILE, [])
+    log = _load_list(AGENT_LOG_FILE)
     log.append({"run_id": run_id, **pipeline_state})
     if len(log) > _AGENT_LOG_MAX:
         log = log[-_AGENT_LOG_MAX:]
@@ -84,7 +88,7 @@ def record_run(run_id: str, pipeline_state: dict) -> None:
 
 def record_transaction(tx: dict) -> None:
     """Append a detailed executed transaction to transactions.json."""
-    txs = _load(TRANSACTIONS_FILE, [])
+    txs = _load_list(TRANSACTIONS_FILE)
     txs.append(tx)
     _save(TRANSACTIONS_FILE, txs)
 
@@ -107,10 +111,7 @@ def mark_pending_executed(run_id: str) -> None:
 
 
 def get_recent_decisions(n: int = 20) -> list:
-    data = _load(JOURNAL_FILE, [])
-    if not isinstance(data, list):
-        data = []
-    return data[-n:]
+    return _load_list(JOURNAL_FILE)[-n:]
 
 
 def check_kill_switches(portfolio: dict) -> tuple[bool, str]:
