@@ -2,10 +2,12 @@ name: Market Data Fetch
 
 on:
   schedule:
-    # 8:00 AM EDT (UTC-4) on weekdays — 105 min buffer before Anthropic routine at 9:45 AM.
-    # GitHub Actions queuing can add 30-60 min delay; 105 min ensures the file lands in time.
-    # In winter (EST = UTC-5): update to '0 13 * * 1-5'
-    - cron: '0 12 * * 1-5'
+    # Three staggered triggers (EDT = UTC-4) — GitHub silently skips scheduled runs under load;
+    # redundant entries ensure at least one fires well before the 9:45 AM ET trading routine.
+    # In winter (EST = UTC-5): update all three to '0 12', '30 12', '0 13'
+    - cron: '0 11 * * 1-5'   # 7:00 AM EDT — earliest attempt
+    - cron: '0 12 * * 1-5'   # 8:00 AM EDT — primary
+    - cron: '30 12 * * 1-5'  # 8:30 AM EDT — fallback
   workflow_dispatch:
 
 jobs:

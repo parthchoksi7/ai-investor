@@ -28,29 +28,43 @@ jobs:
           tz = ZoneInfo("America/New_York")
           offset_hours = int(datetime.now(tz).utcoffset().total_seconds() / 3600)  # -4 or -5
 
-          # Target local times (ET) → UTC hour
-          mkt_utc_hour = 9  - offset_hours   # 9:20 AM ET market data fetch
-          hc_utc_hour  = 11 - offset_hours   # 11:00 AM ET health check
+          # market_data.yml: three staggered triggers (7:00 / 8:00 / 8:30 AM ET)
+          h7  = 7  - offset_hours
+          h8  = 8  - offset_hours
+          # health_check.yml: 11:00 AM ET
+          hc  = 11 - offset_hours
 
-          updates = {
-              ".github/workflows/market_data.yml": (
-                  r"cron: '20 \d+ \* \* 1-5'",
-                  f"cron: '20 {mkt_utc_hour} * * 1-5'",
-              ),
-              ".github/workflows/health_check.yml": (
-                  r"cron: '0 \d+ \* \* 1-5'",
-                  f"cron: '0 {hc_utc_hour} * * 1-5'",
-              ),
-          }
+          # market_data.yml — replace entire schedule block (3 crons) as a unit
+          mkt_block_edt = (
+              "    - cron: '0 11 * * 1-5'   # 7:00 AM EDT — earliest attempt\n"
+              "    - cron: '0 12 * * 1-5'   # 8:00 AM EDT — primary\n"
+              "    - cron: '30 12 * * 1-5'  # 8:30 AM EDT — fallback"
+          )
+          mkt_block_est = (
+              "    - cron: '0 12 * * 1-5'   # 7:00 AM EST — earliest attempt\n"
+              "    - cron: '0 13 * * 1-5'   # 8:00 AM EST — primary\n"
+              "    - cron: '30 13 * * 1-5'  # 8:30 AM EST — fallback"
+          )
+          mkt_old = mkt_block_est if offset_hours == -4 else mkt_block_edt
+          mkt_new = mkt_block_edt if offset_hours == -4 else mkt_block_est
 
           changed = False
-          for path, (pattern, replacement) in updates.items():
-              text = open(path).read()
-              new_text = re.sub(pattern, replacement, text)
-              if new_text != text:
-                  open(path, "w").write(new_text)
-                  changed = True
-                  print(f"Updated {path} → {replacement}")
+
+          path = ".github/workflows/market_data.yml"
+          text = open(path).read()
+          new_text = text.replace(mkt_old, mkt_new)
+          if new_text != text:
+              open(path, "w").write(new_text)
+              changed = True
+              print(f"Updated {path} for UTC{offset_hours}")
+
+          path = ".github/workflows/health_check.yml"
+          text = open(path).read()
+          new_text = re.sub(r"cron: '0 \d+ \* \* 1-5'", f"cron: '0 {hc} * * 1-5'", text)
+          if new_text != text:
+              open(path, "w").write(new_text)
+              changed = True
+              print(f"Updated {path} for UTC{offset_hours}")
 
           if not changed:
               print("No changes needed — crons already correct for current offset.")
