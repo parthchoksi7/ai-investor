@@ -35,8 +35,31 @@ def _load(path: str, default):
     return default
 
 
-def _fetch_spy_close(polygon_key: str) -> float | None:
-    """Fetch SPY's previous-day closing price from Polygon. Returns None on any failure."""
+def _fetch_spy_from_snapshot() -> float | None:
+    """Read SPY's latest price from market_snapshot.json (committed daily by market_data.yml).
+
+    Preferred over Polygon "prev" because the snapshot contains today's actual price
+    (intraday during market hours, close after 4 PM), whereas Polygon "prev" always
+    returns the previous trading day's close — duplicating yesterday's SPY value on
+    any run that occurs before today's close is available via "prev".
+
+    Returns None if the file is missing, stale (not dated today), or SPY is absent.
+    """
+    try:
+        snap = _load("market_snapshot.json", {})
+        snap_date = snap.get("date", "")
+        today = datetime.now().strftime("%Y-%m-%d")
+        if snap_date != today:
+            return None
+        spy = snap.get("prices", {}).get("SPY", {})
+        close = float(spy.get("close", 0))
+        return close if close > 0 else None
+    except Exception:
+        return None
+
+
+def _fetch_spy_prev_close(polygon_key: str) -> float | None:
+    """Fetch SPY's previous-day closing price from Polygon. Fallback when snapshot unavailable."""
     url = f"https://api.polygon.io/v2/aggs/ticker/SPY/prev?adjusted=true&apiKey={polygon_key}"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "ai-investor/1.0"})
@@ -107,8 +130,12 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     # ── Load portfolio_snapshot.json (written by cloud routine, read by GH Actions) ─
     file_snapshot = _load(SNAPSHOT_FILE, {})
 
-    # is_close: explicit arg wins; snapshot is the fallback when GH Actions reads it
-    if not is_close:
+    # is_close: explicit arg wins. File fallback only applies in GH Actions, where
+    # publish.py is invoked directly (not via main.py) and needs to read the flag
+    # from portfolio_snapshot.json committed by the cloud routine. Without the
+    # GITHUB_ACTIONS guard the morning daily-cycle run would inherit is_close=True
+    # from the previous day's EOD file, writing close_value prematurely.
+    if not is_close and os.environ.get("GITHUB_ACTIONS"):
         is_close = bool(file_snapshot.get("is_close", False))
 
     # ── Portfolio state: arg → mcp_portfolio.json → snapshot ─────────────────
@@ -181,8 +208,15 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     drawdown  = max(0.0, (peak - total_value) / peak * 100) if peak > 0 else 0.0
 
     # ── SPY benchmark ──────────────────────────────────────────────────────────
+    # Prefer market_snapshot.json (committed daily, contains today's live price)
+    # over Polygon "prev" (which returns the previous trading day's close, causing
+    # two consecutive snapshots to show the same SPY value when both run before
+    # today's close is available via "prev"). SPY is updated on every run so the
+    # dashboard always reflects the latest available data alongside the portfolio.
     polygon_key = os.getenv("POLYGON_API_KEY")
-    spy_close   = _fetch_spy_close(polygon_key) if polygon_key else None
+    spy_close = _fetch_spy_from_snapshot()
+    if spy_close is None and polygon_key:
+        spy_close = _fetch_spy_prev_close(polygon_key)
     spy_cumulative = _get_spy_cumulative(client, spy_close)
 
     # ── Upsert portfolio snapshot ──────────────────────────────────────────────
