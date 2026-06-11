@@ -375,6 +375,17 @@ assert _parse_json("not json at all", {"default": True}) == {"default": True}
 # Empty string → returns default
 assert _parse_json("", []) == []
 
+# Truncation recovery: Haiku hit max_tokens mid-string inside a list (most common real failure)
+# The partial incomplete item is stripped; the complete prior items survive.
+truncated = '{"ticker": "NVDA", "catalysts": ["AI capex cycle", "china expor'
+result = _parse_json(truncated, {})
+assert isinstance(result, dict) and result != {}, f"Should recover truncated mid-list JSON, got: {result}"
+assert result.get("ticker") == "NVDA", f"Ticker missing after recovery: {result}"
+assert result.get("catalysts") == ["AI capex cycle"], f"Should keep complete list items: {result}"
+# Note: recovery does NOT handle truncation after a complete number value (e.g. ..., "confidence": 75)
+# because the brace-regex misidentifies the closing " of the preceding key. Primary mitigation
+# for that case is the max_tokens increase (Jun 11 2026: Agent 2 600→1000, Agent 4 500→800).
+
 print("✅ JSON parse resilience tests passed")
 EOF
 ```
@@ -476,7 +487,7 @@ What a healthy run looks like (approximate — your output will differ):
    ✅ All clear.
 
 📈  Step 3: Fetching market data...
-   85 tickers | 20 news articles | 2 news-discovered
+   85 tickers | 50 news articles | 2 news-discovered
 
 🔢  Step 4: Computing quant scores...
    Top 5 by composite score:
@@ -552,9 +563,16 @@ If any system prompt was modified in `analysis.py`:
 ```bash
 python3 - <<'EOF'
 from analysis import MODEL_FAST, MODEL_SMART, MAX_CANDIDATES
-# Estimate: Haiku agents × 3 = 3 × MAX_CANDIDATES per run
-# Each Haiku call: ~400–600 tokens out, ~800 tokens in
-# Each Sonnet call: ~400–1200 tokens out, ~2000–8000 tokens in
+# Current max_tokens per agent (as of Jun 11 2026):
+#   Agent 1 (Regime, Sonnet):      700
+#   Agent 2 (Research, Haiku):    1000
+#   Agent 3 (Earnings, Haiku):     600
+#   Agent 4 (Devil's Adv, Haiku):  800
+#   Agent 5 (Position, Haiku):     600
+#   Agent 6 (PM, Sonnet):         2000
+#   Agent 7 (CRO, Sonnet):        1200
+# Haiku: ~600–1000 tokens out, ~1200 tokens in (richer news context since Jun 11)
+# Sonnet: ~700–2000 tokens out, ~3000–10000 tokens in
 # Ensure MAX_CANDIDATES hasn't been raised without understanding cost implications
 print(f"MAX_CANDIDATES = {MAX_CANDIDATES}")
 assert MAX_CANDIDATES <= 25, "Raising MAX_CANDIDATES above 25 significantly increases cost and latency"
@@ -895,6 +913,9 @@ These are documented risks in the current system. Any deployment that touches th
 | SELL qty not bounded by sellable shares | `execute.py:_compute_qty` | ~~Medium~~ **Fixed `8f0b2e9`** | `_compute_qty` now caps SELL to `available_qty` (from `shares_available_for_sells`) |
 | Full portfolio churn on bad PM output | `main.py` | ~~Medium~~ **Fixed `8f0b2e9`** | Circuit breaker halts execution if SELL notional > 50% of portfolio |
 | Transient Anthropic 529 overloads kill agent pipeline | `analysis.py` | ~~High~~ **Fixed `7652b9d`** | All agents retry 2× with 30s/60s backoff on 529 responses |
+| Haiku response truncated mid-JSON when max_tokens too low | `analysis.py:_parse_json` | ~~High~~ **Fixed `61ab95a`** | Raised max_tokens per agent (700–1000 range); added truncation recovery in `_parse_json` (brace-counting + suffix append) |
+| `decision_journal.json` initialized as `{}` (empty dict) on first run | `journal.py:record_trade` | ~~Medium~~ **Fixed `b8ec88d`** | Added `isinstance(journal, list)` guard; resets to `[]` when file contains `{}` |
+| GitHub Actions scheduled cron silently skipped | `market_data.yml` | ~~Medium~~ **Mitigated `2b21c7f`** | 3 staggered triggers (7:00/8:00/8:30 AM EDT) — one silent skip can't strand the routine. Safety dispatch remains the highest-reliability option |
 
 ---
 
