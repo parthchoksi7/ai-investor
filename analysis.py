@@ -238,18 +238,36 @@ def _parse_json(text: str, default):
     text = re.sub(r'^```(?:json)?\s*', '', text)
     text = re.sub(r'\s*```$', '', text)
     text = text.strip()
-    try:
-        result = json.loads(text)
-    except json.JSONDecodeError:
+
+    def _try(s):
+        try:
+            return json.loads(s)
+        except json.JSONDecodeError:
+            return None
+
+    result = _try(text)
+
+    if result is None:
         # Model wrapped JSON in prose — extract the first {...} or [...] block
         match = re.search(r'(\{[\s\S]*\}|\[[\s\S]*\])', text)
         if match:
-            try:
-                result = json.loads(match.group(1))
-            except json.JSONDecodeError:
-                return default
-        else:
-            return default
+            result = _try(match.group(1))
+
+    # Truncation recovery: response hit max_tokens mid-JSON so closing braces are missing.
+    # Count unmatched braces and append enough "}" to close the object, then retry.
+    if result is None and '{' in text:
+        # Strip any trailing partial string or comma before trying to close
+        truncated = re.sub(r',?\s*"[^"]*$', '', text.rstrip())
+        truncated = re.sub(r',\s*$', '', truncated)
+        open_braces = truncated.count('{') - truncated.count('}')
+        open_arrays = truncated.count('[') - truncated.count(']')
+        suffix = ']' * max(open_arrays, 0) + '}' * max(open_braces, 0)
+        if suffix:
+            result = _try(truncated + suffix)
+
+    if result is None:
+        return default
+
     # Unwrap list → dict when a dict is expected (model occasionally wraps in array)
     if isinstance(result, list) and isinstance(default, dict):
         for item in result:
@@ -394,7 +412,7 @@ Output JSON:
         MODEL_SMART, _REGIME_SYSTEM, user_msg,
         default={"regime": "NEUTRAL", "confidence": 50, "growth_value": "NEUTRAL",
                  "favored_factors": [], "avoid_factors": [], "key_observations": []},
-        max_tokens=400,
+        max_tokens=700,
         retries=2,
     )
 
@@ -434,7 +452,7 @@ Output JSON (fill in every field):
         MODEL_FAST, _cached_system(_RESEARCH_SYSTEM), user_msg,
         default={"thesis": "", "catalysts": [], "confidence": 5,
                  "key_risks": [], "invalidates_if": [], "variant_view": ""},
-        max_tokens=600,
+        max_tokens=1000,
     )
 
 
@@ -469,7 +487,7 @@ Output JSON (fill in every field):
         MODEL_FAST, _cached_system(_EARNINGS_SYSTEM), user_msg,
         default={"earnings_alpha_score": 5, "beat_probability": "MEDIUM",
                  "guidance_cut_probability": "LOW", "key_catalysts_90d": []},
-        max_tokens=400,
+        max_tokens=600,
     )
 
 
@@ -526,7 +544,7 @@ Output JSON (fill in every field):
         MODEL_FAST, _cached_system(_DEVILS_SYSTEM), user_msg,
         default={"bear_case": "", "overall_risk_score": 5,
                  "recommend_reject": False, "hidden_risks": []},
-        max_tokens=500,
+        max_tokens=800,
     )
 
 
