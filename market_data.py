@@ -212,13 +212,19 @@ def get_all_fundamentals(tickers: list[str]) -> dict:
             cache[ticker] = {"data": data, "fetched": today}
             result[ticker] = data
 
-    with open(FUNDAMENTALS_CACHE, "w") as f:
+    tmp = FUNDAMENTALS_CACHE + ".tmp"
+    with open(tmp, "w") as f:
         json.dump(cache, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, FUNDAMENTALS_CACHE)
 
     return result
 
 
 def get_news_summary() -> list[dict]:
+    if not POLYGON_KEY:
+        return []
     url = "https://api.polygon.io/v2/reference/news"
     params = {"apiKey": POLYGON_KEY, "limit": 20, "order": "desc"}
     try:

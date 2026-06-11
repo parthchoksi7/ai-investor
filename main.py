@@ -405,7 +405,7 @@ def run_daily_cycle():
         action        = d["action"]
         target_weight = d.get("target_weight", 0)
         price         = market_data["prices"].get(ticker, {}).get("close", 0)
-        qty           = _compute_qty(target_weight, action, ticker, portfolio, market_data["prices"])
+        qty           = d.get("qty") or _compute_qty(target_weight, action, ticker, portfolio, market_data["prices"])
         total_value   = round(qty * price, 2) if qty and price else None
         broker_order  = order_results.get(ticker, {})
         broker_id     = broker_order.get("id") if isinstance(broker_order, dict) else None
