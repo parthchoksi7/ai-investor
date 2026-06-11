@@ -12,7 +12,11 @@ Pipeline order:
 """
 
 import os
+import re
+import time
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -20,24 +24,27 @@ except ImportError:
     pass
 
 _client = None
+_client_lock = threading.Lock()
 
 
 def _get_client():
     """Return (and lazily create) the shared Anthropic client."""
     global _client
     if _client is None:
-        import anthropic  # deferred so tests can import this module without the package
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if api_key:
-            _client = anthropic.Anthropic(api_key=api_key)
-        else:
-            token_file = os.getenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", "")
-            if token_file and os.path.isfile(token_file):
-                with open(token_file) as _tf:
-                    token = _tf.read().strip()
-                _client = anthropic.Anthropic(auth_token=token)
-            else:
-                _client = anthropic.Anthropic()
+        with _client_lock:
+            if _client is None:  # double-checked locking — safe under Python's GIL
+                import anthropic  # deferred so tests can import this module without the package
+                api_key = os.getenv("ANTHROPIC_API_KEY")
+                if api_key:
+                    _client = anthropic.Anthropic(api_key=api_key)
+                else:
+                    token_file = os.getenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", "")
+                    if token_file and os.path.isfile(token_file):
+                        with open(token_file) as _tf:
+                            token = _tf.read().strip()
+                        _client = anthropic.Anthropic(auth_token=token)
+                    else:
+                        _client = anthropic.Anthropic()
     return _client
 
 MODEL_FAST  = "claude-haiku-4-5-20251001"  # per-ticker agents
@@ -226,7 +233,6 @@ def _cached_system(prompt: str) -> list:
 
 
 def _parse_json(text: str, default):
-    import re
     text = text.strip()
     # Strip markdown code fences wherever they appear
     text = re.sub(r'^```(?:json)?\s*', '', text)
@@ -254,7 +260,6 @@ def _parse_json(text: str, default):
 
 
 def _safe_call(model, system, user_msg, default, max_tokens=600, retries=2):
-    import time
     for attempt in range(retries + 1):
         try:
             raw = _call(model, system, user_msg, max_tokens=max_tokens)
@@ -762,43 +767,56 @@ def get_trade_decisions(
     candidates = _select_candidates(portfolio, market_data, quant_scores)
     print(f"   Candidates for analysis ({len(candidates)}): {', '.join(candidates)}")
 
-    # ── 2. Research Analyst ───────────────────────────────────────────────────
-    print(f"   [2/7] Research Analyst ({len(candidates)} tickers)...")
+    _WORKERS = min(5, max(1, len(candidates)))
+
+    # ── 2 & 3: Research and Earnings are fully independent — run both in parallel ──
+    print(f"   [2/7] Research Analyst + [3/7] Earnings Analyst ({len(candidates)} tickers, parallel)...")
     research_map: dict = {}
-    for ticker in candidates:
-        research_map[ticker] = run_research_analyst(ticker, market_data, quant_scores)
-
-    # ── 3. Earnings & Catalyst Analyst ───────────────────────────────────────
-    print(f"   [3/7] Earnings & Catalyst Analyst ({len(candidates)} tickers)...")
     earnings_map: dict = {}
-    for ticker in candidates:
-        earnings_map[ticker] = run_earnings_catalyst_analyst(ticker, market_data)
+    with ThreadPoolExecutor(max_workers=_WORKERS * 2) as _pool:
+        r_futs = {_pool.submit(run_research_analyst, t, market_data, quant_scores): t for t in candidates}
+        e_futs = {_pool.submit(run_earnings_catalyst_analyst, t, market_data): t for t in candidates}
+        for fut in as_completed(list(r_futs) + list(e_futs)):
+            if fut in r_futs:
+                research_map[r_futs[fut]] = fut.result()
+            else:
+                earnings_map[e_futs[fut]] = fut.result()
 
-    # ── 4. Devil's Advocate (all candidates — confidence filter was backwards) ──
-    # High-confidence Haiku output is exactly the case most likely to need adversarial review.
-    devil_candidates = candidates
-    print(f"   [4/7] Devil's Advocate ({len(devil_candidates)} tickers)...")
+    # ── 4. Devil's Advocate — depends on 2 & 3, but parallel across tickers ──
+    print(f"   [4/7] Devil's Advocate ({len(candidates)} tickers, parallel)...")
     devil_map: dict = {}
-    for ticker in devil_candidates:
-        devil_map[ticker] = run_devils_advocate(
-            ticker, research_map[ticker], earnings_map[ticker], market_data, quant_scores
-        )
+    with ThreadPoolExecutor(max_workers=_WORKERS) as _pool:
+        d_futs = {
+            _pool.submit(run_devils_advocate, t, research_map[t], earnings_map[t], market_data, quant_scores): t
+            for t in candidates
+        }
+        for fut in as_completed(d_futs):
+            devil_map[d_futs[fut]] = fut.result()
 
-    # ── 5. Position Review (current holdings only) ────────────────────────────
+    # ── 5. Position Review — parallel across holdings ─────────────────────────
     holdings = portfolio.get("positions", [])
-    print(f"   [5/7] Position Review Analyst ({len(holdings)} holdings)...")
+    print(f"   [5/7] Position Review Analyst ({len(holdings)} holdings, parallel)...")
     position_reviews: dict = {}
-    for holding in holdings:
-        ticker = holding["symbol"]
-        position_reviews[ticker] = run_position_review_analyst(
-            holding, market_data, quant_scores, research_map.get(ticker),
-            (prior_journal or {}).get(ticker),
-        )
-        review = position_reviews[ticker]
-        print(
-            f"         {ticker}: hold={review.get('hold_score')}/10 "
-            f"alpha={review.get('remaining_alpha')} → {review.get('recommended_action')}"
-        )
+    if holdings:
+        _h_workers = min(5, len(holdings))
+        with ThreadPoolExecutor(max_workers=_h_workers) as _pool:
+            h_futs = {
+                _pool.submit(
+                    run_position_review_analyst,
+                    h, market_data, quant_scores,
+                    research_map.get(h["symbol"]),
+                    (prior_journal or {}).get(h["symbol"]),
+                ): h["symbol"]
+                for h in holdings
+            }
+            for fut in as_completed(h_futs):
+                ticker = h_futs[fut]
+                review = fut.result()
+                position_reviews[ticker] = review
+                print(
+                    f"         {ticker}: hold={review.get('hold_score')}/10 "
+                    f"alpha={review.get('remaining_alpha')} → {review.get('recommended_action')}"
+                )
 
     # ── 6. Portfolio Manager ──────────────────────────────────────────────────
     print("   [6/7] Portfolio Manager...")
