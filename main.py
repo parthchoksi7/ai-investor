@@ -353,38 +353,75 @@ def run_daily_cycle():
         print("=" * 60 + "\n")
         return
 
-    order_results: dict       = {}
-    executed_decisions: list  = []
-    execution_errors: list    = []
+    order_results: dict    = {}
+    attempted: list        = []
+    execution_errors: list = []
 
     if kill_active:
-        sell_only = [d for d in decisions if d.get("action", "").upper() == "SELL"]
+        attempted = [d for d in decisions if d.get("action", "").upper() == "SELL"]
         blocked   = [d for d in decisions if d.get("action", "").upper() == "BUY"]
         if blocked:
             print(f"\n⛔  Step 6: Kill switch active — blocking {len(blocked)} BUY(s).")
-        if sell_only:
-            print(f"\n⚡  Step 6: Executing {len(sell_only)} SELL(s) (kill switch active)...")
-            order_results      = execute_trades(sell_only, portfolio, market_data["prices"])
-            executed_decisions = sell_only
-            if not DRY_RUN:
-                mark_pending_executed(run_id)
+        if attempted:
+            print(f"\n⚡  Step 6: Executing {len(attempted)} SELL(s) (kill switch active)...")
         else:
             print("\n⛔  Step 6: Kill switch active — no SELL orders to execute.")
     else:
+        attempted = decisions
         print("\n⚡  Step 6: Executing trades...")
+
+    if attempted:
         try:
-            order_results      = execute_trades(decisions, portfolio, market_data["prices"])
-            executed_decisions = decisions
-            if not DRY_RUN:
-                mark_pending_executed(run_id)
+            order_results = execute_trades(attempted, portfolio, market_data["prices"])
         except Exception as e:
             execution_errors.append(str(e))
             print(f"   ❌ Execution error: {e}")
 
-    if execution_errors:
-        health.record("execution", FAILED,
-                      message=f"Trade execution errors: {'; '.join(execution_errors)}",
-                      decisions=len(decisions), errors=execution_errors, dry_run=DRY_RUN)
+    # An order only counts as executed when the broker returned an order id
+    # (or this is a dry run). Rejections — insufficient buying power, halted
+    # ticker, hard-block — come back without an id and must not be logged as
+    # fills or reported as healthy.
+    def _order_ok(r) -> bool:
+        return isinstance(r, dict) and bool(r.get("id") or r.get("dry_run"))
+
+    failed_orders = {t: r for t, r in order_results.items() if not _order_ok(r)}
+    executed_decisions = [
+        d for d in attempted
+        if d.get("action", "").upper() in ("BUY", "SELL")
+        and _order_ok(order_results.get(d.get("ticker")))
+    ]
+
+    # Stamp the idempotency lock as soon as anything was placed — a retry must
+    # never double-fill those orders. If nothing was placed at all (every order
+    # rejected, or execution crashed before the first order), leave it
+    # unstamped so the next scheduled attempt can retry the day.
+    any_placed = bool(executed_decisions)
+    nothing_to_place = not order_results and not execution_errors
+    if not DRY_RUN and (any_placed or nothing_to_place):
+        mark_pending_executed(run_id)
+
+    if execution_errors or failed_orders:
+        fail_details = {}
+        for t, r in failed_orders.items():
+            if isinstance(r, dict) and r.get("detail"):
+                fail_details[t] = str(r["detail"])[:200]
+            elif isinstance(r, dict) and r.get("blocked"):
+                fail_details[t] = "hard-blocked ticker"
+            else:
+                fail_details[t] = f"no broker order id (response: {str(r)[:120]})"
+        for t, msg in fail_details.items():
+            print(f"   ❌ Order NOT executed: {t} — {msg}")
+
+        status = DEGRADED if executed_decisions else FAILED
+        message = f"{len(failed_orders)} of {len(order_results)} order(s) failed"
+        if execution_errors:
+            message += f"; execution errors: {'; '.join(execution_errors)}"
+        health.record("execution", status,
+                      message=message,
+                      failed_orders=fail_details,
+                      errors=execution_errors,
+                      executed=len(executed_decisions),
+                      decisions=len(decisions), dry_run=DRY_RUN)
     else:
         health.record("execution", OK,
                       decisions=len(decisions),
