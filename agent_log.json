@@ -7728,5 +7728,2286 @@
         }
       ]
     }
+  },
+  {
+    "run_id": "20260611-134755",
+    "date": "2026-06-11",
+    "regime": {
+      "regime": "NEUTRAL",
+      "confidence": 50,
+      "growth_value": "NEUTRAL",
+      "favored_factors": [],
+      "avoid_factors": [],
+      "key_observations": []
+    },
+    "candidates": [
+      "UNH",
+      "EOG",
+      "TJX",
+      "JNJ",
+      "MS",
+      "EQIX",
+      "UPS",
+      "C",
+      "GS",
+      "PLD",
+      "PANW",
+      "JPM",
+      "TGT",
+      "LLY",
+      "LIN",
+      "ABBV",
+      "MRK",
+      "AMT",
+      "AAPL",
+      "BAC"
+    ],
+    "quant_scores": {
+      "PANW": {
+        "ticker": "PANW",
+        "data_available": true,
+        "composite_score": 70.0,
+        "momentum_score": 100.0,
+        "return_1m": 23.2,
+        "return_3m": 59.59,
+        "return_6m": 34.74,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 76.7,
+        "valuation_score": 50,
+        "volatility": 51.8,
+        "beta": 0.49,
+        "volatility_score": 43.4
+      },
+      "JNJ": {
+        "ticker": "JNJ",
+        "data_available": true,
+        "composite_score": 79.4,
+        "momentum_score": 82.4,
+        "return_1m": 7.7,
+        "return_3m": -1.85,
+        "return_6m": 18.29,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 83.3,
+        "valuation_score": 50,
+        "volatility": 18.1,
+        "beta": -0.14,
+        "volatility_score": 95.3
+      },
+      "EOG": {
+        "ticker": "EOG",
+        "data_available": true,
+        "composite_score": 77.7,
+        "momentum_score": 85.5,
+        "return_1m": 5.23,
+        "return_3m": 5.86,
+        "return_6m": 26.81,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 90.0,
+        "valuation_score": 50,
+        "volatility": 29.2,
+        "beta": -0.06,
+        "volatility_score": 78.2
+      },
+      "LLY": {
+        "ticker": "LLY",
+        "data_available": true,
+        "composite_score": 68.3,
+        "momentum_score": 98.4,
+        "return_1m": 14.82,
+        "return_3m": 16.3,
+        "return_6m": 15.91,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 37.6,
+        "beta": 0.71,
+        "volatility_score": 65.2
+      },
+      "UPS": {
+        "ticker": "UPS",
+        "data_available": true,
+        "composite_score": 67.1,
+        "momentum_score": 87.6,
+        "return_1m": 7.74,
+        "return_3m": 8.34,
+        "return_6m": 10.9,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 32.4,
+        "beta": 1.05,
+        "volatility_score": 73.2
+      },
+      "AMT": {
+        "ticker": "AMT",
+        "data_available": true,
+        "composite_score": 68.0,
+        "momentum_score": 85.2,
+        "return_1m": 7.09,
+        "return_3m": 7.53,
+        "return_6m": 8.77,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 28.1,
+        "beta": 0.23,
+        "volatility_score": 79.9
+      },
+      "TJX": {
+        "ticker": "TJX",
+        "data_available": true,
+        "composite_score": 71.7,
+        "momentum_score": 91.9,
+        "return_1m": 13.36,
+        "return_3m": 9.33,
+        "return_6m": 11.15,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 23.6,
+        "beta": 0.35,
+        "volatility_score": 86.7
+      },
+      "EQIX": {
+        "ticker": "EQIX",
+        "data_available": true,
+        "composite_score": 65.7,
+        "momentum_score": 63.9,
+        "return_1m": -3.38,
+        "return_3m": 7.47,
+        "return_6m": 41.73,
+        "above_50dma": false,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 17.5,
+        "beta": 0.58,
+        "volatility_score": 96.1
+      },
+      "GS": {
+        "ticker": "GS",
+        "data_available": true,
+        "composite_score": 69.4,
+        "momentum_score": 93.5,
+        "return_1m": 6.79,
+        "return_3m": 28.26,
+        "return_6m": 15.84,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 31.0,
+        "beta": 1.56,
+        "volatility_score": 75.3
+      },
+      "TGT": {
+        "ticker": "TGT",
+        "data_available": true,
+        "composite_score": 70.1,
+        "momentum_score": 92.6,
+        "return_1m": 6.6,
+        "return_3m": 12.17,
+        "return_6m": 40.09,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 28.5,
+        "beta": 0.24,
+        "volatility_score": 79.2
+      },
+      "ABBV": {
+        "ticker": "ABBV",
+        "data_available": true,
+        "composite_score": 67.8,
+        "momentum_score": 81.4,
+        "return_1m": 9.18,
+        "return_3m": 1.53,
+        "return_6m": 3.44,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 25.8,
+        "beta": 0.27,
+        "volatility_score": 83.4
+      },
+      "UNH": {
+        "ticker": "UNH",
+        "data_available": true,
+        "composite_score": 66.9,
+        "momentum_score": 88.4,
+        "return_1m": 2.27,
+        "return_3m": 46.32,
+        "return_6m": 26.25,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 33.4,
+        "beta": 0.34,
+        "volatility_score": 71.7
+      },
+      "MRK": {
+        "ticker": "MRK",
+        "data_available": true,
+        "composite_score": 68.6,
+        "momentum_score": 85.5,
+        "return_1m": 7.02,
+        "return_3m": 2.48,
+        "return_6m": 20.38,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 26.9,
+        "beta": -0.43,
+        "volatility_score": 81.7
+      },
+      "BAC": {
+        "ticker": "BAC",
+        "data_available": true,
+        "composite_score": 71.1,
+        "momentum_score": 87.2,
+        "return_1m": 7.89,
+        "return_3m": 12.41,
+        "return_6m": 1.19,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 21.8,
+        "beta": -0.2,
+        "volatility_score": 89.6
+      },
+      "PLD": {
+        "ticker": "PLD",
+        "data_available": true,
+        "composite_score": 68.9,
+        "momentum_score": 79.6,
+        "return_1m": 1.18,
+        "return_3m": 8.46,
+        "return_6m": 15.08,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 21.5,
+        "beta": -0.13,
+        "volatility_score": 90.0
+      },
+      "AAPL": {
+        "ticker": "AAPL",
+        "data_available": true,
+        "composite_score": 67.4,
+        "momentum_score": 76.8,
+        "return_1m": -1.09,
+        "return_3m": 14.12,
+        "return_6m": 5.4,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 23.2,
+        "beta": 0.79,
+        "volatility_score": 87.4
+      },
+      "C": {
+        "ticker": "C",
+        "data_available": true,
+        "composite_score": 70.9,
+        "momentum_score": 95.2,
+        "return_1m": 6.77,
+        "return_3m": 28.57,
+        "return_6m": 24.6,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 28.5,
+        "beta": 1.21,
+        "volatility_score": 79.2
+      },
+      "JPM": {
+        "ticker": "JPM",
+        "data_available": true,
+        "composite_score": 68.4,
+        "momentum_score": 77.9,
+        "return_1m": 1.88,
+        "return_3m": 10.36,
+        "return_6m": 4.36,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 21.5,
+        "beta": 0.69,
+        "volatility_score": 90.0
+      },
+      "MS": {
+        "ticker": "MS",
+        "data_available": true,
+        "composite_score": 72.2,
+        "momentum_score": 97.2,
+        "return_1m": 8.69,
+        "return_3m": 35.83,
+        "return_6m": 17.9,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 26.5,
+        "beta": 1.22,
+        "volatility_score": 82.3
+      },
+      "LIN": {
+        "ticker": "LIN",
+        "data_available": true,
+        "composite_score": 70.5,
+        "momentum_score": 82.7,
+        "return_1m": 3.22,
+        "return_3m": 6.05,
+        "return_6m": 33.67,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 19.6,
+        "beta": 0.04,
+        "volatility_score": 92.9
+      }
+    },
+    "research": {
+      "UNH": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "EQIX": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "JNJ": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "TJX": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "PLD": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "MS": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "GS": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "EOG": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "UPS": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "C": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "PANW": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "JPM": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "LLY": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "LIN": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "TGT": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "MRK": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "ABBV": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "AMT": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "AAPL": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "BAC": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      }
+    },
+    "earnings": {
+      "UNH": {
+        "next_earnings_est": "2026-07-16",
+        "earnings_alpha_score": 6,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (medical loss ratio trends, margin dynamics)",
+          "UnitedHealth Group investor conference participation or industry health conference presentations",
+          "Optum segment performance update (pharmacy, healthcare services revenue acceleration)",
+          "Medical loss ratio guidance for H2 2026",
+          "Potential CMS rate announcements or Medicare Advantage policy updates affecting 2027 rates",
+          "Share buyback authorization updates and capital allocation announcements",
+          "Litigation resolution updates (Change Healthcare ransomware, DOJ antitrust matters)"
+        ],
+        "expected_move_pct": 4.2
+      },
+      "TJX": {
+        "next_earnings_est": "2026-08-20",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 FY2026 earnings report (late August) - comp store sales trends and margin performance",
+          "Back-to-school inventory positioning and promotional intensity signals",
+          "Summer clearance execution and off-price inventory management",
+          "Consumer discretionary spending trends heading into Q3",
+          "Potential guidance raise if H1 performance strong and 2H demand outlook improves"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "EOG": {
+        "next_earnings_est": "2026-08-03",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (early August) - energy prices and production volumes",
+          "Mid-Continent and Bakken production updates - cost guidance",
+          "Oil and gas price environment volatility (WTI/Henry Hub sensitivity)",
+          "Capital allocation announcements - dividend or buyback decisions",
+          "Deepwater Gulf of Mexico project updates - major growth driver"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "JNJ": {
+        "next_earnings_est": "2026-07-14",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings release (late July) - pharma/consumer health segment performance",
+          "MedTech division guidance updates on medical device demand",
+          "Regulatory decisions on pending drug approvals/FDA actions",
+          "Dividend announcement and capital allocation plans",
+          "Janssen pharma pipeline readouts or clinical trial data",
+          "Consumer health portfolio performance and market share trends"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "EQIX": {
+        "next_earnings_est": "2026-07-30",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (late July) - data center utilization trends and pricing power",
+          "AI/hyperscaler capacity expansion announcements - incremental revenue visibility",
+          "Guidance confirmation for H2 2026 - economic demand signals for colocation services",
+          "Potential capital allocation decision (dividend/buyback) - shareholder returns signal"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "UPS": {
+        "next_earnings_est": "2026-07-28",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "MEDIUM",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (late July) - volume trends and margin pressure from rate cuts",
+          "Guidance reaffirmation or revision on 2026 full-year EPS amid economic uncertainty",
+          "Freight demand indicators - potential softening in Q3 seasonal volumes",
+          "Pension funding updates and capital allocation announcements",
+          "Competitive pricing environment commentary in logistics sector"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "MS": {
+        "next_earnings_est": "2026-07-16",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (July 16) - Investment banking and trading revenue trends",
+          "Wealth Management segment growth metrics and net new assets",
+          "Capital markets activity recovery/slowdown signals",
+          "Interest rate guidance impact on net interest margin",
+          "Regulatory capital ratio announcements (stress test results if applicable)",
+          "M&A advisory pipeline strength indicators",
+          "Trading revenue seasonality (summer volatility)",
+          "Credit quality trends in lending portfolio"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "GS": {
+        "next_earnings_est": "2026-07-16",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "MEDIUM",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (mid-July) - investment banking revenue trends, trading volatility impact",
+          "Fixed income trading results - net interest margin compression in declining rate environment",
+          "Wealth management AUM changes - market performance impact on fees",
+          "Capital return announcements - buyback authorization or dividend decisions",
+          "Regulatory capital ratio disclosures - stress test results implications",
+          "M&A market activity metrics - deal pipeline visibility for advisory fees",
+          "Rate cut expectations - margin pressure from lower Fed funds rates"
+        ],
+        "expected_move_pct": 3.2
+      },
+      "C": {
+        "next_earnings_est": "2026-07-17",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "MEDIUM",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report and guidance (mid-July)",
+          "Net interest margin commentary amid Fed rate environment",
+          "Credit loss provisions and loan portfolio health disclosure",
+          "Capital return announcements (buyback/dividend authorization)",
+          "Wealth management and investment banking revenue trends",
+          "Regulatory capital ratio updates and stress testing results"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "PLD": {
+        "next_earnings_est": "2026-07-21",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (late July) - industrial property REIT with logistics portfolio exposure to e-commerce trends",
+          "Occupancy rate updates and rental rate growth disclosures - direct indicator of pricing power",
+          "Capital deployment announcements - potential acquisitions or developments in high-demand logistics corridors",
+          "Dividend sustainability discussion - critical for REIT valuation given 3-4% yield profile",
+          "Portfolio repositioning updates - management commentary on geographic/asset-class allocation shifts",
+          "Interest rate sensitivity signals - refinancing activity and debt maturity management"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "JPM": {
+        "next_earnings_est": "2026-07-14",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (~July 14) - net interest margin trends and credit quality updates",
+          "Investment banking and trading revenue commentary amid market volatility",
+          "Net interest income guidance for remainder of 2026",
+          "Capital allocation announcement - potential share buyback updates or dividend decision",
+          "Credit loss provision discussion - consumer and commercial loan portfolio health",
+          "Federal Reserve policy signals affecting NII trajectory",
+          "Wealth management and asset management fee revenue trends"
+        ],
+        "expected_move_pct": 3.2
+      },
+      "LLY": {
+        "next_earnings_est": "2026-07-21",
+        "earnings_alpha_score": 7,
+        "beat_probability": "HIGH",
+        "guidance_raise_probability": "HIGH",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (late July) - GLP-1 revenue acceleration expected",
+          "Tirzepatide/Mounjaro demand trends and market share updates",
+          "Potential FDA approval or clinical data readout for obesity/diabetes pipeline assets",
+          "Incretin mimetic competitive landscape commentary",
+          "Capital allocation announcement - dividend/buyback updates",
+          "Baricitinib/Olumiant indication expansion or market penetration data",
+          "International market expansion progress in GLP-1 category"
+        ],
+        "expected_move_pct": 5.5
+      },
+      "MRK": {
+        "next_earnings_est": "2026-07-30",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "MEDIUM",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (late July) - pharma typically reports late in month",
+          "Potential FDA decisions on pipeline assets (oncology/immunology programs in review)",
+          "Keytruda (pembrolizumab) label expansion announcements or clinical trial readouts",
+          "Gardasil/vaccine franchise revenue trends amid market competition",
+          "Dividend/capital allocation announcements at earnings",
+          "Respiratory/infectious disease portfolio updates (post-COVID normalization concerns)",
+          "Litigation resolution updates (opioid settlements, patent challenges)"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "ABBV": {
+        "next_earnings_est": "2026-07-29",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (~late July) - potential beat on immunology/oncology franchise",
+          "RINVOQ/rheumatology data updates or label expansions",
+          "Skyrizi/Rinvoq franchise momentum updates - key growth drivers",
+          "Potential M&A or pipeline advancement announcements",
+          "Allergan aesthetics segment performance review",
+          "Guidance reaffirmation or adjustment for FY2026"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "LIN": {
+        "next_earnings_est": "2026-07-30",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings release (late July)",
+          "Industrial gas demand trends from manufacturing/refining data",
+          "Helium market dynamics and pricing updates",
+          "Hydrogen economy project announcements or updates",
+          "Capital allocation decisions (M&A, buyback acceleration)",
+          "Energy transition customer contract wins or expansions"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "AMT": {
+        "next_earnings_est": "2026-07-29",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (late July) - recurring revenue visibility and tower utilization rates",
+          "Potential guidance raise on 5G/wireless capex cycle acceleration",
+          "Capital allocation announcement - dividend policy or share buyback updates",
+          "Data center expansion progress and colocation growth metrics",
+          "International tower portfolio performance updates",
+          "Tenant mix announcements (3G sunset completion impact)"
+        ],
+        "expected_move_pct": 3.2
+      },
+      "PANW": {
+        "next_earnings_est": "2026-08-21",
+        "earnings_alpha_score": 6,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q3 FY2026 earnings report (August 21, 2026) - Platform subscription growth and RPO trends",
+          "Guidance for Q4 FY2026 and FY2027 - Cloud security market share momentum",
+          "Potential M&A announcement or partnership expansion in cloud-native security",
+          "Cloud security portfolio updates or product launch announcements",
+          "AI/ML security feature releases or competitive positioning updates",
+          "Enterprise customer wins disclosure and retention metrics",
+          "Remaining fiscal year guidance adjustments based on macro enterprise spend"
+        ],
+        "expected_move_pct": 5,
+        "rationale": "PANW typically reports Q3 earnings in late August. The cybersecurity sector has shown resilience despite macro uncertainty. Key variables: RPO growth (recurring revenue commitment), cloud platform adoption acceleration, and guidance stance on FY2027. MEDIUM beat probability reflects balanced execution on subscription expansion offset by potential enterprise IT budget pressure. MEDIUM guidance raise probability assumes the company maintains confidence in cloud security TAM expansion. Expected 5% move reflects normal earnings volatility for high-growth security software names."
+      },
+      "AAPL": {
+        "next_earnings_est": "2026-07-28",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "MEDIUM",
+        "key_catalysts_90d": [
+          "Q3 FY2026 earnings report (late July) - Services growth trajectory and installed base metrics",
+          "iPhone 18 launch event (expected September) - new product cycle catalyst",
+          "M&A/Capital allocation announcement - potential buyback expansion or acquisition",
+          "Regulatory clarity on App Store policies - ongoing antitrust proceedings may resolve",
+          "Services margin expansion data - recurring revenue growth sustainability",
+          "China demand indicators - geopolitical/competitive headwinds in key market",
+          "AI feature rollout updates - implementation of Apple Intelligence features"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "BAC": {
+        "next_earnings_est": "2026-07-15",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (~mid-July) - Net interest margin trends and credit quality",
+          "Fed monetary policy signals (FOMC meetings/statements) - Rate path impacts NII",
+          "Capital return announcements (potential buyback acceleration or dividend increase)",
+          "Investment banking/trading revenue trends - M&A activity and capital markets volatility",
+          "Loan loss provision guidance - Credit cycle positioning heading into late 2026",
+          "Deposit dynamics and funding cost pressures - Competitive consumer banking environment"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "TGT": {
+        "next_earnings_est": "2026-08-19",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "MEDIUM",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (late August) - retail comparable sales and margin trends",
+          "Back-to-school seasonal demand (July-August) - historically important for TGT",
+          "Consumer discretionary spending patterns in summer months",
+          "Potential margin pressure commentary on labor costs and inventory management",
+          "Holiday season guidance (Q4 preview) typically included in Q2 earnings call"
+        ],
+        "expected_move_pct": 3.5
+      }
+    },
+    "devils_advocate": {
+      "UNH": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "MS": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "TJX": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "EOG": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "JNJ": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "EQIX": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "UPS": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "GS": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "PLD": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "C": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "PANW": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "LLY": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "TGT": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "JPM": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "LIN": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "ABBV": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "AMT": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "MRK": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "AAPL": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "BAC": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      }
+    },
+    "position_reviews": {
+      "MS": {
+        "hold_score": 5,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "catalysts_played_out": false,
+        "recommended_action": "HOLD",
+        "reasoning": "MS shows mixed signals warranting cautious retention. Positive: Strong momentum (97.2) and recent 3M performance (35.83%) indicate sustained uptrend; composite score of 72.2 is solid; trading above both 50 and 200 DMAs suggests technical health. Concerning: Low original confidence (5/10) suggests weak conviction; -2% drawdown from entry despite strong momentum creates minor technical concern; quality and value metrics at 50 (neutral) lack conviction; high beta (1.22) amplifies volatility risk. The absence of recent news leaves catalysts unclear. Recommendation: Maintain position given technical strength and medium alpha potential, but do not add. Set tight monitoring for momentum failure below 50 DMA or deterioration in institutional accumulation signals. Consider reducing if confidence thesis cannot be articulated more specifically."
+      },
+      "JPM": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "catalysts_played_out": false,
+        "recommended_action": "HOLD",
+        "reasoning": "JPM exhibits solid fundamentals with composite score of 68.4 and strong momentum (77.9). Quality and value metrics are neutral (50), but the position shows positive returns YTD (3M: +10.36%, 1M: +1.88%) with low volatility (21.5%) and beta (0.69), indicating defensive positioning. However, your stated confidence of only 5/10 is a material concern\u2014this disconnect between the quantitative strength and low conviction suggests either incomplete due diligence or external uncertainty not captured in quant metrics. Current P&L is barely negative (-0.5%), so no loss realization pressure. Remain positioned but address the confidence gap: either validate the thesis through deeper research to raise conviction to 7-8/10, or reduce size to match your 5/10 comfort level. The low beta makes this suitable as a core holding, but medium alpha suggests this is now partially a beta play rather than an active bet. Monitor for catalyst clarity to justify conviction increase."
+      },
+      "EOG": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "catalysts_played_out": false,
+        "recommended_action": "HOLD",
+        "reasoning": "EOG shows solid technical positioning with composite score of 77.7 and strong momentum (85.5). Quality metrics are excellent (90.0). However, your own confidence level of 5/10 is a critical red flag\u2014this suggests conviction has eroded or thesis assumptions are being questioned. The valuation signal (50) indicates fair value, not compelling opportunity. Position size is tiny (0.247912 shares, ~$35 notional), making this a negligible portfolio impact. Given low confidence, moderate alpha opportunity, and lack of recent catalysts, this appears to be a conviction mismatch. HOLD only if you can articulate renewed thesis conviction within next 2-3 weeks. Otherwise, REDUCE or redeploy capital to higher-confidence ideas. The negation of negative beta (-0.06) during energy upswings suggests you're not capturing full sector momentum\u2014potential opportunity cost relative to peers. Monitor for macro energy/rates catalysts that could reinvigorate case."
+      },
+      "MRK": {
+        "hold_score": 4,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "REDUCE",
+        "reasoning": "MRK presents weak conviction with multiple concerns: (1) Low thesis confidence (5/10) suggests conviction already eroded; (2) Quality score of 50 indicates deteriorating fundamentals\u2014below median for a large-cap pharma; (3) Momentum at 85.5 is strong, but 1M returns of 7% suggest catalysts may have already played out with limited runway; (4) Valuation neutral (50) offers no margin of safety; (5) Negative alpha signal from composite score of 68.6 (below 70 threshold) despite passing technical levels; (6) Defensive beta (-0.43) suggests this was a hedging position, but better opportunities likely exist elsewhere. The lack of recent news combined with weak thesis confidence indicates passive holding rather than active conviction. Position size is small (0.29 shares), but capital is better deployed where thesis confidence exceeds 7/10 and quality metrics are stronger."
+      },
+      "EQIX": {
+        "hold_score": 5,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "catalysts_played_out": false,
+        "recommended_action": "HOLD",
+        "reasoning": "EQIX presents a mixed picture warranting cautious holding. Composite score of 65.7 is solid but not compelling; quality and value metrics at 50 (neutral) suggest limited fundamental tailwinds. The low confidence score (5/10) in your original thesis is concerning and should be monitored closely. Positive signals: momentum at 63.9 is respectable, beta of 0.58 provides downside cushion, price above 200-day MA shows intermediate trend support, and recent 3M return of +7.47% indicates underlying strength despite -3.7% current drawdown. Negative signals: 1M momentum turning negative (-3.38%), valuation appears stretched relative to quality metrics, and low volatility (17.5%) may indicate reduced dislocations. Data center thesis (EQIX's core) remains structurally sound with AI infrastructure tailwinds available, but catalysts appear priced in. Position is small (0.037 shares); opportunity cost is low. Recommend: maintain hold but reassess if composite drops below 60 or thesis confidence drops further. No near-term catalyst visibility suggests limited upside surprise potential."
+      },
+      "LIN": {
+        "hold_score": 5,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "catalysts_played_out": false,
+        "recommended_action": "HOLD",
+        "reasoning": "LIN presents a mixed picture warranting cautious hold. Positive factors: Strong momentum (82.7) and composite score (70.5) suggest continued positive technicals; low beta (0.04) provides defensive characteristics; positive recent returns (1M: 3.22%, 3M: 6.05%) with price above both 50/200 MAs indicate uptrend. Concerns: Your own low confidence (5/10) reflects execution risk; quality/value scores at neutral 50 suggest limited fundamental edge; 2.4% unrealized gain is modest. The position size (0.087592 shares) appears small, limiting portfolio impact. No recent news creates uncertainty on near-term catalysts. Thesis remains intact but lacks conviction. MEDIUM alpha remains available through momentum continuation, but limited fundamental support constrains upside. Recommend holding current small position while monitoring for: (1) catalyst developments that could justify higher conviction, (2) momentum deterioration below 50-day MA as exit trigger, or (3) opportunity cost if higher-confidence ideas emerge. Consider this a 'prove-it' hold rather than core conviction position."
+      },
+      "GS": {
+        "hold_score": 4,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "REDUCE",
+        "reasoning": "GS presents a weak risk/reward at current levels. Your own confidence is already low (5/10), which is a critical red flag. While momentum metrics are strong (93.5), this appears to be tactical price action rather than fundamental strength\u2014quality and value scores are both mediocre at 50. The composite score of 69.4 is above threshold but uninspiring given 1.56 beta exposure (high volatility risk). Recent momentum (6.79% 1M, 28.26% 3M) suggests catalysts may have already been priced in. With near-flat P&L and no positive news, the risk of mean reversion in this cyclical, beta-heavy position outweighs remaining alpha potential. Position size (0.04 shares) is modest, but capital is better deployed elsewhere. Reduce on strength into the momentum."
+      }
+    },
+    "portfolio_manager_proposed": [
+      {
+        "ticker": "GS",
+        "action": "SELL",
+        "target_weight": 0.0,
+        "source_of_capital": "GS",
+        "rationale": "LOW alpha rating with REDUCE action, hold score 4/10, and lowest composite quant score among financials; freeing capital for higher-conviction opportunities.",
+        "qty": 0.039584
+      },
+      {
+        "ticker": "MRK",
+        "action": "SELL",
+        "target_weight": 0.0,
+        "source_of_capital": "MRK",
+        "rationale": "LOW alpha rating with REDUCE action and hold score 4/10; weakest quant composite among current holdings, capital better deployed elsewhere.",
+        "qty": 0.28935
+      },
+      {
+        "ticker": "JNJ",
+        "action": "BUY",
+        "target_weight": 0.07,
+        "source_of_capital": "GS",
+        "rationale": "Highest composite quant score (79.4) with near-zero beta (-0.14) providing defensive diversification, replacing GS with superior risk-adjusted return profile in neutral regime.",
+        "qty": 0.146504
+      },
+      {
+        "ticker": "TJX",
+        "action": "BUY",
+        "target_weight": 0.07,
+        "source_of_capital": "MRK",
+        "rationale": "Strong momentum (91.9) and composite (71.7) with low beta (0.35) and consumer defensive characteristics; adds sector diversification replacing low-alpha MRK.",
+        "qty": 0.2058
+      },
+      {
+        "ticker": "PANW",
+        "action": "BUY",
+        "target_weight": 0.07,
+        "source_of_capital": "cash",
+        "rationale": "Perfect momentum score (100.0), strong quant score (76.7), earnings alpha 6/10, and zero current tech/cybersecurity exposure adds meaningful diversification in a neutral regime.",
+        "qty": 0.132739
+      }
+    ],
+    "cro": {
+      "approved": true,
+      "risk_budget_used": 42,
+      "largest_risk": "PANW carries 51.8% annualized volatility at 7% weight, and a cybersecurity sector drawdown or earnings miss could inflict outsized loss relative to its portfolio contribution.",
+      "rejected_tickers": [],
+      "reasoning": "The proposed trades improve overall portfolio construction. Selling GS and MRK removes low-conviction positions, and the replacements (JNJ, TJX, PANW) add sector diversification across healthcare, consumer discretionary, and technology. The portfolio maintains a high cash buffer (46.2%) which provides meaningful downside protection and optionality. Concentration risk is manageable \u2014 no single position exceeds 9.1% and the top 3 positions total ~26%. Factor exposure is well-distributed: near-zero aggregate beta across holdings reduces systematic market risk, though MS at 9% with beta 1.22 is the primary market-correlated position. Correlation risk is low given the mix of defensive (JNJ, LIN), low-beta (EOG, TJX), and growth (PANW, EQIX) names with limited sector overlap. PANW's elevated volatility (51.8%) is the primary concern but is contained at 7% weight \u2014 a 40% drawdown in PANW would cost the portfolio only ~2.8%, which is tolerable. No catastrophic concentration or correlation cluster exists that could cause portfolio-level ruin. Approved."
+    },
+    "final_decisions": [
+      {
+        "ticker": "GS",
+        "action": "SELL",
+        "target_weight": 0.0,
+        "source_of_capital": "GS",
+        "rationale": "LOW alpha rating with REDUCE action, hold score 4/10, and lowest composite quant score among financials; freeing capital for higher-conviction opportunities.",
+        "qty": 0.039584
+      },
+      {
+        "ticker": "MRK",
+        "action": "SELL",
+        "target_weight": 0.0,
+        "source_of_capital": "MRK",
+        "rationale": "LOW alpha rating with REDUCE action and hold score 4/10; weakest quant composite among current holdings, capital better deployed elsewhere.",
+        "qty": 0.28935
+      },
+      {
+        "ticker": "JNJ",
+        "action": "BUY",
+        "target_weight": 0.07,
+        "source_of_capital": "GS",
+        "rationale": "Highest composite quant score (79.4) with near-zero beta (-0.14) providing defensive diversification, replacing GS with superior risk-adjusted return profile in neutral regime.",
+        "qty": 0.146504
+      },
+      {
+        "ticker": "TJX",
+        "action": "BUY",
+        "target_weight": 0.07,
+        "source_of_capital": "MRK",
+        "rationale": "Strong momentum (91.9) and composite (71.7) with low beta (0.35) and consumer defensive characteristics; adds sector diversification replacing low-alpha MRK.",
+        "qty": 0.2058
+      },
+      {
+        "ticker": "PANW",
+        "action": "BUY",
+        "target_weight": 0.07,
+        "source_of_capital": "cash",
+        "rationale": "Perfect momentum score (100.0), strong quant score (76.7), earnings alpha 6/10, and zero current tech/cybersecurity exposure adds meaningful diversification in a neutral regime.",
+        "qty": 0.132739
+      }
+    ],
+    "timestamp": "2026-06-11T13:47:55.087220+00:00",
+    "kill_switch_active": false,
+    "market_data_source": "market_snapshot_file",
+    "market_data_date": "2026-06-11",
+    "portfolio_snapshot": {
+      "cash": 230.45,
+      "total_value": 499.1375659157,
+      "positions": [
+        {
+          "symbol": "EQIX",
+          "qty": 0.037203,
+          "avg_price": 1076.79,
+          "current_price": 1036.83,
+          "market_value": 38.574,
+          "unrealized_pnl": -1.487
+        },
+        {
+          "symbol": "MS",
+          "qty": 0.215357,
+          "avg_price": 213.55,
+          "current_price": 209.31,
+          "market_value": 45.076,
+          "unrealized_pnl": -0.913
+        },
+        {
+          "symbol": "MRK",
+          "qty": 0.28935,
+          "avg_price": 121.06,
+          "current_price": 120.685,
+          "market_value": 34.934,
+          "unrealized_pnl": -0.109
+        },
+        {
+          "symbol": "EOG",
+          "qty": 0.247912,
+          "avg_price": 141.14,
+          "current_price": 140.47,
+          "market_value": 34.829,
+          "unrealized_pnl": -0.166
+        },
+        {
+          "symbol": "JPM",
+          "qty": 0.095754,
+          "avg_price": 313.72,
+          "current_price": 312.085,
+          "market_value": 29.893,
+          "unrealized_pnl": -0.157
+        },
+        {
+          "symbol": "LIN",
+          "qty": 0.087592,
+          "avg_price": 504.95,
+          "current_price": 517.26,
+          "market_value": 45.307,
+          "unrealized_pnl": 1.078
+        },
+        {
+          "symbol": "GS",
+          "qty": 0.039584,
+          "avg_price": 1006.72,
+          "current_price": 1013.965,
+          "market_value": 40.136,
+          "unrealized_pnl": 0.287
+        }
+      ]
+    }
+  },
+  {
+    "run_id": "20260611-135301",
+    "date": "2026-06-11",
+    "regime": {
+      "regime": "NEUTRAL",
+      "confidence": 50,
+      "growth_value": "NEUTRAL",
+      "favored_factors": [],
+      "avoid_factors": [],
+      "key_observations": []
+    },
+    "candidates": [
+      "GS",
+      "UPS",
+      "LIN",
+      "JPM",
+      "EQIX",
+      "BAC",
+      "AMT",
+      "C",
+      "ABBV",
+      "LLY",
+      "PLD",
+      "MRK",
+      "MS",
+      "TGT",
+      "UNH",
+      "EOG",
+      "PANW",
+      "JNJ",
+      "AAPL",
+      "TJX"
+    ],
+    "quant_scores": {
+      "PANW": {
+        "ticker": "PANW",
+        "data_available": true,
+        "composite_score": 70.0,
+        "momentum_score": 100.0,
+        "return_1m": 23.2,
+        "return_3m": 59.59,
+        "return_6m": 34.74,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 76.7,
+        "valuation_score": 50,
+        "volatility": 51.8,
+        "beta": 0.49,
+        "volatility_score": 43.4
+      },
+      "JNJ": {
+        "ticker": "JNJ",
+        "data_available": true,
+        "composite_score": 79.4,
+        "momentum_score": 82.4,
+        "return_1m": 7.7,
+        "return_3m": -1.85,
+        "return_6m": 18.29,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 83.3,
+        "valuation_score": 50,
+        "volatility": 18.1,
+        "beta": -0.14,
+        "volatility_score": 95.3
+      },
+      "EOG": {
+        "ticker": "EOG",
+        "data_available": true,
+        "composite_score": 77.7,
+        "momentum_score": 85.5,
+        "return_1m": 5.23,
+        "return_3m": 5.86,
+        "return_6m": 26.81,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 90.0,
+        "valuation_score": 50,
+        "volatility": 29.2,
+        "beta": -0.06,
+        "volatility_score": 78.2
+      },
+      "LLY": {
+        "ticker": "LLY",
+        "data_available": true,
+        "composite_score": 68.3,
+        "momentum_score": 98.4,
+        "return_1m": 14.82,
+        "return_3m": 16.3,
+        "return_6m": 15.91,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 37.6,
+        "beta": 0.71,
+        "volatility_score": 65.2
+      },
+      "UPS": {
+        "ticker": "UPS",
+        "data_available": true,
+        "composite_score": 67.1,
+        "momentum_score": 87.6,
+        "return_1m": 7.74,
+        "return_3m": 8.34,
+        "return_6m": 10.9,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 32.4,
+        "beta": 1.05,
+        "volatility_score": 73.2
+      },
+      "AMT": {
+        "ticker": "AMT",
+        "data_available": true,
+        "composite_score": 68.0,
+        "momentum_score": 85.2,
+        "return_1m": 7.09,
+        "return_3m": 7.53,
+        "return_6m": 8.77,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 28.1,
+        "beta": 0.23,
+        "volatility_score": 79.9
+      },
+      "TJX": {
+        "ticker": "TJX",
+        "data_available": true,
+        "composite_score": 71.7,
+        "momentum_score": 91.9,
+        "return_1m": 13.36,
+        "return_3m": 9.33,
+        "return_6m": 11.15,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 23.6,
+        "beta": 0.35,
+        "volatility_score": 86.7
+      },
+      "EQIX": {
+        "ticker": "EQIX",
+        "data_available": true,
+        "composite_score": 65.7,
+        "momentum_score": 63.9,
+        "return_1m": -3.38,
+        "return_3m": 7.47,
+        "return_6m": 41.73,
+        "above_50dma": false,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 17.5,
+        "beta": 0.58,
+        "volatility_score": 96.1
+      },
+      "GS": {
+        "ticker": "GS",
+        "data_available": true,
+        "composite_score": 69.4,
+        "momentum_score": 93.5,
+        "return_1m": 6.79,
+        "return_3m": 28.26,
+        "return_6m": 15.84,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 31.0,
+        "beta": 1.56,
+        "volatility_score": 75.3
+      },
+      "TGT": {
+        "ticker": "TGT",
+        "data_available": true,
+        "composite_score": 70.1,
+        "momentum_score": 92.6,
+        "return_1m": 6.6,
+        "return_3m": 12.17,
+        "return_6m": 40.09,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 28.5,
+        "beta": 0.24,
+        "volatility_score": 79.2
+      },
+      "ABBV": {
+        "ticker": "ABBV",
+        "data_available": true,
+        "composite_score": 67.8,
+        "momentum_score": 81.4,
+        "return_1m": 9.18,
+        "return_3m": 1.53,
+        "return_6m": 3.44,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 25.8,
+        "beta": 0.27,
+        "volatility_score": 83.4
+      },
+      "UNH": {
+        "ticker": "UNH",
+        "data_available": true,
+        "composite_score": 66.9,
+        "momentum_score": 88.4,
+        "return_1m": 2.27,
+        "return_3m": 46.32,
+        "return_6m": 26.25,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 33.4,
+        "beta": 0.34,
+        "volatility_score": 71.7
+      },
+      "MRK": {
+        "ticker": "MRK",
+        "data_available": true,
+        "composite_score": 68.6,
+        "momentum_score": 85.5,
+        "return_1m": 7.02,
+        "return_3m": 2.48,
+        "return_6m": 20.38,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 26.9,
+        "beta": -0.43,
+        "volatility_score": 81.7
+      },
+      "BAC": {
+        "ticker": "BAC",
+        "data_available": true,
+        "composite_score": 71.1,
+        "momentum_score": 87.2,
+        "return_1m": 7.89,
+        "return_3m": 12.41,
+        "return_6m": 1.19,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 21.8,
+        "beta": -0.2,
+        "volatility_score": 89.6
+      },
+      "PLD": {
+        "ticker": "PLD",
+        "data_available": true,
+        "composite_score": 68.9,
+        "momentum_score": 79.6,
+        "return_1m": 1.18,
+        "return_3m": 8.46,
+        "return_6m": 15.08,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 21.5,
+        "beta": -0.13,
+        "volatility_score": 90.0
+      },
+      "AAPL": {
+        "ticker": "AAPL",
+        "data_available": true,
+        "composite_score": 67.4,
+        "momentum_score": 76.8,
+        "return_1m": -1.09,
+        "return_3m": 14.12,
+        "return_6m": 5.4,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 23.2,
+        "beta": 0.79,
+        "volatility_score": 87.4
+      },
+      "C": {
+        "ticker": "C",
+        "data_available": true,
+        "composite_score": 70.9,
+        "momentum_score": 95.2,
+        "return_1m": 6.77,
+        "return_3m": 28.57,
+        "return_6m": 24.6,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 28.5,
+        "beta": 1.21,
+        "volatility_score": 79.2
+      },
+      "JPM": {
+        "ticker": "JPM",
+        "data_available": true,
+        "composite_score": 68.4,
+        "momentum_score": 77.9,
+        "return_1m": 1.88,
+        "return_3m": 10.36,
+        "return_6m": 4.36,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 21.5,
+        "beta": 0.69,
+        "volatility_score": 90.0
+      },
+      "MS": {
+        "ticker": "MS",
+        "data_available": true,
+        "composite_score": 72.2,
+        "momentum_score": 97.2,
+        "return_1m": 8.69,
+        "return_3m": 35.83,
+        "return_6m": 17.9,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 26.5,
+        "beta": 1.22,
+        "volatility_score": 82.3
+      },
+      "LIN": {
+        "ticker": "LIN",
+        "data_available": true,
+        "composite_score": 70.5,
+        "momentum_score": 82.7,
+        "return_1m": 3.22,
+        "return_3m": 6.05,
+        "return_6m": 33.67,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "valuation_score": 50,
+        "volatility": 19.6,
+        "beta": 0.04,
+        "volatility_score": 92.9
+      }
+    },
+    "research": {
+      "ABBV": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "GS": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "LLY": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "UPS": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "EQIX": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "BAC": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "AMT": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "C": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "JPM": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "LIN": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "MRK": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "PLD": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "UNH": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "TGT": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "PANW": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "MS": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "EOG": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "JNJ": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "AAPL": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      },
+      "TJX": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": ""
+      }
+    },
+    "earnings": {
+      "GS": {
+        "next_earnings_est": "2026-07-16",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "MEDIUM",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings release (est. mid-July)",
+          "Investment banking revenue commentary amid M&A activity levels",
+          "Trading revenue trends in fixed income and equities",
+          "Net interest margin pressure discussion",
+          "Capital return program announcements or adjustments",
+          "Regulatory capital ratio updates (stress test results if applicable)",
+          "Wealth management segment performance and AUM trends"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "LIN": {
+        "next_earnings_est": "2026-07-30",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (late July) - industrial gases demand from semiconductor/data center recovery",
+          "Guidance commentary on H2 2026 capex allocation and margin expansion",
+          "Potential ASU (air separation unit) contract awards or large project announcements",
+          "Quarterly dividend decision and capital allocation update",
+          "Industrial production data and chemical/refining cycle indicators affecting gas demand"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "UPS": {
+        "next_earnings_est": "2026-07-28",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "MEDIUM",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings release (late July) - revenue pressure from e-commerce normalization post-pandemic",
+          "Guidance revision for full-year 2026 - likely conservative given macro headwinds",
+          "Peak summer shipping season commentary - operational efficiency metrics critical",
+          "Federal Reserve rate decision impacts (June FOMC meeting already passed, July meeting outside window)",
+          "Potential cost inflation commentary - labor agreements and fuel surcharge dynamics",
+          "International segment performance - European and Asia-Pacific volume trends"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "EQIX": {
+        "next_earnings_est": "2026-07-30",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (late July) - data center utilization trends and pricing power",
+          "AI/cloud infrastructure demand commentary and capacity expansion updates",
+          "International expansion progress (APAC and EMEA region growth rates)",
+          "Customer concentration risk disclosure and hyperscaler contract wins",
+          "Free cash flow and capital allocation guidance (dividend/buyback decisions)",
+          "Power and cooling infrastructure investments monetization trends"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "JPM": {
+        "next_earnings_est": "2026-07-14",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings release (July 14) - Net interest margin trends and loan growth",
+          "Trading revenue performance disclosure - Equity/Fixed Income volatility capture",
+          "Investment banking fee trends - M&A and capital markets activity levels",
+          "Credit quality metrics - Net charge-offs and loan loss provisions",
+          "Capital allocation commentary - Share buyback authorization and dividend policy",
+          "Deposit dynamics and funding costs - Interest rate environment impact",
+          "Expense guidance updates - Cost management execution relative to revenue growth"
+        ],
+        "expected_move_pct": 3.2
+      },
+      "AMT": {
+        "next_earnings_est": "2026-07-29",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings release (late July) - tower utilization trends and pricing power commentary",
+          "2H 2026 guidance update - particularly regarding international expansion capex and ROI",
+          "Potential dividend increase announcement - AMT typically raises dividends in mid-late year",
+          "Data center colocation demand commentary - secular growth driver for communications infrastructure",
+          "Weighted average lease renewal rate disclosure - key metric for organic growth assessment",
+          "Capital allocation guidance - potential share buyback acceleration or acquisition activity"
+        ],
+        "expected_move_pct": 3.2
+      },
+      "C": {
+        "next_earnings_est": "2026-07-13",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "MEDIUM",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings release (est. mid-July)",
+          "Net interest margin guidance commentary amid Fed policy signals",
+          "Credit loss provisions and loan loss reserve adequacy discussions",
+          "Capital return program updates (dividend/buyback ratios)",
+          "Institutional investor regulatory capital ratio targets"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "ABBV": {
+        "next_earnings_est": "2026-07-30",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "MEDIUM",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (late July) - primary focus on Rinvoq, Skyrizi, and Imbruvica performance",
+          "Guidance revision for FY2026 - potential downward adjustment given macro headwinds in pharma",
+          "IMBRUVICA franchise updates - clinical trial data or label expansion announcements",
+          "Dividend announcement or capital allocation strategy shift",
+          "Allergan integration updates and synergy realization progress",
+          "Regulatory decisions on pending drug applications or label extensions"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "LLY": {
+        "next_earnings_est": "2026-07-21",
+        "earnings_alpha_score": 7,
+        "beat_probability": "HIGH",
+        "guidance_raise_probability": "HIGH",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (late July) - GLP-1 franchise revenue acceleration expected",
+          "Tirzepatide label expansion updates or regulatory decisions",
+          "Bariatric surgery market share gains data from ongoing trials",
+          "Mounjaro/Zepbound demand trajectory and pricing power confirmation",
+          "Investor Day or analyst meetings with forward guidance",
+          "FDA decisions on pipeline obesity/diabetes candidates",
+          "Manufacturing capacity expansion announcements for GLP-1 products",
+          "International market penetration milestones (Europe, Asia)"
+        ],
+        "expected_move_pct": 5.2
+      },
+      "BAC": {
+        "next_earnings_est": "2026-07-15",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "MEDIUM",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (est. July 15) - Net interest margin trends and deposit dynamics",
+          "Fed monetary policy signals and rate expectations through September FOMC meeting",
+          "Credit quality metrics and loan loss provision guidance amid economic uncertainty",
+          "Capital return announcements (buyback authorization or dividend changes)",
+          "Investment banking and trading revenue disclosure relative to market volatility",
+          "Deposit flight risk assessment following regional banking sector stress in 2023-2024",
+          "Regulatory capital ratio reporting and stress test implications"
+        ],
+        "expected_move_pct": 3.2
+      },
+      "PLD": {
+        "next_earnings_est": "2026-07-23",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report and guidance (late July)",
+          "Occupancy rate updates and rent growth commentary",
+          "Industrial real estate demand signals and leasing spreads",
+          "Dividend declaration and capital allocation announcements",
+          "Data center expansion commentary and strategic initiatives"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "TGT": {
+        "next_earnings_est": "2026-08-19",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "MEDIUM",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (August 19) - retail comp sales trends critical",
+          "Back-to-school season demand signals (July-August) - largest seasonal event",
+          "Inventory management commentary - key focus post-2023 challenges",
+          "Holiday season guidance update - typically conservative given macro uncertainty",
+          "Same-day services adoption metrics (drive-up, same-day delivery) - margin driver"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "MS": {
+        "next_earnings_est": "2026-07-16",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (late July) - investment banking and trading revenue sensitivity to market conditions",
+          "Capital Markets Day or investor update (if scheduled Q3) - guidance reset opportunity",
+          "Federal Reserve policy communications - impacts net interest margin and fixed income trading",
+          "Equity market volatility - drives trading volumes and advisory deal activity",
+          "Quarterly dividend announcement and capital allocation commentary",
+          "Wealth management net new asset flows disclosure"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "MRK": {
+        "next_earnings_est": "2026-07-30",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "MEDIUM",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (late July) - revenue pressure from Keytruda patent cliff in EU",
+          "Gardasil/HPV vaccine uptake trends and competitive positioning vs GSK/Seagen",
+          "Clinical trial readouts for MRK-003 (respiratory) and MRK-4830 (oncology pipeline)",
+          "Potential FDA decisions on SORBENT (cardiovascular indication)",
+          "Continued Acceleron integration progress and synergy realization updates"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "UNH": {
+        "next_earnings_est": "2026-07-16",
+        "earnings_alpha_score": 6,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (EPS and medical loss ratio trends)",
+          "Updated full-year 2026 earnings guidance",
+          "Medicare Advantage enrollment commentary and pricing dynamics",
+          "Optum revenue growth update and synergy realization progress",
+          "UnitedHealth Group operational efficiency metrics and margin expansion",
+          "Healthcare regulation developments (potential rebate policy changes)",
+          "Commercial medical cost trend update"
+        ],
+        "expected_move_pct": 4.5
+      },
+      "EOG": {
+        "next_earnings_est": "2026-08-07",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (~early August) with production volumes and cash flow guidance",
+          "Oil and gas price environment volatility affecting near-term margins",
+          "Permian Basin operational updates and well productivity trends",
+          "Potential capital allocation announcement (buyback acceleration, dividend increase, or M&A)",
+          "Quarterly cash flow results and free cash flow generation vs. guidance"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "JNJ": {
+        "next_earnings_est": "2026-07-14",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report and guidance commentary (mid-July)",
+          "Pharmaceutical segment performance trends and pipeline updates",
+          "MedTech division margin trajectory post-restructuring",
+          "Consumer Health divestiture progress or strategic announcement",
+          "Regulatory decisions on pending drug approvals (immunology, oncology, cardiovascular)",
+          "Dividend announcement or capital allocation policy update",
+          "Talquetamab or other hematology asset phase 3 readouts",
+          "Carvykti or CAR-T market adoption metrics disclosure"
+        ],
+        "expected_move_pct": 3.2
+      },
+      "AAPL": {
+        "next_earnings_est": "2026-07-28",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "MEDIUM",
+        "key_catalysts_90d": [
+          "Q3 FY2026 earnings report (late July) - Services growth trajectory and margin performance",
+          "iPhone 18 pre-orders and launch cycle signals (September)",
+          "Mac product refresh announcements (potential WWDC follow-ups)",
+          "Services segment guidance - highest margin business under scrutiny",
+          "China revenue trends and geopolitical headwinds update",
+          "Capital return program acceleration or modification announcement",
+          "EU regulatory developments on App Store policies"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "TJX": {
+        "next_earnings_est": "2026-08-20",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (late August) - seasonal strength in back-to-school inventory demand",
+          "Back-to-school season promotional intensity and margin commentary",
+          "Mid-year inventory management updates and markdown positioning",
+          "Summer clearance execution and gross margin trends",
+          "Comparable store sales trends through July-August period",
+          "International expansion updates (particularly at TJ Maxx and Marshalls)",
+          "Supply chain cost pressures and freight normalization commentary"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "PANW": {
+        "next_earnings_est": "2026-08-21",
+        "earnings_alpha_score": 6,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q3 FY2026 earnings report (late August) - subscription/ARR growth metrics critical",
+          "Potential guidance raise for FY2026 full-year based on platform consolidation momentum",
+          "Cloud security market share gains vs. CrowdStrike post-incident recovery opportunity",
+          "Possible M&A announcement or partnership expansion in AI-driven threat detection",
+          "Analyst day or investor update on AI/ML product roadmap execution",
+          "Customer retention/NRR metrics in security posture management and network security segments",
+          "Competitive positioning updates relative to Check Point and Fortinet in mid-market"
+        ],
+        "expected_move_pct": 4.5
+      }
+    },
+    "devils_advocate": {
+      "LIN": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "UPS": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "EQIX": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "JPM": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "GS": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "ABBV": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "AMT": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "BAC": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "LLY": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "C": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "MRK": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "PLD": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "MS": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "TGT": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "UNH": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "PANW": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "EOG": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "JNJ": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "AAPL": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "TJX": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      }
+    },
+    "position_reviews": {
+      "JPM": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "catalysts_played_out": false,
+        "recommended_action": "HOLD",
+        "reasoning": "JPM exhibits strong quantitative fundamentals (composite 68.4, momentum 77.9) with low volatility (21.5%) and defensive beta (0.69), suggesting quality stability. However, low confidence (5/10) on the original thesis and valuation metrics at midpoint (val=50, quality=50) indicate limited edge. Recent 3M outperformance (+10.36%) and price at 200-day MA suggest momentum may be moderating. No near-term catalysts evident, but the position's defensive characteristics and strong technical setup (above 50 & 200-day MAs) warrant holding. At -0.5% P&L with small position size, opportunity cost is minimal. Monitor for: (1) confidence thesis clarification, (2) pullback to re-establish entry conviction, (3) pivot toward higher-conviction ideas. Not a conviction hold, but no compelling exit signal. Reduce if outperformance vs. defensive benchmark persists without new catalysts."
+      },
+      "MRK": {
+        "hold_score": 4,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "REDUCE",
+        "reasoning": "MRK presents a conflicted profile with deteriorating conviction. Starting with the concerning elements: your own confidence threshold is critically low at 5/10, suggesting underlying thesis weakness. The quality score of 50 (median) and valuation score of 50 (median) indicate the stock offers neither quality premium nor valuation advantage\u2014two fundamental pillars of a defensible long thesis. The position is underwater (-0.3%), and momentum has decelerated sharply from 3M to 1M performance (2.48% \u2192 7.02% annualized), signaling fading upside. The negative beta (-0.43) was valuable during risk-off periods, but that appears played out with recent momentum. The composite score of 68.6 is adequate but not compelling for a conviction position. Most critically, with zero catalysts identified and low confidence, you're essentially holding for mean reversion rather than active alpha generation. The small position size (0.289 shares) suggests you've already de-risked, but continuing to hold a low-conviction, median-quality, median-valuation name with no catalyst pipeline is capital inefficiency. Recommend reducing to free up capital for higher-conviction opportunities where your thesis is more robust and catalysts are identifiable."
+      },
+      "EOG": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "catalysts_played_out": false,
+        "recommended_action": "HOLD",
+        "reasoning": "EOG Resources shows mixed signals warranting a measured hold despite low confidence thesis. Positives: Strong quality score (90.0) and composite quant (77.7) indicate fundamental strength; momentum remains solid (85.5, +5.23% 1M return); price above both 50 and 200-day MAs suggesting uptrend continuation; negative beta (-0.06) provides portfolio diversification value. Concerns: Your stated confidence is only 5/10, suggesting uncertainty in the original thesis premise; valuation score of 50 is uninspiring; high volatility (29.2%) creates execution risk; minimal P&L on position (-0.5%) offers no conviction signal. The lack of recent catalysts combined with moderate valuation suggests oil/energy macro dynamics may be pricing in energy cycle stability rather than growth inflection. Action: Hold current position given quality metrics and momentum, but do not add. Monitor thesis confidence\u2014if it remains below 6/10 after next earnings/macro data point, reassess for reallocation to higher-conviction ideas. The small position size (0.247 shares) limits portfolio impact of suboptimal conviction."
+      },
+      "EQIX": {
+        "hold_score": 5,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "catalysts_played_out": false,
+        "recommended_action": "HOLD",
+        "reasoning": "EQIX shows mixed signals warranting cautious hold. Positives: Composite score of 65.7 indicates solid fundamental strength, above 200-day MA suggests intact uptrend structure, low beta (0.58) provides defensive characteristics, and 3M momentum of +7.47% shows recovery despite recent 1M weakness. Concerns: Your own confidence is only 5/10, suggesting conviction erosion; momentum (63.9) is elevated but not exceptional; quality/value metrics at 50 indicate balanced but uninspiring profile; recent 1M decline of -3.38% and current underwater position suggest near-term weakness. The absence of recent news and low volatility (17.5%) indicate a holding in transition rather than an active conviction play. Position sizing (0.037203 shares) is minimal, suggesting this is not a core holding. Alpha remains available given EQIX's defensive moat in data center real estate and ongoing cloud capex trends, but clarity is needed on whether recent weakness reflects broader market concern or opportunity. Action: Maintain position but do not add. Set mental stop at 200-day MA breach. Revisit if conviction score drops below 4 or if superior opportunities emerge in comparable defensive growth names."
+      },
+      "MS": {
+        "hold_score": 5,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "catalysts_played_out": false,
+        "recommended_action": "HOLD",
+        "reasoning": "MS presents a mixed picture warranting continued monitoring rather than action. The composite score of 72.2 is solid, with exceptional momentum (97.2) and above-average positioning (above 50MA and 200MA). However, quality and value metrics are neutral at 50, suggesting limited fundamental differentiation. The 3M return of 35.83% is strong, but recent 1M slowdown (8.69%) indicates momentum may be decelerating\u2014a concern given the position's heavy reliance on technical strength. The low 5/10 thesis confidence is a red flag that suggests initial conviction has weakened; the -2% current drawdown is minor but inconsistent with a high-conviction setup. Beta of 1.22 means you're taking elevated systematic risk without corresponding alpha clarity. No catalysts are evident in the pipeline, suggesting upside may be momentum-dependent rather than fundamental. MEDIUM alpha remains available through continued execution and sentiment shifts in financials, but the deteriorating thesis confidence and softening momentum trend argue for either: (1) holding through the next 1-2 quarters with strict 8-10% stop loss discipline, or (2) reducing to 50% and redeploy to higher-conviction ideas. A hold is justified only if you can articulate why thesis confidence should improve in the next 90 days."
+      },
+      "GS": {
+        "hold_score": 4,
+        "remaining_alpha": "LOW",
+        "thesis_intact": false,
+        "catalysts_played_out": true,
+        "recommended_action": "REDUCE",
+        "reasoning": "GS presents a deteriorating risk/reward profile. The original thesis confidence was already weak at 5/10, and current data confirms erosion: Quality (50) and Value (50) metrics are neutral/mediocre\u2014insufficient to justify a 1.56 beta, which amplifies downside in corrections. Momentum (93.5) is the sole strength but represents mean-reversion risk after strong recent runs (28.26% 3M return). No catalyst pipeline evident. The position has already captured near-term upside (6.79% 1M), suggesting momentum exhaustion. Financial sector headwinds (rate pressure, regulatory uncertainty) remain unresolved. With minimal edge and elevated volatility exposure, capital is better deployed elsewhere. Reduce by 50-75% to lock in modest gains and redeploy to higher-conviction ideas."
+      },
+      "LIN": {
+        "hold_score": 5,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "catalysts_played_out": false,
+        "recommended_action": "HOLD",
+        "reasoning": "LIN shows mixed signals warranting a cautious hold. Positive: Strong momentum (82.7) and composite score (70.5) indicate technical strength; price above both 50/200 SMAs suggests uptrend intact; low beta (0.04) provides downside cushion; modest YTD gains (3M: 6.05%) suggest room for continuation. Concerns: Your own low confidence (5/10) is a red flag that shouldn't be ignored; quality and value scores at 50 (neutral/weak) lack fundamental conviction; no recent news suggests limited near-term catalysts; position size is tiny (0.087 shares), indicating lack of commitment. The thesis appears structurally sound but conviction is insufficient. Position maintenance is justified by technicals, but consider: (1) waiting for quality/value scores to strengthen before adding, (2) monitoring for catalyst announcements that would improve confidence to 7+, or (3) reallocating this micro-position to higher-conviction ideas. This is a 'let it run' rather than 'build' scenario."
+      }
+    },
+    "portfolio_manager_proposed": [],
+    "cro": {
+      "approved": true,
+      "risk_budget_used": 0,
+      "largest_risk": "none",
+      "rejected_tickers": [],
+      "reasoning": "No trades to evaluate."
+    },
+    "final_decisions": [],
+    "timestamp": "2026-06-11T13:53:01.415187+00:00",
+    "kill_switch_active": false,
+    "market_data_source": "market_snapshot_file",
+    "market_data_date": "2026-06-11",
+    "portfolio_snapshot": {
+      "cash": 230.45,
+      "total_value": 499.1375659157,
+      "positions": [
+        {
+          "symbol": "EQIX",
+          "qty": 0.037203,
+          "avg_price": 1076.79,
+          "current_price": 1036.83,
+          "market_value": 38.574,
+          "unrealized_pnl": -1.487
+        },
+        {
+          "symbol": "MS",
+          "qty": 0.215357,
+          "avg_price": 213.55,
+          "current_price": 209.31,
+          "market_value": 45.076,
+          "unrealized_pnl": -0.913
+        },
+        {
+          "symbol": "MRK",
+          "qty": 0.28935,
+          "avg_price": 121.06,
+          "current_price": 120.685,
+          "market_value": 34.934,
+          "unrealized_pnl": -0.109
+        },
+        {
+          "symbol": "EOG",
+          "qty": 0.247912,
+          "avg_price": 141.14,
+          "current_price": 140.47,
+          "market_value": 34.829,
+          "unrealized_pnl": -0.166
+        },
+        {
+          "symbol": "JPM",
+          "qty": 0.095754,
+          "avg_price": 313.72,
+          "current_price": 312.085,
+          "market_value": 29.893,
+          "unrealized_pnl": -0.157
+        },
+        {
+          "symbol": "LIN",
+          "qty": 0.087592,
+          "avg_price": 504.95,
+          "current_price": 517.26,
+          "market_value": 45.307,
+          "unrealized_pnl": 1.078
+        },
+        {
+          "symbol": "GS",
+          "qty": 0.039584,
+          "avg_price": 1006.72,
+          "current_price": 1013.965,
+          "market_value": 40.136,
+          "unrealized_pnl": 0.287
+        }
+      ]
+    }
   }
 ]

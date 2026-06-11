@@ -169,5 +169,27 @@
     "rationale": "Manual execution \u2014 CRO API failed (529 overload), PM decisions executed after verification",
     "broker_order_id": null,
     "dry_run": false
+  },
+  {
+    "transaction_id": "cf14c823-22b0-4723-9711-d76dcdb98449",
+    "run_id": "20260611-134755",
+    "date": "2026-06-11",
+    "timestamp": "2026-06-11T13:52:37.767199+00:00",
+    "ticker": "GS",
+    "action": "SELL",
+    "qty": 0.039584,
+    "price": 1005.67,
+    "total_value": 39.81,
+    "target_weight": 0.0,
+    "portfolio_value_before": 499.1375659157,
+    "source_of_capital": "GS",
+    "regime": "NEUTRAL",
+    "regime_confidence": 50,
+    "rationale": "LOW alpha rating with REDUCE action, hold score 4/10, and lowest composite quant score among financials; freeing capital for higher-conviction opportunities.",
+    "research_confidence": 5,
+    "earnings_alpha_score": 5,
+    "cro_risk_budget": 42,
+    "broker_order_id": null,
+    "dry_run": true
   }
 ]
