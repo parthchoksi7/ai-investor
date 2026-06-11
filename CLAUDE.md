@@ -290,6 +290,18 @@ This prevents the silent all-50 quant score failure mode where agents run but pr
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
 
+## Changelog — Jun 11 2026
+
+Every substantive fix that landed today, newest first:
+
+| Commit | Change | Why it mattered |
+|--------|--------|-----------------|
+| `b8ec88d` | `journal.py`: guard `decision_journal.json` being `{}` (empty dict) on first run — `isinstance` check resets to `[]` before `.append()` | Cloud routine crashed with `AttributeError: 'dict' object has no attribute 'append'` on the very first trade because the file contained `{}` not `[]`; pipeline produced 0 trades |
+| `61ab95a` | `analysis.py`: `max_tokens` increased (Agent 1: 400→700, Agent 2: 600→1000, Agent 3: 400→600, Agent 4: 500→800); `_parse_json` truncation recovery (count open braces, strip trailing partial strings, append closing `}]`) | Richer news descriptions in prompts pushed verbose Haiku responses past the old ceiling; every parse failed mid-JSON → all 20 Research/DA/Earnings agents returned defaults → 0 trades |
+| `e2a18b3` | `market_data.py`: `get_news_summary()` and `get_ticker_news()` called BEFORE the history loop (not after) | Polygon free tier = 5 calls/minute. History loop exhaust the budget in <1 second; news calls 40 seconds later hit a grey zone. Moving news first guarantees a fresh 5-call budget |
+| `ac69e20` | `market_data.py`: news feed upgraded — 50 articles (was 20), `description` field (300 chars), `published_utc`; new `get_ticker_news()` for top-4 movers (|change_pct|>3%); `analysis.py`: `_fmt_news` + `_ticker_news` helpers pass richer context to Agents 1–5 | Agents previously saw only headlines; missed material context behind moves |
+| `2b21c7f` | `market_data.yml`: 3 staggered cron triggers (7:00 / 8:00 / 8:30 AM EDT) instead of a single 8:00 AM cron; `update_dst.yml`: rewrote broken regex (matched minute 20 which never existed in the file) to do explicit block-string replacement of all 3 crons | Jun 11 market_data run silently skipped by GitHub scheduler — no error, no trace. Triple triggers mean one silent skip can't strand the 9:45 AM routine |
+
 ## Changelog — Jun 10 2026
 
 Every substantive fix that landed today, newest first:
@@ -333,11 +345,11 @@ Noise (non-fatal, safe to ignore): `$JPMPC: possibly delisted` and similar yfina
 
 ### ⚠️ The real standing risk: GitHub scheduled-cron delay
 
-`market_data.yml` is scheduled at `0 12 * * 1-5` (8:00 AM EDT), 105 min before the 9:45 AM routine. **GitHub Actions scheduled runs are best-effort and can be delayed by hours or skipped during high load.** On Jun 9 the *scheduled* run did not finish until **16:14 UTC (12:14 PM ET)** — well after the routine; the routine was rescued only by a **manual** `workflow_dispatch` at 13:46 UTC. If neither lands before 9:45 AM ET, `market_snapshot.json` is stale → routine **preflight-aborts** (`_data_date != today`) → zero trades.
+`market_data.yml` now fires at **three** staggered times — 7:00 AM, 8:00 AM, and 8:30 AM EDT (commit `2b21c7f`) — with an idempotency guard that skips the job if today's snapshot is already present. **GitHub Actions scheduled runs are best-effort and can be delayed by hours or skipped during high load** — even with three triggers, all three could be delayed simultaneously. On Jun 9 every run was late; on Jun 11 the job was silently skipped. If none of the three crons lands before 9:45 AM ET, `market_snapshot.json` is stale → routine **preflight-aborts** (`_data_date != today`) → zero trades.
 
 Mitigations (in order of robustness):
-1. **Safety dispatch**: trigger `market_data.yml` manually if the scheduled run hasn't gone green by ~9:15 AM ET: `gh workflow run market_data.yml --repo parthchoksi7/ai-investor` then confirm a fresh `chore: market snapshot` commit landed.
-2. Move the cron earlier (e.g. `0 11 * * 1-5` = 7:00 AM EDT) for a larger buffer, and rely on `keepalive.yml` to keep the schedule enabled.
+1. **Safety dispatch** (still the highest-reliability option): trigger `market_data.yml` manually if no fresh `chore: market snapshot` commit has landed by ~9:15 AM ET: `gh workflow run market_data.yml --repo parthchoksi7/ai-investor` then confirm the commit is on `main`.
+2. ~~Move the cron earlier~~ — **Done** (commit `2b21c7f`): earliest trigger is now 7:00 AM EDT, 165 min before the routine.
 3. Longer term: have the routine itself dispatch `market_data.yml` and poll for the fresh commit before running `main.py`, rather than assuming the file is present.
 
 ### Repository settings — current state (verified, no change required)
@@ -371,8 +383,8 @@ Manual checks (GitHub UI / `gh`):
 ## Known Limitations
 
 - Cloud quant scores are always 50 if `market_snapshot.json` isn't available (GitHub Actions job delayed or failed). The pre-flight abort prevents silent no-trade runs.
-- `market_data.py` makes ~90 API calls per run locally (one per ticker for 210-day history). Can be slow (~2–3 min) and may hit Polygon free-tier rate limits.
-- DST: GitHub Actions crons (`market_data.yml`, `health_check.yml`) are auto-updated by `.github/workflows/update_dst.yml` on March 1 and November 1. Both Anthropic routine crons require manual updates — see the EOD note and Daily Cycle note under Automated Execution above.
+- `market_data.py` makes ~90 API calls per run locally (one per ticker for 210-day history) plus up to 5 Polygon calls for news (1 summary + 4 per-ticker). Polygon free tier = 5 calls/minute — news calls are placed FIRST (before the history loop) to guarantee a fresh budget window.
+- DST: GitHub Actions crons (`market_data.yml`, `health_check.yml`) are auto-updated by `.github/workflows/update_dst.yml` on March 15 and November 8. Both Anthropic routine crons require manual updates — see the EOD note and Daily Cycle note under Automated Execution above.
 - Website shows no live intraday prices. Value is current as of the last routine run (9:45 AM or 4:00 PM ET).
 
 ## Testing
