@@ -222,19 +222,46 @@ def get_all_fundamentals(tickers: list[str]) -> dict:
     return result
 
 
-def get_news_summary() -> list[dict]:
+def get_news_summary(limit: int = 50) -> list[dict]:
     if not POLYGON_KEY:
         return []
     url = "https://api.polygon.io/v2/reference/news"
-    params = {"apiKey": POLYGON_KEY, "limit": 20, "order": "desc"}
+    params = {"apiKey": POLYGON_KEY, "limit": limit, "order": "desc"}
     try:
         r = requests.get(url, params=params, timeout=10)
         return [
-            {"title": item.get("title", ""), "tickers": item.get("tickers", [])}
+            {
+                "title":         item.get("title", ""),
+                "description":   (item.get("description") or "")[:300],
+                "published_utc": item.get("published_utc", ""),
+                "tickers":       item.get("tickers", []),
+            }
             for item in r.json().get("results", [])
         ]
     except Exception as e:
         print(f"   ⚠ News fetch failed: {e}")
+        return []
+
+
+def get_ticker_news(ticker: str, limit: int = 5) -> list[dict]:
+    """Fetch recent news specifically for a single ticker."""
+    if not POLYGON_KEY:
+        return []
+    url = "https://api.polygon.io/v2/reference/news"
+    params = {"apiKey": POLYGON_KEY, "ticker": ticker, "limit": limit, "order": "desc"}
+    try:
+        r = requests.get(url, params=params, timeout=10)
+        return [
+            {
+                "title":         item.get("title", ""),
+                "description":   (item.get("description") or "")[:300],
+                "published_utc": item.get("published_utc", ""),
+                "tickers":       item.get("tickers", []),
+            }
+            for item in r.json().get("results", [])
+        ]
+    except Exception as e:
+        print(f"   ⚠ Ticker news failed for {ticker}: {e}")
         return []
 
 
@@ -312,6 +339,20 @@ def get_market_snapshot() -> dict:
 
     articles = get_news_summary()
 
+    # Per-ticker deep-dive news for the top movers (|change_pct| > 3%, up to 10 tickers).
+    # Sorted by magnitude so the biggest movers get coverage first.
+    ticker_news: dict = {}
+    movers = sorted(
+        [t for t, p in prices.items() if abs(p.get("change_pct", 0)) > 3 and t not in ("SPY", "QQQ")],
+        key=lambda t: abs(prices[t].get("change_pct", 0)),
+        reverse=True,
+    )[:10]
+    for t in movers:
+        tn = get_ticker_news(t, limit=5)
+        if tn:
+            ticker_news[t] = tn
+            print(f"   📰 Ticker news: {t} {prices[t].get('change_pct', 0):+.1f}% ({len(tn)} articles)")
+
     # Discover non-watchlist tickers mentioned in news.
     # Skip preferred share tickers (Polygon format: BASE + "P" + SERIES, e.g. JPMPC = JPM pref C).
     # They're not common equity and yfinance can't resolve them.
@@ -361,5 +402,6 @@ def get_market_snapshot() -> dict:
         "history":         history,
         "fundamentals":    fundamentals,
         "news":            articles,
+        "ticker_news":     ticker_news,
         "news_discovered": news_discovered,
     }
