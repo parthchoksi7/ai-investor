@@ -295,6 +295,21 @@ This prevents the silent all-50 quant score failure mode where agents run but pr
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
 
+## Changelog — Jun 12 2026
+
+Every substantive fix that landed today, newest first:
+
+| Commit | Change | Why it mattered |
+|--------|--------|-----------------|
+| `67b0bf8` | `journal.mark_transactions_live(run_id, fills)` is now **fill-aware**: only tickers the broker accepted (present in `fills`, keyed `ticker -> {order_id, price}`) flip `dry_run=False` and get their `broker_order_id` + actual fill price persisted; rejected/absent tickers stay `dry_run=True`. `publish.py` `close_value` is now **write-once** (guarded by a null-check on today's row). Both routine prompts updated: daily STEP 4 builds a fills accumulator → `fills.json` → passes to reconcile, and adds a per-order `ref_id` (UUID) for broker idempotency. `test_pipeline.py`: `TestMarkTransactionsLive` (5) + `TestCloseValueImmutability` (3). | Senior review caught that the first cut flipped **every** decision live regardless of actual fill — reintroducing the `fd9d56a` phantom-fill bug for the cloud path, with no `broker_order_id` ever persisted (no reconciliation). `close_value` overwrote on every is_close publish — unmasked once EOD actually triggered publish. |
+| `9f1ad2e` | New `ROUTINE_EOD_CLOSE.md` (version-controlled EOD prompt); CLAUDE.md EOD section now flags the `portfolio_snapshot.json` trigger requirement. EOD routine fixed to `git add portfolio_snapshot.json` (was only `mcp_portfolio.json`) and drop `[skip ci]`. | EOD committed only `mcp_portfolio.json`, but `publish.yml` triggers solely on a `portfolio_snapshot.json` push → the official 4 PM `close_value` **never auto-published** (required manual dispatch / backfill commits). |
+| `0e17c7d` | `journal.mark_transactions_live` added + called in daily STEP 4 stamp; daily STEP 5 commit message dropped `[skip ci]`; Jun 11/12 `transactions.json` backfilled `dry_run=False` (reconciled against Robinhood — all 7 orders confirmed filled). | Cloud `main.py` runs `DRY_RUN=true` (robin_stocks blocked), so `record_transaction` stamped every real MCP trade `dry_run=True`; `publish.py` filtered them out → no cloud trade ever reached the website. `[skip ci]` on the routine commit also suppressed `publish.yml`. |
+| `6c46cc9` | `ROUTINE_DAILY_CYCLE.md` STEP 1: added `available_qty` to the `mcp_portfolio.json` spec. | `execute.py:_compute_qty` reads `available_qty` to cap SELLs, but the routine never wrote it (spec/code mismatch). |
+
+> **Live routines updated** (via `RemoteTrigger`, schedules + Robinhood MCP preserved) to match the canonical MD files. Daily takes effect next proceeding run (today already executed); EOD's first live test is the 4 PM ET run.
+>
+> **Dry-run skipped (DEPLOYMENT §7.1/§14):** `DRY_RUN=true python main.py` was **not** run — it's market hours on a trading day and today's cycle already executed; running it would overwrite `pending_decisions.json` and risk a double-fill. Verification was limited to the full `pytest` suite + workflow YAML parse.
+
 ## Changelog — Jun 11 2026
 
 Every substantive fix that landed today, newest first:
