@@ -577,6 +577,73 @@ class TestMarkPendingExecuted:
         mark_pending_executed("run-001")  # must not raise
 
 
+class TestMarkTransactionsLive:
+    """Cloud routine writes every decision dry_run=True (main.py runs DRY_RUN=true);
+    reconciliation must mark live ONLY orders the broker actually accepted, so a
+    rejected order is never published as a phantom fill (preserves fd9d56a)."""
+
+    def _write(self, path, txs):
+        path.write_text(json.dumps(txs))
+
+    def _txs(self):
+        return [
+            {"run_id": "r1", "ticker": "BAC", "action": "BUY",  "qty": 0.5, "price": 55.16,
+             "total_value": 27.58, "broker_order_id": None, "dry_run": True},
+            {"run_id": "r1", "ticker": "JPM", "action": "SELL", "qty": 0.1, "price": 313.49,
+             "total_value": 31.35, "broker_order_id": None, "dry_run": True},
+            {"run_id": "r0", "ticker": "AAPL", "action": "BUY", "qty": 0.2, "price": 290.0,
+             "total_value": 58.0, "broker_order_id": None, "dry_run": True},  # other run
+        ]
+
+    def test_only_filled_tickers_flip(self, tmp_path, monkeypatch):
+        import journal
+        f = tmp_path / "tx.json"; self._write(f, self._txs())
+        monkeypatch.setattr(journal, "TRANSACTIONS_FILE", str(f))
+        journal.mark_transactions_live("r1", {"BAC": {"order_id": "ob", "price": 55.52}})
+        data = {t["ticker"]: t for t in json.loads(f.read_text())}
+        assert data["BAC"]["dry_run"] is False           # filled → live
+        assert data["JPM"]["dry_run"] is True             # not in fills → stays dry_run
+        assert data["AAPL"]["dry_run"] is True            # other run untouched
+
+    def test_persists_order_id_and_fill_price(self, tmp_path, monkeypatch):
+        import journal
+        f = tmp_path / "tx.json"; self._write(f, self._txs())
+        monkeypatch.setattr(journal, "TRANSACTIONS_FILE", str(f))
+        journal.mark_transactions_live("r1", {"BAC": {"order_id": "ob123", "price": 55.52}})
+        bac = next(t for t in json.loads(f.read_text()) if t["ticker"] == "BAC")
+        assert bac["broker_order_id"] == "ob123"
+        assert bac["price"] == 55.52
+        assert bac["total_value"] == round(0.5 * 55.52, 2)  # recomputed from fill price
+
+    def test_null_fill_price_keeps_decision_price(self, tmp_path, monkeypatch):
+        import journal
+        f = tmp_path / "tx.json"; self._write(f, self._txs())
+        monkeypatch.setattr(journal, "TRANSACTIONS_FILE", str(f))
+        journal.mark_transactions_live("r1", {"BAC": {"order_id": "ob", "price": None}})
+        bac = next(t for t in json.loads(f.read_text()) if t["ticker"] == "BAC")
+        assert bac["price"] == 55.16  # unchanged decision-time quote
+
+    def test_idempotent_on_rerun(self, tmp_path, monkeypatch):
+        import journal
+        f = tmp_path / "tx.json"; self._write(f, self._txs())
+        monkeypatch.setattr(journal, "TRANSACTIONS_FILE", str(f))
+        fills = {"BAC": {"order_id": "ob", "price": 55.52}}
+        journal.mark_transactions_live("r1", fills)
+        journal.mark_transactions_live("r1", fills)  # second run is a no-op
+        bac = next(t for t in json.loads(f.read_text()) if t["ticker"] == "BAC")
+        assert bac["dry_run"] is False and bac["broker_order_id"] == "ob"
+
+    def test_none_fills_flips_all_legacy(self, tmp_path, monkeypatch):
+        import journal
+        f = tmp_path / "tx.json"; self._write(f, self._txs())
+        monkeypatch.setattr(journal, "TRANSACTIONS_FILE", str(f))
+        journal.mark_transactions_live("r1", None)  # legacy flip-all
+        data = {t["ticker"]: t for t in json.loads(f.read_text())}
+        assert data["BAC"]["dry_run"] is False
+        assert data["JPM"]["dry_run"] is False
+        assert data["AAPL"]["dry_run"] is True  # other run still untouched
+
+
 # ── journal._load_list — corrupt/foreign file-shape guards ───────────────────
 
 class TestLoadListGuards:

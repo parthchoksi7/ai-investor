@@ -144,6 +144,9 @@ Read decisions from pending_decisions["decisions"] (the nested array, not the ro
 
 TSLA HARD BLOCK: NEVER place any order for TSLA under any circumstances. Skip it entirely.
 
+Maintain a fills accumulator as you place orders — a dict you will write to fills.json:
+  fills = {}   # ticker -> {"order_id": <str>, "price": <float or null>}
+
 For each decision where action is BUY or SELL:
 
   1. QUANTITY — read decision["qty"] directly.
@@ -157,20 +160,34 @@ For each decision where action is BUY or SELL:
      qty = 0.648 is a valid fractional order. Place it.
      Robinhood supports fractional shares down to 0.000001.
 
-  3. PLACE ORDER:
+  3. PLACE ORDER — generate a fresh UUID ref_id per order for broker-side idempotency
+     (re-send the SAME ref_id only if you retry the SAME order after a transport failure;
+     never reuse it for a different order):
      place_equity_order(
        account_number='994046696',
        symbol=<ticker>,
        side='buy' or 'sell',
        quantity=<qty from step 1>,
        type='market',
-       time_in_force='gfd'
+       time_in_force='gfd',
+       ref_id=<fresh uuid4>
      )
 
-  4. LOG the result (ticker, qty, order id or error) to the session output.
+  4. RECORD THE RESULT:
+     • If the response carries an order id, the broker ACCEPTED the order. Record it:
+         fills[<ticker>] = {"order_id": <response id>, "price": <average/executed price or null>}
+       (If the response has no fill price yet for a market order, leave price null — the
+        decision-time quote in transactions.json is then kept.)
+     • If the response is an error / rejection (no id), DO NOT add it to fills. Log the error
+       to the session output. It will correctly remain dry_run=True (never published as a fill).
+
+  5. LOG the result (ticker, qty, order id or error) to the session output.
 
 Skip HOLD decisions entirely.
-If pending_decisions["decisions"] is [], skip order placement and go to the stamp step.
+If pending_decisions["decisions"] is [], skip order placement (fills stays {}) and go to the stamp step.
+
+Write the accumulator to fills.json so the stamp step can read it:
+  Write fills.json = the fills dict you built above (e.g. {"BAC": {"order_id": "...", "price": 55.52}, ...}).
 
 AFTER ALL ORDERS ARE PLACED (or if decisions was empty), stamp the execution —
 BUT only if the CRO made a genuine decision. If the CRO itself failed due to API
@@ -182,11 +199,15 @@ import json, os
 from journal import mark_pending_executed, mark_transactions_live
 p = json.load(open('pending_decisions.json'))
 h = json.load(open('system_health.json')) if os.path.exists('system_health.json') else {}
+fills = json.load(open('fills.json')) if os.path.exists('fills.json') else {}
 cro_api_failed = h.get('checks', {}).get('agent_7_cro', {}).get('api_failed', False)
 if p['decisions'] or not cro_api_failed:
     mark_pending_executed(p['run_id'])
-    mark_transactions_live(p['run_id'])
-    print(f"Execution stamped: run_id={p['run_id']}")
+    # Pass broker fills so ONLY accepted orders are marked live (rejections stay
+    # dry_run=True and are never published as phantom fills). fills maps
+    # ticker -> {"order_id": str, "price": float|None}.
+    mark_transactions_live(p['run_id'], fills)
+    print(f"Execution stamped: run_id={p['run_id']} ({len(fills)} fill(s) reconciled)")
 else:
     print("Skipping execution stamp — CRO blocked trades due to API error, not a risk decision. Next retry will re-run.")
 PY
