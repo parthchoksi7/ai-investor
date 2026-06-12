@@ -93,6 +93,27 @@ def record_transaction(tx: dict) -> None:
     _save(TRANSACTIONS_FILE, txs)
 
 
+def mark_transactions_live(run_id: str) -> None:
+    """Flip dry_run=False for all transactions in a given run.
+
+    Called by the cloud routine after MCP orders are placed, because main.py
+    runs with DRY_RUN=true in that environment (robin_stocks is blocked) but
+    the orders are real. Without this, publish.py filters them out and they
+    never appear on the website.
+    """
+    txs = _load_list(TRANSACTIONS_FILE)
+    updated = 0
+    for tx in txs:
+        if tx.get("run_id") == run_id and tx.get("dry_run"):
+            tx["dry_run"] = False
+            updated += 1
+    if updated:
+        _save(TRANSACTIONS_FILE, txs)
+        print(f"   ✅ Marked {updated} transaction(s) as live (run_id={run_id})")
+    else:
+        print(f"   ℹ️  No dry_run transactions found for run_id={run_id}")
+
+
 def mark_pending_executed(run_id: str) -> None:
     """Stamp pending_decisions.json as executed to prevent double-execution on retry."""
     if not os.path.isfile(PENDING_FILE):
