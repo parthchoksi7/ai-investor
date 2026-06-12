@@ -66,6 +66,7 @@ Write mcp_portfolio.json with this exact structure:
     {
       "symbol": "TICKER",
       "qty": <float>,
+      "available_qty": <float>,
       "avg_price": <float>,
       "current_price": <float>,
       "market_value": <float>,
@@ -73,6 +74,10 @@ Write mcp_portfolio.json with this exact structure:
     }
   ]
 }
+
+available_qty = shares_available_for_sells from get_equity_positions (falls back to qty if the
+field is absent). execute.py:_compute_qty caps SELL orders to available_qty to prevent oversell
+when shares are held for options events or pending transfers.
 
 ═══════════════════════════════════════════════
 STEP 2 — Set up environment
