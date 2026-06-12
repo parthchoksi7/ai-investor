@@ -174,12 +174,13 @@ get a fresh run when the API recovers.
 
 python - <<'PY'
 import json, os
-from journal import mark_pending_executed
+from journal import mark_pending_executed, mark_transactions_live
 p = json.load(open('pending_decisions.json'))
 h = json.load(open('system_health.json')) if os.path.exists('system_health.json') else {}
 cro_api_failed = h.get('checks', {}).get('agent_7_cro', {}).get('api_failed', False)
 if p['decisions'] or not cro_api_failed:
     mark_pending_executed(p['run_id'])
+    mark_transactions_live(p['run_id'])
     print(f"Execution stamped: run_id={p['run_id']}")
 else:
     print("Skipping execution stamp — CRO blocked trades due to API error, not a risk decision. Next retry will re-run.")
