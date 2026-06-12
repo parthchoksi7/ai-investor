@@ -1,32 +1,40 @@
 {
-  "run_id": "20260611-185140",
-  "date": "2026-06-11",
-  "generated_at": "2026-06-11T18:51:40.921042+00:00",
-  "executed_at": "2026-06-11T18:57:13.173533+00:00",
+  "run_id": "20260612-134736",
+  "date": "2026-06-12",
+  "generated_at": "2026-06-12T13:47:36.590236+00:00",
+  "executed_at": "2026-06-12T13:52:22.572732+00:00",
   "decisions": [
     {
-      "ticker": "LLY",
-      "action": "BUY",
-      "target_weight": 0.09,
-      "source_of_capital": "cash",
-      "rationale": "LLY offers the highest earnings alpha score (7/10) among candidates with confirmed GLP-1 franchise momentum, Q2 catalyst visibility, and RISK_ON/GROWTH regime alignment; deploying cash from 46% idle position into a large-cap growth compounder with momentum score of 99.6 directly matches favored regime factors.",
-      "qty": 0.038668
-    },
-    {
-      "ticker": "PANW",
+      "ticker": "BAC",
       "action": "BUY",
       "target_weight": 0.08,
       "source_of_capital": "cash",
-      "rationale": "PANW leads quant momentum at 100.0 and aligns with AI_THEMATIC and MOMENTUM favored factors in current RISK_ON regime; despite lower conviction (5/10), the perfect momentum score and cybersecurity secular tailwind justify a measured position funded from excess cash, improving portfolio growth tilt.",
-      "qty": 0.144413
+      "rationale": "BAC's 92.4 momentum score (highest among financials candidates), conf=7/10, reject=False, and Q2 earnings catalyst on July 16 align perfectly with RISK_ON/MOMENTUM regime while diversifying the existing financial sector exposure away from pure investment banking toward consumer/commercial banking with NIM stabilization thesis.",
+      "qty": 0.72802
     },
     {
-      "ticker": "MRK",
+      "ticker": "EQIX",
       "action": "SELL",
       "target_weight": 0.0,
-      "source_of_capital": "MRK",
-      "rationale": "MRK scores lowest on hold conviction (6/10) with DEFENSIVE_VALUE characteristics explicitly flagged as avoid in current regime, and is directly displaced by LLY which offers superior pharma exposure with higher earnings alpha and regime fit.",
-      "qty": 0.28935
+      "source_of_capital": "EQIX",
+      "rationale": "EQIX carries the lowest composite quant score (66.0) and lowest momentum (64.8) among current holdings with a bear case flagging hyperscaler vertical integration risk and value-trap characteristics; capital is better deployed into higher-momentum RISK_ON names given the current regime.",
+      "qty": 0.037203
+    },
+    {
+      "ticker": "JPM",
+      "action": "SELL",
+      "target_weight": 0.0,
+      "source_of_capital": "JPM",
+      "rationale": "JPM (quant 69.1, hold=6/10) is the weakest financial holding with lowest momentum among the bank positions; selling frees capital while BAC (92.4 momentum) offers superior near-term alpha in the same sector with a more favorable earnings catalyst profile.",
+      "qty": 0.095754
+    },
+    {
+      "ticker": "AAPL",
+      "action": "BUY",
+      "target_weight": 0.08,
+      "source_of_capital": "cash",
+      "rationale": "AAPL (quant 68.4, conf=6/10) adds LARGE_CAP_TECH exposure explicitly favored by the RISK_ON regime, with Q3 earnings on July 28 as near-term catalyst and Services-driven margin expansion providing quality anchor to balance the portfolio's high-beta financial and energy positions.",
+      "qty": 0.135837
     }
   ]
 }
