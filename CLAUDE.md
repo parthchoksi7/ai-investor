@@ -45,6 +45,7 @@ Haiku runs for each of up to 20 candidates. Sonnet runs 3 times total. Prompt ca
 | `fetch_snapshot.py` | Run by GitHub Actions to pre-fetch and commit market data |
 | `preflight_gate.py` | STEP 0 gate the routine runs first each attempt — PROCEED / SKIP-RETRY / SKIP-DONE (see below) |
 | `ROUTINE_DAILY_CYCLE.md` | Canonical, version-controlled copy of the daily routine prompt (secrets redacted) |
+| `ROUTINE_EOD_CLOSE.md` | Canonical, version-controlled copy of the EOD close routine prompt (secrets redacted) |
 | `trades.csv` | Trade log (committed to GitHub after each run) |
 | `decision_journal.json` | Full thesis + invalidation conditions per trade |
 | `system_health.json` | Written every run; push triggers `alert.yml` |
@@ -126,13 +127,17 @@ This routine does **not** run the trading pipeline and places **no orders**. It:
    ```
    git config user.name "AI Investor Bot"
    git config user.email "ai-investor-bot@users.noreply.github.com"
-   git add portfolio_snapshot.json
+   git add portfolio_snapshot.json mcp_portfolio.json
    git commit -m "chore: eod portfolio snapshot"
    git push
    ```
    This push triggers `publish.yml` in GitHub Actions, which runs `publish.py` with Supabase access and writes `close_value` to the `portfolio_snapshots` table.
 
 The `--close` flag writes both `total_value` (latest) **and** `close_value` + `close_at` (the official 4:00 PM closing price). `close_value` is immutable once written — it is the authoritative daily close used for the performance chart on the website.
+
+> 📄 The full, paste-ready EOD routine prompt (with secrets redacted) is version-controlled at [`ROUTINE_EOD_CLOSE.md`](ROUTINE_EOD_CLOSE.md). Keep it in sync whenever you change the live routine.
+>
+> ⚠️ **Two non-obvious requirements (both were live bugs, fixed Jun 12 2026):** STEP 4 **must** `git add portfolio_snapshot.json` (NOT just `mcp_portfolio.json`) and the commit message **must NOT** contain `[skip ci]`. `publish.yml` triggers *only* on a `portfolio_snapshot.json` push and is suppressed by `[skip ci]`; either mistake means `close_value` silently never reaches Supabase (the symptom: daily-close chart points appear only after a manual workflow dispatch).
 
 ## Running Locally
 
