@@ -1129,3 +1129,28 @@ class TestIsCloseInheritance:
         self._write(tmp_path, "portfolio_snapshot.json", {"is_close": False})
         result = self._resolve_is_close(tmp_path, caller_is_close=True, in_github_actions=False)
         assert result is True
+
+
+class TestCloseValueImmutability:
+    """publish.py: close_value is the authoritative 4 PM close and must be written
+    once per day. A second is_close publish (EOD retry, DST double-fire, manual
+    dispatch) must NOT overwrite it. This guard was latent until the EOD routine
+    began actually triggering publish.yml (Jun 12 2026 fix)."""
+
+    def _should_write_close(self, is_close, existing_rows):
+        """Replicate the guard in publish_to_supabase() in isolation."""
+        if not is_close:
+            return False
+        already_closed = bool(existing_rows) and existing_rows[0].get("close_value") is not None
+        return not already_closed
+
+    def test_first_close_of_day_writes(self):
+        assert self._should_write_close(True, []) is True            # no row yet
+        assert self._should_write_close(True, [{"close_value": None}]) is True  # morning row, no close
+
+    def test_second_close_preserves_original(self):
+        assert self._should_write_close(True, [{"close_value": 735.15}]) is False  # immutable
+
+    def test_non_close_run_never_writes(self):
+        assert self._should_write_close(False, []) is False
+        assert self._should_write_close(False, [{"close_value": None}]) is False
