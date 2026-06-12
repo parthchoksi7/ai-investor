@@ -241,8 +241,26 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
         "updated_at":                datetime.now(timezone.utc).isoformat(),
     }
     if is_close:
-        snapshot_row["close_value"] = round(total_value, 2)
-        snapshot_row["close_at"]    = datetime.now(timezone.utc).isoformat()
+        # close_value is the authoritative 4 PM close and must be immutable. A
+        # second is_close publish (EOD retry, DST double-fire, manual dispatch)
+        # must NOT overwrite it. Only write when today's row has no close_value yet.
+        already_closed = False
+        try:
+            existing = (
+                client.table("portfolio_snapshots")
+                .select("close_value")
+                .eq("date", today)
+                .execute()
+            )
+            rows = existing.data or []
+            already_closed = bool(rows) and rows[0].get("close_value") is not None
+        except Exception as e:
+            print(f"   ⚠️  Could not check existing close_value — {e}. Proceeding to write.")
+        if already_closed:
+            print(f"   🔒 close_value already set for {today} — preserving immutable close.")
+        else:
+            snapshot_row["close_value"] = round(total_value, 2)
+            snapshot_row["close_at"]    = datetime.now(timezone.utc).isoformat()
     if spy_close is not None:
         snapshot_row["spy_close"] = round(spy_close, 4)
     if spy_cumulative is not None:

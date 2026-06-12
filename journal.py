@@ -93,25 +93,54 @@ def record_transaction(tx: dict) -> None:
     _save(TRANSACTIONS_FILE, txs)
 
 
-def mark_transactions_live(run_id: str) -> None:
-    """Flip dry_run=False for all transactions in a given run.
+def mark_transactions_live(run_id: str, fills: dict | None = None) -> None:
+    """Reconcile a run's speculative transactions against actual broker fills.
 
-    Called by the cloud routine after MCP orders are placed, because main.py
-    runs with DRY_RUN=true in that environment (robin_stocks is blocked) but
-    the orders are real. Without this, publish.py filters them out and they
-    never appear on the website.
+    main.py runs DRY_RUN=true in the cloud (robin_stocks is blocked), so it
+    writes every decision to transactions.json as dry_run=True with a null
+    broker_order_id BEFORE the real MCP orders are placed in STEP 4. publish.py
+    filters dry_run records out, so trades stay invisible until reconciled here.
+
+    `fills` maps ticker -> {"order_id": str, "price": float|None} for orders the
+    broker ACTUALLY accepted (returned an order id). Only those tickers are
+    marked live; their broker_order_id (and fill price, when known) is recorded.
+    A ticker present in the run but ABSENT from `fills` is a rejected/failed
+    order — it stays dry_run=True so it is never published as a phantom fill.
+    This preserves the fd9d56a invariant: a non-dry_run row exists ⟺ the broker
+    accepted the order.
+
+    Back-compat: if `fills` is None the caller supplied no reconciliation data;
+    all of the run's transactions are flipped (legacy flip-all) and a warning is
+    logged, because fills and rejections cannot be told apart in that mode.
     """
     txs = _load_list(TRANSACTIONS_FILE)
     updated = 0
     for tx in txs:
-        if tx.get("run_id") == run_id and tx.get("dry_run"):
+        if tx.get("run_id") != run_id or not tx.get("dry_run"):
+            continue
+        ticker = tx.get("ticker")
+        if fills is None:
             tx["dry_run"] = False
             updated += 1
+        elif ticker in fills:
+            tx["dry_run"] = False
+            fill = fills[ticker] or {}
+            if fill.get("order_id"):
+                tx["broker_order_id"] = fill["order_id"]
+            if fill.get("price"):
+                tx["price"] = round(float(fill["price"]), 4)
+                if tx.get("qty"):
+                    tx["total_value"] = round(float(tx["qty"]) * float(fill["price"]), 2)
+            updated += 1
+        # else: ticker not in fills → rejected/unfilled → leave dry_run=True
     if updated:
         _save(TRANSACTIONS_FILE, txs)
         print(f"   ✅ Marked {updated} transaction(s) as live (run_id={run_id})")
     else:
         print(f"   ℹ️  No dry_run transactions found for run_id={run_id}")
+    if fills is None:
+        print("   ⚠️  mark_transactions_live called without broker fills — "
+              "all run transactions flipped live (cannot distinguish rejections).")
 
 
 def mark_pending_executed(run_id: str) -> None:
