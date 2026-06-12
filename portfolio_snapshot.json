@@ -1,72 +1,80 @@
 {
-  "is_close": false,
+  "is_close": true,
   "portfolio": {
-    "cash": 180.82,
-    "total_value": 501.969517237,
+    "cash": 169.98,
+    "total_value": 502.44468751,
     "positions": [
       {
-        "symbol": "EQIX",
-        "qty": 0.037203,
-        "avg_price": 1076.79,
-        "current_price": 1053.615,
-        "market_value": 39.197,
-        "unrealized_pnl": -0.862
+        "symbol": "AAPL",
+        "qty": 0.135837,
+        "avg_price": 292.11,
+        "current_price": 291.07,
+        "market_value": 39.538076,
+        "unrealized_pnl": -0.14127,
+        "available_qty": 0.135837
       },
       {
         "symbol": "MS",
         "qty": 0.215357,
         "avg_price": 213.55,
-        "current_price": 215.41,
-        "market_value": 46.394,
-        "unrealized_pnl": 0.401
+        "current_price": 214.04,
+        "market_value": 46.095012,
+        "unrealized_pnl": 0.105525,
+        "available_qty": 0.215357
+      },
+      {
+        "symbol": "BAC",
+        "qty": 0.72802,
+        "avg_price": 55.52,
+        "current_price": 55.99,
+        "market_value": 40.76184,
+        "unrealized_pnl": 0.34217,
+        "available_qty": 0.72802
       },
       {
         "symbol": "EOG",
         "qty": 0.247912,
         "avg_price": 141.14,
-        "current_price": 136.12,
-        "market_value": 33.751,
-        "unrealized_pnl": -1.245
-      },
-      {
-        "symbol": "JPM",
-        "qty": 0.095754,
-        "avg_price": 313.72,
-        "current_price": 316.205,
-        "market_value": 30.279,
-        "unrealized_pnl": 0.238
+        "current_price": 136.64,
+        "market_value": 33.874696,
+        "unrealized_pnl": -1.115604,
+        "available_qty": 0.247912
       },
       {
         "symbol": "LIN",
         "qty": 0.087592,
         "avg_price": 504.95,
-        "current_price": 518.85,
-        "market_value": 45.449,
-        "unrealized_pnl": 1.218
+        "current_price": 523.53,
+        "market_value": 47.85704,
+        "unrealized_pnl": 3.62746,
+        "available_qty": 0.087592
       },
       {
         "symbol": "GS",
         "qty": 0.039584,
         "avg_price": 1006.72,
-        "current_price": 1054.81,
-        "market_value": 41.763,
-        "unrealized_pnl": 1.903
+        "current_price": 1062.945,
+        "market_value": 42.075615,
+        "unrealized_pnl": 2.22561,
+        "available_qty": 0.039584
       },
       {
         "symbol": "LLY",
         "qty": 0.038668,
         "avg_price": 1164.53,
-        "current_price": 1149.495,
-        "market_value": 44.449,
-        "unrealized_pnl": -0.581
+        "current_price": 1133.0,
+        "market_value": 43.810844,
+        "unrealized_pnl": -1.219202,
+        "available_qty": 0.038668
       },
       {
         "symbol": "PANW",
         "qty": 0.144413,
         "avg_price": 277.19,
-        "current_price": 276.25,
-        "market_value": 39.909,
-        "unrealized_pnl": -0.136
+        "current_price": 279.61,
+        "market_value": 40.379319,
+        "unrealized_pnl": 0.349479,
+        "available_qty": 0.144413
       }
     ]
   },
@@ -1673,5 +1681,5 @@
     }
   },
   "regime": "NEUTRAL",
-  "written_at": "2026-06-12T13:51:40.780368+00:00"
+  "written_at": "2026-06-12T20:06:35.475395+00:00"
 }
