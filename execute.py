@@ -351,7 +351,15 @@ def execute_trades(decisions: list[dict], portfolio: dict, prices: dict) -> dict
             print(f"   ⏸  Skipping {action} {ticker} — qty {qty:.6f} ≤ 0")
             continue
 
-        result = place_order(ticker, action, qty)
+        # Isolate each order: a transient exception on one must not abort the
+        # loop and strand the rest. With SELL-before-BUY ordering the bad case
+        # is SELLs placed, exception, BUYs never attempted → capital stranded
+        # in cash. order_executed() classifies {"exception": True} as not-a-fill.
+        try:
+            result = place_order(ticker, action, qty)
+        except Exception as e:
+            print(f"   ❌ Order EXCEPTION for {ticker}: {e}")
+            result = {"detail": str(e)[:200], "exception": True}
         order_results[ticker] = result
 
     return order_results

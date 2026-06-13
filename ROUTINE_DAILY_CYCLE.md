@@ -214,6 +214,10 @@ For each decision where action is BUY or SELL:
         decision-time quote in transactions.json is then kept.)
      • If the response is an error / rejection (no id), DO NOT add it to fills. Log the error
        to the session output. It will correctly remain dry_run=True (never published as a fill).
+     • If place_equity_order itself ERRORS / throws (timeout, transport failure), treat it
+       exactly like a rejection: record the error, DO NOT add it to fills, and CONTINUE to the
+       next order. One order's exception must never abort the remaining orders — with SELLs
+       placed before BUYs, aborting would strand capital in cash with the BUYs never attempted.
 
   5. LOG the result (ticker, qty, order id or error) to the session output.
 

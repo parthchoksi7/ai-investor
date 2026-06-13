@@ -980,6 +980,36 @@ class TestSellBeforeBuyOrdering:
         assert "MRK" not in results and "EOG" not in results
 
 
+class TestPerOrderErrorIsolation:
+    """One order's transient exception must not abort the loop and strand the
+    rest. With SELL-before-BUY ordering, aborting after a SELL exception would
+    leave the funding SELLs done but the BUYs never attempted (Fix 6)."""
+
+    def test_exception_on_one_order_does_not_strand_others(self, monkeypatch):
+        import execute
+        attempted = []
+
+        def _flaky(ticker, action, qty):
+            attempted.append(ticker)
+            if ticker == "BBB":
+                raise RuntimeError("transient transport error")
+            return {"id": f"ok-{ticker}"}
+
+        monkeypatch.setattr(execute, "place_order", _flaky)
+        results = execute.execute_trades(
+            [{"ticker": "AAA", "action": "SELL", "qty": 0.1},
+             {"ticker": "BBB", "action": "SELL", "qty": 0.2},
+             {"ticker": "CCC", "action": "BUY",  "qty": 0.3}],
+            {"total_value": 500.0, "positions": []}, {})
+        # all three attempted despite BBB raising mid-loop
+        assert attempted == ["AAA", "BBB", "CCC"]
+        assert execute.order_executed(results["AAA"]) is True
+        assert execute.order_executed(results["CCC"]) is True
+        # BBB recorded as a not-a-fill exception, never as a phantom fill
+        assert results["BBB"].get("exception") is True
+        assert execute.order_executed(results["BBB"]) is False
+
+
 # ── Execution stamp decision (main.py contract) ──────────────────────────────
 
 class TestExecutionStampDecision:
