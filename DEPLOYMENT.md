@@ -207,10 +207,15 @@ If `_safe_call()` fails, ALL trades must be blocked — not approved. Verify thi
 # In main.py: confirm sell_only path still executes when kill_active=True
 ```
 
-### 2.6 Target weight bounds
-The Portfolio Manager outputs `target_weight` 0.0–0.10. Verify there is no path where an LLM output above 0.10 reaches `_compute_qty()` without rejection. Currently there is no server-side clamp — if the PM outputs 0.50, the system will attempt to allocate 50% to one position.
+### 2.6 Validation gate (guardrails.py)
+All LLM trade output passes through `guardrails.validate_decisions()` in `main.py` — after qty pre-computation, before `pending_decisions.json` is written. It enforces: action whitelist, `BLOCKED_TICKERS`, ticker ∈ analyzed candidates ∪ holdings, same-ticker BUY+SELL conflict rejection, `target_weight` clamp to [0, 0.10] **with qty recompute**, BUY notional ≤ 12% of portfolio (SELLs exempt — full exits of overweight positions must never be blocked), $5 minimum notional, and the good-faith-violation guard (no SELL within 2 trading days of a broker-accepted BUY, unless the kill switch is active). Interventions are recorded under the `decision_validation` health check (DEGRADED → alert.yml).
 
-**Known gap:** No bounds validation on `target_weight` before execution. Until this is fixed, this is an accepted risk. Any change to analysis.py's PM section must confirm the PM system prompt still says "0.00–0.10".
+For any change to `guardrails.py` or its call site:
+- [ ] Gate still runs AFTER qty pre-computation (notional rules need qty) and BEFORE the `pending_decisions.json` dump
+- [ ] Weight clamping still recomputes `qty` — a clamped weight with a stale qty is a no-op at execution
+- [ ] SELLs are still exempt from the BUY notional cap
+- [ ] `TestValidateDecisions` in `test_pipeline.py` passes; new rules get new cases
+- [ ] PM system prompt still says "0.00–0.10" (the gate is defense in depth, not a license to relax the prompt)
 
 ---
 
@@ -930,7 +935,7 @@ These are documented risks in the current system. Any deployment that touches th
 |------|----------|----------|------------|
 | SPY price in morning snapshot is intraday (not official close) | `publish.py` | Low | By design — user wants SPY synced with portfolio on every update. EOD run overwrites with official close via `is_close=True`. Chart labels the index as "indexed to 100" not "closing prices". |
 | `market_snapshot.json` missing or stale → SPY falls back to Polygon "prev" (previous day) | `publish.py:_fetch_spy_from_snapshot` | Low | Polygon fallback still gives valid SPY data; worst case is SPY lags by one day in the dashboard, identical to the pre-fix behavior. |
-| No `target_weight` bounds validation before execution | `execute.py:_compute_qty` | High | PM prompt constrains to 0.10; review PM output in dry-run |
+| No `target_weight` bounds validation before execution | `execute.py:_compute_qty` | ~~High~~ **Fixed (guardrails.py)** | `validate_decisions()` clamps weight to [0, 0.10] + recomputes qty, rejects unknown/blocked tickers, caps BUY notional at 12%, GFV guard — see §2.6 |
 | Portfolio state is snapshot at pipeline time, not execution time | `main.py`, `execute.py` | Medium | Market orders; prices drift between analysis and execution. Acceptable for small portfolio |
 | `agent_log.json` grows unboundedly | `journal.py:record_run` | ~~Low~~ **Fixed `8f0b2e9`** | Capped at 90 entries (~3 months). Previously whole file loaded into memory each run |
 | No fill confirmation — broker order "placed" ≠ "filled" | `execute.py:place_order` | Medium | Manual reconciliation in Step 8.2 after each live run |
