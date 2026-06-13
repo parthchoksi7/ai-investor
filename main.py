@@ -24,7 +24,7 @@ from market_data  import get_market_snapshot
 from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, DRY_RUN
-from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, get_recent_decisions
+from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions
 from guardrails   import validate_decisions
 from publish      import publish_to_supabase
 from health       import HealthTracker, OK, DEGRADED, FAILED, ABORTED
@@ -322,11 +322,12 @@ def run_daily_cycle():
 
     with open("pending_decisions.json", "w") as _f:
         _json.dump({
-            "run_id":       run_id,
-            "date":         today,
-            "generated_at": run_start,
-            "executed_at":  None,
-            "decisions":    decisions,
+            "run_id":               run_id,
+            "date":                 today,
+            "generated_at":         run_start,
+            "execution_started_at": None,
+            "executed_at":          None,
+            "decisions":            decisions,
         }, _f, indent=2)
 
     if not decisions:
@@ -390,6 +391,12 @@ def run_daily_cycle():
         print("\n⚡  Step 6: Executing trades...")
 
     if attempted:
+        # Claim the run BEFORE the first order (stamp-first). In the cloud the
+        # routine does this itself (and pushes the claim for cross-attempt
+        # durability) before its MCP orders; locally main.py places the orders,
+        # so it sets the claim here. DRY_RUN never claims — no orders happen.
+        if not DRY_RUN:
+            mark_execution_started(run_id)
         try:
             order_results = execute_trades(attempted, portfolio, market_data["prices"])
         except Exception as e:

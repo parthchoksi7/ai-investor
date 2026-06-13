@@ -140,9 +140,37 @@ GUARD 2 — Idempotency:
   This run was already executed. Do not place any orders. (Belt-and-suspenders with the
   STEP 0 gate's SKIP/DONE — across the 4 daily attempts this prevents double-execution.)
 
+GUARD 3 — Execution claim (cross-attempt partial-fill protection):
+  If pending_decisions["execution_started_at"] is not null, STOP immediately.
+  A prior attempt STARTED placing orders and crashed before stamping executed_at.
+  Orders may have been placed. Re-running would risk double-fills. Recover manually
+  via Scenario B in CLAUDE.md (diff actual get_equity_positions against targets).
+
 Read decisions from pending_decisions["decisions"] (the nested array, not the root object).
 
 TSLA HARD BLOCK: NEVER place any order for TSLA under any circumstances. Skip it entirely.
+
+CLAIM THE RUN (only if decisions is non-empty — an empty list has nothing to protect):
+BEFORE placing the FIRST order, stamp execution_started_at and push it so the claim
+survives this environment dying mid-execution:
+
+python - <<'PY'
+import json
+from journal import mark_execution_started
+p = json.load(open('pending_decisions.json'))
+mark_execution_started(p['run_id'])
+PY
+git config user.email 'ai-investor-bot@users.noreply.github.com'
+git config user.name 'AI Investor Bot'
+git add pending_decisions.json system_health.json trades.csv decision_journal.json agent_log.json transactions.json mcp_portfolio.json portfolio_snapshot.json fundamentals_cache.json portfolio_peak.json
+git commit -m 'chore: execution claim'
+git push || (git pull --rebase && git push)
+
+If the push fails even after the rebase retry, STOP — do NOT place any orders.
+Without a durable claim, a crash mid-execution re-opens the double-fill window.
+Failing toward missed trades is correct; failing toward duplicate trades is not.
+(The claim commit carries the full artifact set so the audit trail of what was
+*intended* survives even if this attempt dies during order placement.)
 
 Maintain a fills accumulator as you place orders — a dict you will write to fills.json:
   fills = {}   # ticker -> {"order_id": <str>, "price": <float or null>}
@@ -257,7 +285,11 @@ git push || echo "WARNING: git push failed — trades executed but artifacts not
    (UTC in cloud) → US/Eastern to match the gate and `pending_decisions["date"]`.
 4. **STEP 4 stamp** also converted to a heredoc for paste-safety.
 
-> ⚠️ **Partial-failure caveat (unchanged, pre-existing):** if an attempt places some orders but
-> crashes before STEP 4 stamps `executed_at`, nothing is pushed, and the next attempt may re-run.
-> GUARD 2 protects within an attempt; for cross-attempt partial fills, follow **Scenario B** in
-> the `CLAUDE.md` Manual Execution Runbook (compare actual `get_equity_positions` to targets).
+## What changed — Jun 12 2026 evening (remediation batch)
+
+1. **STEP 4 — stamp-first execution claim** (closes the cross-attempt double-fill window that
+   was previously documented here as an unresolved caveat): `execution_started_at` is stamped,
+   committed, and pushed BEFORE the first order is placed. GUARD 3 + the STEP 0 gate treat a
+   non-null claim dated today as SKIP/DONE. If the claim push fails after one rebase retry, the
+   attempt STOPS without placing orders — the system now fails toward missed trades, never
+   duplicate trades. Crash-mid-execution recovery is Scenario B (position diff), never re-run.

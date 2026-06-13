@@ -107,6 +107,21 @@ def main() -> int:
         )
         return SKIP_DONE
 
+    # 1b. Execution claim — a prior attempt started placing orders but never
+    # finished (crashed mid-execution before executed_at was stamped). Orders
+    # MAY have been placed; re-running would risk double-fills. Fail toward
+    # missed trades: stop, and recover via the Scenario B runbook in CLAUDE.md
+    # (diff actual get_equity_positions against pending_decisions targets).
+    if pending and pending.get("date") == TODAY and pending.get("execution_started_at"):
+        print(
+            f"SKIP/DONE: execution was STARTED today ({TODAY}, "
+            f"run_id={pending.get('run_id')}, "
+            f"started_at={pending.get('execution_started_at')}) but executed_at was "
+            "never stamped — a prior attempt crashed mid-execution. Orders may have "
+            "been placed. DO NOT re-run. Recover manually via Scenario B in CLAUDE.md."
+        )
+        return SKIP_DONE
+
     # 2. Freshness — is market_snapshot.json dated today with enough history?
     snap = _read_json("market_snapshot.json")
     if snap is None:

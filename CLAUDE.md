@@ -88,7 +88,7 @@ esac
 
 - **Exit 0 (PROCEED):** fresh snapshot dated today (≥22 history bars) AND today's pipeline has not executed yet → run the full pipeline.
 - **Exit 10 (SKIP/RETRY):** `market_snapshot.json` is missing or not dated today → **do not run**. Stop cleanly; the next scheduled attempt re-checks. If all 4 attempts see stale data, the day is intentionally skipped (no trades — correct behavior).
-- **Exit 20 (SKIP/DONE):** `pending_decisions.json` shows today already executed → **do not run again** (idempotency across the 4 attempts; prevents double-execution).
+- **Exit 20 (SKIP/DONE):** `pending_decisions.json` shows today already executed, **or** today's `execution_started_at` is set without `executed_at` (a prior attempt crashed mid-execution — orders may exist; recover via Scenario B) → **do not run again**.
 
 This is why the schedule has four fire times rather than one: the gate + the existing `pending_decisions` idempotency envelope guarantee the pipeline runs **at most once per day**, on the first attempt that sees fresh data. On Jun 9 the market_data job didn't land until 12:14 PM ET — the 12:45 retry would have caught it.
 
@@ -192,6 +192,7 @@ The Portfolio Manager outputs `target_weight` (0.0–0.10) rather than share cou
   "run_id": "20260608-145656",
   "date": "2026-06-08",
   "generated_at": "2026-06-08T13:56:00Z",
+  "execution_started_at": null,
   "executed_at": null,
   "decisions": [ ... ]
 }
@@ -202,14 +203,16 @@ The Portfolio Manager outputs `target_weight` (0.0–0.10) rather than share cou
 1. **Read decisions** from `pending_decisions["decisions"]` (not the root — it's no longer a bare list).
 2. **Verify freshness** — check `pending_decisions["date"] == today`. If it's yesterday's file, DO NOT execute. Stop and log a warning.
 3. **Check idempotency** — if `pending_decisions["executed_at"]` is not `null`, this run was already executed. DO NOT place orders again. Stop immediately.
-4. **Execute orders** via Robinhood MCP. Each decision includes a pre-computed `qty` (fractional shares) — **use it directly, do NOT round to whole shares**. Robinhood supports fractional orders. Skip a decision only if `qty == 0`; a qty of 0.648 is a valid, placeable order.
-5. **Stamp execution** after all MCP orders are placed:
+4. **Check the execution claim** — if `pending_decisions["execution_started_at"]` is not `null`, a prior attempt started placing orders and crashed before stamping `executed_at`. Orders may have been placed. DO NOT re-run — recover via **Scenario B** in the Manual Execution Runbook.
+5. **Claim the run** (skip when `decisions` is empty): call `journal.mark_execution_started(run_id)`, then commit and push the full artifact set BEFORE placing the first order. If the push fails after one `git pull --rebase` retry, STOP without placing orders — without a durable claim, a crash mid-execution re-opens the cross-attempt double-fill window.
+6. **Execute orders** via Robinhood MCP. Each decision includes a pre-computed `qty` (fractional shares) — **use it directly, do NOT round to whole shares**. Robinhood supports fractional orders. Skip a decision only if `qty == 0`; a qty of 0.648 is a valid, placeable order.
+7. **Stamp execution** after all MCP orders are placed:
    ```
    python -c "from journal import mark_pending_executed; mark_pending_executed('RUN_ID')"
    ```
    Replace `RUN_ID` with the value from `pending_decisions["run_id"]`.
 
-Steps 3 and 5 together prevent double-execution if the routine retries after a partial failure.
+Steps 3–5 and 7 together guarantee the failure direction: a crash at any point yields **missed trades** (recoverable via Scenario B), never **duplicate trades**. Old envelopes without `execution_started_at` are read with `.get()` — a missing field behaves as `null`.
 
 ## Cloud Environment (Scheduled Routine)
 
@@ -443,7 +446,11 @@ Use this when the scheduled routine fails or you need to intervene.
 
 ### Scenario A — Routine failed before placing orders
 
-`pending_decisions.json` exists, `executed_at` is `null`.
+`pending_decisions.json` exists, `executed_at` is `null`, **and `execution_started_at` is `null`**.
+
+> ⚠️ If `execution_started_at` is **not** null, the failed attempt got as far as claiming the
+> run — orders may have been placed even though `executed_at` was never stamped. That is
+> **Scenario B**, not A. Never blind-execute a claimed file.
 
 1. Check `pending_decisions["date"] == today`. If stale (yesterday's file), **stop** — wait for tomorrow's run.
 2. Read `pending_decisions["decisions"]`. If `[]`, nothing to execute.
