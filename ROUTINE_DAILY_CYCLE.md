@@ -60,6 +60,7 @@ Call in order:
 
 Write mcp_portfolio.json with this exact structure:
 {
+  "as_of": "<ISO-8601 timestamp, US/Eastern, e.g. 2026-06-12T09:46:00-04:00>",
   "cash": <float>,
   "total_value": <float>,
   "positions": [
@@ -74,6 +75,11 @@ Write mcp_portfolio.json with this exact structure:
     }
   ]
 }
+
+as_of MUST be the current timestamp (ET) at which you fetched this portfolio. execute.py
+get_portfolio_summary() raises StalePortfolioError if as_of is missing or not dated today (ET),
+and main.py then aborts before sizing any orders — every order is sized from this file, so a
+stale copy would size today's trades against a prior day's cash/positions. Write it fresh every run.
 
 available_qty = shares_available_for_sells from get_equity_positions (falls back to qty if the
 field is absent). execute.py:_compute_qty caps SELL orders to available_qty to prevent oversell

@@ -1539,3 +1539,77 @@ class TestPreflightGateExecutionClaim(TestPreflightGate):
                     {"date": "2020-01-01", "run_id": "x", "executed_at": None,
                      "execution_started_at": "2020-01-01T13:50:00Z"})
         assert self._run(tmp_path) == 0  # stale claim from a prior day — PROCEED
+
+
+# ── execute.get_portfolio_summary — mcp_portfolio.json freshness (Fix 4) ─────
+
+class TestPortfolioFreshness:
+    """Every order is sized from mcp_portfolio.json. A stale copy (prior day's
+    portfolio committed to the repo, or a routine that failed to refresh it)
+    would size today's trades against the wrong cash/positions. The file must
+    carry an as_of dated today (ET) or get_portfolio_summary raises."""
+
+    def _et_now_iso(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/New_York")).isoformat()
+
+    def _et_iso_days_ago(self, n):
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        return (datetime.now(ZoneInfo("America/New_York")) - timedelta(days=n)).isoformat()
+
+    def _write(self, tmp_path, obj):
+        (tmp_path / "mcp_portfolio.json").write_text(json.dumps(obj))
+
+    def test_fresh_as_of_passes(self, tmp_path, monkeypatch):
+        import execute
+        monkeypatch.chdir(tmp_path)
+        self._write(tmp_path, {"as_of": self._et_now_iso(), "cash": 123.45,
+                               "total_value": 456.78, "positions": []})
+        assert execute.get_portfolio_summary()["cash"] == 123.45
+
+    def test_missing_as_of_raises(self, tmp_path, monkeypatch):
+        import execute
+        monkeypatch.chdir(tmp_path)
+        self._write(tmp_path, {"cash": 123.45, "total_value": 456.78, "positions": []})
+        with pytest.raises(execute.StalePortfolioError, match="no 'as_of'"):
+            execute.get_portfolio_summary()
+
+    def test_yesterday_as_of_raises(self, tmp_path, monkeypatch):
+        import execute
+        monkeypatch.chdir(tmp_path)
+        self._write(tmp_path, {"as_of": self._et_iso_days_ago(1), "cash": 1.0,
+                               "total_value": 1.0, "positions": []})
+        with pytest.raises(execute.StalePortfolioError, match="stale"):
+            execute.get_portfolio_summary()
+
+    def test_unparseable_as_of_raises(self, tmp_path, monkeypatch):
+        import execute
+        monkeypatch.chdir(tmp_path)
+        self._write(tmp_path, {"as_of": "not-a-timestamp", "cash": 1.0,
+                               "total_value": 1.0, "positions": []})
+        with pytest.raises(execute.StalePortfolioError, match="unparseable"):
+            execute.get_portfolio_summary()
+
+    def test_naive_today_timestamp_accepted_as_et(self, tmp_path, monkeypatch):
+        import execute
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        monkeypatch.chdir(tmp_path)
+        naive_today = datetime.now(ZoneInfo("America/New_York")).replace(tzinfo=None).isoformat()
+        self._write(tmp_path, {"as_of": naive_today, "cash": 9.0,
+                               "total_value": 9.0, "positions": []})
+        assert execute.get_portfolio_summary()["cash"] == 9.0
+
+    def test_no_file_falls_through_to_robin_stocks(self, tmp_path, monkeypatch):
+        import execute
+        monkeypatch.chdir(tmp_path)  # no mcp_portfolio.json here
+        called = {"login": False}
+        def _fake_login():
+            called["login"] = True
+            raise RuntimeError("robin_stocks path reached (expected)")
+        monkeypatch.setattr(execute, "_login", _fake_login)
+        with pytest.raises(RuntimeError, match="robin_stocks path"):
+            execute.get_portfolio_summary()
+        assert called["login"] is True  # fell through to the live path, no StalePortfolioError
