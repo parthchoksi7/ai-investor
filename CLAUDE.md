@@ -300,6 +300,28 @@ This prevents the silent all-50 quant score failure mode where agents run but pr
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
 
+## Changelog — Jun 13 2026 (IMPROVEMENTS_SPEC evaluation batch)
+
+Critical evaluation + selective implementation of `IMPROVEMENTS_SPEC.md` (a phased work order written from a partial read of the repo). Three of its phases were rejected on inspection; six were implemented. No live routine prompt change is required — all changes are code/data, and the cloud routine's STEP 4/5 protocol is unchanged. Newest first.
+
+| Change | Phase | Why it mattered |
+|--------|-------|-----------------|
+| `feat(guardrails)` 25% **sector cap** in code (`enforce_sector_limits` + static `SECTOR_MAP`), wired in `main.py` after `validate_decisions`, folded into the `decision_validation` health check. | 0.2 | The sector limit lived **only** in the PM prompt — an LLM is not a control. Three 10% BUYs into one sector would size 30% concentration. SELLs applied first so a same-sector exit frees budget; existing holdings count. |
+| `feat(journal)` **`close_position`** populates `actual_return` / `thesis_correct` / `exits` on the matching open BUY when a position is sold; wired into `main.py`'s executed-SELL loop. | 1 | The feedback loop was dead — entries were created with `actual_return=None` and nothing ever populated them, so the system could not tell a thesis that worked from one that blew up. Cloud caveat (speculative close under DRY_RUN, reconciliation won't re-open a wrongly-closed BUY) is documented in the function. |
+| `feat(memory)` `get_ticker_history` + `recently_exited` (journal) fed into the **Research Analyst** (prior outcomes) and **Portfolio Manager** (re-entry warning). | 2 | Only Position Review saw prior theses, and only for current holdings. The thesis-builders for new/re-entered names got nothing → the "sold AAPL at \$292, rebuy at \$291" churn. |
+| `fix(quant)` **honest composite** — each sub-score carries a `*_available` flag; `score_all_tickers` weights only real factors and renormalizes; `factors_used` recorded; `_fmt_scores` shows `N/A` not a fake 50. | 3.1 | All 100 fundamentals are `None` on free-tier Polygon, so quality/valuation were a constant 50 for every ticker — a "4-factor" composite that was really momentum+volatility. **No ranking/trade impact** (the 50s were constant, so they never affected ordering); this is a pure honesty fix. |
+| `feat(cro)` **real correlation data** — `quant_engine.compute_return_correlations` (pairwise 120d return corr) + sector concentration injected into the CRO `user_msg`. | 4 | The CRO prompt asks it to assess "correlation risk" but was fed only per-ticker weight/vol/beta — its correlation judgment was fabricated. Block is omitted entirely when no matrix can be computed (no pretense). |
+| `feat(perf)` new **`performance.py`** — local portfolio-vs-SPY report (cumulative, max drawdown, ann. vol, Sharpe) from `agent_log.json` + `market_snapshot.json`; writes `performance_report.json`. Supabase-independent. | 6 | No local way to tell if the strategy beats buy-and-hold. Honest caveats printed (price-return SPY, cash drag, too-few-days Sharpe). |
+| `fix(gitignore)` split the malformed `market_snapshot.jsonfills.json` line → `fills.json` ignored; `market_snapshot.json` left tracked (the cloud data source `market_data.yml` commits); `performance_report.json` ignored. | — | The concatenated line ignored **neither** file. Found during QA. |
+
+**Rejected after inspection** (the spec was written without seeing the current code/data):
+- **0.1 (clamp oversized `target_weight`)** — already done, and better: `guardrails.validate_decisions` rule 5 already clamps weight to [0,0.10] **and recomputes qty** (the spec's version would drop the trade instead of capping it). Adding it would create two competing gates.
+- **3.2 (gate the earnings agent on an upcoming-earnings signal)** — unbuildable: there is **no earnings-calendar data source** in the system. A heuristic gate would be fabrication. The real fix is to add a calendar feed (documented as future work).
+- **5.1 (structured output, delete brace-recovery)** — high blast radius on the core parse path; the brace-recovery it deletes currently works. Deferred to its own PR with live dry-run validation.
+- **5.2 (programmatic `invalidates_if` checks)** — the real stored conditions are **qualitative fundamental triggers** ("Mounjaro revenue growth below 25% YoY", "WTI below \$55/bbl", "KEYTRUDA below \$15B consensus"), not the stock's own price. A price/drawdown regex would misread a commodity price or consensus figure as a stock-price stop and feed false flags to the LLM. The right fix is an explicit structured `price_stop` field the Research agent populates — a data-model change, not regex mining.
+
+> **QA:** full `pytest` suite green (**205**, +45 new). `DRY_RUN` integration was validated with a **stubbed** end-to-end `get_trade_decisions` run (today's snapshot is from 6/12 and would preflight-abort, so a real `main.py` dry-run can't reach the agents until Monday's fresh snapshot). Workflow YAML parses; DEPLOYMENT §3.1/§3.7 regression scripts pass. P0/P1/P2 change — solo-dev 24h cooling + a real dry-run on Monday's fresh data recommended before the change drives a live run.
+
 ## Changelog — Jun 12 2026 (evening — code-review remediation batch)
 
 Six-phase remediation from a senior code review. Each phase is an independent commit; all P0 unless noted. Newest first. **Live-routine sync required before the next live run** — see the "Live routine sync" note at the end.
@@ -459,6 +481,12 @@ pytest test_pipeline.py -v
 | `TestOrderExecuted` | `execute.py` | Broker result classification: order id / dry-run = fill; rejection / block / empty = not a fill |
 | `TestSellBeforeBuyOrdering` | `execute.py` | SELLs placed before BUYs (stable within side); HOLD and qty-0 never placed |
 | `TestExecutionStampDecision` | `main.py` logic | Idempotency stamp truth table: stamp on any fill, withhold when nothing placed |
+| `TestEnforceSectorLimits` | `guardrails.py` | 25% sector cap; SELL frees budget before BUY; holdings count; order preserved; default `SECTOR_MAP` |
+| `TestClosePosition` | `journal.py` | Realized-outcome feedback: full/partial exit, thesis-correct branches, no-op + zero-avg guards, survives reconciliation |
+| `TestTickerHistoryHelpers` / `TestMemoryPromptBlocks` / `TestMemoryInjectedIntoAgents` | `journal.py` / `analysis.py` | Per-ticker history + recently-exited recall; prompt blocks; memory actually reaches Research/PM `user_msg` |
+| `TestReturnCorrelations` / `TestCroCorrelationInjection` | `quant_engine.py` / `analysis.py` | Pairwise return correlation; CRO `user_msg` carries a real correlation block (none when no history) |
+| `TestPerformanceReport` | `performance.py` | Metrics on known curves, epoch-ms SPY parse, as-of alignment, end-to-end report, missing-file safety |
+| `TestScoreAllTickers` (updated) | `quant_engine.py` | Honest composite: all-4 factors when fundamentals present; drops + renormalizes momentum+volatility when absent; neutral when no factor has data |
 
 ## Manual Execution Runbook
 
