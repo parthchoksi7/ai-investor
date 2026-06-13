@@ -580,10 +580,9 @@ class TestMarkPendingExecuted:
 class TestMarkTransactionsLive:
     """Cloud routine writes every decision dry_run=True (main.py runs DRY_RUN=true);
     reconciliation must mark live ONLY orders the broker actually accepted, so a
-    rejected order is never published as a phantom fill (preserves fd9d56a)."""
-
-    def _write(self, path, txs):
-        path.write_text(json.dumps(txs))
+    rejected order is never published as a phantom fill (preserves fd9d56a).
+    Since the Fix-3 batch the reconciler is authoritative for trades.csv and
+    decision_journal.json too — every test isolates all four state files."""
 
     def _txs(self):
         return [
@@ -595,53 +594,193 @@ class TestMarkTransactionsLive:
              "total_value": 58.0, "broker_order_id": None, "dry_run": True},  # other run
         ]
 
+    def _journal_rows(self):
+        return [
+            {"trade_id": "t1", "run_id": "r1", "ticker": "BAC", "status": "open"},
+            {"trade_id": "t2", "run_id": "r1", "ticker": "JPM", "status": "open"},
+            {"trade_id": "t3", "run_id": "r0", "ticker": "AAPL", "status": "open"},
+            {"trade_id": "t4", "run_id": "r1", "ticker": "OLD", "status": "closed"},
+        ]
+
+    def _csv_rows(self):
+        header = ("date,strategy,ticker,action,qty,price,total_value,target_weight,"
+                  "portfolio_value,rationale,broker_order_id,dry_run,run_id")
+        return "\n".join([
+            header,
+            "2026-06-12,institutional,BAC,BUY,0.5,55.1600,27.58,0.0800,500.00,r,,True,r1",
+            "2026-06-12,institutional,JPM,SELL,0.1,313.4900,31.35,0.0000,500.00,r,,True,r1",
+            "2026-06-11,institutional,AAPL,BUY,0.2,290.0000,58.00,0.0800,500.00,r,,True,r0",
+            "2026-06-10,institutional,MS,BUY,0.05,210.2500,11.11,,497.21,manual,,False,",
+        ]) + "\n"
+
+    def _setup(self, tmp_path, monkeypatch, txs=None):
+        """Isolate transactions.json, trades.csv, decision_journal.json, and
+        system_health.json in tmp_path. Returns (journal_module, paths_dict)."""
+        import journal, execute, health
+        p = {
+            "tx":     tmp_path / "transactions.json",
+            "csv":    tmp_path / "trades.csv",
+            "jrnl":   tmp_path / "decision_journal.json",
+            "health": tmp_path / "system_health.json",
+        }
+        p["tx"].write_text(json.dumps(txs if txs is not None else self._txs()))
+        p["csv"].write_text(self._csv_rows())
+        p["jrnl"].write_text(json.dumps(self._journal_rows()))
+        monkeypatch.setattr(journal, "TRANSACTIONS_FILE", str(p["tx"]))
+        monkeypatch.setattr(journal, "JOURNAL_FILE", str(p["jrnl"]))
+        monkeypatch.setattr(execute, "TRADE_LOG", str(p["csv"]))
+        monkeypatch.setattr(health, "HEALTH_FILE", str(p["health"]))
+        return journal, p
+
+    @staticmethod
+    def _csv_dict(path):
+        import csv as _csv
+        with open(path, newline="") as f:
+            return {r["ticker"]: r for r in _csv.DictReader(f)}
+
+    # — transactions.json (original fd9d56a contract, unchanged) —
+
     def test_only_filled_tickers_flip(self, tmp_path, monkeypatch):
-        import journal
-        f = tmp_path / "tx.json"; self._write(f, self._txs())
-        monkeypatch.setattr(journal, "TRANSACTIONS_FILE", str(f))
+        journal, p = self._setup(tmp_path, monkeypatch)
         journal.mark_transactions_live("r1", {"BAC": {"order_id": "ob", "price": 55.52}})
-        data = {t["ticker"]: t for t in json.loads(f.read_text())}
+        data = {t["ticker"]: t for t in json.loads(p["tx"].read_text())}
         assert data["BAC"]["dry_run"] is False           # filled → live
         assert data["JPM"]["dry_run"] is True             # not in fills → stays dry_run
         assert data["AAPL"]["dry_run"] is True            # other run untouched
 
     def test_persists_order_id_and_fill_price(self, tmp_path, monkeypatch):
-        import journal
-        f = tmp_path / "tx.json"; self._write(f, self._txs())
-        monkeypatch.setattr(journal, "TRANSACTIONS_FILE", str(f))
+        journal, p = self._setup(tmp_path, monkeypatch)
         journal.mark_transactions_live("r1", {"BAC": {"order_id": "ob123", "price": 55.52}})
-        bac = next(t for t in json.loads(f.read_text()) if t["ticker"] == "BAC")
+        bac = next(t for t in json.loads(p["tx"].read_text()) if t["ticker"] == "BAC")
         assert bac["broker_order_id"] == "ob123"
         assert bac["price"] == 55.52
         assert bac["total_value"] == round(0.5 * 55.52, 2)  # recomputed from fill price
 
     def test_null_fill_price_keeps_decision_price(self, tmp_path, monkeypatch):
-        import journal
-        f = tmp_path / "tx.json"; self._write(f, self._txs())
-        monkeypatch.setattr(journal, "TRANSACTIONS_FILE", str(f))
+        journal, p = self._setup(tmp_path, monkeypatch)
         journal.mark_transactions_live("r1", {"BAC": {"order_id": "ob", "price": None}})
-        bac = next(t for t in json.loads(f.read_text()) if t["ticker"] == "BAC")
+        bac = next(t for t in json.loads(p["tx"].read_text()) if t["ticker"] == "BAC")
         assert bac["price"] == 55.16  # unchanged decision-time quote
 
     def test_idempotent_on_rerun(self, tmp_path, monkeypatch):
-        import journal
-        f = tmp_path / "tx.json"; self._write(f, self._txs())
-        monkeypatch.setattr(journal, "TRANSACTIONS_FILE", str(f))
+        journal, p = self._setup(tmp_path, monkeypatch)
         fills = {"BAC": {"order_id": "ob", "price": 55.52}}
         journal.mark_transactions_live("r1", fills)
         journal.mark_transactions_live("r1", fills)  # second run is a no-op
-        bac = next(t for t in json.loads(f.read_text()) if t["ticker"] == "BAC")
+        bac = next(t for t in json.loads(p["tx"].read_text()) if t["ticker"] == "BAC")
         assert bac["dry_run"] is False and bac["broker_order_id"] == "ob"
 
-    def test_none_fills_flips_all_legacy(self, tmp_path, monkeypatch):
-        import journal
-        f = tmp_path / "tx.json"; self._write(f, self._txs())
-        monkeypatch.setattr(journal, "TRANSACTIONS_FILE", str(f))
-        journal.mark_transactions_live("r1", None)  # legacy flip-all
-        data = {t["ticker"]: t for t in json.loads(f.read_text())}
+    # — fills=None must never silently flip-all (Fix 5) —
+
+    def test_none_fills_raises(self, tmp_path, monkeypatch):
+        journal, p = self._setup(tmp_path, monkeypatch)
+        with pytest.raises(ValueError, match="fills"):
+            journal.mark_transactions_live("r1", None)
+        data = {t["ticker"]: t for t in json.loads(p["tx"].read_text())}
+        assert all(t["dry_run"] is True for t in data.values())  # nothing flipped
+
+    def test_force_flip_all_emergency_path(self, tmp_path, monkeypatch):
+        journal, p = self._setup(tmp_path, monkeypatch)
+        journal.mark_transactions_live("r1", None, force_flip_all=True)
+        data = {t["ticker"]: t for t in json.loads(p["tx"].read_text())}
         assert data["BAC"]["dry_run"] is False
         assert data["JPM"]["dry_run"] is False
         assert data["AAPL"]["dry_run"] is True  # other run still untouched
+
+    # — trades.csv reconciliation (agent-facing history) —
+
+    def test_trades_csv_reflects_exactly_the_filled_subset(self, tmp_path, monkeypatch):
+        journal, p = self._setup(tmp_path, monkeypatch)
+        journal.mark_transactions_live("r1", {"BAC": {"order_id": "ob9", "price": 55.52}})
+        rows = self._csv_dict(p["csv"])
+        assert rows["BAC"]["dry_run"] == "False" and rows["BAC"]["broker_order_id"] == "ob9"
+        assert rows["BAC"]["price"] == "55.5200"          # fill price persisted
+        assert rows["JPM"]["dry_run"] == "True" and rows["JPM"]["broker_order_id"] == ""
+        assert rows["AAPL"]["dry_run"] == "True"          # other run untouched
+        assert rows["MS"]["dry_run"] == "False"           # empty run_id never touched
+
+    def test_empty_fills_keeps_all_rows_speculative(self, tmp_path, monkeypatch):
+        journal, p = self._setup(tmp_path, monkeypatch)
+        journal.mark_transactions_live("r1", {})
+        rows = self._csv_dict(p["csv"])
+        assert rows["BAC"]["dry_run"] == "True"
+        assert rows["JPM"]["dry_run"] == "True"
+
+    def test_old_csv_without_run_id_column_migrates(self, tmp_path, monkeypatch):
+        journal, p = self._setup(tmp_path, monkeypatch)
+        old = ("date,strategy,ticker,action,qty,price,total_value,target_weight,"
+               "portfolio_value,rationale,broker_order_id,dry_run\n"
+               "2026-06-11,institutional,LLY,BUY,0.03,1164.96,45.05,0.09,500.52,r,,True\n")
+        p["csv"].write_text(old)
+        journal.mark_transactions_live("r1", {"BAC": {"order_id": "ob"}})  # triggers migration
+        rows = self._csv_dict(p["csv"])
+        assert rows["LLY"]["run_id"] == ""               # migrated, data preserved
+        assert rows["LLY"]["dry_run"] == "True"           # no run_id → never reconciled
+
+    # — decision_journal.json reconciliation (prior_journal input) —
+
+    def test_unfilled_journal_entries_marked_rejected(self, tmp_path, monkeypatch):
+        journal, p = self._setup(tmp_path, monkeypatch)
+        journal.mark_transactions_live("r1", {"BAC": {"order_id": "ob"}})
+        rows = {e["trade_id"]: e for e in json.loads(p["jrnl"].read_text())}
+        assert rows["t1"]["status"] == "open"      # filled stays open
+        assert rows["t2"]["status"] == "rejected"  # unfilled → rejected
+        assert rows["t3"]["status"] == "open"      # other run untouched
+        assert rows["t4"]["status"] == "closed"    # non-open statuses never touched
+
+    def test_re_reconcile_with_real_fills_restores_open(self, tmp_path, monkeypatch):
+        # first pass ran with an empty fills.json; the corrected pass must recover
+        journal, p = self._setup(tmp_path, monkeypatch)
+        journal.mark_transactions_live("r1", {})
+        journal.mark_transactions_live("r1", {"BAC": {"order_id": "ob"}})
+        rows = {e["trade_id"]: e for e in json.loads(p["jrnl"].read_text())}
+        assert rows["t1"]["status"] == "open"
+        assert rows["t2"]["status"] == "rejected"
+
+    # — failure-direction health check —
+
+    def test_zero_fills_with_decisions_records_failed_health(self, tmp_path, monkeypatch):
+        journal, p = self._setup(tmp_path, monkeypatch)
+        journal.mark_transactions_live("r1", {})
+        h = json.loads(p["health"].read_text())
+        assert h["checks"]["reconciliation"]["status"] == "FAILED"
+        assert h["overall_status"] == "FAILED"  # alert.yml must see it
+
+    def test_partial_fills_record_degraded_health(self, tmp_path, monkeypatch):
+        journal, p = self._setup(tmp_path, monkeypatch)
+        journal.mark_transactions_live("r1", {"BAC": {"order_id": "ob"}})
+        h = json.loads(p["health"].read_text())
+        assert h["checks"]["reconciliation"]["status"] == "DEGRADED"
+        assert h["checks"]["reconciliation"]["unfilled"] == ["JPM"]
+
+    def test_all_fills_record_ok_health(self, tmp_path, monkeypatch):
+        journal, p = self._setup(tmp_path, monkeypatch)
+        journal.mark_transactions_live(
+            "r1", {"BAC": {"order_id": "a"}, "JPM": {"order_id": "b"}})
+        h = json.loads(p["health"].read_text())
+        assert h["checks"]["reconciliation"]["status"] == "OK"
+
+
+class TestGetTradeHistoryFilter:
+    """Agent-facing trade history must only ever contain broker-accepted rows."""
+
+    def test_dry_run_rows_excluded(self, tmp_path, monkeypatch):
+        import execute
+        f = tmp_path / "trades.csv"
+        f.write_text(
+            "date,strategy,ticker,action,qty,price,total_value,target_weight,"
+            "portfolio_value,rationale,broker_order_id,dry_run,run_id\n"
+            "2026-06-11,institutional,LLY,BUY,0.03,1164.96,45.05,0.09,500.52,r,,False,r1\n"
+            "2026-06-12,institutional,XYZ,BUY,0.5,10.00,5.00,0.01,500.00,r,,True,r2\n"
+        )
+        monkeypatch.setattr(execute, "TRADE_LOG", str(f))
+        rows = execute.get_trade_history()
+        assert [r["ticker"] for r in rows] == ["LLY"]  # phantom XYZ never reaches agents
+
+    def test_missing_file_returns_empty(self, tmp_path, monkeypatch):
+        import execute
+        monkeypatch.setattr(execute, "TRADE_LOG", str(tmp_path / "none.csv"))
+        assert execute.get_trade_history() == []
 
 
 # ── journal._load_list — corrupt/foreign file-shape guards ───────────────────

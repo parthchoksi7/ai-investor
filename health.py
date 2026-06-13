@@ -76,3 +76,35 @@ def load_last_health() -> dict:
         return json.loads(Path(HEALTH_FILE).read_text())
     except Exception:
         return {}
+
+
+def append_check(name: str, status: str, message: str = "", **details) -> dict:
+    """Add/overwrite one check on the EXISTING system_health.json.
+
+    For steps that run AFTER main.py has already written the health file —
+    e.g. fill reconciliation in routine STEP 4. Recomputes overall_status and
+    rebuilds the alerts list: alert.yml keys off overall status, so inserting
+    a FAILED check without recomputing would hide it under a stale OK.
+    """
+    data = load_last_health()
+    if not data:
+        data = {"run_id": None, "date": None, "checks": {}, "alerts": []}
+    checks = data.setdefault("checks", {})
+    checks[name] = {
+        "status":  status,
+        "message": message,
+        "ts":      datetime.now(timezone.utc).isoformat(),
+        **details,
+    }
+    data["alerts"] = [
+        f"[{c.get('status')}] {n}: {c.get('message', '')}"
+        for n, c in checks.items() if c.get("status") != OK
+    ]
+    worst = max((_SEVERITY.get(c.get("status"), 0) for c in checks.values()), default=0)
+    data["overall_status"] = next(s for s, v in _SEVERITY.items() if v == worst)
+    data["timestamp"] = datetime.now(timezone.utc).isoformat()
+
+    tmp = HEALTH_FILE + ".tmp"
+    Path(tmp).write_text(json.dumps(data, indent=2))
+    Path(tmp).replace(HEALTH_FILE)  # atomic
+    return data

@@ -453,7 +453,8 @@ def run_daily_cycle():
 
     # ── Step 7: Log ───────────────────────────────────────────────────────────
     print("\n📝  Step 7: Logging decisions...")
-    log_trades(executed_decisions, portfolio, market_data["prices"], broker_order_ids=order_results)
+    log_trades(executed_decisions, portfolio, market_data["prices"],
+               broker_order_ids=order_results, run_id=run_id)
 
     regime_str = pipeline_state.get("regime", {}).get("regime", "")
 
@@ -503,6 +504,7 @@ def run_daily_cycle():
             confidence      = pipeline_state.get("research", {}).get(ticker, {}).get("confidence", 5),
             expected_return = d.get("expected_return", 0),
             invalidates_if  = pipeline_state.get("research", {}).get(ticker, {}).get("invalidates_if", []),
+            run_id          = run_id,
         )
         print(f"   📔 Journal entry: {trade_id} ({action} {ticker})")
 

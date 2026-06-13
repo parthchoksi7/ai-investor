@@ -940,7 +940,7 @@ These are documented risks in the current system. Any deployment that touches th
 | No `target_weight` bounds validation before execution | `execute.py:_compute_qty` | ~~High~~ **Fixed (guardrails.py)** | `validate_decisions()` clamps weight to [0, 0.10] + recomputes qty, rejects unknown/blocked tickers, caps BUY notional at 12%, GFV guard — see §2.6 |
 | Portfolio state is snapshot at pipeline time, not execution time | `main.py`, `execute.py` | Medium | Market orders; prices drift between analysis and execution. Acceptable for small portfolio |
 | `agent_log.json` grows unboundedly | `journal.py:record_run` | ~~Low~~ **Fixed `8f0b2e9`** | Capped at 90 entries (~3 months). Previously whole file loaded into memory each run |
-| No fill confirmation — broker order "placed" ≠ "filled" | `execute.py:place_order` | Medium | Manual reconciliation in Step 8.2 after each live run |
+| No fill confirmation — broker order "placed" ≠ "filled" | `execute.py:place_order` | Medium | Manual reconciliation in Step 8.2 after each live run. `journal.mark_transactions_live(run_id, fills)` reconciles all three logs (transactions.json / trades.csv / decision_journal.json) against accepted orders; zero-fills-with-decisions records `reconciliation: FAILED` → alert.yml |
 | DST clock drift | Routine cron | Medium | Manual update in November/March; noted in CLAUDE.md |
 | mcp_portfolio.json staleness in cloud | `execute.py:get_portfolio_summary` | High | Cloud routine must write fresh mcp_portfolio.json at start of every run |
 | Cloud market data limited to MCP quotes only | `market_data.py` | Medium | Quant scores default to 50; agents use training knowledge |
