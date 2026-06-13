@@ -2,9 +2,10 @@ name: Health Check — Daily Pipeline
 
 on:
   schedule:
-    # 11:00 AM EDT (UTC-4) on weekdays — 75 min after pipeline should have run
-    # In winter (EST = UTC-5): update to '0 16 * * 1-5'
-    - cron: '0 15 * * 1-5'
+    # 1:15 PM EDT (UTC-4) on weekdays — AFTER the last routine retry (12:45 ET)
+    # has had time to run + publish, so a legitimately late run (11:45/12:45)
+    # is not flagged as a failure. In winter (EST = UTC-5): '15 18 * * 1-5'.
+    - cron: '15 17 * * 1-5'
   workflow_dispatch:
 
 jobs:

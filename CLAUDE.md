@@ -220,19 +220,19 @@ Anthropic's cloud environment blocks all external HTTP except Robinhood MCP and 
 - `api.polygon.io` → **blocked** (HTTP 403)
 - `query1.finance.yahoo.com` (yfinance) → **blocked** (HTTP 403)
 
-As a result, the cloud routine uses a different data path than local:
+As a result, the cloud routine sources market data differently than local:
 
 | | Local (`python main.py`) | Cloud (scheduled routine) |
 |---|---|---|
-| Portfolio | `robin_stocks` | Robinhood MCP |
-| Market data | Polygon (210-day OHLCV) | Robinhood MCP `get_equity_quotes` → `mcp_market_data.json` |
-| Fundamentals | Polygon financials | Not available (quant scores default to 50) |
-| News | Polygon news API | Not available |
+| Portfolio | `robin_stocks` | Robinhood MCP → `mcp_portfolio.json` |
+| Market data | Polygon (210-day OHLCV, live) | **`market_snapshot.json`** — full Polygon 210-day OHLCV, fetched & committed by `market_data.yml` (GH Actions), git-pulled by the routine |
+| Fundamentals | Polygon financials | Whatever `market_snapshot.json` carries |
+| News | Polygon news API | Whatever `market_snapshot.json` carries |
 | Auth | `ANTHROPIC_API_KEY` | `CLAUDE_SESSION_INGRESS_TOKEN_FILE` (OAuth token, auto-injected) |
 
-**Quant scores in cloud:** All scores default to 50 (neutral) because no historical data is available. The 7 LLM agents still run fully and can apply their training knowledge about each company.
+**Quant scores in cloud (normal path):** the committed `market_snapshot.json` contains the full 210-day history, so quant scores are **real**, identical to local. The `preflight_gate.py` STEP 0 check requires this snapshot dated today with ≥22 bars or it SKIP/RETRYs — so the pipeline only runs against real data. (`main.py` independently aborts if `_data_date != today` or `min_depth < 22`.)
 
-**`mcp_market_data.json`:** Written by the routine from Robinhood MCP quotes. `get_market_snapshot()` loads it as a fallback when both Polygon and yfinance return empty.
+**Degraded fallback (`mcp_market_data.json`):** if `market_snapshot.json` is missing, `get_market_snapshot()` falls back to MCP quotes written to `mcp_market_data.json`. This carries only ~2 history bars, so quant scores would default to 50 — but the preflight gate + the main.py abort prevent the pipeline from actually running in this state. It exists as a last-resort data source, not the normal path. The 7 LLM agents apply training knowledge regardless.
 
 **`mcp_portfolio.json`:** Written by the routine from Robinhood MCP. `get_portfolio_summary()` reads it instead of calling `robin_stocks` when the file exists.
 
@@ -408,7 +408,8 @@ Manual checks (GitHub UI / `gh`):
 
 ## Known Limitations
 
-- Cloud quant scores are always 50 if `market_snapshot.json` isn't available (GitHub Actions job delayed or failed). The pre-flight abort prevents silent no-trade runs.
+- Cloud quant scores are real (full 210-day history) because the committed `market_snapshot.json` is the primary source; they only degrade toward 50 in the `mcp_market_data.json` fallback, which the pre-flight gate + main.py abort prevent from running. So "no trades" from a missing snapshot is intended (the day is skipped), not a silent all-50 run.
+- **Drawdown peak does not account for deposits.** `portfolio_peak.json` tracks raw `total_value`. Funding the account (a deposit) inflates `total_value` → a new apparent peak, so the kill-switch drawdown math (`(peak − current) / peak`) measures from a peak that includes deposited cash, not investment performance. After any deposit/withdrawal, manually reset `portfolio_peak.json["peak"]` to the post-deposit value (see Manual Execution Runbook Scenario C).
 - `market_data.py` makes ~90 API calls per run locally (one per ticker for 210-day history) plus up to 5 Polygon calls for news (1 summary + 4 per-ticker). Polygon free tier = 5 calls/minute — news calls are placed FIRST (before the history loop) to guarantee a fresh budget window.
 - DST: GitHub Actions crons (`market_data.yml`, `health_check.yml`) are auto-updated by `.github/workflows/update_dst.yml` on March 15 and November 8. Both Anthropic routine crons require manual updates — see the EOD note and Daily Cycle note under Automated Execution above.
 - Website shows no live intraday prices. Value is current as of the last routine run (9:45 AM or 4:00 PM ET).

@@ -83,10 +83,13 @@ def _compute_qty(
     total_value    = portfolio["total_value"]
     target_dollars = target_weight * total_value
 
-    current_qty = 0.0
+    # Single lookup: held qty and the broker's sellable cap come from one pass.
+    current_qty   = 0.0
+    available_qty = 0.0
     for p in portfolio["positions"]:
         if p["symbol"] == ticker:
-            current_qty = float(p["qty"])
+            current_qty   = float(p["qty"])
+            available_qty = float(p.get("available_qty", p.get("qty", current_qty)))
             break
 
     current_dollars = current_qty * current_price
@@ -98,12 +101,7 @@ def _compute_qty(
         return round(delta_dollars / current_price, 6)
 
     if action == "SELL":
-        # Cap to available_qty (shares_available_for_sells from broker) when present
-        available_qty = current_qty
-        for p in portfolio["positions"]:
-            if p["symbol"] == ticker:
-                available_qty = float(p.get("available_qty", p.get("qty", current_qty)))
-                break
+        # available_qty (shares_available_for_sells from broker) caps the sale
         if target_weight == 0:
             return available_qty  # exit entire position — never exceed available
         if delta_dollars >= 0:

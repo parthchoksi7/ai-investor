@@ -333,7 +333,7 @@ def check_kill_switches(portfolio: dict) -> tuple[bool, str]:
     peak = peak_data.get("peak", total)
 
     if total >= peak:
-        _save(PEAK_FILE, {"peak": total, "updated": datetime.now().strftime("%Y-%m-%d")})
+        _save(PEAK_FILE, {"peak": total, "updated": datetime.now(_ET).strftime("%Y-%m-%d")})
         return False, ""
 
     drawdown = (peak - total) / peak

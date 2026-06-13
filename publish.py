@@ -16,10 +16,13 @@ import os
 import urllib.request
 import urllib.error
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_ET = ZoneInfo("America/New_York")
 
 STARTING_CAPITAL = 500.0
 TRANSACTIONS_FILE = "transactions.json"
@@ -48,7 +51,7 @@ def _fetch_spy_from_snapshot() -> float | None:
     try:
         snap = _load("market_snapshot.json", {})
         snap_date = snap.get("date", "")
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(_ET).strftime("%Y-%m-%d")
         if snap_date != today:
             return None
         spy = snap.get("prices", {}).get("SPY", {})
@@ -227,7 +230,7 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     if snapshot_written_at and os.environ.get("GITHUB_ACTIONS"):
         today = snapshot_written_at[:10]
     else:
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(_ET).strftime("%Y-%m-%d")  # ET matches the rest of the pipeline
     cumulative_return = round((total_value - STARTING_CAPITAL) / STARTING_CAPITAL * 100, 4)
 
     snapshot_row: dict = {
