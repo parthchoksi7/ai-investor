@@ -1154,3 +1154,173 @@ class TestCloseValueImmutability:
     def test_non_close_run_never_writes(self):
         assert self._should_write_close(False, []) is False
         assert self._should_write_close(False, [{"close_value": None}]) is False
+
+
+# ── guardrails.validate_decisions — deterministic gate on LLM output ─────────
+
+class TestValidateDecisions:
+    """target_weight used to flow from the PM LLM straight into _compute_qty
+    with no bounds check, and execute_trades would place any positive-qty
+    decision regardless of whether the ticker was ever analyzed. The gate is
+    the control; the prompt text is not. (DEPLOYMENT.md ex-§2.6 known gap.)"""
+
+    def _portfolio(self):
+        return {"total_value": 500.0, "cash": 100.0,
+                "positions": [{"symbol": "JPM", "qty": 0.1, "available_qty": 0.1}]}
+
+    def _prices(self):
+        return {"NVDA": {"close": 100.0}, "JPM": {"close": 300.0},
+                "BAC": {"close": 50.0}, "TSLA": {"close": 200.0}}
+
+    def _validate(self, decisions, kill_active=False, transactions=None):
+        from guardrails import validate_decisions
+        return validate_decisions(
+            decisions, self._portfolio(), self._prices(),
+            candidates=["NVDA", "BAC"], kill_active=kill_active,
+            transactions=transactions if transactions is not None else [])
+
+    @staticmethod
+    def _trading_days_ago(n):
+        """Date string n weekdays before today (ET) — mirrors the gate's counting."""
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        d = datetime.now(ZoneInfo("America/New_York")).date()
+        left = n
+        while left > 0:
+            d -= timedelta(days=1)
+            if d.weekday() < 5:
+                left -= 1
+        return d.strftime("%Y-%m-%d")
+
+    # — pass-through —
+
+    def test_valid_decisions_pass_unchanged(self):
+        decisions = [
+            {"ticker": "NVDA", "action": "BUY", "target_weight": 0.08, "qty": 0.4},
+            {"ticker": "JPM", "action": "SELL", "target_weight": 0.0, "qty": 0.1},
+        ]
+        out, report = self._validate([dict(d) for d in decisions])
+        assert out == decisions
+        assert report["passed"] == 2
+        assert not (report["rejected"] or report["modified"] or report["skipped"])
+
+    def test_hold_passes_through_untouched(self):
+        out, report = self._validate([{"ticker": "JPM", "action": "HOLD"}])
+        assert out == [{"ticker": "JPM", "action": "HOLD"}]
+        assert not report["rejected"]
+
+    # — rejection rules —
+
+    def test_invalid_action_rejected(self):
+        out, report = self._validate([{"ticker": "NVDA", "action": "SHORT",
+                                       "target_weight": 0.08, "qty": 0.4}])
+        assert out == [] and len(report["rejected"]) == 1
+
+    def test_unknown_ticker_rejected(self):
+        out, report = self._validate([{"ticker": "GME", "action": "BUY",
+                                       "target_weight": 0.05, "qty": 0.1}])
+        assert out == []
+        assert "not in analyzed candidates" in report["rejected"][0]["reason"]
+
+    def test_blocked_ticker_rejected(self):
+        out, report = self._validate([{"ticker": "TSLA", "action": "BUY",
+                                       "target_weight": 0.05, "qty": 0.1}])
+        assert out == [] and "hard-blocked" in report["rejected"][0]["reason"]
+
+    def test_same_ticker_buy_and_sell_both_rejected(self):
+        out, report = self._validate([
+            {"ticker": "NVDA", "action": "BUY", "target_weight": 0.08, "qty": 0.4},
+            {"ticker": "NVDA", "action": "SELL", "target_weight": 0.0, "qty": 0.4},
+        ])
+        assert out == [] and len(report["rejected"]) == 2
+
+    def test_non_numeric_weight_rejected(self):
+        out, report = self._validate([{"ticker": "NVDA", "action": "BUY",
+                                       "target_weight": "max", "qty": 0.4}])
+        assert out == [] and "not a number" in report["rejected"][0]["reason"]
+
+    # — clamping (must recompute qty, or the clamp is a no-op at execution) —
+
+    def test_overweight_clamped_and_qty_recomputed(self):
+        # 0.12 → 0.10 of $500 = $50 @ $100 → qty must become 0.5, not stay 0.6
+        out, report = self._validate([{"ticker": "NVDA", "action": "BUY",
+                                       "target_weight": 0.12, "qty": 0.6}])
+        assert len(out) == 1
+        assert out[0]["target_weight"] == 0.10
+        assert abs(out[0]["qty"] - 0.5) < 1e-9
+        assert len(report["modified"]) == 1
+
+    def test_negative_weight_clamped_to_zero(self):
+        out, _ = self._validate([{"ticker": "NVDA", "action": "BUY",
+                                  "target_weight": -0.05, "qty": 0.2}])
+        assert len(out) == 1
+        assert out[0]["target_weight"] == 0.0
+        assert out[0]["qty"] == 0.0  # BUY to 0% of an unheld name = no shares
+
+    # — notional caps —
+
+    def test_buy_notional_above_cap_rejected_not_clamped(self):
+        # weight says 8% but qty says $100 = 20% of the $500 book — qty math wrong
+        out, report = self._validate([{"ticker": "NVDA", "action": "BUY",
+                                       "target_weight": 0.08, "qty": 1.0}])
+        assert out == [] and "notional" in report["rejected"][0]["reason"]
+
+    def test_sell_notional_exempt_from_buy_cap(self):
+        # full exit of a position grown past 12% must NOT be blocked
+        from guardrails import validate_decisions
+        portfolio = {"total_value": 500.0, "cash": 0.0,
+                     "positions": [{"symbol": "JPM", "qty": 0.25, "available_qty": 0.25}]}
+        out, report = validate_decisions(
+            [{"ticker": "JPM", "action": "SELL", "target_weight": 0.0, "qty": 0.25}],
+            portfolio, self._prices(), candidates=[], kill_active=False, transactions=[])
+        assert len(out) == 1 and not report["rejected"]  # $75 = 15% — allowed for SELL
+
+    def test_sub_minimum_notional_skipped(self):
+        out, report = self._validate([{"ticker": "NVDA", "action": "BUY",
+                                       "target_weight": 0.008, "qty": 0.04}])
+        assert out == [] and len(report["skipped"]) == 1
+        assert not report["rejected"]  # skip is a no-op, not a failure
+
+    # — good-faith-violation guard —
+
+    def test_sell_one_trading_day_after_buy_rejected(self):
+        txs = [{"ticker": "JPM", "action": "BUY", "dry_run": False,
+                "date": self._trading_days_ago(1)}]
+        out, report = self._validate(
+            [{"ticker": "JPM", "action": "SELL", "target_weight": 0.0, "qty": 0.1}],
+            transactions=txs)
+        assert out == [] and "good-faith" in report["rejected"][0]["reason"]
+
+    def test_sell_three_trading_days_after_buy_passes(self):
+        txs = [{"ticker": "JPM", "action": "BUY", "dry_run": False,
+                "date": self._trading_days_ago(3)}]
+        out, _ = self._validate(
+            [{"ticker": "JPM", "action": "SELL", "target_weight": 0.0, "qty": 0.1}],
+            transactions=txs)
+        assert len(out) == 1
+
+    def test_kill_switch_overrides_gfv(self):
+        txs = [{"ticker": "JPM", "action": "BUY", "dry_run": False,
+                "date": self._trading_days_ago(1)}]
+        out, _ = self._validate(
+            [{"ticker": "JPM", "action": "SELL", "target_weight": 0.0, "qty": 0.1}],
+            kill_active=True, transactions=txs)
+        assert len(out) == 1  # risk exits are never blocked
+
+    def test_dry_run_buy_ignored_by_gfv(self):
+        # a rejected/phantom BUY (dry_run=True) never established a position
+        txs = [{"ticker": "JPM", "action": "BUY", "dry_run": True,
+                "date": self._trading_days_ago(1)}]
+        out, _ = self._validate(
+            [{"ticker": "JPM", "action": "SELL", "target_weight": 0.0, "qty": 0.1}],
+            transactions=txs)
+        assert len(out) == 1
+
+    # — trading-day arithmetic —
+
+    def test_trading_days_counting(self):
+        from guardrails import _trading_days_since
+        assert _trading_days_since("2026-06-11", "2026-06-12") == 1  # Thu → Fri
+        assert _trading_days_since("2026-06-11", "2026-06-15") == 2  # Thu → Mon
+        assert _trading_days_since("2026-06-12", "2026-06-15") == 1  # Fri → Mon
+        assert _trading_days_since("2026-06-12", "2026-06-12") == 0  # same day

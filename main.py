@@ -25,6 +25,7 @@ from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, DRY_RUN
 from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, get_recent_decisions
+from guardrails   import validate_decisions
 from publish      import publish_to_supabase
 from health       import HealthTracker, OK, DEGRADED, FAILED, ABORTED
 
@@ -184,6 +185,24 @@ def run_daily_cycle():
             _d["qty"] = _compute_qty(
                 _d["target_weight"], _action, _d["ticker"], portfolio, market_data["prices"]
             )
+
+    # ── Validation gate: deterministic guardrails on LLM output ──────────────
+    # Runs AFTER qty pre-computation (notional checks need qty) and BEFORE the
+    # decisions reach pending_decisions.json / execution. See guardrails.py.
+    decisions, validation_report = validate_decisions(
+        decisions, portfolio, market_data["prices"],
+        pipeline_state.get("candidates", []), kill_active,
+    )
+    _interventions = (validation_report["rejected"] + validation_report["modified"]
+                      + validation_report["skipped"])
+    if _interventions:
+        health.record("decision_validation", DEGRADED,
+                      message=f"{len(validation_report['rejected'])} rejected, "
+                              f"{len(validation_report['modified'])} clamped, "
+                              f"{len(validation_report['skipped'])} skipped by guardrails",
+                      **validation_report)
+    else:
+        health.record("decision_validation", OK, passed=validation_report["passed"])
 
     # ── Agent health checks ───────────────────────────────────────────────────
 
