@@ -50,6 +50,143 @@ MAX_TARGET_WEIGHT        = 0.10
 MAX_BUY_NOTIONAL_PCT     = 0.12
 MIN_ORDER_NOTIONAL       = 5.00
 GFV_WINDOW_TRADING_DAYS  = 2
+MAX_SECTOR_WEIGHT        = 0.25   # hard cap on projected post-trade sector weight
+
+
+# Static ticker → sector map for the current universe. The data layer carries
+# no sector field (free-tier Polygon returns no fundamentals), so the 25%
+# sector cap — previously enforced only in the PM prompt, i.e. not enforced —
+# needs this map to become a code-level control.
+#
+# Reasonable GICS-style buckets; exactness is not required (a slightly-off
+# bucket only shifts which marginal BUY is rejected, never loses capital — a
+# rejected BUY forgoes a trade, it cannot lose money). Unknown tickers fall to
+# "UNKNOWN" and share one conservative bucket, so an unmapped name still counts
+# toward a cap rather than escaping it.
+# TODO: source sectors from Polygon /v3/reference/tickers (sic_description /
+# sector) when a paid tier is available, and fall back to this map.
+SECTOR_MAP: dict[str, str] = {
+    # Technology
+    "AAPL": "Technology", "ADBE": "Technology", "AMAT": "Technology",
+    "AMD": "Technology", "ARM": "Technology", "AVGO": "Technology",
+    "CRM": "Technology", "CRWD": "Technology", "DDOG": "Technology",
+    "IBM": "Technology", "INTC": "Technology", "MDB": "Technology",
+    "MRVL": "Technology", "MSFT": "Technology", "MSTR": "Technology",
+    "MU": "Technology", "NET": "Technology", "NOW": "Technology",
+    "NVDA": "Technology", "ORCL": "Technology", "PANW": "Technology",
+    "PLTR": "Technology", "QCOM": "Technology", "SMCI": "Technology",
+    "SNOW": "Technology", "TEAM": "Technology", "TXN": "Technology",
+    "WDAY": "Technology", "ZS": "Technology",
+    # Communication Services
+    "GOOG": "Communication Services", "GOOGL": "Communication Services",
+    "META": "Communication Services", "NFLX": "Communication Services",
+    "SPOT": "Communication Services",
+    # Consumer Discretionary
+    "ABNB": "Consumer Discretionary", "AMZN": "Consumer Discretionary",
+    "BKNG": "Consumer Discretionary", "CMG": "Consumer Discretionary",
+    "EBAY": "Consumer Discretionary", "HD": "Consumer Discretionary",
+    "LOW": "Consumer Discretionary", "LULU": "Consumer Discretionary",
+    "MCD": "Consumer Discretionary", "NKE": "Consumer Discretionary",
+    "SBUX": "Consumer Discretionary", "TGT": "Consumer Discretionary",
+    "TJX": "Consumer Discretionary", "TSLA": "Consumer Discretionary",
+    # Consumer Staples
+    "COST": "Consumer Staples", "WMT": "Consumer Staples",
+    # Financials (incl. payment networks / fintech)
+    "AXP": "Financials", "BAC": "Financials", "BLK": "Financials",
+    "C": "Financials", "COIN": "Financials", "GS": "Financials",
+    "JPM": "Financials", "MA": "Financials", "MS": "Financials",
+    "PYPL": "Financials", "V": "Financials", "WFC": "Financials",
+    # Health Care
+    "ABBV": "Health Care", "AMGN": "Health Care", "BMY": "Health Care",
+    "DHR": "Health Care", "GILD": "Health Care", "ISRG": "Health Care",
+    "JNJ": "Health Care", "LLY": "Health Care", "MRK": "Health Care",
+    "PFE": "Health Care", "REGN": "Health Care", "TMO": "Health Care",
+    "UNH": "Health Care", "VRTX": "Health Care",
+    # Industrials
+    "BA": "Industrials", "CAT": "Industrials", "DE": "Industrials",
+    "GE": "Industrials", "HON": "Industrials", "LMT": "Industrials",
+    "RTX": "Industrials", "UBER": "Industrials", "UPS": "Industrials",
+    # Energy
+    "COP": "Energy", "CVX": "Energy", "EOG": "Energy", "OXY": "Energy",
+    "SLB": "Energy", "XOM": "Energy",
+    # Materials
+    "FCX": "Materials", "LIN": "Materials", "NEM": "Materials",
+    # Real Estate
+    "AMT": "Real Estate", "EQIX": "Real Estate", "PLD": "Real Estate",
+    # Utilities
+    "NEE": "Utilities",
+    # Benchmarks (never traded — excluded from candidates)
+    "SPY": "ETF", "QQQ": "ETF",
+}
+
+
+def sector_of(ticker: str) -> str:
+    return SECTOR_MAP.get(ticker, "UNKNOWN")
+
+
+def enforce_sector_limits(
+    decisions: list[dict],
+    portfolio: dict,
+    sectors: dict[str, str] | None = None,
+    max_sector_weight: float = MAX_SECTOR_WEIGHT,
+) -> tuple[list[dict], list[dict]]:
+    """Reject BUYs that would push any sector over max_sector_weight.
+
+    Returns (kept, rejected). Rejected entries are the original decision dicts
+    annotated with a `rejected_reason`. The projected post-trade weight of a
+    traded name is its `target_weight` (the PM's target is an absolute weight,
+    not an increment); untouched holdings keep their current weight. SELLs are
+    applied first so a same-sector exit frees budget for a later BUY — even when
+    decisions arrive BUY-first. Decision order is otherwise preserved.
+
+    Runs AFTER validate_decisions (so same-ticker BUY+SELL conflicts and
+    weight-clamping are already resolved) and is recorded under the same
+    `decision_validation` health check in main.py.
+    """
+    if sectors is None:
+        sectors = SECTOR_MAP
+    sec_of = lambda t: sectors.get(t, "UNKNOWN")
+
+    total = float(portfolio.get("total_value", 0) or 0)
+    # Projected per-ticker weight, seeded from current holdings.
+    proj: dict[str, float] = {}
+    for p in portfolio.get("positions", []):
+        sym = p.get("symbol")
+        if sym:
+            proj[sym] = (float(p.get("market_value", 0) or 0) / total) if total else 0.0
+
+    # Pass 1: apply SELLs up front to free sector budget (target_weight is the
+    # weight the position is reduced TO — 0.0 for a full exit).
+    for d in decisions:
+        if str(d.get("action", "")).upper() == "SELL":
+            proj[d.get("ticker", "")] = float(d.get("target_weight", 0) or 0)
+
+    def sector_weight(sec: str, exclude: str) -> float:
+        return sum(w for t, w in proj.items()
+                   if sec_of(t) == sec and t != exclude)
+
+    kept, rejected = [], []
+    # Pass 2: evaluate BUYs in original order; accepted BUYs accrue into proj
+    # so a second BUY in the same sector sees the first one's weight.
+    for d in decisions:
+        action = str(d.get("action", "")).upper()
+        if action != "BUY":
+            kept.append(d)   # SELL / HOLD: never blocked by the sector cap
+            continue
+        ticker    = d.get("ticker", "")
+        tw        = float(d.get("target_weight", 0) or 0)
+        sec       = sec_of(ticker)
+        projected = sector_weight(sec, exclude=ticker) + tw
+        if projected > max_sector_weight + 1e-9:
+            reason = (f"{sec} sector would be {projected:.0%} > "
+                      f"{max_sector_weight:.0%} cap")
+            rejected.append({**d, "rejected_reason": reason})
+            print(f"   🚫 SECTOR REJECT: BUY {ticker} — {reason}")
+            continue
+        proj[ticker] = tw
+        kept.append(d)
+
+    return kept, rejected
 
 
 def _trading_days_since(buy_date: str, today: str) -> int:

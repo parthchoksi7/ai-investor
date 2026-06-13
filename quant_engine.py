@@ -1,8 +1,26 @@
 """
 quant_engine.py — Deterministic scoring. No LLM involved.
+
+Composite scoring is HONEST about missing data. Each sub-score carries a
+`*_available` flag; score_all_tickers weights only the factors that have real
+data and renormalizes. When fundamentals are absent (the live case today — the
+free-tier Polygon financials endpoint returns nothing, so quality/valuation
+have no inputs), the composite reflects momentum + volatility alone rather than
+silently blending in a constant 50 for the two missing factors and advertising
+a "4-factor" score that is really 2-factor. See README/CLAUDE.md.
 """
 
 import math
+
+# Base factor weights. They sum to 1.0 when every factor has real data; when a
+# factor is unavailable it is dropped and the remaining weights are renormalized
+# (so the composite is always a weighted average over real factors only).
+FACTOR_WEIGHTS = {
+    "momentum":   0.30,
+    "quality":    0.25,
+    "valuation":  0.20,
+    "volatility": 0.25,
+}
 
 
 def _mean(values: list) -> float:
@@ -32,8 +50,8 @@ def compute_momentum_score(history: list[dict]) -> dict:
     """Score 0-100. Higher = stronger momentum."""
     if not history:
         return {
-            "momentum_score": 50, "return_1m": None,
-            "return_3m": None, "return_6m": None,
+            "momentum_score": 50, "momentum_available": False,
+            "return_1m": None, "return_3m": None, "return_6m": None,
             "above_50dma": None, "above_200dma": None,
         }
 
@@ -60,6 +78,7 @@ def compute_momentum_score(history: list[dict]) -> dict:
 
     return {
         "momentum_score": round(max(0.0, min(100.0, score)), 1),
+        "momentum_available": True,
         "return_1m":  round(r1m, 2) if r1m is not None else None,
         "return_3m":  round(r3m, 2) if r3m is not None else None,
         "return_6m":  round(r6m, 2) if r6m is not None else None,
@@ -71,7 +90,7 @@ def compute_momentum_score(history: list[dict]) -> dict:
 def compute_quality_score(fundamentals: dict | None) -> dict:
     """Score 0-100. Higher = better quality."""
     if not fundamentals:
-        return {"quality_score": 50}
+        return {"quality_score": 50, "quality_available": False}
 
     scores = []
 
@@ -91,13 +110,16 @@ def compute_quality_score(fundamentals: dict | None) -> dict:
     if de is not None:
         scores.append(90 if de < 0.5 else 70 if de < 1.0 else 50 if de < 2.0 else 25)
 
-    return {"quality_score": round(_mean(scores), 1) if scores else 50}
+    return {
+        "quality_score": round(_mean(scores), 1) if scores else 50,
+        "quality_available": bool(scores),
+    }
 
 
 def compute_valuation_score(fundamentals: dict | None) -> dict:
     """Score 0-100. Higher = better value (cheaper relative to fundamentals)."""
     if not fundamentals:
-        return {"valuation_score": 50}
+        return {"valuation_score": 50, "valuation_available": False}
 
     scores = []
 
@@ -113,13 +135,17 @@ def compute_valuation_score(fundamentals: dict | None) -> dict:
     if ev_ebitda is not None and ev_ebitda > 0:
         scores.append(90 if ev_ebitda < 10 else 70 if ev_ebitda < 15 else 50 if ev_ebitda < 25 else 30 if ev_ebitda < 40 else 10)
 
-    return {"valuation_score": round(_mean(scores), 1) if scores else 50}
+    return {
+        "valuation_score": round(_mean(scores), 1) if scores else 50,
+        "valuation_available": bool(scores),
+    }
 
 
 def compute_risk_metrics(history: list[dict], spy_history: list[dict]) -> dict:
     """Returns annualized volatility, beta vs SPY, and a risk score (higher = lower risk)."""
     if len(history) < 22:
-        return {"volatility": None, "beta": None, "volatility_score": 50}
+        return {"volatility": None, "beta": None,
+                "volatility_score": 50, "volatility_available": False}
 
     closes = [float(d["close"]) for d in history]
     daily_ret = [(closes[i] - closes[i - 1]) / closes[i - 1] for i in range(1, len(closes))]
@@ -146,7 +172,64 @@ def compute_risk_metrics(history: list[dict], spy_history: list[dict]) -> dict:
         "volatility": round(vol, 1),
         "beta": beta,
         "volatility_score": round(vol_score, 1),
+        "volatility_available": True,
     }
+
+
+def _pearson(a: list[float], b: list[float]) -> float | None:
+    """Pearson correlation of two equal-length return series; None if degenerate."""
+    n = len(a)
+    if n < 2:
+        return None
+    ma, mb = _mean(a), _mean(b)
+    cov = sum((x - ma) * (y - mb) for x, y in zip(a, b)) / (n - 1)
+    sa, sb = _stdev(a), _stdev(b)
+    if sa == 0 or sb == 0:
+        return None
+    return cov / (sa * sb)
+
+
+def _daily_returns(history: list[dict], window: int) -> list[float]:
+    closes = [float(b["close"]) for b in history][-(window + 1):]
+    return [(closes[i] - closes[i - 1]) / closes[i - 1]
+            for i in range(1, len(closes)) if closes[i - 1]]
+
+
+def compute_return_correlations(
+    history_map: dict,
+    tickers: list[str],
+    window: int = 120,
+    top_n: int = 8,
+    min_overlap: int = 22,
+) -> list[tuple[str, str, float]]:
+    """Top pairwise daily-return correlations among `tickers`.
+
+    Returns [(t1, t2, corr), ...] sorted by |corr| descending, length ≤ top_n.
+    Gives the CRO REAL correlation data instead of a fabricated judgment — the
+    prompt asks it to assess "correlation risk" but it was previously fed only
+    per-ticker weight/vol/beta. Pairs with fewer than `min_overlap` overlapping
+    daily returns are skipped (insufficient data → no fake number).
+    """
+    rets: dict[str, list[float]] = {}
+    for t in tickers:
+        series = _daily_returns(history_map.get(t) or [], window)
+        if len(series) >= min_overlap:
+            rets[t] = series
+
+    pairs: list[tuple[str, str, float]] = []
+    names = sorted(rets)
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            a, b = rets[names[i]], rets[names[j]]
+            n = min(len(a), len(b))
+            if n < min_overlap:
+                continue
+            c = _pearson(a[-n:], b[-n:])
+            if c is not None:
+                pairs.append((names[i], names[j], round(c, 2)))
+
+    pairs.sort(key=lambda p: -abs(p[2]))
+    return pairs[:top_n]
 
 
 def score_all_tickers(market_data: dict) -> dict:
@@ -161,17 +244,30 @@ def score_all_tickers(market_data: dict) -> dict:
         valuation = compute_valuation_score(fundamentals)
         risk      = compute_risk_metrics(history, spy_history)
 
-        composite = (
-            momentum["momentum_score"]  * 0.30
-            + quality["quality_score"]  * 0.25
-            + valuation["valuation_score"] * 0.20
-            + risk["volatility_score"]  * 0.25
-        )
+        # Weight only the factors that have real data, then renormalize. A
+        # missing factor (e.g. quality/valuation when fundamentals are absent)
+        # is dropped entirely rather than blended in as a constant 50 — the
+        # composite stays an honest weighted average over the real factors.
+        factor_values = {
+            "momentum":   (momentum["momentum_score"],   momentum["momentum_available"]),
+            "quality":    (quality["quality_score"],     quality["quality_available"]),
+            "valuation":  (valuation["valuation_score"], valuation["valuation_available"]),
+            "volatility": (risk["volatility_score"],     risk["volatility_available"]),
+        }
+        factors_used = [f for f, (_, avail) in factor_values.items() if avail]
+        weight_sum   = sum(FACTOR_WEIGHTS[f] for f in factors_used)
+        if weight_sum > 0:
+            composite = sum(
+                FACTOR_WEIGHTS[f] * factor_values[f][0] for f in factors_used
+            ) / weight_sum
+        else:
+            composite = 50.0  # no real factor — fully neutral, flagged below
 
         scores[ticker] = {
             "ticker": ticker,
             "data_available": len(history) > 0,
             "composite_score": round(composite, 1),
+            "factors_used": factors_used,
             **momentum,
             **quality,
             **valuation,

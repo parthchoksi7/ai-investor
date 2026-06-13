@@ -304,11 +304,16 @@ def _fmt_scores(scores: dict) -> str:
     # Default True so old cached scores without the flag are treated as having data.
     if not scores.get("data_available", True):
         return "QUANT DATA UNAVAILABLE (no historical prices — scores are not real)"
+    # Show factors with no real data as N/A rather than a misleading neutral 50.
+    # quality/valuation default to 50 when fundamentals are absent (the live
+    # case on free-tier Polygon) — labelling that "50" would imply a real read.
+    quality = scores.get('quality_score', '?') if scores.get('quality_available', True) else "N/A"
+    val     = scores.get('valuation_score', '?') if scores.get('valuation_available', True) else "N/A"
     return (
         f"composite={scores.get('composite_score','?')} "
         f"mom={scores.get('momentum_score','?')} "
-        f"quality={scores.get('quality_score','?')} "
-        f"val={scores.get('valuation_score','?')} "
+        f"quality={quality} "
+        f"val={val} "
         f"vol={scores.get('volatility','?')}% "
         f"beta={scores.get('beta','?')} "
         f"1M={scores.get('return_1m','?')}% "
@@ -330,6 +335,47 @@ def _fmt_news(articles: list[dict], limit: int = 15) -> str:
         if desc:
             line += f"\n    {desc[:200]}"
         lines.append(line)
+    return "\n".join(lines)
+
+
+def _fmt_ticker_history(history: list[dict] | None) -> str:
+    """Render prior journal theses + realized outcomes for one ticker (Phase 2).
+
+    Gives the thesis-builder a memory of how past calls on this name played out,
+    so a re-entry sees its prior result instead of starting blind.
+    """
+    if not history:
+        return ""
+    lines = ["PRIOR HISTORY FOR THIS TICKER (your past theses and how they resolved):"]
+    for e in history:
+        ar = e.get("actual_return")
+        if ar is None:
+            outcome = f"{e.get('status', 'open')} — no realized outcome yet"
+        else:
+            outcome = f"{ar:+.1%} realized | thesis_correct={e.get('thesis_correct')}"
+        lines.append(f"  {e.get('date', '?')} {e.get('action', '?')} — "
+                     f"thesis: {(e.get('thesis') or '')[:120]}")
+        lines.append(f"    outcome: {outcome}")
+    return "\n".join(lines)
+
+
+def _fmt_recently_exited(recently_exited: dict | None) -> str:
+    """Render a re-entry warning block for the PM (Phase 2).
+
+    Directly addresses the churn blind spot: a name sold days ago should not be
+    silently rebought. The model must justify any reversal in its rationale.
+    """
+    if not recently_exited:
+        return ""
+    lines = ["RECENTLY EXITED — justify any re-entry. Do NOT re-buy a name below "
+             "unless its original exit reason is now resolved; if you propose a "
+             "re-buy, say why in the rationale:"]
+    for t, e in recently_exited.items():
+        last = (e.get("exits") or [{}])[-1]
+        rr = last.get("realized_return")
+        rr_s = f"{rr:+.1%}" if isinstance(rr, (int, float)) else "?"
+        lines.append(f"  {t}: exited {last.get('date', '?')} at {rr_s} — "
+                     f"original thesis: {(e.get('thesis') or '')[:100]}")
     return "\n".join(lines)
 
 
@@ -419,10 +465,12 @@ Output JSON:
 
 # ── Agent 2: Research Analyst ─────────────────────────────────────────────────
 
-def run_research_analyst(ticker: str, market_data: dict, quant_scores: dict) -> dict:
+def run_research_analyst(ticker: str, market_data: dict, quant_scores: dict,
+                         ticker_history: list[dict] | None = None) -> dict:
     data   = market_data["prices"].get(ticker) or market_data.get("news_discovered", {}).get(ticker, {})
     scores = quant_scores.get(ticker, {})
     news = _ticker_news(ticker, market_data)
+    history_block = _fmt_ticker_history(ticker_history)
 
     user_msg = f"""\
 TICKER: {ticker}
@@ -432,6 +480,7 @@ QUANT: {_fmt_scores(scores)}
 
 NEWS:
 {news}
+{(chr(10) + history_block) if history_block else ''}
 
 Draw on your training knowledge of {ticker}'s business model, competitive position, \
 and sector dynamics. All fields below must be non-empty — do not return blank strings.
@@ -620,6 +669,7 @@ def run_portfolio_manager(
     portfolio: dict,
     trade_history: list | None,
     date: str = "",
+    recently_exited: dict | None = None,
 ) -> list[dict]:
     total = portfolio["total_value"]
     cash  = portfolio["cash"]
@@ -670,10 +720,13 @@ def run_portfolio_manager(
     for t in (trade_history or [])[-10:]:
         history_lines.append(f"  {t.get('date')} | {t.get('action')} {t.get('ticker')} | {t.get('rationale','')[:80]}")
 
+    reentry_block = _fmt_recently_exited(recently_exited)
+
     user_msg = f"""\
 Date: {date}
 
 MARKET REGIME: {json.dumps(regime)}
+{(reentry_block + chr(10)) if reentry_block else ''}
 
 CURRENT PORTFOLIO:
   Cash: ${cash:,.2f} ({cash_pct:.1f}%)  Total: ${total:,.2f}
@@ -713,10 +766,42 @@ Omit HOLD decisions. Return [] if no trades improve portfolio expected value."""
 
 # ── Agent 7: Chief Risk Officer ───────────────────────────────────────────────
 
+def _correlation_block(projected: dict, history: dict | None) -> str:
+    """Build a real correlation + concentration section for the CRO from price
+    history. Returns '' when no matrix can be computed (no pretense)."""
+    if not history:
+        return ""
+    held = [t for t, w in projected.items() if w > 0.001]
+    from quant_engine import compute_return_correlations
+    pairs = compute_return_correlations(history, held)
+
+    lines = []
+    if pairs:
+        lines.append("HIGHEST PAIRWISE CORRELATIONS (post-trade holdings, ~120d daily returns):")
+        lines += [f"  {a} / {b}: {c:+.2f}" for a, b, c in pairs]
+
+    # Sector concentration from the static guardrails map (lazy import to avoid
+    # an import-time dependency on the execution stack).
+    try:
+        from guardrails import sector_of
+        sector_w: dict[str, float] = {}
+        for t, w in projected.items():
+            if w > 0.001:
+                sector_w[sector_of(t)] = sector_w.get(sector_of(t), 0.0) + w
+        if sector_w:
+            top_sec, top_w = max(sector_w.items(), key=lambda x: x[1])
+            lines.append(f"CONCENTRATION: top sector = {top_sec} {top_w:.0%}")
+    except Exception:
+        pass
+
+    return "\n".join(lines)
+
+
 def run_chief_risk_officer(
     decisions: list[dict],
     portfolio: dict,
     quant_scores: dict,
+    history: dict | None = None,
 ) -> dict:
     if not decisions:
         return {"approved": True, "risk_budget_used": 0, "largest_risk": "none",
@@ -745,12 +830,15 @@ def run_chief_risk_officer(
                 f"beta={s.get('beta','?')}"
             )
 
+    corr_block = _correlation_block(projected, history)
+
     user_msg = f"""\
 PROPOSED TRADES:
 {json.dumps(decisions, indent=2)}
 
 PROJECTED PORTFOLIO (post-trade weights):
 {chr(10).join(risk_lines)}
+{(chr(10) + corr_block) if corr_block else ''}
 
 CURRENT CASH: ${portfolio['cash']:,.2f} ({portfolio['cash']/total*100:.1f}%)
 
@@ -784,9 +872,16 @@ def get_trade_decisions(
     quant_scores: dict,
     trade_history: list | None = None,
     prior_journal: dict | None = None,
+    ticker_history: dict | None = None,
+    recently_exited: dict | None = None,
 ) -> tuple[list[dict], dict]:
     """
     Run the full 7-agent pipeline.
+
+    ticker_history: {ticker: [journal entries]} fed to the Research Analyst so a
+        new/re-entered thesis sees how prior calls on that name resolved.
+    recently_exited: {ticker: closed entry} fed to the Portfolio Manager as a
+        re-entry warning (churn guard).
     Returns (decisions, pipeline_state) where pipeline_state is the full paper trail
     of every agent's output for this run.
     """
@@ -808,7 +903,8 @@ def get_trade_decisions(
     research_map: dict = {}
     earnings_map: dict = {}
     with ThreadPoolExecutor(max_workers=_WORKERS * 2) as _pool:
-        r_futs = {_pool.submit(run_research_analyst, t, market_data, quant_scores): t for t in candidates}
+        r_futs = {_pool.submit(run_research_analyst, t, market_data, quant_scores,
+                               (ticker_history or {}).get(t)): t for t in candidates}
         e_futs = {_pool.submit(run_earnings_catalyst_analyst, t, market_data): t for t in candidates}
         for fut in as_completed(list(r_futs) + list(e_futs)):
             if fut in r_futs:
@@ -858,6 +954,7 @@ def get_trade_decisions(
         regime, research_map, earnings_map, devil_map,
         position_reviews, quant_scores, portfolio, trade_history,
         date=market_data_date,
+        recently_exited=recently_exited,
     )
 
     if decisions:
@@ -871,7 +968,8 @@ def get_trade_decisions(
 
     # ── 7. Chief Risk Officer ─────────────────────────────────────────────────
     print("   [7/7] Chief Risk Officer...")
-    risk = run_chief_risk_officer(decisions, portfolio, quant_scores)
+    risk = run_chief_risk_officer(decisions, portfolio, quant_scores,
+                                  history=market_data.get("history"))
     print(
         f"         {'✅ APPROVED' if risk.get('approved') else '🚨 REJECTED'} | "
         f"risk_budget={risk.get('risk_budget_used')}% | {risk.get('largest_risk')}"

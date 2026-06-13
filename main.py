@@ -24,8 +24,8 @@ from market_data  import get_market_snapshot
 from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, StalePortfolioError, DRY_RUN
-from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions
-from guardrails   import validate_decisions
+from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions, close_position, get_ticker_history, recently_exited
+from guardrails   import validate_decisions, enforce_sector_limits
 from publish      import publish_to_supabase
 from health       import HealthTracker, OK, DEGRADED, FAILED, ABORTED
 
@@ -180,13 +180,24 @@ def run_daily_cycle():
     print("\n🧠  Step 5: Running 7-agent pipeline...")
     trade_history = get_trade_history()
 
+    recent_entries = get_recent_decisions(n=200)
     prior_journal: dict = {}
-    for entry in get_recent_decisions(n=200):
+    for entry in recent_entries:
         t = entry.get("ticker")
         if t and t not in prior_journal and entry.get("status") == "open":
             prior_journal[t] = entry
 
-    decisions, pipeline_state = get_trade_decisions(portfolio, market_data, quant_scores, trade_history, prior_journal)
+    # Phase 2 — outcome memory fed back to the agents. ticker_history gives the
+    # Research Analyst each name's prior theses + realized outcomes; recently
+    # exited names become a re-entry warning for the Portfolio Manager.
+    seen_tickers   = {e.get("ticker") for e in recent_entries if e.get("ticker")}
+    ticker_history = {t: get_ticker_history(t) for t in seen_tickers}
+    exited_map     = recently_exited()
+
+    decisions, pipeline_state = get_trade_decisions(
+        portfolio, market_data, quant_scores, trade_history, prior_journal,
+        ticker_history=ticker_history, recently_exited=exited_map,
+    )
 
     # Pre-compute fractional qty
     for _d in decisions:
@@ -203,6 +214,17 @@ def run_daily_cycle():
         decisions, portfolio, market_data["prices"],
         pipeline_state.get("candidates", []), kill_active,
     )
+
+    # Sector cap (25%) — a code-level control; the limit otherwise lives only
+    # in the PM prompt. Runs after validate_decisions so weight-clamping and
+    # same-ticker conflict rejection are already applied. Rejections fold into
+    # the same decision_validation health check.
+    decisions, sector_rejected = enforce_sector_limits(decisions, portfolio)
+    for r in sector_rejected:
+        validation_report["rejected"].append(
+            {"ticker": r.get("ticker", "?"), "action": r.get("action", "?"),
+             "reason": r.get("rejected_reason", "sector cap")})
+
     _interventions = (validation_report["rejected"] + validation_report["modified"]
                       + validation_report["skipped"])
     if _interventions:
@@ -517,6 +539,24 @@ def run_daily_cycle():
             run_id          = run_id,
         )
         print(f"   📔 Journal entry: {trade_id} ({action} {ticker})")
+
+        # ── Close the feedback loop: a SELL realizes the outcome of the matching
+        # open BUY thesis (actual_return / thesis_correct). avg_price (cost basis)
+        # comes from the broker position; exit_price from today's close.
+        if action == "SELL":
+            avg_price = next(
+                (float(p.get("avg_price", 0) or 0) for p in portfolio["positions"]
+                 if p.get("symbol") == ticker), 0.0)
+            closed_id = close_position(
+                ticker     = ticker,
+                exit_price = price,
+                avg_price  = avg_price,
+                full_exit  = (float(target_weight or 0) == 0),
+                run_id     = run_id,
+            )
+            if closed_id:
+                print(f"   📕 Closed thesis {closed_id} for {ticker} "
+                      f"(realized vs ${avg_price:.2f} cost basis)")
 
     # ── Step 8: Publish to Supabase ───────────────────────────────────────────
     print("\n🌐  Step 8: Publishing to Supabase...")
