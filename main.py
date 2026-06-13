@@ -23,7 +23,7 @@ _ET = ZoneInfo("America/New_York")
 from market_data  import get_market_snapshot
 from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
-from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, DRY_RUN
+from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, StalePortfolioError, DRY_RUN
 from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions
 from guardrails   import validate_decisions
 from publish      import publish_to_supabase
@@ -43,7 +43,17 @@ def run_daily_cycle():
 
     # ── Step 1: Portfolio ─────────────────────────────────────────────────────
     print("\n📊  Step 1: Fetching portfolio...")
-    portfolio = get_portfolio_summary()
+    try:
+        portfolio = get_portfolio_summary()
+    except StalePortfolioError as e:
+        print(f"\n   🚨 PIPELINE ABORTED: {e}")
+        health.record("portfolio", FAILED, message=str(e)[:300])
+        health.record("pipeline", ABORTED,
+                      message="Aborted before sizing orders — mcp_portfolio.json is stale or undated.")
+        health.save()
+        print(f"\n   📋 system_health.json written (overall={health.overall_status})")
+        print("=" * 60 + "\n")
+        return
     print(f"   Cash: ${portfolio['cash']:,.2f}")
     print(f"   Positions: {len(portfolio['positions'])}")
     print(f"   Total Value: ${portfolio['total_value']:,.2f}")

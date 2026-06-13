@@ -50,6 +50,7 @@ Call:
 
 Write mcp_portfolio.json in this exact format:
 {
+  "as_of": "<ISO-8601 timestamp, US/Eastern, e.g. 2026-06-12T16:00:00-04:00>",
   "cash": <float>,
   "total_value": <float>,
   "positions": [
@@ -58,6 +59,8 @@ Write mcp_portfolio.json in this exact format:
 }
 
 unrealized_pnl = market_value - (avg_price * qty)
+as_of = current ET timestamp at fetch time. (The EOD path reads this file via publish.py, which
+does not enforce freshness, but write it anyway for consistency with the daily cycle and audit.)
 
 STEP 2 — Set up environment
 Create .env:

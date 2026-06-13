@@ -414,8 +414,13 @@ tmpdir = tempfile.mkdtemp()
 try:
     os.chdir(tmpdir)
 
-    # Write mcp_portfolio.json — should be preferred over robin_stocks
-    mcp = {"cash": 123.45, "total_value": 456.78, "positions": []}
+    # Write mcp_portfolio.json — should be preferred over robin_stocks.
+    # Must carry a fresh as_of (ET) or get_portfolio_summary raises
+    # StalePortfolioError (freshness enforcement, Fix 4).
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    now_et = datetime.now(ZoneInfo("America/New_York")).isoformat()
+    mcp = {"as_of": now_et, "cash": 123.45, "total_value": 456.78, "positions": []}
     with open("mcp_portfolio.json", "w") as f:
         json.dump(mcp, f)
 
@@ -667,9 +672,13 @@ for fname in ["mcp_portfolio.json", "mcp_market_data.json"]:
     if os.path.isfile(fname):
         with open(fname) as f:
             data = json.load(f)
-        file_date = data.get("date", "unknown")
-        status = "✅ fresh" if file_date == today else f"⚠️  STALE (dated {file_date})"
+        # mcp_portfolio.json freshness key is as_of (ISO ts, ET); mcp_market_data uses date
+        raw = data.get("as_of") or data.get("date", "unknown")
+        file_date = str(raw)[:10]  # ISO date portion
+        status = "✅ fresh" if file_date == today else f"⚠️  STALE ({raw})"
         print(f"{fname}: {status}")
+        if fname == "mcp_portfolio.json" and "as_of" not in data:
+            print("   ⚠️  mcp_portfolio.json has no as_of — get_portfolio_summary will raise StalePortfolioError")
     else:
         print(f"{fname}: not present (OK — cloud will write it)")
 
@@ -942,7 +951,7 @@ These are documented risks in the current system. Any deployment that touches th
 | `agent_log.json` grows unboundedly | `journal.py:record_run` | ~~Low~~ **Fixed `8f0b2e9`** | Capped at 90 entries (~3 months). Previously whole file loaded into memory each run |
 | No fill confirmation — broker order "placed" ≠ "filled" | `execute.py:place_order` | Medium | Manual reconciliation in Step 8.2 after each live run. `journal.mark_transactions_live(run_id, fills)` reconciles all three logs (transactions.json / trades.csv / decision_journal.json) against accepted orders; zero-fills-with-decisions records `reconciliation: FAILED` → alert.yml |
 | DST clock drift | Routine cron | Medium | Manual update in November/March; noted in CLAUDE.md |
-| mcp_portfolio.json staleness in cloud | `execute.py:get_portfolio_summary` | High | Cloud routine must write fresh mcp_portfolio.json at start of every run |
+| mcp_portfolio.json staleness in cloud | `execute.py:get_portfolio_summary` | ~~High~~ **Fixed (Fix 4)** | `get_portfolio_summary` raises `StalePortfolioError` if `as_of` is missing or not today (ET); `main.py` aborts before sizing orders (portfolio: FAILED → alert.yml). Routine STEP 1 writes `as_of` |
 | Cloud market data limited to MCP quotes only | `market_data.py` | Medium | Quant scores default to 50; agents use training knowledge |
 | No automated alerting on pipeline failure | All | ~~High~~ **Partially fixed** | `system_health.json` + `alert.yml` GitHub Issue alerts on FAILED/DEGRADED; 529 API retries prevent silent agent failures |
 | JSON files corruptible mid-write | `journal.py`, `health.py` | ~~High~~ **Fixed `8f0b2e9`** | All writes now atomic via `.tmp` + `os.replace()` |

@@ -209,14 +209,55 @@ def log_trades(
     print(f"   📝 Trades logged to {TRADE_LOG}")
 
 
+class StalePortfolioError(Exception):
+    """mcp_portfolio.json exists but is not provably from today (ET).
+
+    Every order is sized from this file. A stale copy (a prior day's portfolio
+    committed to the repo, or a routine that failed to refresh it) would size
+    today's trades against the wrong cash/positions. Fail loud, like the
+    market-data preflight abort, rather than trade on stale state.
+    """
+
+
 def get_portfolio_summary() -> dict:
     """Fetches balance and positions from the Robinhood Agentic account.
     If mcp_portfolio.json exists, reads from it instead (used by the cloud routine).
+
+    The cloud file MUST carry an "as_of" ISO timestamp dated today (ET). A
+    missing or stale as_of raises StalePortfolioError — main.py catches it,
+    records portfolio: FAILED, and aborts before sizing any orders.
     """
     if os.path.isfile("mcp_portfolio.json"):
         import json as _json
         with open("mcp_portfolio.json") as f:
-            return _json.load(f)
+            data = _json.load(f)
+
+        as_of = data.get("as_of")
+        if not as_of:
+            raise StalePortfolioError(
+                "mcp_portfolio.json has no 'as_of' timestamp — cannot prove it is "
+                "today's portfolio. The routine STEP 1 must write as_of (ISO, ET). "
+                "Refusing to size orders against unverifiable portfolio state."
+            )
+        try:
+            _dt = datetime.fromisoformat(as_of)
+            # Spec says ET. A naive timestamp is assumed ET; an aware one is
+            # converted to ET before taking the calendar date.
+            _dt = _dt.replace(tzinfo=_ET) if _dt.tzinfo is None else _dt.astimezone(_ET)
+            as_of_date = _dt.date()
+        except (ValueError, TypeError) as e:
+            raise StalePortfolioError(
+                f"mcp_portfolio.json 'as_of' is unparseable ({as_of!r}): {e}. "
+                "Cannot verify freshness — refusing to size orders."
+            )
+        today = datetime.now(_ET).date()
+        if as_of_date != today:
+            raise StalePortfolioError(
+                f"mcp_portfolio.json is stale: as_of={as_of} (ET date {as_of_date}), "
+                f"today is {today}. The routine did not refresh the portfolio. "
+                "Refusing to size orders against a prior day's state."
+            )
+        return data
     _login()
 
     account          = rh.profiles.load_account_profile(account_number=AGENTIC_ACCOUNT)
