@@ -285,7 +285,9 @@ Every run — including aborted runs — writes `system_health.json` to the repo
 | `agent_5_position_review` | Open positions exist but no reviews returned |
 | `agent_6_portfolio_manager` | 0 trades proposed despite REDUCE/EXIT signals (data starvation) |
 | `agent_7_cro` | No CRO output returned |
+| `decision_validation` | Guardrails rejected/clamped/skipped any decision (DEGRADED) — see `guardrails.py` |
 | `execution` | Any order rejected by the broker (no order id returned) → DEGRADED (partial fills) or FAILED (none filled), with per-ticker `failed_orders` detail; also any execution exception |
+| `reconciliation` | Decisions existed but zero fills reconciled live (FAILED — orders may have been placed with fills.json missing/empty) or partial (DEGRADED). Written by `mark_transactions_live` after `main.py`, via `health.append_check` |
 | `supabase_publish` | Supabase publish failed |
 
 ### Pre-flight abort
@@ -297,6 +299,23 @@ The pipeline aborts before running any agents if either condition is true:
 This prevents the silent all-50 quant score failure mode where agents run but produce no trades because they have no quantitative signal. When aborted, `system_health.json` is written immediately and the alert fires.
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
+
+## Changelog — Jun 12 2026 (evening — code-review remediation batch)
+
+Six-phase remediation from a senior code review. Each phase is an independent commit; all P0 unless noted. Newest first. **Live-routine sync required before the next live run** — see the "Live routine sync" note at the end.
+
+| Commit | Change | Why it mattered |
+|--------|--------|-----------------|
+| `chore(hygiene)` | (Fix 8) ET timestamps in `journal.check_kill_switches` + `publish.py`; `_compute_qty` single position lookup; `health_check.yml` 11:00 AM → 1:15 PM ET (+`update_dst.yml` regex fix for minute 15); CLAUDE.md Cloud Environment corrected (committed `market_snapshot.json` is the primary cloud source with real quant scores, not all-50); deposit-inflates-peak limitation documented. | `health_check` at 11:00 false-alarmed against legit 11:45/12:45 routine retries; docs claimed all-50 cloud scores as normal when the gate guarantees real data; naive `datetime.now()` could log the wrong date near midnight. |
+| `fix(execute)` | (Fix 6) Per-order try/except in `execute_trades`; routine STEP 4 mirrors it for the MCP path. | One transient order exception aborted the whole loop — with SELL-before-BUY ordering, SELLs filled but BUYs never attempted → capital stranded in cash. |
+| `fix(portfolio)` | (Fix 4) `get_portfolio_summary` raises `StalePortfolioError` if `mcp_portfolio.json` `as_of` is missing/not today (ET); `main.py` aborts before sizing orders. Routine STEP 1 (daily + EOD) writes `as_of`. | Every order was sized from this file with no freshness check; a stale committed copy would size today's trades against a prior day's cash/positions. |
+| `fix(reconcile)` | (Fix 3+5) `mark_transactions_live` is authoritative for **all three** logs (transactions.json / trades.csv / decision_journal.json) against broker fills; `get_trade_history` excludes `dry_run` rows; `fills=None` now raises (was silent flip-all); `health.append_check`; one-time backfill of the Jun 10–12 `trades.csv`/journal rows. | trades.csv showed phantom fills fed back to agents via `get_trade_history`, and `decision_journal` kept "open" theses for rejected orders — agents were told they held positions the broker may have refused. |
+| `fix(idempotency)` | (Fix 2) Stamp-first execution claim: `execution_started_at` stamped + pushed BEFORE the first order; gate + GUARD 3 treat a today claim as SKIP/DONE; STOP-without-orders if the claim push fails. | An attempt that placed some orders then crashed before stamping `executed_at` left the next hourly attempt to re-place everything (documented unresolved caveat). Now fails toward missed trades, never duplicates. |
+| `feat(guardrails)` | (Fix 1+7) `guardrails.validate_decisions` in `main.py` after qty pre-compute: action whitelist, BLOCKED_TICKERS, ticker ∈ candidates ∪ holdings, same-ticker BUY+SELL rejection, weight clamp to [0,0.10] **with qty recompute**, BUY notional cap 12% (SELLs exempt), $5 min, cash-account GFV guard. `decision_validation` health check. | `target_weight` flowed straight into `_compute_qty` with no bounds check (DEPLOYMENT ex-§2.6 known gap); any positive-qty decision was placed regardless of whether the ticker was analyzed. |
+
+> **Live routine sync required** (cannot be done from code — update the live Anthropic routine prompts to match the canonical MD files via the routines UI / `RemoteTrigger`): **daily** `trig_01Avvj5aBf3sXbDqUB3g4rTm` — STEP 1 writes `as_of`; STEP 4 claim-commit-push before first order, per-order error handling, reconciler comment; STEP 5 adds `fills.json`. **EOD** `trig_01GtedgrYMGHYCJVLLHXZTCq` — STEP 1 writes `as_of`. Until the daily routine is synced, Fix 4 makes Monday's run abort safely (no trades) rather than trade on an undated portfolio.
+>
+> **Dry-run status:** the full `pytest` suite (166) passes; the live `DRY_RUN=true python main.py` integration run is deferred (DEPLOYMENT §7.1 — it overwrites `pending_decisions.json`; run it on the weekend before syncing the routine, then discard the local `pending_decisions.json`).
 
 ## Changelog — Jun 12 2026
 
