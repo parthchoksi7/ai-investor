@@ -52,11 +52,20 @@ def _login():
 
 
 def get_trade_history(n: int = 30) -> list[dict]:
-    """Reads the last n rows from trades.csv."""
+    """Last n broker-accepted rows from trades.csv (the agent-facing history).
+
+    Excludes dry_run=="True" rows: in the cloud, main.py logs every decision
+    dry_run=True BEFORE the MCP orders are placed, and the reconciler
+    (journal.mark_transactions_live) flips only broker-accepted rows to
+    "False". A dry_run row is therefore either speculative (not yet
+    reconciled) or a rejected order — the agents must never be told they
+    hold a position the broker refused. (csv stores booleans as strings.)
+    """
     if not os.path.isfile(TRADE_LOG):
         return []
     with open(TRADE_LOG, newline="") as f:
-        return list(csv.DictReader(f))[-n:]
+        rows = [r for r in csv.DictReader(f) if r.get("dry_run") != "True"]
+    return rows[-n:]
 
 
 def _compute_qty(
@@ -107,6 +116,7 @@ def _compute_qty(
 TRADE_LOG_FIELDS = [
     "date", "strategy", "ticker", "action", "qty", "price", "total_value",
     "target_weight", "portfolio_value", "rationale", "broker_order_id", "dry_run",
+    "run_id",  # reconciliation key — journal.mark_transactions_live rewrites this run's rows against broker fills
 ]
 
 
@@ -149,6 +159,7 @@ def log_trades(
     prices: dict | None = None,
     strategy: str = "institutional",
     broker_order_ids: dict | None = None,
+    run_id: str = "",
 ) -> None:
     """Appends executed trades to trades.csv."""
     _migrate_trade_log()
@@ -192,6 +203,7 @@ def log_trades(
                 "rationale":       trade.get("rationale", ""),
                 "broker_order_id": order_id,
                 "dry_run":         str(DRY_RUN),
+                "run_id":          run_id,
             })
 
     print(f"   📝 Trades logged to {TRADE_LOG}")

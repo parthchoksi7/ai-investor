@@ -231,9 +231,14 @@ fills = json.load(open('fills.json')) if os.path.exists('fills.json') else {}
 cro_api_failed = h.get('checks', {}).get('agent_7_cro', {}).get('api_failed', False)
 if p['decisions'] or not cro_api_failed:
     mark_pending_executed(p['run_id'])
-    # Pass broker fills so ONLY accepted orders are marked live (rejections stay
-    # dry_run=True and are never published as phantom fills). fills maps
-    # ticker -> {"order_id": str, "price": float|None}.
+    # Reconcile ALL logs (transactions.json, trades.csv, decision_journal.json)
+    # against broker fills: ONLY accepted orders go live; rejections stay
+    # dry_run=True / status="rejected" and are never published or fed back to
+    # the agents as phantom positions. fills maps ticker -> {"order_id": str,
+    # "price": float|None}. If decisions existed but fills is empty, the
+    # reconciler records reconciliation=FAILED on system_health.json (paging).
+    # NOTE: never call mark_transactions_live(run_id) with no fills arg — it
+    # now RAISES (a bare flip-all silently re-created the phantom-fill bug).
     mark_transactions_live(p['run_id'], fills)
     print(f"Execution stamped: run_id={p['run_id']} ({len(fills)} fill(s) reconciled)")
 else:
@@ -246,7 +251,7 @@ STEP 5 — Commit artifacts
 
 git config user.email 'ai-investor-bot@users.noreply.github.com'
 git config user.name 'AI Investor Bot'
-git add portfolio_snapshot.json system_health.json mcp_portfolio.json trades.csv decision_journal.json fundamentals_cache.json portfolio_peak.json pending_decisions.json agent_log.json transactions.json
+git add portfolio_snapshot.json system_health.json mcp_portfolio.json trades.csv decision_journal.json fundamentals_cache.json portfolio_peak.json pending_decisions.json agent_log.json transactions.json fills.json
 git diff --staged --quiet || git commit -m 'chore: daily cycle'
 git push || echo "WARNING: git push failed — trades executed but artifacts not committed to remote"
 ```
