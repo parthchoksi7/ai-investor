@@ -81,6 +81,70 @@ def record_trade(
     return trade_id
 
 
+def close_position(
+    ticker: str,
+    exit_price: float,
+    avg_price: float,
+    full_exit: bool,
+    run_id: str = "",
+) -> str | None:
+    """Record a realized outcome on the most recent OPEN buy entry for `ticker`.
+
+    Closes the feedback loop: decision_journal entries are created with
+    actual_return=None / thesis_correct=None and nothing ever populated them, so
+    a BUY thesis stayed "open" forever even after the position was sold. On a
+    SELL this annotates the matching open BUY with its realized return and
+    whether the thesis was directionally correct.
+
+    Full exit  → status='closed'. Partial reduce → stays 'open', notes the trim.
+    Realized return is per-share vs cost basis, so it is lot-size independent and
+    correct for partial exits. Returns the trade_id touched, or None if there was
+    no open BUY entry to close (a no-op — e.g. a SELL of a manually-acquired
+    position, or a re-run after the entry already closed).
+
+    NOTE (cloud caveat): main.py runs DRY_RUN in the cloud, so this is called on
+    the speculative executed-decision list before broker reconciliation. If a
+    SELL is subsequently rejected by the broker, the BUY here was closed
+    prematurely and reconciliation (_reconcile_journal) does NOT re-open a
+    'closed' entry. SELLs are placed first and rarely rejected, and this is
+    feedback-quality data (not a capital control), so the exposure is accepted
+    and documented rather than gated behind full fill reconciliation.
+    """
+    if not avg_price:
+        return None  # no cost basis → cannot compute a return (avoid div-by-zero)
+    journal = _load_list(JOURNAL_FILE)
+    realized = round((exit_price - avg_price) / avg_price, 4)  # e.g. -0.064 = -6.4%
+
+    # newest OPEN buy for this ticker
+    target = None
+    for entry in reversed(journal):
+        if (entry.get("ticker") == ticker and entry.get("action") == "BUY"
+                and entry.get("status") == "open"):
+            target = entry
+            break
+    if target is None:
+        return None
+
+    target["actual_return"] = realized
+    expected = target.get("expected_return") or 0
+    # Thesis judged correct if direction matched; when an explicit expected
+    # return was set, require realized to clear at least half of it.
+    target["thesis_correct"] = (
+        bool(realized > 0) if not expected else bool(realized >= expected * 0.5))
+    target.setdefault("exits", []).append({
+        "date": datetime.now(_ET).strftime("%Y-%m-%d"),
+        "run_id": run_id,
+        "exit_price": round(exit_price, 4),
+        "avg_price": round(avg_price, 4),
+        "realized_return": realized,
+        "full_exit": full_exit,
+    })
+    if full_exit:
+        target["status"] = "closed"
+    _save(JOURNAL_FILE, journal)
+    return target.get("trade_id")
+
+
 _AGENT_LOG_MAX = 90  # ~3 months of trading days
 
 def record_run(run_id: str, pipeline_state: dict) -> None:
@@ -318,6 +382,40 @@ def mark_pending_executed(run_id: str) -> None:
 
 def get_recent_decisions(n: int = 20) -> list:
     return _load_list(JOURNAL_FILE)[-n:]
+
+
+def get_ticker_history(ticker: str, n: int = 3) -> list[dict]:
+    """Most-recent journal entries for one ticker (open or closed), with outcomes.
+
+    Feeds the Research Analyst a memory of how prior theses for this name played
+    out — `actual_return` / `thesis_correct` are populated by close_position.
+    """
+    rows = [e for e in _load_list(JOURNAL_FILE) if e.get("ticker") == ticker]
+    return rows[-n:]
+
+
+def recently_exited(within_days: int = 10) -> dict:
+    """ticker -> most recent CLOSED entry whose last exit was within `within_days`.
+
+    Surfaces the re-entry blind spot to the Portfolio Manager: a name the system
+    just sold should not be silently rebought without justifying the reversal.
+    """
+    from datetime import date, timedelta
+    cutoff = date.today() - timedelta(days=within_days)
+    out: dict = {}
+    for e in _load_list(JOURNAL_FILE):
+        if e.get("status") != "closed":
+            continue
+        exits = e.get("exits") or []
+        if not exits:
+            continue
+        try:
+            d = date.fromisoformat(exits[-1]["date"])
+        except (ValueError, KeyError, TypeError):
+            continue
+        if d >= cutoff:
+            out[e["ticker"]] = e  # last write wins = most recent in file order
+    return out
 
 
 def check_kill_switches(portfolio: dict) -> tuple[bool, str]:

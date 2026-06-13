@@ -99,13 +99,23 @@ Tests cover the quant engine (pure functions), health tracker, kill switch logic
 |------|---------|
 | `main.py` | Pipeline orchestrator — 9-step daily cycle |
 | `market_data.py` | Polygon + yfinance: prices, 210-day OHLCV, fundamentals, news |
-| `quant_engine.py` | Deterministic scoring: momentum / quality / valuation / risk |
+| `quant_engine.py` | Deterministic scoring: momentum / quality / valuation / risk — composite weights only the factors with **real data** (see note below) |
 | `analysis.py` | 7-agent Claude pipeline |
 | `execute.py` | Robinhood order execution via `robin_stocks` |
-| `journal.py` | Decision journal + 20% drawdown kill switch |
+| `guardrails.py` | Deterministic gate on LLM trade output — position cap, **25% sector cap**, ticker-universe, notional/GFV checks |
+| `journal.py` | Decision journal + 20% drawdown kill switch + realized-outcome feedback (`close_position`) |
 | `health.py` | Health tracker — writes `system_health.json` after every run |
 | `publish.py` | Publishes portfolio snapshots to Supabase |
+| `performance.py` | Local portfolio-vs-SPY report (`python performance.py`) — no Supabase needed |
 | `fetch_snapshot.py` | Run by GitHub Actions to pre-fetch market data |
+
+> **Quant honesty.** The composite is a weighted average over only the factors that
+> have real data. On the free Polygon tier the financials endpoint returns nothing,
+> so **quality and valuation have no inputs** — they are dropped and the live
+> composite is momentum + volatility (renormalized), not a 4-factor blend. Each
+> sub-score carries a `*_available` flag and the per-ticker `factors_used` list
+> records exactly which factors were real. When fundamentals are present, all four
+> factors are used.
 
 ### Data files (gitignored in dev, committed in cloud)
 
