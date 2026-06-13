@@ -212,12 +212,16 @@ If `_safe_call()` fails, ALL trades must be blocked — not approved. Verify thi
 ### 2.6 Validation gate (guardrails.py)
 All LLM trade output passes through `guardrails.validate_decisions()` in `main.py` — after qty pre-computation, before `pending_decisions.json` is written. It enforces: action whitelist, `BLOCKED_TICKERS`, ticker ∈ analyzed candidates ∪ holdings, same-ticker BUY+SELL conflict rejection, `target_weight` clamp to [0, 0.10] **with qty recompute**, BUY notional ≤ 12% of portfolio (SELLs exempt — full exits of overweight positions must never be blocked), $5 minimum notional, and the good-faith-violation guard (no SELL within 2 trading days of a broker-accepted BUY, unless the kill switch is active). Interventions are recorded under the `decision_validation` health check (DEGRADED → alert.yml).
 
+Immediately after, `guardrails.enforce_sector_limits()` applies the **25% sector cap** as a code control (it previously lived only in the PM prompt). It uses a static `SECTOR_MAP` (the data layer carries no sector field), rejects the marginal BUY that pushes a sector's projected post-trade weight over 25%, applies SELLs first so a same-sector exit frees budget, and counts existing holdings. Its rejections fold into the same `decision_validation` health check. SELLs are never blocked by the sector cap.
+
 For any change to `guardrails.py` or its call site:
 - [ ] Gate still runs AFTER qty pre-computation (notional rules need qty) and BEFORE the `pending_decisions.json` dump
 - [ ] Weight clamping still recomputes `qty` — a clamped weight with a stale qty is a no-op at execution
 - [ ] SELLs are still exempt from the BUY notional cap
-- [ ] `TestValidateDecisions` in `test_pipeline.py` passes; new rules get new cases
-- [ ] PM system prompt still says "0.00–0.10" (the gate is defense in depth, not a license to relax the prompt)
+- [ ] SELLs are still exempt from the sector cap (full exits must never be blocked)
+- [ ] `enforce_sector_limits` still runs AFTER `validate_decisions` (so weight clamps/conflicts are resolved first)
+- [ ] `TestValidateDecisions` and `TestEnforceSectorLimits` in `test_pipeline.py` pass; new rules get new cases
+- [ ] PM system prompt still says "0.00–0.10" and "Max sector: 25%" (the gate is defense in depth, not a license to relax the prompt)
 
 ---
 
@@ -947,6 +951,9 @@ These are documented risks in the current system. Any deployment that touches th
 | SPY price in morning snapshot is intraday (not official close) | `publish.py` | Low | By design — user wants SPY synced with portfolio on every update. EOD run overwrites with official close via `is_close=True`. Chart labels the index as "indexed to 100" not "closing prices". |
 | `market_snapshot.json` missing or stale → SPY falls back to Polygon "prev" (previous day) | `publish.py:_fetch_spy_from_snapshot` | Low | Polygon fallback still gives valid SPY data; worst case is SPY lags by one day in the dashboard, identical to the pre-fix behavior. |
 | No `target_weight` bounds validation before execution | `execute.py:_compute_qty` | ~~High~~ **Fixed (guardrails.py)** | `validate_decisions()` clamps weight to [0, 0.10] + recomputes qty, rejects unknown/blocked tickers, caps BUY notional at 12%, GFV guard — see §2.6 |
+| 25% sector cap enforced only in the PM prompt (an LLM is not a control) | `analysis.py` PM prompt | ~~Medium~~ **Fixed (guardrails.py)** | `enforce_sector_limits()` rejects BUYs that push a sector's projected weight > 25%, using a static `SECTOR_MAP` — see §2.6. Static map is a known approximation (TODO: source sectors from Polygon paid tier) |
+| Quality/valuation factors silently default to 50 (free-tier Polygon returns no fundamentals) → "4-factor" composite is really momentum+volatility | `quant_engine.py` | ~~Medium~~ **Fixed (honest reweight)** | Composite now weights only factors with real data and renormalizes; `factors_used` records which were real; `_fmt_scores` shows N/A. No ranking impact (the 50s were constant) — transparency fix |
+| `decision_journal` `actual_return`/`thesis_correct` never populated → no outcome feedback | `journal.py` | ~~Medium~~ **Fixed (close_position)** | A SELL closes the matching open BUY with realized return + correctness. Cloud caveat: closes speculatively under DRY_RUN; a rejected SELL leaves a wrongly-closed BUY that reconciliation won't re-open (feedback-quality, not capital — accepted) |
 | Portfolio state is snapshot at pipeline time, not execution time | `main.py`, `execute.py` | Medium | Market orders; prices drift between analysis and execution. Acceptable for small portfolio |
 | `agent_log.json` grows unboundedly | `journal.py:record_run` | ~~Low~~ **Fixed `8f0b2e9`** | Capped at 90 entries (~3 months). Previously whole file loaded into memory each run |
 | No fill confirmation — broker order "placed" ≠ "filled" | `execute.py:place_order` | Medium | Manual reconciliation in Step 8.2 after each live run. `journal.mark_transactions_live(run_id, fills)` reconciles all three logs (transactions.json / trades.csv / decision_journal.json) against accepted orders; zero-fills-with-decisions records `reconciliation: FAILED` → alert.yml |

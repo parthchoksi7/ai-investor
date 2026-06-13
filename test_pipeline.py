@@ -397,12 +397,17 @@ class TestRiskMetrics:
 # ── quant_engine.score_all_tickers ───────────────────────────────────────────
 
 class TestScoreAllTickers:
-    def test_composite_weight_formula(self):
+    def test_composite_weight_formula_all_factors(self):
+        # When every factor has real data the composite uses all four base weights.
         from quant_engine import score_all_tickers
         history = _flat(100.0, 210)
-        market_data = {"history": {"AAPL": history, "SPY": history}, "fundamentals": {}}
+        market_data = {
+            "history": {"AAPL": history, "SPY": history},
+            "fundamentals": {"AAPL": {"gross_margin": 0.75, "pe_ratio": 12.0}},
+        }
         scores = score_all_tickers(market_data)
         s = scores["AAPL"]
+        assert set(s["factors_used"]) == {"momentum", "quality", "valuation", "volatility"}
         expected = (
             s["momentum_score"]   * 0.30
             + s["quality_score"]  * 0.25
@@ -410,6 +415,29 @@ class TestScoreAllTickers:
             + s["volatility_score"] * 0.25
         )
         assert s["composite_score"] == pytest.approx(expected, abs=0.15)
+
+    def test_composite_drops_missing_factors_and_renormalizes(self):
+        # Phase 3.1 honesty: with NO fundamentals, quality/valuation carry no
+        # real data and must be dropped — the composite is momentum+volatility
+        # renormalized to their own weights, NOT blended with two constant 50s.
+        from quant_engine import score_all_tickers
+        history = _flat(100.0, 210)
+        market_data = {"history": {"AAPL": history, "SPY": history}, "fundamentals": {}}
+        s = score_all_tickers(market_data)["AAPL"]
+        assert s["factors_used"] == ["momentum", "volatility"]
+        assert s["quality_available"] is False
+        assert s["valuation_available"] is False
+        expected = (s["momentum_score"] * 0.30 + s["volatility_score"] * 0.25) / 0.55
+        assert s["composite_score"] == pytest.approx(expected, abs=0.05)
+
+    def test_composite_no_real_factor_is_neutral(self):
+        # Empty history (cloud fallback): no factor has data → neutral 50, flagged.
+        from quant_engine import score_all_tickers
+        market_data = {"history": {"AAPL": []}, "fundamentals": {}}
+        s = score_all_tickers(market_data)["AAPL"]
+        assert s["factors_used"] == []
+        assert s["composite_score"] == 50.0
+        assert s["data_available"] is False
 
     def test_empty_market_data_returns_empty(self):
         from quant_engine import score_all_tickers
@@ -1495,6 +1523,108 @@ class TestValidateDecisions:
         assert _trading_days_since("2026-06-12", "2026-06-12") == 0  # same day
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 0.2 — guardrails.enforce_sector_limits: the 25% sector cap is enforced
+# in CODE, not just the PM prompt. SELLs are applied before BUYs so freed
+# sector budget is reusable.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestEnforceSectorLimits:
+    """MAX_SECTOR_WEIGHT (25%) is a hard cap on projected post-trade sector
+    weight. The marginal BUY that breaches it is rejected; a same-sector SELL
+    applied first frees budget for a subsequent BUY. Existing holdings count
+    toward the budget."""
+
+    SECTORS = {"GS": "Financials", "MS": "Financials", "JPM": "Financials",
+               "BAC": "Financials", "XOM": "Energy"}
+
+    def _empty_portfolio(self):
+        return {"total_value": 1000.0, "cash": 1000.0, "positions": []}
+
+    def test_third_same_sector_buy_rejected(self):
+        from guardrails import enforce_sector_limits
+        decisions = [
+            {"ticker": "GS",  "action": "BUY", "target_weight": 0.10},
+            {"ticker": "MS",  "action": "BUY", "target_weight": 0.10},
+            {"ticker": "JPM", "action": "BUY", "target_weight": 0.10},  # → 30% Financials
+        ]
+        kept, rejected = enforce_sector_limits(
+            decisions, self._empty_portfolio(), sectors=self.SECTORS)
+        assert {d["ticker"] for d in kept} == {"GS", "MS"}
+        assert [d["ticker"] for d in rejected] == ["JPM"]
+        assert "rejected_reason" in rejected[0]
+
+    def test_other_sector_buy_unaffected(self):
+        from guardrails import enforce_sector_limits
+        decisions = [
+            {"ticker": "GS",  "action": "BUY", "target_weight": 0.10},
+            {"ticker": "MS",  "action": "BUY", "target_weight": 0.10},
+            {"ticker": "XOM", "action": "BUY", "target_weight": 0.10},  # Energy, fine
+        ]
+        kept, rejected = enforce_sector_limits(
+            decisions, self._empty_portfolio(), sectors=self.SECTORS)
+        assert {d["ticker"] for d in kept} == {"GS", "MS", "XOM"}
+        assert rejected == []
+
+    def test_existing_holdings_count_toward_sector_budget(self):
+        from guardrails import enforce_sector_limits
+        portfolio = {"total_value": 1000.0, "cash": 800.0,
+                     "positions": [{"symbol": "BAC", "market_value": 200.0}]}  # 20%
+        decisions = [{"ticker": "GS", "action": "BUY", "target_weight": 0.10}]  # → 30%
+        kept, rejected = enforce_sector_limits(
+            decisions, portfolio, sectors=self.SECTORS)
+        assert kept == []
+        assert [d["ticker"] for d in rejected] == ["GS"]
+
+    def test_sell_frees_budget_before_buy(self):
+        # Holding 25% BAC (Financials at cap). Selling it frees room for a GS buy
+        # even though decisions are passed BUY-first.
+        from guardrails import enforce_sector_limits
+        portfolio = {"total_value": 1000.0, "cash": 750.0,
+                     "positions": [{"symbol": "BAC", "market_value": 250.0}]}  # 25%
+        decisions = [
+            {"ticker": "GS",  "action": "BUY",  "target_weight": 0.10},
+            {"ticker": "BAC", "action": "SELL", "target_weight": 0.0},
+        ]
+        kept, rejected = enforce_sector_limits(
+            decisions, portfolio, sectors=self.SECTORS)
+        assert {d["ticker"] for d in kept} == {"GS", "BAC"}
+        assert rejected == []
+
+    def test_sell_is_never_rejected(self):
+        from guardrails import enforce_sector_limits
+        portfolio = {"total_value": 1000.0, "cash": 0.0,
+                     "positions": [{"symbol": "BAC", "market_value": 300.0}]}  # 30% over cap
+        decisions = [{"ticker": "BAC", "action": "SELL", "target_weight": 0.0}]
+        kept, rejected = enforce_sector_limits(
+            decisions, portfolio, sectors=self.SECTORS)
+        assert [d["ticker"] for d in kept] == ["BAC"]
+        assert rejected == []
+
+    def test_decision_order_preserved(self):
+        from guardrails import enforce_sector_limits
+        decisions = [
+            {"ticker": "XOM", "action": "BUY", "target_weight": 0.10},  # Energy
+            {"ticker": "GS",  "action": "BUY", "target_weight": 0.10},  # Financials
+        ]
+        kept, _ = enforce_sector_limits(
+            decisions, self._empty_portfolio(), sectors=self.SECTORS)
+        assert [d["ticker"] for d in kept] == ["XOM", "GS"]
+
+    def test_default_sector_map_used(self):
+        # Without an explicit map, the built-in SECTOR_MAP applies: NVDA/AVGO/AMD
+        # are all Technology, so the third 10% tech BUY is rejected.
+        from guardrails import enforce_sector_limits
+        decisions = [
+            {"ticker": "NVDA", "action": "BUY", "target_weight": 0.10},
+            {"ticker": "AVGO", "action": "BUY", "target_weight": 0.10},
+            {"ticker": "AMD",  "action": "BUY", "target_weight": 0.10},  # → 30% Tech
+        ]
+        kept, rejected = enforce_sector_limits(decisions, self._empty_portfolio())
+        assert {d["ticker"] for d in kept} == {"NVDA", "AVGO"}
+        assert [d["ticker"] for d in rejected] == ["AMD"]
+
+
 # ── journal.mark_execution_started — stamp-first execution claim ──────────────
 
 class TestMarkExecutionStarted:
@@ -1643,3 +1773,370 @@ class TestPortfolioFreshness:
         with pytest.raises(RuntimeError, match="robin_stocks path"):
             execute.get_portfolio_summary()
         assert called["login"] is True  # fell through to the live path, no StalePortfolioError
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 1 — journal.close_position: closes the matching open BUY on a sell and
+# records the realized outcome. This is the feedback loop the system lacked —
+# actual_return / thesis_correct were never populated before.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestClosePosition:
+    """On a SELL, the most recent open BUY entry for that ticker gains a numeric
+    actual_return and a boolean thesis_correct; a full exit flips status to
+    'closed'. Realized return is per-share vs cost basis, so it is independent of
+    lot size and correct for partial exits."""
+
+    def _open_buy(self, ticker="AAPL", expected_return=0.0, trade_id="t1"):
+        return {
+            "trade_id": trade_id, "run_id": "r0", "date": "2026-06-01",
+            "ticker": ticker, "action": "BUY", "target_weight": 0.08,
+            "thesis": "variant perception", "anti_thesis": "", "catalysts": [],
+            "confidence": 7, "expected_return": expected_return, "invalidates_if": [],
+            "status": "open", "actual_return": None, "thesis_correct": None,
+        }
+
+    def _setup(self, tmp_path, monkeypatch, entries):
+        import journal
+        jf = tmp_path / "decision_journal.json"
+        jf.write_text(json.dumps(entries))
+        monkeypatch.setattr(journal, "JOURNAL_FILE", str(jf))
+        return journal, jf
+
+    def test_full_exit_closes_entry_with_loss(self, tmp_path, monkeypatch):
+        # bought ~312, exit at 292 → realized ≈ -6.4%, thesis wrong.
+        journal, jf = self._setup(tmp_path, monkeypatch, [self._open_buy()])
+        tid = journal.close_position("AAPL", exit_price=292.0, avg_price=312.0,
+                                     full_exit=True, run_id="r1")
+        entry = json.loads(jf.read_text())[0]
+        assert tid == "t1"
+        assert entry["status"] == "closed"
+        assert entry["actual_return"] == round((292.0 - 312.0) / 312.0, 4)  # -0.0641
+        assert entry["thesis_correct"] is False
+        assert entry["exits"][-1]["full_exit"] is True
+        assert entry["exits"][-1]["exit_price"] == 292.0
+
+    def test_full_exit_with_gain_marks_thesis_correct(self, tmp_path, monkeypatch):
+        journal, jf = self._setup(tmp_path, monkeypatch, [self._open_buy()])
+        journal.close_position("AAPL", exit_price=340.0, avg_price=312.0, full_exit=True)
+        entry = json.loads(jf.read_text())[0]
+        assert entry["actual_return"] > 0
+        assert entry["thesis_correct"] is True
+
+    def test_expected_return_threshold_branch(self, tmp_path, monkeypatch):
+        # With expected_return=0.10, thesis is "correct" only if realized met at
+        # least half of it. +3% realized against a +10% expectation fails the bar.
+        journal, jf = self._setup(
+            tmp_path, monkeypatch, [self._open_buy(expected_return=0.10)])
+        journal.close_position("AAPL", exit_price=321.36, avg_price=312.0, full_exit=True)
+        entry = json.loads(jf.read_text())[0]
+        assert entry["actual_return"] == round((321.36 - 312.0) / 312.0, 4)  # ~+0.03
+        assert entry["thesis_correct"] is False  # 0.03 < 0.10*0.5
+
+    def test_partial_exit_keeps_entry_open(self, tmp_path, monkeypatch):
+        journal, jf = self._setup(tmp_path, monkeypatch, [self._open_buy()])
+        journal.close_position("AAPL", exit_price=300.0, avg_price=312.0, full_exit=False)
+        entry = json.loads(jf.read_text())[0]
+        assert entry["status"] == "open"           # reduce, not exit
+        assert entry["actual_return"] is not None   # outcome still recorded
+        assert entry["exits"][-1]["full_exit"] is False
+
+    def test_no_matching_open_entry_is_noop(self, tmp_path, monkeypatch):
+        closed = {**self._open_buy(), "status": "closed"}
+        journal, jf = self._setup(tmp_path, monkeypatch, [closed])
+        assert journal.close_position("AAPL", 300.0, 312.0, full_exit=True) is None
+        assert json.loads(jf.read_text())[0]["status"] == "closed"  # untouched
+
+    def test_zero_avg_price_guard(self, tmp_path, monkeypatch):
+        journal, jf = self._setup(tmp_path, monkeypatch, [self._open_buy()])
+        assert journal.close_position("AAPL", 300.0, 0.0, full_exit=True) is None
+        assert json.loads(jf.read_text())[0]["status"] == "open"  # no divide-by-zero
+
+    def test_closes_most_recent_open_entry(self, tmp_path, monkeypatch):
+        older = self._open_buy(trade_id="old")
+        newer = {**self._open_buy(trade_id="new"), "date": "2026-06-10"}
+        journal, jf = self._setup(tmp_path, monkeypatch, [older, newer])
+        tid = journal.close_position("AAPL", 300.0, 312.0, full_exit=True)
+        rows = {e["trade_id"]: e for e in json.loads(jf.read_text())}
+        assert tid == "new"
+        assert rows["new"]["status"] == "closed"
+        assert rows["old"]["status"] == "open"  # untouched
+
+    def test_closed_entry_survives_reconciliation(self, tmp_path, monkeypatch):
+        # Spec note: _reconcile_journal flips only open↔rejected and leaves any
+        # other status (including 'closed') untouched. A close_position-closed
+        # entry must survive a later mark_transactions_live pass over the run.
+        journal, jf = self._setup(tmp_path, monkeypatch, [self._open_buy()])
+        journal.close_position("AAPL", 292.0, 312.0, full_exit=True, run_id="r0")
+        changed = journal._reconcile_journal("r0", fills={})  # AAPL not in fills
+        entry = json.loads(jf.read_text())[0]
+        assert entry["status"] == "closed"  # NOT flipped to rejected
+        assert changed == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 2 — outcome memory fed back to agents: journal.get_ticker_history /
+# recently_exited helpers + the Research/PM prompt blocks built from them.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestTickerHistoryHelpers:
+    def _setup(self, tmp_path, monkeypatch, entries):
+        import journal
+        jf = tmp_path / "decision_journal.json"
+        jf.write_text(json.dumps(entries))
+        monkeypatch.setattr(journal, "JOURNAL_FILE", str(jf))
+        return journal
+
+    def test_get_ticker_history_filters_and_limits(self, tmp_path, monkeypatch):
+        entries = [
+            {"ticker": "AAPL", "action": "BUY", "date": "2026-01-01"},
+            {"ticker": "MSFT", "action": "BUY", "date": "2026-02-01"},
+            {"ticker": "AAPL", "action": "SELL", "date": "2026-03-01"},
+            {"ticker": "AAPL", "action": "BUY", "date": "2026-04-01"},
+            {"ticker": "AAPL", "action": "BUY", "date": "2026-05-01"},
+        ]
+        journal = self._setup(tmp_path, monkeypatch, entries)
+        rows = journal.get_ticker_history("AAPL", n=2)
+        assert [r["date"] for r in rows] == ["2026-04-01", "2026-05-01"]
+        assert all(r["ticker"] == "AAPL" for r in rows)
+
+    def test_recently_exited_includes_recent_closed(self, tmp_path, monkeypatch):
+        from datetime import date
+        today = date.today().isoformat()
+        entries = [{
+            "ticker": "AAPL", "action": "BUY", "status": "closed",
+            "thesis": "cloud growth", "expected_return": 0.1,
+            "exits": [{"date": today, "realized_return": -0.06, "full_exit": True}],
+        }]
+        journal = self._setup(tmp_path, monkeypatch, entries)
+        out = journal.recently_exited(within_days=10)
+        assert "AAPL" in out
+        assert out["AAPL"]["exits"][-1]["realized_return"] == -0.06
+
+    def test_recently_exited_excludes_old_and_open(self, tmp_path, monkeypatch):
+        from datetime import date, timedelta
+        old = (date.today() - timedelta(days=30)).isoformat()
+        entries = [
+            {"ticker": "AAPL", "action": "BUY", "status": "closed",
+             "exits": [{"date": old, "realized_return": 0.0, "full_exit": True}]},
+            {"ticker": "MSFT", "action": "BUY", "status": "open", "exits": []},
+        ]
+        journal = self._setup(tmp_path, monkeypatch, entries)
+        assert journal.recently_exited(within_days=10) == {}
+
+
+class TestMemoryPromptBlocks:
+    """The formatters render exactly the memory the agents consume; empty inputs
+    produce empty strings (no stray prompt sections)."""
+
+    def test_ticker_history_block_shows_outcome(self):
+        from analysis import _fmt_ticker_history
+        block = _fmt_ticker_history([
+            {"date": "2026-05-01", "action": "BUY", "thesis": "cheap cloud name",
+             "actual_return": -0.064, "thesis_correct": False, "status": "closed"},
+        ])
+        assert "PRIOR HISTORY" in block
+        assert "-6.4%" in block
+        assert "thesis_correct=False" in block
+
+    def test_ticker_history_open_entry_has_no_realized(self):
+        from analysis import _fmt_ticker_history
+        block = _fmt_ticker_history([
+            {"date": "2026-05-01", "action": "BUY", "thesis": "x",
+             "actual_return": None, "status": "open"},
+        ])
+        assert "no realized outcome yet" in block
+
+    def test_empty_history_is_empty_string(self):
+        from analysis import _fmt_ticker_history
+        assert _fmt_ticker_history(None) == ""
+        assert _fmt_ticker_history([]) == ""
+
+    def test_recently_exited_block_warns(self):
+        from analysis import _fmt_recently_exited
+        block = _fmt_recently_exited({
+            "AAPL": {"thesis": "AI tailwind",
+                     "exits": [{"date": "2026-06-10", "realized_return": -0.03}]},
+        })
+        assert "RECENTLY EXITED" in block
+        assert "AAPL" in block
+        assert "-3.0%" in block
+
+    def test_empty_recently_exited_is_empty_string(self):
+        from analysis import _fmt_recently_exited
+        assert _fmt_recently_exited(None) == ""
+        assert _fmt_recently_exited({}) == ""
+
+
+class TestMemoryInjectedIntoAgents:
+    """Acceptance: the memory actually reaches the agent user_msg. Capture the
+    prompt by stubbing analysis._call."""
+
+    def _capture(self, monkeypatch):
+        import analysis
+        captured = {}
+        def _fake_call(model, system, user_msg, max_tokens=600):
+            captured["user_msg"] = user_msg
+            return "[]"  # valid JSON; PM expects an array, research a dict
+        monkeypatch.setattr(analysis, "_call", _fake_call)
+        return analysis, captured
+
+    def test_research_user_msg_contains_prior_outcome(self, monkeypatch):
+        analysis, captured = self._capture(monkeypatch)
+        md = {"prices": {"AAPL": {"close": 291.0, "change_pct": 0.0}}, "date": "2026-06-13"}
+        analysis.run_research_analyst(
+            "AAPL", md, {"AAPL": {"data_available": True}},
+            ticker_history=[{"date": "2026-06-01", "action": "BUY",
+                             "thesis": "rebound", "actual_return": -0.064,
+                             "thesis_correct": False, "status": "closed"}])
+        assert "PRIOR HISTORY" in captured["user_msg"]
+        assert "-6.4%" in captured["user_msg"]
+
+    def test_pm_user_msg_contains_reentry_warning(self, monkeypatch):
+        analysis, captured = self._capture(monkeypatch)
+        portfolio = {"total_value": 500.0, "cash": 500.0, "positions": []}
+        analysis.run_portfolio_manager(
+            {}, {}, {}, {}, {}, {}, portfolio, [], date="2026-06-13",
+            recently_exited={"AAPL": {"thesis": "sold the bounce",
+                "exits": [{"date": "2026-06-11", "realized_return": 0.02}]}})
+        assert "RECENTLY EXITED" in captured["user_msg"]
+        assert "AAPL" in captured["user_msg"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 4 — CRO gets REAL correlation data: quant_engine.compute_return_correlations
+# + the correlation/concentration block injected into the CRO user_msg.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestReturnCorrelations:
+    def test_identical_series_correlate_one(self):
+        from quant_engine import compute_return_correlations
+        hist = {"A": _trend(100.0, 130.0, 60), "B": _trend(100.0, 130.0, 60)}
+        pairs = compute_return_correlations(hist, ["A", "B"], window=60)
+        assert len(pairs) == 1
+        a, b, c = pairs[0]
+        assert {a, b} == {"A", "B"}
+        assert c == pytest.approx(1.0, abs=0.01)
+
+    def test_short_history_skipped(self):
+        from quant_engine import compute_return_correlations
+        hist = {"A": _trend(100.0, 110.0, 10), "B": _trend(100.0, 110.0, 10)}
+        assert compute_return_correlations(hist, ["A", "B"]) == []  # < 22 overlap
+
+    def test_sorted_by_abs_corr_and_capped(self):
+        from quant_engine import compute_return_correlations
+        # A,B move together; C is a flat series (skipped: zero variance → no pair)
+        hist = {
+            "A": _trend(100.0, 130.0, 60),
+            "B": _trend(100.0, 130.0, 60),
+            "D": _trend(200.0, 150.0, 60),  # downtrend, still valid variance
+        }
+        pairs = compute_return_correlations(hist, ["A", "B", "D"], window=60, top_n=2)
+        assert len(pairs) <= 2
+        # most-correlated pair first
+        assert abs(pairs[0][2]) >= abs(pairs[-1][2])
+
+    def test_no_history_returns_empty(self):
+        from quant_engine import compute_return_correlations
+        assert compute_return_correlations({}, ["A"]) == []
+
+
+class TestCroCorrelationInjection:
+    def test_cro_user_msg_has_correlation_block(self, monkeypatch):
+        import analysis
+        captured = {}
+        def _fake_call(model, system, user_msg, max_tokens=600):
+            captured["user_msg"] = user_msg
+            return '{"approved": true, "risk_budget_used": 30, "rejected_tickers": []}'
+        monkeypatch.setattr(analysis, "_call", _fake_call)
+
+        portfolio = {"total_value": 1000.0, "cash": 0.0, "positions": []}
+        decisions = [
+            {"ticker": "A", "action": "BUY", "target_weight": 0.10},
+            {"ticker": "B", "action": "BUY", "target_weight": 0.10},
+        ]
+        history = {"A": _trend(100.0, 130.0, 60), "B": _trend(100.0, 130.0, 60)}
+        analysis.run_chief_risk_officer(decisions, portfolio, {}, history=history)
+        assert "HIGHEST PAIRWISE CORRELATIONS" in captured["user_msg"]
+        assert "A / B" in captured["user_msg"]
+
+    def test_cro_no_history_no_pretense(self, monkeypatch):
+        import analysis
+        captured = {}
+        def _fake_call(model, system, user_msg, max_tokens=600):
+            captured["user_msg"] = user_msg
+            return '{"approved": true, "rejected_tickers": []}'
+        monkeypatch.setattr(analysis, "_call", _fake_call)
+        portfolio = {"total_value": 1000.0, "cash": 0.0, "positions": []}
+        decisions = [{"ticker": "A", "action": "BUY", "target_weight": 0.10}]
+        analysis.run_chief_risk_officer(decisions, portfolio, {}, history=None)
+        assert "HIGHEST PAIRWISE CORRELATIONS" not in captured["user_msg"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 6 — performance.py: local portfolio-vs-SPY report, no Supabase needed.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPerformanceReport:
+    def test_metrics_on_known_curve(self):
+        import performance
+        # +10% then -50% from 110 → drawdown -50%, cumulative -45%
+        m = performance._metrics([100.0, 110.0, 55.0])
+        assert m["cumulative_return"] == pytest.approx(-0.45, abs=1e-6)
+        assert m["max_drawdown"] == pytest.approx(-0.5, abs=1e-6)
+
+    def test_metrics_short_curve_is_safe(self):
+        import performance
+        m = performance._metrics([100.0])
+        assert m["cumulative_return"] == 0.0
+        assert m["sharpe"] is None
+
+    def test_spy_curve_converts_epoch_ms(self, tmp_path):
+        import performance
+        # 1781236800000 ms == 2026-06-12 UTC
+        snap = {"history": {"SPY": [
+            {"date": 1781150400000, "close": 738.0},
+            {"date": 1781236800000, "close": 740.0},
+        ]}}
+        p = tmp_path / "snap.json"
+        p.write_text(json.dumps(snap))
+        curve = performance._spy_curve(str(p))
+        assert curve["2026-06-12"] == 740.0
+        assert len(curve) == 2
+
+    def test_align_uses_as_of_prior_close(self):
+        import performance
+        portfolio = [("2026-06-08", 500.0), ("2026-06-09", 505.0)]
+        spy = {"2026-06-05": 700.0, "2026-06-08": 710.0}  # no 06-09 bar
+        dates, pv, sv = performance._align(portfolio, spy)
+        assert dates == ["2026-06-08", "2026-06-09"]
+        assert pv == [500.0, 505.0]
+        assert sv == [710.0, 710.0]  # 06-09 falls back to latest prior (06-08)
+
+    def test_build_report_end_to_end(self, tmp_path):
+        import performance
+        log = [
+            {"date": "2026-06-08", "portfolio_snapshot": {"total_value": 500.0}},
+            {"date": "2026-06-08", "portfolio_snapshot": {"total_value": 501.0}},  # later run wins
+            {"date": "2026-06-09", "portfolio_snapshot": {"total_value": 510.0}},
+        ]
+        snap = {"history": {"SPY": [
+            {"date": "2026-06-08", "close": 700.0},
+            {"date": "2026-06-09", "close": 707.0},
+        ]}}
+        lp = tmp_path / "agent_log.json"; lp.write_text(json.dumps(log))
+        sp = tmp_path / "snap.json";       sp.write_text(json.dumps(snap))
+        report = performance.build_report(str(lp), str(sp))
+        assert report["inception"] == "2026-06-08"
+        assert report["as_of"] == "2026-06-09"
+        assert report["trading_days"] == 2
+        assert report["portfolio_curve"][0]["value"] == 501.0  # dedup last-of-day
+        # portfolio +1.798% (501→510) vs SPY +1.0% (700→707) → positive alpha
+        assert report["alpha_cumulative_return"] > 0
+
+    def test_missing_files_are_safe(self, tmp_path):
+        import performance
+        report = performance.build_report(str(tmp_path / "none.json"),
+                                          str(tmp_path / "none2.json"))
+        assert report["trading_days"] == 0
+        assert report["inception"] is None

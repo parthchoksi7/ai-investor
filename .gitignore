@@ -3,4 +3,7 @@ __pycache__/
 *.pyc
 venv/
 .DS_Store
-market_snapshot.jsonfills.json
+# NOTE: market_snapshot.json is intentionally NOT ignored — market_data.yml
+# commits it (git add market_snapshot.json) as the cloud routine's data source.
+fills.json
+performance_report.json
