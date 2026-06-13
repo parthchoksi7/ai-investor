@@ -143,6 +143,35 @@ def mark_transactions_live(run_id: str, fills: dict | None = None) -> None:
               "all run transactions flipped live (cannot distinguish rejections).")
 
 
+def mark_execution_started(run_id: str) -> None:
+    """Stamp pending_decisions.json BEFORE the first order is placed.
+
+    Closes the cross-attempt double-fill window: if an attempt places some
+    orders then crashes before executed_at is stamped and pushed, the next
+    hourly attempt would otherwise see executed_at=null + fresh data and
+    re-place everything. The cloud routine commits and pushes this claim
+    BEFORE placing the first order, so the claim is durable across attempts.
+    preflight_gate and the routine's guards treat a non-null
+    execution_started_at dated today exactly like executed_at: STOP — recovery
+    goes through the Scenario B runbook (position diff), never blind re-execution.
+
+    Fails toward missed trades, never duplicate trades.
+    """
+    if not os.path.isfile(PENDING_FILE):
+        return
+    with open(PENDING_FILE) as f:
+        pending = json.load(f)
+    if not isinstance(pending, dict):
+        return  # old bare-list format — can't stamp
+    if pending.get("run_id") != run_id:
+        return  # stale file from a different run
+    if pending.get("execution_started_at"):
+        return  # already claimed — preserve the original claim timestamp
+    pending["execution_started_at"] = datetime.now(timezone.utc).isoformat()
+    _save(PENDING_FILE, pending)
+    print(f"   🚩 Execution claim set (run_id={run_id}) — placing orders next")
+
+
 def mark_pending_executed(run_id: str) -> None:
     """Stamp pending_decisions.json as executed to prevent double-execution on retry."""
     if not os.path.isfile(PENDING_FILE):

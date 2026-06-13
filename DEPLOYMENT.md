@@ -178,8 +178,10 @@ Read `pending_decisions.json` envelope protocol:
 - [ ] Cloud routine reads `decisions` from `pending_decisions["decisions"]`, not the root
 - [ ] Cloud routine verifies `pending_decisions["date"] == today` before placing orders
 - [ ] Cloud routine checks `pending_decisions["executed_at"] is None` before placing orders
+- [ ] Cloud routine checks `pending_decisions["execution_started_at"] is None` before placing orders (a non-null claim = a prior attempt crashed mid-execution; recovery is Scenario B, never re-run)
+- [ ] Cloud routine stamps + pushes `execution_started_at` BEFORE the first order, and STOPS without placing orders if that push fails (fail toward missed trades, never duplicates)
 - [ ] Cloud routine stamps `executed_at` after orders are placed, not before
-- [ ] If any order step fails, `executed_at` is NOT stamped — this allows safe retry
+- [ ] If any order step fails, `executed_at` is NOT stamped — `execution_started_at` (already pushed) is what prevents the next attempt from double-filling
 
 ### 2.3 Quantity math audit (P0 changes)
 For any change to `_compute_qty()`:

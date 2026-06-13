@@ -1324,3 +1324,79 @@ class TestValidateDecisions:
         assert _trading_days_since("2026-06-11", "2026-06-15") == 2  # Thu → Mon
         assert _trading_days_since("2026-06-12", "2026-06-15") == 1  # Fri → Mon
         assert _trading_days_since("2026-06-12", "2026-06-12") == 0  # same day
+
+
+# ── journal.mark_execution_started — stamp-first execution claim ──────────────
+
+class TestMarkExecutionStarted:
+    """The claim is stamped (and pushed by the routine) BEFORE the first order,
+    so an attempt that crashes mid-execution leaves a durable marker. The gate
+    treats started-but-not-executed as SKIP/DONE: failure direction is missed
+    trades (Scenario B recovery), never duplicate trades."""
+
+    def _pending(self, **overrides):
+        base = {"run_id": "r1", "date": "2026-06-12",
+                "generated_at": "2026-06-12T13:45:00Z",
+                "execution_started_at": None, "executed_at": None,
+                "decisions": [{"ticker": "BAC", "action": "BUY"}]}
+        return {**base, **overrides}
+
+    def _setup(self, tmp_path, monkeypatch, pending):
+        import journal
+        f = tmp_path / "pending_decisions.json"
+        f.write_text(json.dumps(pending))
+        monkeypatch.setattr(journal, "PENDING_FILE", str(f))
+        return journal, f
+
+    def test_stamps_claim(self, tmp_path, monkeypatch):
+        journal, f = self._setup(tmp_path, monkeypatch, self._pending())
+        journal.mark_execution_started("r1")
+        data = json.loads(f.read_text())
+        assert data["execution_started_at"] is not None
+        assert data["executed_at"] is None  # claim does NOT imply completion
+
+    def test_idempotent_preserves_first_claim(self, tmp_path, monkeypatch):
+        journal, f = self._setup(tmp_path, monkeypatch, self._pending())
+        journal.mark_execution_started("r1")
+        first = json.loads(f.read_text())["execution_started_at"]
+        journal.mark_execution_started("r1")
+        assert json.loads(f.read_text())["execution_started_at"] == first
+
+    def test_wrong_run_id_noops(self, tmp_path, monkeypatch):
+        journal, f = self._setup(tmp_path, monkeypatch, self._pending())
+        journal.mark_execution_started("OTHER")
+        assert json.loads(f.read_text())["execution_started_at"] is None
+
+    def test_missing_file_is_safe(self, tmp_path, monkeypatch):
+        import journal
+        monkeypatch.setattr(journal, "PENDING_FILE", str(tmp_path / "nope.json"))
+        journal.mark_execution_started("r1")  # must not raise
+
+    def test_old_envelope_without_field_gains_it(self, tmp_path, monkeypatch):
+        pending = self._pending()
+        del pending["execution_started_at"]  # pre-claim envelope shape
+        journal, f = self._setup(tmp_path, monkeypatch, pending)
+        journal.mark_execution_started("r1")
+        assert json.loads(f.read_text())["execution_started_at"] is not None
+
+
+class TestPreflightGateExecutionClaim(TestPreflightGate):
+    """Gate must treat started-but-never-completed execution as SKIP/DONE."""
+
+    def test_skip_done_when_execution_started_but_not_completed(self, tmp_path):
+        today = self._today_et()
+        self._write(tmp_path, "market_snapshot.json",
+                    {"date": today, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 200}})
+        self._write(tmp_path, "pending_decisions.json",
+                    {"date": today, "run_id": "x", "executed_at": None,
+                     "execution_started_at": "2026-06-12T13:50:00Z"})
+        assert self._run(tmp_path) == 20  # orders may exist — never re-run
+
+    def test_yesterdays_claim_does_not_block_today(self, tmp_path):
+        today = self._today_et()
+        self._write(tmp_path, "market_snapshot.json",
+                    {"date": today, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 200}})
+        self._write(tmp_path, "pending_decisions.json",
+                    {"date": "2020-01-01", "run_id": "x", "executed_at": None,
+                     "execution_started_at": "2020-01-01T13:50:00Z"})
+        assert self._run(tmp_path) == 0  # stale claim from a prior day — PROCEED
