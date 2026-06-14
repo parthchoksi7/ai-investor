@@ -36,13 +36,11 @@ REPORT       = "performance_report.json"
 
 TRADING_DAYS = 252
 
-# California top-bracket combined marginal rates on trading gains (taxable
-# account). Short-term = ordinary income (37% fed + 3.8% NIIT + 13.3% CA);
-# long-term = 20% + 3.8% + 13.3% (CA gives no preferential cap-gains rate).
-# These are estimates for a scorecard, not tax advice — see caveats.
-CA_SHORT_TERM_RATE = 0.54
-CA_LONG_TERM_RATE  = 0.371
-LONG_TERM_DAYS     = 365      # held > 365 days → long-term
+# Tax rates + ST/LT netting live in cost_model (single source of truth, shared
+# with the backtest and the future net-edge gate). Imported into this namespace
+# so performance.CA_SHORT_TERM_RATE / .LONG_TERM_DAYS still resolve.
+from cost_model import CA_SHORT_TERM_RATE, CA_LONG_TERM_RATE, LONG_TERM_DAYS, tax_on_realized
+
 MIN_SIGNIFICANT_DAYS = 60     # pre-registered: fewer trading days → "not significant"
 
 
@@ -302,26 +300,8 @@ def realized_summary(realized_lots: list[dict]) -> dict:
     lt = round(sum(l["gain"] for l in realized_lots if l["term"] == "LT"), 2)
     realized_pretax = round(st + lt, 2)
 
-    # IRS-style netting: net ST and LT separately, then a net loss in one term
-    # offsets a net gain in the other before tax; remaining net loss carries
-    # forward. (The $3k/yr ordinary-income offset cap, cross-YEAR carryover, and
-    # wash-sale disallowance are not modeled.)
-    carryforward = 0.0
-    if st >= 0 and lt >= 0:
-        tax = st * CA_SHORT_TERM_RATE + lt * CA_LONG_TERM_RATE
-    elif st < 0 and lt < 0:
-        tax = 0.0
-        carryforward = -(st + lt)
-    elif st < 0 <= lt:                  # ST loss offsets LT gain
-        net = lt + st
-        tax = max(0.0, net) * CA_LONG_TERM_RATE
-        carryforward = -min(0.0, net)
-    else:                               # lt < 0 <= st: LT loss offsets ST gain
-        net = st + lt
-        tax = max(0.0, net) * CA_SHORT_TERM_RATE
-        carryforward = -min(0.0, net)
-
-    tax = round(tax, 2)
+    # ST/LT netting lives in cost_model (shared with the backtest / live gate).
+    tax, carryforward = tax_on_realized(st, lt)
     return {
         "realized_gain_pretax":    realized_pretax,
         "short_term_gain":         st,

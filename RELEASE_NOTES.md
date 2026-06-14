@@ -13,7 +13,13 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
-_Nothing pending — see the dated release below._
+### Added
+- **`cost_model.py`** — shared cost & tax spine (P1 foundation for the backtest
+  #3 and the future net-edge gate #6). Holds the CA top-bracket tax rates +
+  IRS-style ST/LT netting (`tax_on_realized`), a round-trip cost/slippage
+  estimate (`round_trip_cost`), and `net_edge()` (gross − cost − CA tax).
+  `performance.py` now imports the rates + netting from it (single source of
+  truth), so simulated and live economics can't drift. (+9 tests; suite **245**.)
 
 ---
 
