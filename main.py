@@ -24,8 +24,8 @@ from market_data  import get_market_snapshot
 from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, StalePortfolioError, DRY_RUN
-from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions, close_position, get_ticker_history, recently_exited
-from guardrails   import validate_decisions, enforce_sector_limits
+from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions, close_position, get_ticker_history, recently_exited, _load_list, TRANSACTIONS_FILE
+from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry
 from publish      import publish_to_supabase
 from health       import HealthTracker, OK, DEGRADED, FAILED, ABORTED
 
@@ -210,20 +210,34 @@ def run_daily_cycle():
     # ── Validation gate: deterministic guardrails on LLM output ──────────────
     # Runs AFTER qty pre-computation (notional checks need qty) and BEFORE the
     # decisions reach pending_decisions.json / execution. See guardrails.py.
+    # Load the executed-trade log ONCE and pass it to every guard that needs it
+    # (validate's GFV check + both turnover guards) — one disk read and a single
+    # consistent view, instead of three independent reads of the same file.
+    _txs = _load_list(TRANSACTIONS_FILE)
+
     decisions, validation_report = validate_decisions(
         decisions, portfolio, market_data["prices"],
-        pipeline_state.get("candidates", []), kill_active,
+        pipeline_state.get("candidates", []), kill_active, transactions=_txs,
     )
 
-    # Sector cap (25%) — a code-level control; the limit otherwise lives only
-    # in the PM prompt. Runs after validate_decisions so weight-clamping and
-    # same-ticker conflict rejection are already applied. Rejections fold into
-    # the same decision_validation health check.
+    # Turnover / tax discipline (CA top-bracket taxable account). Every sale is a
+    # short-term gain (~54%), so cut round-trip churn: block SELLs of names bought
+    # < 5 trading days ago, and BUYs of names sold < 30 calendar days ago
+    # (wash-sale + anti-churn). Risk exits are exempt via kill_active. These run
+    # BEFORE the sector cap so the cap projects against the SELL set that will
+    # actually execute — otherwise a SELL dropped here after the cap freed its
+    # sector budget could let a same-sector BUY breach the 25% limit.
+    decisions, holding_rejected = enforce_min_holding_period(decisions, portfolio, transactions=_txs, kill_active=kill_active)
+    decisions, reentry_rejected = enforce_wash_sale_reentry(decisions, transactions=_txs)
+
+    # Sector cap (25%) — a code-level control (the limit otherwise lives only in
+    # the PM prompt). Runs LAST so it sees the post-turnover SELL/BUY set.
     decisions, sector_rejected = enforce_sector_limits(decisions, portfolio)
-    for r in sector_rejected:
+
+    for r in holding_rejected + reentry_rejected + sector_rejected:
         validation_report["rejected"].append(
             {"ticker": r.get("ticker", "?"), "action": r.get("action", "?"),
-             "reason": r.get("rejected_reason", "sector cap")})
+             "reason": r.get("rejected_reason", "turnover/sector guard")})
 
     _interventions = (validation_report["rejected"] + validation_report["modified"]
                       + validation_report["skipped"])

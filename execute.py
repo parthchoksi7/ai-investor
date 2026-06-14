@@ -21,6 +21,13 @@ TRADE_LOG = "trades.csv"
 DRY_RUN   = os.getenv("DRY_RUN", "false").lower() == "true"
 AGENTIC_ACCOUNT = os.getenv("ROBINHOOD_ACCOUNT_NUMBER")
 
+# Paper-shadow scale. The live book is ~$500; the *_100x trade-log columns model
+# the same trades on a hypothetical $50,000 book — same tickers, same prices,
+# qty and dollar value multiplied by SHADOW_MULTIPLIER. Buying 0.5 sh of a $300
+# stock ($150) records a parallel 50 sh / $15,000 shadow trade. Price and
+# target_weight are NOT scaled (price is per-share; weight is a ratio).
+SHADOW_MULTIPLIER = 100
+
 # Hard-blocked tickers — never bought or sold under any circumstances
 BLOCKED_TICKERS = {"TSLA"}
 
@@ -115,7 +122,26 @@ TRADE_LOG_FIELDS = [
     "date", "strategy", "ticker", "action", "qty", "price", "total_value",
     "target_weight", "portfolio_value", "rationale", "broker_order_id", "dry_run",
     "run_id",  # reconciliation key — journal.mark_transactions_live rewrites this run's rows against broker fills
+    # Paper-shadow (100x) columns — a hypothetical $50,000 book trading the same
+    # names at the same prices. qty/value/portfolio scale by SHADOW_MULTIPLIER;
+    # price and target_weight are deliberately not scaled. Backfilled for old
+    # rows by _migrate_trade_log from the base columns.
+    "qty_100x", "total_value_100x", "portfolio_value_100x",
 ]
+
+
+def _scaled(value, decimals: int) -> str:
+    """Return value × SHADOW_MULTIPLIER formatted to `decimals`, or "" if blank.
+
+    Accepts a float or a numeric CSV string. Empty/None/non-numeric → "" so the
+    shadow column mirrors an empty base column rather than writing a bogus 0.
+    """
+    if value in (None, ""):
+        return ""
+    try:
+        return f"{float(value) * SHADOW_MULTIPLIER:.{decimals}f}"
+    except (TypeError, ValueError):
+        return ""
 
 
 def _migrate_trade_log() -> None:
@@ -136,7 +162,17 @@ def _migrate_trade_log() -> None:
         writer = csv.DictWriter(f, fieldnames=TRADE_LOG_FIELDS, extrasaction="ignore")
         writer.writeheader()
         for row in rows:
-            writer.writerow({k: row.get(k, "") for k in TRADE_LOG_FIELDS})
+            out = {k: row.get(k, "") for k in TRADE_LOG_FIELDS}
+            # Backfill the paper-shadow columns for older rows that predate them,
+            # derived from the base columns (×100). Only fill when empty so a
+            # value already present (e.g. a reconciled row) is never clobbered.
+            if not out["qty_100x"]:
+                out["qty_100x"] = _scaled(row.get("qty"), 6)
+            if not out["total_value_100x"]:
+                out["total_value_100x"] = _scaled(row.get("total_value"), 2)
+            if not out["portfolio_value_100x"]:
+                out["portfolio_value_100x"] = _scaled(row.get("portfolio_value"), 2)
+            writer.writerow(out)
     os.replace(tmp, TRADE_LOG)
     print(f"   🔁 Migrated {TRADE_LOG} header to current schema ({len(rows)} row(s) preserved)")
 
@@ -202,6 +238,10 @@ def log_trades(
                 "broker_order_id": order_id,
                 "dry_run":         str(DRY_RUN),
                 "run_id":          run_id,
+                # Paper-shadow (100x): same price, qty/value/portfolio ×100.
+                "qty_100x":             _scaled(qty, 6),
+                "total_value_100x":     _scaled(total_value, 2),
+                "portfolio_value_100x": _scaled(portfolio["total_value"], 2),
             })
 
     print(f"   📝 Trades logged to {TRADE_LOG}")

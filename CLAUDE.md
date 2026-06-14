@@ -300,6 +300,26 @@ This prevents the silent all-50 quant score failure mode where agents run but pr
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
 
+## Changelog — Jun 14 2026 (paper-shadow + after-tax + turnover discipline)
+
+Edge-upgrade batch P0/P0.5 from the FINAL_PLAN roadmap. All changes are
+code/data; no live routine prompt change required. The turnover guards run in the
+`main.py` trade path (after the sector cap, inside the `decision_validation`
+health check); the after-tax scorecard and 100× columns are reporting/logging
+only. Newest first.
+
+| Change | Why it mattered |
+|--------|-----------------|
+| `feat(perf)` **after-tax scorecard** (`performance.py`) — realized gain and after-tax realized gain tracked **separately** via FIFO lot-matching; CA top-bracket rates (ST ≈54%, LT ≈37.1%); SELLs with no in-log basis reported "uncovered" not guessed; vs SPY-buy-and-hold; `not_significant` flag < 60 days. | The pre-mortem's #1 unaddressed risk: we measured **pre-tax** return. For a CA top-bracket taxable account every churned gain is ~54% short-term — the only honest metric is after-tax-vs-hold-SPY. |
+| `feat(guardrails)` **turnover/tax discipline** — `enforce_min_holding_period` (block SELL of a name bought < 5 trading days ago; risk exits exempt) + `enforce_wash_sale_reentry` (block BUY of a name sold < 30 calendar days ago). Wired in `main.py`, folded into `decision_validation`. | Weekly momentum rotation is tax-suicidal at ~54% ST. These cut the documented churn; `enforce_wash_sale_reentry` hardens the soft 10-day `recently_exited` warning into a 30-day control. |
+| `feat(execute)` **paper-shadow 100× columns** on `trades.csv` (`qty_100x`, `total_value_100x`, `portfolio_value_100x`) — `SHADOW_MULTIPLIER`/`_scaled`; old rows backfilled; reconciliation keeps `total_value_100x` synced to the fill. | Models a $50,000 book at the same prices for a usable performance lens. **Caveat:** linear projection (zero market impact), not proof of scale — a real paper account is roadmap P4. |
+| `docs(process)` **`RELEASE_NOTES.md`** + DEPLOYMENT.md **§7.0 pre-deploy gates** (update release notes; expert `/code-review` before commit) + CLAUDE.md "Deployment gates"; `TestReleaseNotes` guards the `[Unreleased]` section. | No user-facing release log existed, and deploys shipped without a mandated expert review step. |
+| `docs(plan)` **`SOLUTION_PLANS.md`** + **`FINAL_PLAN.md`** — expert-panel designs for #1/#2/#3/#5/#6/#9, phased roadmap, CA tax recalibration, Shreyas-Doshi pre-mortem. | Decision-ready plan for the edge upgrades; spine principle: backtest deterministic layers, forward-test the LLM. |
+
+> **Pre-deploy code review (§7.0.2) fixes folded in:** (1) `realized_summary` nets ST/LT gains/losses per IRS ordering (was taxing gains in full while crediting losses fully against after-tax); (2) turnover guards run BEFORE the sector cap in `main.py` so the cap sees the executable SELL set (a dropped SELL could otherwise let a same-sector BUY breach 25%); (3) `validate_decisions` + both turnover guards share a single `transactions.json` read; (4) `_last_live_*_date` DRY'd, min-holding skips the read under kill switch.
+>
+> **QA:** full `pytest` green (**236**, +31 new: `TestPaperShadowColumns`, `TestRealizedLots`, `TestRealizedSummary`, `TestAfterTaxScorecard`, `TestMinHoldingPeriod`, `TestWashSaleReentry`, `TestReleaseNotes`). Expert `/code-review` run pre-commit per the new §7.0 gate. A real `DRY_RUN main.py` was **not** run (the snapshot is from 6/12 → preflight-abort, and running it would overwrite `pending_decisions.json`) — validated via the test suite + targeted integration checks instead.
+
 ## Changelog — Jun 13 2026 (IMPROVEMENTS_SPEC evaluation batch)
 
 Critical evaluation + selective implementation of `IMPROVEMENTS_SPEC.md` (a phased work order written from a partial read of the repo). Three of its phases were rejected on inspection; six were implemented. No live routine prompt change is required — all changes are code/data, and the cloud routine's STEP 4/5 protocol is unchanged. Newest first.
@@ -424,6 +444,15 @@ Mitigations (in order of robustness):
 - `default_workflow_permissions = read`. This is fine **because every workflow that pushes declares its own `permissions: contents: write`.** Flipping Settings → Actions → Workflow permissions to "Read and write" is optional defense-in-depth, not a fix.
 - Branch protection on `main`: not enabled (private repo on the free plan). Bot accounts push directly without obstruction.
 - Actions secrets present: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `POLYGON_API_KEY`, `ANTHROPIC_API_KEY`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`.
+
+## Deployment gates (run before every deploy)
+
+Two mandatory pre-commit gates, authoritative copy in DEPLOYMENT.md §7.0:
+1. **Update `RELEASE_NOTES.md`** — describe the change under `[Unreleased]`, and on
+   deploy move it into a new `## [YYYY-MM-DD] — … · ~HH:MM PT · <hash>` block.
+   (`TestReleaseNotes` asserts an `[Unreleased]` section exists.)
+2. **Expert code review** — `/code-review high` (or `/code-review ultra` for P0
+   execution-path changes); resolve every finding before committing.
 
 ## Pre-Run QA Checklist (run before market open or after any CI change)
 

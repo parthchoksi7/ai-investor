@@ -931,6 +931,71 @@ class TestTradeLogMigration:
         assert rows[1]["target_weight"] == "0.0500"
 
 
+class TestPaperShadowColumns:
+    """Parallel *_100x columns model a 100x ($50,000) book: same price, qty and
+    dollar value scaled by SHADOW_MULTIPLIER; price and target_weight unscaled."""
+
+    def _patch(self, tmp_path, monkeypatch):
+        import execute
+        log = tmp_path / "trades.csv"
+        monkeypatch.setattr(execute, "TRADE_LOG", str(log))
+        monkeypatch.setattr(execute, "DRY_RUN", True)
+        return execute, log
+
+    def test_fresh_write_scales_qty_value_portfolio(self, tmp_path, monkeypatch):
+        import csv
+        execute, log = self._patch(tmp_path, monkeypatch)
+        # 0.5 sh @ $300 = $150 on a $500 book → 50 sh / $15,000 / $50,000 shadow
+        execute.log_trades(
+            [{"ticker": "AAPL", "action": "BUY", "target_weight": 0.30,
+              "qty": 0.5, "rationale": "demo"}],
+            {"total_value": 500.0, "positions": []},
+            prices={"AAPL": {"close": 300.0}}, run_id="r1")
+        r = list(csv.DictReader(log.open()))[0]
+        assert r["qty_100x"] == "50.000000"
+        assert r["total_value"] == "150.00" and r["total_value_100x"] == "15000.00"
+        assert r["portfolio_value"] == "500.00" and r["portfolio_value_100x"] == "50000.00"
+        assert r["price"] == "300.0000"          # price NOT scaled (per-share)
+        assert r["target_weight"] == "0.3000"    # ratio NOT scaled
+
+    def test_migration_backfills_shadow_from_base(self, tmp_path, monkeypatch):
+        import csv
+        execute, log = self._patch(tmp_path, monkeypatch)
+        # a pre-shadow 13-column row with base values present
+        old_header = ("date,strategy,ticker,action,qty,price,total_value,"
+                      "target_weight,portfolio_value,rationale,broker_order_id,"
+                      "dry_run,run_id")
+        log.write_text(old_header + "\n"
+                       "2026-06-01,institutional,AAPL,BUY,1.5,300.0000,450.00,"
+                       "0.0900,500.00,old,xyz,False,r0\n")
+        execute._migrate_trade_log()
+        r = list(csv.DictReader(log.open()))[0]
+        assert r["qty_100x"] == "150.000000"
+        assert r["total_value_100x"] == "45000.00"
+        assert r["portfolio_value_100x"] == "50000.00"
+
+    def test_blank_base_yields_blank_shadow(self, tmp_path, monkeypatch):
+        execute, _ = self._patch(tmp_path, monkeypatch)
+        assert execute._scaled("", 2) == ""
+        assert execute._scaled(None, 6) == ""
+        assert execute._scaled("not-a-number", 2) == ""
+        assert execute._scaled(1.5, 6) == "150.000000"
+
+    def test_reconcile_keeps_shadow_in_sync(self, tmp_path, monkeypatch):
+        import csv, journal
+        execute, log = self._patch(tmp_path, monkeypatch)
+        execute.log_trades(
+            [{"ticker": "AAPL", "action": "BUY", "target_weight": 0.30,
+              "qty": 0.5, "rationale": "demo"}],
+            {"total_value": 500.0, "positions": []},
+            prices={"AAPL": {"close": 300.0}}, run_id="r1")
+        # broker filled at $310, not $300 → total_value and its 100x twin update
+        journal._reconcile_trade_log("r1", {"AAPL": {"order_id": "abc", "price": 310.0}})
+        r = list(csv.DictReader(log.open()))[0]
+        assert r["total_value"] == "155.00"
+        assert r["total_value_100x"] == "15500.00"
+
+
 # ── execute.order_executed — broker result classification ────────────────────
 
 class TestOrderExecuted:
@@ -2140,3 +2205,294 @@ class TestPerformanceReport:
                                           str(tmp_path / "none2.json"))
         assert report["trading_days"] == 0
         assert report["inception"] is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  After-tax scorecard — realized gain vs AFTER-tax realized gain (CA top bracket)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestRealizedLots:
+    """FIFO lot-matching of SELLs against prior BUYs. Cost basis is never guessed:
+    a SELL with no in-log BUY is reported as 'uncovered', not assigned a basis."""
+
+    def _tx(self, action, ticker, qty, price, date):
+        return {"action": action, "ticker": ticker, "qty": qty, "price": price,
+                "date": date, "timestamp": date + "T00:00:00+00:00"}
+
+    def test_simple_round_trip_gain(self):
+        import performance
+        txs = [self._tx("BUY", "AAPL", 10, 100.0, "2026-01-02"),
+               self._tx("SELL", "AAPL", 10, 120.0, "2026-01-09")]
+        realized, uncovered = performance.compute_realized_lots(txs)
+        assert uncovered == []
+        assert len(realized) == 1
+        assert realized[0]["gain"] == 200.0
+        assert realized[0]["term"] == "ST"
+
+    def test_round_trip_loss(self):
+        import performance
+        txs = [self._tx("BUY", "AAPL", 10, 100.0, "2026-01-02"),
+               self._tx("SELL", "AAPL", 10, 80.0, "2026-01-09")]
+        realized, _ = performance.compute_realized_lots(txs)
+        assert realized[0]["gain"] == -200.0
+
+    def test_fifo_partial_consumes_oldest_lot_first(self):
+        import performance
+        txs = [self._tx("BUY", "AAPL", 10, 100.0, "2026-01-02"),
+               self._tx("BUY", "AAPL", 10, 110.0, "2026-01-03"),
+               self._tx("SELL", "AAPL", 15, 130.0, "2026-01-10")]
+        realized, uncovered = performance.compute_realized_lots(txs)
+        assert uncovered == []
+        # 10 @100 (gain 300) + 5 @110 (gain 100) = 400 across two lots
+        assert len(realized) == 2
+        assert realized[0]["gain"] == 300.0 and realized[0]["buy_price"] == 100.0
+        assert realized[1]["gain"] == 100.0 and realized[1]["qty"] == 5.0
+
+    def test_uncovered_sell_has_no_basis(self):
+        import performance
+        txs = [self._tx("SELL", "AAPL", 5, 100.0, "2026-01-09")]  # no prior buy
+        realized, uncovered = performance.compute_realized_lots(txs)
+        assert realized == []
+        assert uncovered == [{"ticker": "AAPL", "qty": 5.0, "sell_date": "2026-01-09"}]
+
+    def test_partial_uncovered_sell_splits(self):
+        import performance
+        txs = [self._tx("BUY", "AAPL", 3, 100.0, "2026-01-02"),
+               self._tx("SELL", "AAPL", 5, 120.0, "2026-01-09")]  # 3 covered, 2 uncovered
+        realized, uncovered = performance.compute_realized_lots(txs)
+        assert realized[0]["qty"] == 3.0 and realized[0]["gain"] == 60.0
+        assert uncovered == [{"ticker": "AAPL", "qty": 2.0, "sell_date": "2026-01-09"}]
+
+    def test_long_term_classification(self):
+        import performance
+        txs = [self._tx("BUY", "AAPL", 1, 100.0, "2025-01-02"),
+               self._tx("SELL", "AAPL", 1, 150.0, "2026-06-01")]  # > 365 days
+        realized, _ = performance.compute_realized_lots(txs)
+        assert realized[0]["term"] == "LT"
+
+    def test_dry_run_excluded(self):
+        import performance
+        txs = [{**self._tx("BUY", "AAPL", 10, 100.0, "2026-01-02"), "dry_run": True},
+               self._tx("SELL", "AAPL", 10, 120.0, "2026-01-09")]
+        realized, uncovered = performance.compute_realized_lots(txs)
+        assert realized == []  # the buy was dry_run → sell is uncovered
+        assert uncovered[0]["qty"] == 10.0
+
+
+class TestRealizedSummary:
+    """Realized gain (pre-tax) and realized gain (AFTER tax) tracked separately."""
+
+    def test_short_term_gain_taxed_at_ca_rate(self):
+        import performance
+        s = performance.realized_summary([
+            {"term": "ST", "gain": 200.0}, {"term": "ST", "gain": 100.0}])
+        assert s["realized_gain_pretax"] == 300.0
+        assert s["realized_tax_estimate"] == round(300.0 * performance.CA_SHORT_TERM_RATE, 2)
+        assert s["realized_gain_after_tax"] == round(300.0 - 300.0 * performance.CA_SHORT_TERM_RATE, 2)
+        assert s["realized_gain_after_tax"] < s["realized_gain_pretax"]   # separate, smaller
+
+    def test_net_loss_has_no_tax_and_carries_forward(self):
+        import performance
+        s = performance.realized_summary([{"term": "ST", "gain": -150.0}])
+        assert s["realized_tax_estimate"] == 0.0
+        assert s["realized_gain_after_tax"] == -150.0
+        assert s["loss_carryforward"] == 150.0
+
+    def test_st_and_lt_taxed_at_their_own_rates(self):
+        import performance
+        s = performance.realized_summary([{"term": "ST", "gain": 100.0},
+                                          {"term": "LT", "gain": 100.0}])
+        expect = round(100 * performance.CA_SHORT_TERM_RATE + 100 * performance.CA_LONG_TERM_RATE, 2)
+        assert s["realized_tax_estimate"] == expect
+        assert s["short_term_gain"] == 100.0 and s["long_term_gain"] == 100.0
+
+    def test_lt_loss_offsets_st_gain_before_tax(self):
+        # IRS netting: ST +1000, LT -400 → 600 taxable at the ST rate, no carryforward
+        import performance
+        s = performance.realized_summary([{"term": "ST", "gain": 1000.0},
+                                          {"term": "LT", "gain": -400.0}])
+        assert s["realized_gain_pretax"] == 600.0
+        assert s["realized_tax_estimate"] == round(600.0 * performance.CA_SHORT_TERM_RATE, 2)
+        assert s["realized_gain_after_tax"] == round(600.0 - 600.0 * performance.CA_SHORT_TERM_RATE, 2)
+        assert s["loss_carryforward"] == 0.0
+
+    def test_loss_exceeding_gain_carries_remainder(self):
+        # ST -1500 vs LT +1000 → ST loss wipes the LT gain (no tax), 500 carries
+        import performance
+        s = performance.realized_summary([{"term": "ST", "gain": -1500.0},
+                                          {"term": "LT", "gain": 1000.0}])
+        assert s["realized_tax_estimate"] == 0.0
+        assert s["loss_carryforward"] == 500.0
+
+
+class TestAfterTaxScorecard:
+    def _curve_files(self, tmp_path, port_curve, spy_curve):
+        log = [{"date": d, "portfolio_snapshot": {"total_value": v}} for d, v in port_curve]
+        snap = {"history": {"SPY": [{"date": d, "close": c} for d, c in spy_curve]}}
+        lp = tmp_path / "agent_log.json"; lp.write_text(json.dumps(log))
+        sp = tmp_path / "snap.json";       sp.write_text(json.dumps(snap))
+        return str(lp), str(sp)
+
+    def test_beats_spy_pretax_but_loses_after_ca_tax(self, tmp_path):
+        """The pre-mortem's 'death by taxes' case, locked in: +20% pre-tax beats
+        SPY +10%, but after ~54% CA short-term tax the strategy (+9.2%) LOSES."""
+        import performance
+        lp, sp = self._curve_files(
+            tmp_path,
+            [("2026-01-02", 1000.0), ("2026-01-09", 1200.0)],
+            [("2026-01-02", 100.0),  ("2026-01-09", 110.0)])
+        txs = [{"action": "BUY", "ticker": "AAPL", "qty": 10, "price": 100.0,
+                "date": "2026-01-02", "timestamp": "2026-01-02T00:00:00+00:00"},
+               {"action": "SELL", "ticker": "AAPL", "qty": 10, "price": 120.0,
+                "date": "2026-01-09", "timestamp": "2026-01-09T00:00:00+00:00"}]
+        s = performance.after_tax_scorecard(
+            transactions=txs, portfolio={"positions": [], "total_value": 1200.0},
+            agent_log_path=lp, snapshot_path=sp)
+        assert s["realized"]["realized_gain_pretax"] == 200.0
+        assert s["realized"]["realized_tax_estimate"] == 108.0       # 200 * 0.54
+        assert s["realized"]["realized_gain_after_tax"] == 92.0      # separate tracking
+        assert s["strategy_return"] == 0.20
+        assert s["spy_hold_return"] == pytest.approx(0.10, abs=1e-9)
+        assert s["strategy_return_after_tax"] == pytest.approx(0.092, abs=1e-9)  # (1200-108)/1000-1
+        assert s["after_tax_alpha_vs_spy"] < 0   # the headline: tax turns alpha negative
+
+    def test_flags_not_significant_under_threshold(self, tmp_path):
+        import performance
+        lp, sp = self._curve_files(
+            tmp_path,
+            [("2026-01-02", 1000.0), ("2026-01-09", 1010.0)],
+            [("2026-01-02", 100.0),  ("2026-01-09", 101.0)])
+        s = performance.after_tax_scorecard(transactions=[], portfolio={"positions": []},
+                                            agent_log_path=lp, snapshot_path=sp)
+        assert s["not_significant"] is True
+        assert any("NOT STATISTICALLY SIGNIFICANT" in c for c in s["caveats"])
+
+    def test_uncovered_sells_surfaced_not_guessed(self, tmp_path):
+        import performance
+        lp, sp = self._curve_files(tmp_path, [("2026-01-02", 1000.0)], [("2026-01-02", 100.0)])
+        txs = [{"action": "SELL", "ticker": "MRK", "qty": 0.3, "price": 122.0,
+                "date": "2026-01-02", "timestamp": "2026-01-02T00:00:00+00:00"}]
+        s = performance.after_tax_scorecard(transactions=txs, portfolio={"positions": []},
+                                            agent_log_path=lp, snapshot_path=sp)
+        assert s["realized"]["realized_gain_pretax"] == 0.0
+        assert len(s["uncovered_sells"]) == 1 and s["uncovered_sells"][0]["ticker"] == "MRK"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Turnover / tax discipline guardrails (CA top-bracket taxable account)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestMinHoldingPeriod:
+    """Block discretionary SELLs of names bought < 5 trading days ago (anti-churn)."""
+
+    def _txs(self, *buys):
+        return [{"ticker": t, "action": "BUY", "date": d, "dry_run": False} for t, d in buys]
+
+    def test_blocks_recent_buy(self):
+        import guardrails
+        # bought Fri 2026-06-12, selling Mon 2026-06-15 → 1 trading day < 5
+        kept, rej = guardrails.enforce_min_holding_period(
+            [{"ticker": "MRK", "action": "SELL", "target_weight": 0.0}],
+            {"positions": []}, transactions=self._txs(("MRK", "2026-06-12")),
+            today="2026-06-15")
+        assert kept == [] and len(rej) == 1
+        assert "min-holding" in rej[0]["rejected_reason"]
+
+    def test_allows_old_buy(self):
+        import guardrails
+        kept, rej = guardrails.enforce_min_holding_period(
+            [{"ticker": "MRK", "action": "SELL", "target_weight": 0.0}],
+            {"positions": []}, transactions=self._txs(("MRK", "2026-06-01")),
+            today="2026-06-12")
+        assert len(kept) == 1 and rej == []
+
+    def test_allows_sell_with_no_in_log_buy(self):
+        # a position opened before logging began must be exitable
+        import guardrails
+        kept, rej = guardrails.enforce_min_holding_period(
+            [{"ticker": "MRK", "action": "SELL", "target_weight": 0.0}],
+            {"positions": []}, transactions=[], today="2026-06-15")
+        assert len(kept) == 1 and rej == []
+
+    def test_kill_active_exempts_all(self):
+        import guardrails
+        kept, rej = guardrails.enforce_min_holding_period(
+            [{"ticker": "MRK", "action": "SELL", "target_weight": 0.0}],
+            {"positions": []}, transactions=self._txs(("MRK", "2026-06-12")),
+            kill_active=True, today="2026-06-15")
+        assert len(kept) == 1 and rej == []
+
+    def test_buys_and_holds_pass_through(self):
+        import guardrails
+        kept, rej = guardrails.enforce_min_holding_period(
+            [{"ticker": "AAPL", "action": "BUY"}, {"ticker": "MS", "action": "HOLD"}],
+            {"positions": []}, transactions=self._txs(("AAPL", "2026-06-12")),
+            today="2026-06-15")
+        assert len(kept) == 2 and rej == []
+
+
+class TestWashSaleReentry:
+    """Block BUYs of names SOLD within 30 calendar days (wash-sale + anti-churn)."""
+
+    def _txs(self, *sells):
+        return [{"ticker": t, "action": "SELL", "date": d, "dry_run": False} for t, d in sells]
+
+    def test_blocks_reentry_within_window(self):
+        import guardrails
+        kept, rej = guardrails.enforce_wash_sale_reentry(
+            [{"ticker": "MRK", "action": "BUY", "target_weight": 0.08}],
+            transactions=self._txs(("MRK", "2026-06-12")), today="2026-06-15")
+        assert kept == [] and len(rej) == 1
+        assert "wash-sale" in rej[0]["rejected_reason"]
+
+    def test_allows_reentry_after_window(self):
+        import guardrails
+        kept, rej = guardrails.enforce_wash_sale_reentry(
+            [{"ticker": "MRK", "action": "BUY", "target_weight": 0.08}],
+            transactions=self._txs(("MRK", "2026-05-01")), today="2026-06-15")  # 45 days
+        assert len(kept) == 1 and rej == []
+
+    def test_allows_buy_never_sold(self):
+        import guardrails
+        kept, rej = guardrails.enforce_wash_sale_reentry(
+            [{"ticker": "NVDA", "action": "BUY", "target_weight": 0.08}],
+            transactions=[], today="2026-06-15")
+        assert len(kept) == 1 and rej == []
+
+    def test_dry_run_sell_ignored(self):
+        import guardrails
+        txs = [{"ticker": "MRK", "action": "SELL", "date": "2026-06-12", "dry_run": True}]
+        kept, rej = guardrails.enforce_wash_sale_reentry(
+            [{"ticker": "MRK", "action": "BUY", "target_weight": 0.08}],
+            transactions=txs, today="2026-06-15")
+        assert len(kept) == 1 and rej == []
+
+    def test_sell_and_hold_pass_through(self):
+        import guardrails
+        kept, rej = guardrails.enforce_wash_sale_reentry(
+            [{"ticker": "MRK", "action": "SELL"}, {"ticker": "MS", "action": "HOLD"}],
+            transactions=self._txs(("MRK", "2026-06-14")), today="2026-06-15")
+        assert len(kept) == 2 and rej == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Deploy gate — RELEASE_NOTES.md must be maintained (DEPLOYMENT.md §7.0.1)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestReleaseNotes:
+    """Forces every code deploy to record what shipped: RELEASE_NOTES.md must
+    exist and carry an [Unreleased] section to move into a dated block on deploy."""
+
+    def _path(self):
+        import os
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "RELEASE_NOTES.md")
+
+    def test_release_notes_file_exists(self):
+        import os
+        assert os.path.isfile(self._path()), "RELEASE_NOTES.md is missing (DEPLOYMENT.md §7.0.1)"
+
+    def test_has_unreleased_section(self):
+        with open(self._path()) as f:
+            text = f.read()
+        assert "## [Unreleased]" in text, \
+            "RELEASE_NOTES.md needs an '## [Unreleased]' section for the next deploy"
