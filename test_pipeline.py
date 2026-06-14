@@ -2787,28 +2787,30 @@ class TestDataProviders:
         assert p.estimates("AAPL") is None
 
     def test_fmp_fundamentals_field_mapping(self, monkeypatch):
+        # stable API: margins/debt/PE from ratios-ttm, FCF-yield/EV from key-metrics-ttm
         from data_providers import FMPProvider
         p = FMPProvider(api_key="x")
-        monkeypatch.setattr(p, "_get", lambda *a, **k: [{
-            "grossProfitMarginTTM": 0.4612, "operatingProfitMarginTTM": 0.301,
-            "debtEquityRatioTTM": 1.23, "peRatioTTM": 28.4,
-            "freeCashFlowYieldTTM": 0.035, "enterpriseValueMultipleTTM": 19.1,
-            "freeCashFlowPerShareTTM": 6.0, "revenuePerShareTTM": 24.0,
-        }])
+        def fake_get(path, **k):
+            if path == "ratios-ttm":
+                return [{"grossProfitMarginTTM": 0.4612, "operatingProfitMarginTTM": 0.301,
+                         "debtToEquityRatioTTM": 1.23, "priceToEarningsRatioTTM": 28.4}]
+            if path == "key-metrics-ttm":
+                return [{"freeCashFlowYieldTTM": 0.035, "evToEBITDATTM": 19.1}]
+            return None
+        monkeypatch.setattr(p, "_get", fake_get)
         f = p.fundamentals("AAPL")
         assert f["gross_margin"] == 0.4612 and f["operating_margin"] == 0.301
         assert f["debt_to_equity"] == 1.23 and f["pe_ratio"] == 28.4
         assert f["fcf_yield"] == 0.035 and f["ev_ebitda"] == 19.1
-        assert f["fcf_margin"] == 0.25                # 6.0 / 24.0
 
     def test_fmp_next_earnings_picks_soonest_future(self, monkeypatch):
+        # stable 'earnings' endpoint: per-symbol rows with a date (epsActual null = upcoming)
         from data_providers import FMPProvider
         p = FMPProvider(api_key="x")
         monkeypatch.setattr(p, "_get", lambda *a, **k: [
-            {"symbol": "AAPL", "date": "2020-01-01"},   # past → ignored
-            {"symbol": "AAPL", "date": "2099-09-09"},
-            {"symbol": "AAPL", "date": "2099-07-01"},   # soonest future
-            {"symbol": "MSFT", "date": "2099-06-01"},   # wrong ticker → ignored
+            {"date": "2020-01-01", "epsActual": 1.0},    # past → ignored
+            {"date": "2099-09-09", "epsActual": None},
+            {"date": "2099-07-01", "epsActual": None},   # soonest future
         ])
         assert p.next_earnings_date("AAPL") == "2099-07-01"
 
