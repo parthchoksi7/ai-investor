@@ -2868,3 +2868,73 @@ class TestEarningsGateAndFabrication:
         r = analysis.run_earnings_catalyst_analyst("AAPL", self._md(calendar={"AAPL": "2026-07-01"}))
         assert r["next_earnings_est"] == "2026-07-01"        # verified calendar wins
         assert r["next_earnings_est_model"] == "2026-08-15" and r["earnings_date_corrected"] is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  #6 — tax-lot accounting + net-edge gate (reject BUYs not worth it after CA tax)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestTaxLots:
+    def _tx(self, action, ticker, qty, price, date, dry=False):
+        return {"action": action, "ticker": ticker, "qty": qty, "price": price,
+                "date": date, "timestamp": date + "T00:00:00+00:00", "dry_run": dry}
+
+    def test_open_lots_after_fifo(self):
+        import tax_lots
+        txs = [self._tx("BUY", "AAPL", 10, 100, "2026-01-02"),
+               self._tx("BUY", "AAPL", 10, 110, "2026-01-03"),
+               self._tx("SELL", "AAPL", 15, 130, "2026-01-10")]
+        lots = tax_lots.open_lots(txs, "AAPL")
+        # FIFO: first lot (10@100) fully consumed; second (10@110) reduced to 5
+        assert len(lots) == 1
+        assert lots[0]["qty"] == 5.0 and lots[0]["cost_basis"] == 110
+        assert lots[0]["acquired"] == "2026-01-03"
+
+    def test_open_lots_excludes_dry_run(self):
+        import tax_lots
+        assert tax_lots.open_lots([self._tx("BUY", "X", 5, 10, "2026-01-01", dry=True)], "X") == []
+
+    def test_holding_days(self):
+        import tax_lots
+        assert tax_lots.holding_days("2026-01-01", "2026-01-31") == 30
+        assert tax_lots.holding_days("bad", "2026-01-31") is None
+
+
+class TestNetEdgeGate:
+    def _prices(self):
+        return {"NVDA": {"close": 100.0}}
+
+    def test_no_expected_return_passes_through(self):
+        import guardrails as g
+        kept, rej = g.enforce_net_edge([{"ticker": "NVDA", "action": "BUY", "qty": 4}], self._prices())
+        assert len(kept) == 1 and rej == []          # not evaluated without expected_return
+
+    def test_sell_is_exempt(self):
+        import guardrails as g
+        kept, rej = g.enforce_net_edge(
+            [{"ticker": "NVDA", "action": "SELL", "qty": 4, "expected_return": 0.01}], self._prices())
+        assert len(kept) == 1 and rej == []
+
+    def test_marginal_buy_rejected_after_tax(self):
+        import guardrails as g
+        # 0.01% expected on a $400 BUY: gross $0.04 < cost $0.12 → net < 0
+        kept, rej = g.enforce_net_edge(
+            [{"ticker": "NVDA", "action": "BUY", "qty": 4, "expected_return": 0.0001}],
+            self._prices(), min_net_edge=0.0)
+        assert kept == [] and len(rej) == 1 and "net edge" in rej[0]["rejected_reason"]
+
+    def test_healthy_edge_kept(self):
+        import guardrails as g
+        # 10% on $400 = $40 gross; net after ~54% tax ≈ $18 > 0 → kept
+        kept, rej = g.enforce_net_edge(
+            [{"ticker": "NVDA", "action": "BUY", "qty": 4, "expected_return": 0.10}],
+            self._prices(), min_net_edge=0.0)
+        assert len(kept) == 1 and rej == []
+
+    def test_tunable_floor_rejects(self):
+        import guardrails as g
+        # same ~$18 net edge, but a $25 floor rejects it
+        kept, rej = g.enforce_net_edge(
+            [{"ticker": "NVDA", "action": "BUY", "qty": 4, "expected_return": 0.10}],
+            self._prices(), min_net_edge=25.0)
+        assert kept == [] and len(rej) == 1

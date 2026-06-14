@@ -790,9 +790,14 @@ OUTPUT: Return ONLY a JSON array. Each element:
   "action": "BUY | SELL",
   "target_weight": 0.00–0.10,
   "source_of_capital": "ticker being reduced, or 'cash'",
+  "expected_return": 0.05,
   "rationale": "one sentence"
 }}
-Omit HOLD decisions. Return [] if no trades improve portfolio expected value."""
+"expected_return" = your estimate of the trade's GROSS return over the 1–3 month
+horizon, as a decimal fraction (e.g. 0.05 = +5%). Be honest and conservative — a
+downstream gate rejects BUYs whose expected return, after ~54% CA short-term tax
+and trading cost, is not worth it. Omit HOLD decisions. Return [] if no trades
+improve portfolio expected value."""
 
     return _safe_call(
         MODEL_SMART, _PM_SYSTEM, user_msg,
