@@ -72,7 +72,7 @@ This runs automatically with real money. There is no human in the loop.
 
 Always activate the virtual environment first. Every Python command in this document assumes it is active:
 ```bash
-cd /Users/parthchoksi/ai-projects/ai-investor
+cd /path/to/ai-investor
 source venv/bin/activate
 # You should see (venv) at the start of your prompt
 ```
@@ -1196,7 +1196,7 @@ grep DRY_RUN .env
 If you see `ModuleNotFoundError: No module named 'anthropic'` or similar, you forgot `source venv/bin/activate`. Every Python command in this document assumes the venv is active.
 
 **Running tests from the wrong directory**
-All tests must be run from `/Users/parthchoksi/ai-projects/ai-investor/` (the project root). If you `cd` somewhere else, imports will fail. Check:
+All tests must be run from `/path/to/ai-investor/` (the project root). If you `cd` somewhere else, imports will fail. Check:
 ```bash
 pwd  # should print the project root
 ```
