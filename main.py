@@ -25,7 +25,7 @@ from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, StalePortfolioError, DRY_RUN
 from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions, close_position, get_ticker_history, recently_exited, _load_list, TRANSACTIONS_FILE
-from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry
+from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge
 from publish      import publish_to_supabase
 from health       import HealthTracker, OK, DEGRADED, FAILED, ABORTED
 
@@ -231,13 +231,18 @@ def run_daily_cycle():
     decisions, reentry_rejected = enforce_wash_sale_reentry(decisions, transactions=_txs)
 
     # Sector cap (25%) — a code-level control (the limit otherwise lives only in
-    # the PM prompt). Runs LAST so it sees the post-turnover SELL/BUY set.
+    # the PM prompt). Runs after turnover filtering so it sees the post-turnover set.
     decisions, sector_rejected = enforce_sector_limits(decisions, portfolio)
 
-    for r in holding_rejected + reentry_rejected + sector_rejected:
+    # Net-edge gate (#6) — reject a BUY whose expected return, after round-trip
+    # cost + CA short-term tax, falls below the floor. No-op until the PM emits an
+    # expected_return; SELLs exempt. Runs last (final economic filter).
+    decisions, netedge_rejected = enforce_net_edge(decisions, market_data["prices"])
+
+    for r in holding_rejected + reentry_rejected + sector_rejected + netedge_rejected:
         validation_report["rejected"].append(
             {"ticker": r.get("ticker", "?"), "action": r.get("action", "?"),
-             "reason": r.get("rejected_reason", "turnover/sector guard")})
+             "reason": r.get("rejected_reason", "turnover/sector/net-edge guard")})
 
     _interventions = (validation_report["rejected"] + validation_report["modified"]
                       + validation_report["skipped"])
