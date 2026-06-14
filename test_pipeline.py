@@ -1293,10 +1293,17 @@ class TestPublishSpyDataSource:
             if "publish" in sys.modules:
                 del sys.modules["publish"]
 
+    def _et_today(self):
+        # publish._fetch_spy_from_snapshot uses ET; the test's "today" must match
+        # it or the snapshot reads as stale during the ET/PT date-straddle window
+        # (~9pm–midnight Pacific), making this test fail ~3 hours every day.
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+
     def test_happy_path_reads_spy_from_snapshot(self, tmp_path):
         """Returns SPY close from market_snapshot.json when dated today."""
-        from datetime import date
-        today = date.today().isoformat()
+        today = self._et_today()
         self._write(tmp_path, "market_snapshot.json", {
             "date": today,
             "prices": {"SPY": {"close": 735.15, "open": 728.0}},
@@ -1320,8 +1327,7 @@ class TestPublishSpyDataSource:
 
     def test_returns_none_when_spy_absent_from_prices(self, tmp_path):
         """Snapshot dated today but SPY not in prices → returns None."""
-        from datetime import date
-        today = date.today().isoformat()
+        today = self._et_today()
         self._write(tmp_path, "market_snapshot.json", {
             "date": today,
             "prices": {"AAPL": {"close": 200.0}},
@@ -1331,8 +1337,7 @@ class TestPublishSpyDataSource:
 
     def test_returns_none_when_spy_close_is_zero(self, tmp_path):
         """SPY close=0 (bad data) → returns None to trigger fallback."""
-        from datetime import date
-        today = date.today().isoformat()
+        today = self._et_today()
         self._write(tmp_path, "market_snapshot.json", {
             "date": today,
             "prices": {"SPY": {"close": 0}},
@@ -1967,7 +1972,7 @@ class TestTickerHistoryHelpers:
 
     def test_recently_exited_includes_recent_closed(self, tmp_path, monkeypatch):
         from datetime import date
-        today = date.today().isoformat()
+        today = date.today().isoformat()   # recently_exited() uses local date.today()
         entries = [{
             "ticker": "AAPL", "action": "BUY", "status": "closed",
             "thesis": "cloud growth", "expected_return": 0.1,
@@ -2496,3 +2501,257 @@ class TestReleaseNotes:
             text = f.read()
         assert "## [Unreleased]" in text, \
             "RELEASE_NOTES.md needs an '## [Unreleased]' section for the next deploy"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  cost_model — shared cost & tax spine (P1: backtest + future net-edge gate)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCostModel:
+    def test_tax_both_gains_at_their_rates(self):
+        import cost_model
+        tax, cf = cost_model.tax_on_realized(1000.0, 200.0)
+        assert tax == round(1000 * cost_model.CA_SHORT_TERM_RATE
+                            + 200 * cost_model.CA_LONG_TERM_RATE, 2)
+        assert cf == 0.0
+
+    def test_tax_lt_loss_offsets_st_gain(self):
+        import cost_model
+        tax, cf = cost_model.tax_on_realized(1000.0, -400.0)
+        assert tax == round(600 * cost_model.CA_SHORT_TERM_RATE, 2)  # 324.0
+        assert cf == 0.0
+
+    def test_tax_st_loss_offsets_lt_gain_with_carryforward(self):
+        import cost_model
+        tax, cf = cost_model.tax_on_realized(-1500.0, 1000.0)
+        assert tax == 0.0
+        assert cf == 500.0
+
+    def test_tax_both_losses_carry_forward(self):
+        import cost_model
+        tax, cf = cost_model.tax_on_realized(-200.0, -100.0)
+        assert tax == 0.0
+        assert cf == 300.0
+
+    def test_round_trip_cost_scales_linearly_with_notional(self):
+        import cost_model
+        assert cost_model.round_trip_cost(2000.0) == round(2 * cost_model.round_trip_cost(1000.0), 4)
+
+    def test_round_trip_cost_vol_adds_slippage(self):
+        import cost_model
+        assert cost_model.round_trip_cost(1000.0, annualized_vol=0.30) > cost_model.round_trip_cost(1000.0)
+
+    def test_net_edge_taxes_only_positive_post_cost_gain(self):
+        import cost_model
+        e = cost_model.net_edge(0.02, 1000.0)            # +2% on $1000 = $20 gross
+        assert e["gross"] == 20.0 and e["cost"] > 0
+        assert e["tax"] == round((e["gross"] - e["cost"]) * cost_model.CA_SHORT_TERM_RATE, 4)
+        assert e["net"] == round(e["gross"] - e["cost"] - e["tax"], 4)
+        assert e["net"] < e["gross"]                     # tax + cost both bite
+
+    def test_net_edge_no_tax_on_loss(self):
+        import cost_model
+        e = cost_model.net_edge(-0.01, 1000.0)
+        assert e["tax"] == 0.0 and e["net"] < 0
+
+    def test_performance_delegates_to_cost_model(self):
+        # the live scorecard and the spine must agree on tax
+        import performance, cost_model
+        s = performance.realized_summary([{"term": "ST", "gain": 1000.0},
+                                          {"term": "LT", "gain": -400.0}])
+        tax, _ = cost_model.tax_on_realized(1000.0, -400.0)
+        assert s["realized_tax_estimate"] == tax
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  backtest — quant-only harness (P1): engine, strategies, report
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _bt_bars(prices, start_ms=1_700_000_000_000, step=86_400_000):
+    return [{"date": start_ms + i * step, "open": p, "high": p * 1.01,
+             "low": p * 0.99, "close": p, "volume": 1e6} for i, p in enumerate(prices)]
+
+
+class TestBacktestStrategies:
+    def _scores(self):
+        return {
+            "SPY":  {"data_available": True, "momentum_available": True, "composite_score": 99, "volatility": 12},
+            "WIN":  {"data_available": True, "momentum_available": True, "composite_score": 90, "volatility": 20},
+            "MID":  {"data_available": True, "momentum_available": True, "composite_score": 70, "volatility": 40},
+            "LOWS": {"data_available": True, "momentum_available": True, "composite_score": 40, "volatility": 15},
+            "NODATA": {"data_available": False, "momentum_available": False, "composite_score": 95},
+        }
+
+    def test_excludes_benchmarks_and_low_composite_and_nodata(self):
+        from backtest.strategies import quant_momentum_vol
+        w = quant_momentum_vol(self._scores(), top_n=8, min_composite=50)
+        assert "SPY" not in w and "QQQ" not in w
+        assert "LOWS" not in w          # below min_composite
+        assert "NODATA" not in w        # no real data
+        assert set(w) == {"WIN", "MID"}
+
+    def test_caps_weight_and_inverse_vol(self):
+        from backtest.strategies import quant_momentum_vol
+        # 0.50 cap so it doesn't bind on a 2-name book — lets inverse-vol show
+        w = quant_momentum_vol(self._scores(), top_n=8, max_weight=0.50, min_composite=50)
+        assert all(v <= 0.50 + 1e-9 for v in w.values())
+        assert w["WIN"] > w["MID"]      # lower vol → larger inverse-vol weight
+
+    def test_empty_when_nothing_qualifies(self):
+        from backtest.strategies import quant_momentum_vol
+        assert quant_momentum_vol({"AAA": {"data_available": True, "momentum_available": True,
+                                           "composite_score": 10, "volatility": 20}}, min_composite=50) == {}
+
+
+class TestBacktestEngine:
+    def _snapshot(self):
+        win  = [100 * (1.005 ** i) for i in range(30)]   # steady up, low vol → high score
+        lose = [100 * (0.99 ** i) for i in range(30)]    # steady down → filtered out
+        spy  = [100 * (1.001 ** i) for i in range(30)]
+        return {"history": {"SPY": _bt_bars(spy), "WIN": _bt_bars(win), "LOSE": _bt_bars(lose)},
+                "fundamentals": {}}
+
+    def test_runs_and_buys_the_winner_not_the_loser(self):
+        from backtest.engine import run_backtest
+        from backtest.strategies import quant_momentum_vol
+        # top_n=1 → only the highest-composite name (the uptrending WIN) is held
+        res = run_backtest(lambda sc: quant_momentum_vol(sc, top_n=1, min_composite=50),
+                           snapshot=self._snapshot(),
+                           initial_capital=10_000.0, rebalance_days=5, warmup=22)
+        assert len(res["equity_curve"]) == 30
+        buys = {t["ticker"] for t in res["transactions"] if t["action"] == "BUY"}
+        assert "WIN" in buys
+        assert "LOSE" not in buys
+        assert res["benchmark_curve"]            # SPY curve present
+
+    def test_fills_at_next_open_no_lookahead(self):
+        from backtest.engine import run_backtest
+        from backtest.strategies import quant_momentum_vol
+        snap = self._snapshot()
+        res = run_backtest(quant_momentum_vol, snapshot=snap,
+                           initial_capital=10_000.0, rebalance_days=5, warmup=22)
+        # first WIN buy must fill at a bar OPEN price (next-open fill), never a close
+        win_open_prices = {round(b["open"], 6) for b in snap["history"]["WIN"]}
+        first_win = next(t for t in res["transactions"] if t["ticker"] == "WIN")
+        assert round(first_win["price"], 6) in win_open_prices
+
+
+class TestBacktestReport:
+    def test_metrics_known_curve(self):
+        from backtest.report import _metrics
+        m = _metrics([("d1", 100.0), ("d2", 110.0), ("d3", 55.0)])
+        assert m["total_return"] == pytest.approx(-0.45, abs=1e-6)
+        assert m["max_drawdown"] == pytest.approx(-0.5, abs=1e-6)
+
+    def test_after_tax_reduces_return_on_realized_gain(self):
+        from backtest.report import build_report
+        result = {
+            "equity_curve":          [("d1", 10_000.0), ("d2", 10_500.0)],
+            "benchmark_curve":       [("d1", 10_000.0), ("d2", 10_100.0)],
+            "transactions": [
+                {"action": "BUY",  "ticker": "X", "qty": 10, "price": 100.0,
+                 "date": "2026-01-02", "timestamp": "2026-01-02T00:00:00+00:00", "dry_run": False},
+                {"action": "SELL", "ticker": "X", "qty": 10, "price": 120.0,
+                 "date": "2026-01-09", "timestamp": "2026-01-09T00:00:00+00:00", "dry_run": False},
+            ],
+            "initial_capital": 10_000.0, "final_equity": 10_500.0, "traded_notional_total": 2_200.0,
+        }
+        rep = build_report(result)
+        assert rep["realized_gain"] == 200.0
+        assert rep["tax_estimate"] == 108.0                       # 200 * 0.54
+        assert rep["after_tax_final_equity"] == 10_392.0          # 10500 - 108
+        assert rep["after_tax_alpha_vs_spy"] < rep["alpha_total_return"]   # tax bites
+
+    def test_real_snapshot_backtest_smoke(self):
+        # CI smoke: the full quant-only backtest on the committed snapshot completes.
+        import os
+        if not os.path.isfile("market_snapshot.json"):
+            pytest.skip("no market_snapshot.json")
+        from backtest.engine import run_backtest, load_snapshot
+        from backtest.strategies import quant_momentum_vol
+        from backtest.report import build_report
+        rep = build_report(run_backtest(quant_momentum_vol, snapshot=load_snapshot()))
+        assert rep["trading_days"] > 100 and rep["n_trades"] > 0
+        assert rep["strategy"]["total_return"] is not None and rep["spy"] is not None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Edge cases / failure scenarios (QA hardening pass)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ec_bars(prices, s=1_700_000_000_000, step=86_400_000):
+    return [{"date": s + i * step, "open": p, "high": p * 1.01, "low": p * 0.99,
+             "close": p, "volume": 1e6} for i, p in enumerate(prices)]
+
+
+class TestBacktestEdgeCases:
+    """Degenerate inputs must not crash and must return sane defaults."""
+
+    def test_no_spy_yields_empty_benchmark(self):
+        from backtest.engine import run_backtest
+        from backtest.strategies import quant_momentum_vol
+        snap = {"history": {"AAA": _ec_bars([100 * 1.01 ** i for i in range(40)])}, "fundamentals": {}}
+        r = run_backtest(quant_momentum_vol, snapshot=snap, warmup=22)
+        assert r["benchmark_curve"] == []          # no SPY → no benchmark, no crash
+
+    def test_warmup_past_history_makes_no_trades(self):
+        from backtest.engine import run_backtest
+        from backtest.strategies import quant_momentum_vol
+        snap = {"history": {"SPY": _ec_bars([100] * 40), "AAA": _ec_bars([100 * 1.01 ** i for i in range(40)])},
+                "fundamentals": {}}
+        r = run_backtest(quant_momentum_vol, snapshot=snap, warmup=100)
+        assert r["transactions"] == []
+        assert all(v == r["initial_capital"] for _, v in r["equity_curve"])  # flat at cash
+
+    def test_empty_history_does_not_crash(self):
+        from backtest.engine import run_backtest
+        from backtest.strategies import quant_momentum_vol
+        r = run_backtest(quant_momentum_vol, snapshot={"history": {}, "fundamentals": {}}, warmup=22)
+        assert r["equity_curve"] == [] and r["final_equity"] == r["initial_capital"]
+
+    def test_report_on_empty_result_is_safe(self):
+        from backtest.report import build_report
+        rep = build_report({"equity_curve": [], "benchmark_curve": [], "transactions": [],
+                            "initial_capital": 50_000.0, "final_equity": 50_000.0, "traded_notional_total": 0.0})
+        assert rep["spy"] is None and rep["n_trades"] == 0 and rep["tax_estimate"] == 0.0
+
+    def test_no_leverage_or_negative_equity(self):
+        from backtest.engine import run_backtest
+        from backtest.strategies import quant_momentum_vol
+        snap = {"history": {"SPY": _ec_bars([100 * 1.001 ** i for i in range(40)]),
+                            "AAA": _ec_bars([100 * 1.01 ** i for i in range(40)])}, "fundamentals": {}}
+        r = run_backtest(quant_momentum_vol, snapshot=snap, initial_capital=10_000.0, warmup=22)
+        eqs = [v for _, v in r["equity_curve"]]
+        assert all(v > 0 for v in eqs)                 # never negative equity
+        assert max(eqs) < 10_000 * 5                   # no leverage blow-up
+
+    def test_report_discloses_survivorship_bias(self):
+        # honesty guard: the universe is current survivors only — must be caveated
+        from backtest.report import build_report
+        rep = build_report({"equity_curve": [("d1", 50_000.0), ("d2", 50_500.0)],
+                            "benchmark_curve": [("d1", 50_000.0), ("d2", 50_100.0)],
+                            "transactions": [], "initial_capital": 50_000.0,
+                            "final_equity": 50_500.0, "traded_notional_total": 0.0})
+        assert any("survivor" in c.lower() for c in rep["caveats"])
+
+
+class TestGuardrailBoundaries:
+    """Off-by-one boundaries on the holding-period and wash-sale windows."""
+
+    def test_min_hold_exactly_5_trading_days_allowed(self):
+        import guardrails as g
+        # Fri 2026-06-05 → Fri 2026-06-12 = exactly 5 trading days; '< 5' blocks, so 5 is allowed
+        kept, rej = g.enforce_min_holding_period(
+            [{"ticker": "X", "action": "SELL", "target_weight": 0.0}], {"positions": []},
+            transactions=[{"ticker": "X", "action": "BUY", "date": "2026-06-05", "dry_run": False}],
+            today="2026-06-12")
+        assert len(kept) == 1 and rej == []
+
+    def test_wash_sale_exactly_30_days_allowed(self):
+        import guardrails as g
+        # sold 2026-05-15, today 2026-06-14 = 30 days; '< 30' blocks, so 30 is allowed
+        kept, rej = g.enforce_wash_sale_reentry(
+            [{"ticker": "X", "action": "BUY", "target_weight": 0.08}],
+            transactions=[{"ticker": "X", "action": "SELL", "date": "2026-05-15", "dry_run": False}],
+            today="2026-06-14")
+        assert len(kept) == 1 and rej == []

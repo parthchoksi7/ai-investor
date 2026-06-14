@@ -17,6 +17,47 @@ _Nothing pending — see the dated release below._
 
 ---
 
+## [2026-06-14] — P1: quant backtest harness + cost_model spine + QA hardening  ·  ~22:15 PT  ·  PR #10
+
+### Added
+- **`cost_model.py`** — shared cost & tax spine (P1 foundation for the backtest
+  #3 and the future net-edge gate #6). Holds the CA top-bracket tax rates +
+  IRS-style ST/LT netting (`tax_on_realized`), a round-trip cost/slippage
+  estimate (`round_trip_cost`), and `net_edge()` (gross − cost − CA tax).
+  `performance.py` now imports the rates + netting from it (single source of
+  truth), so simulated and live economics can't drift. (+9 tests; suite **245**.)
+- **`backtest/` — quant-only backtest harness (#3 / P1).** Event loop over the
+  `market_snapshot.json` history that reuses `quant_engine.score_all_tickers`
+  unchanged (scores exactly what live scores), fills at next-day open (no
+  look-ahead), and imports `cost_model` for after-cost/after-tax economics.
+  Includes a momentum/inverse-vol strategy, an after-tax-vs-SPY report
+  (CAGR/vol/Sharpe/max-DD/turnover, gross & net-of-tax), and `python -m backtest`.
+  **No LLM in the backtest** (a frozen model knows the future — the LLM layer is
+  forward-tested, not backtested). (+8 tests; suite **253**.)
+
+  > **First result (honest):** the quant-only momentum/vol strategy returned
+  > **−0.03%** over ~10 months vs SPY **+8.77%** — gross alpha **−8.8%**, 23.6×
+  > annual turnover. The deterministic layer has **no demonstrated edge** at this
+  > config; this is exactly the validation P1 exists to provide.
+
+### Fixed (QA hardening — two independent review passes, all personas)
+- **Timezone-flaky test** — `TestPublishSpyDataSource` computed "today" with local
+  `date.today()` (Pacific) while the production function uses ET, so it failed ~3
+  hours **every day** (the midnight-ET-to-midnight-PT window). Now uses ET to match.
+- **Survivorship-bias caveat** — the backtest report now discloses that the universe
+  is only tickers in today's snapshot (no delisted names) and fixed over the window,
+  so absolute returns are biased upward.
+- **+8 edge-case regression tests** — degenerate backtests (no SPY / empty history /
+  warmup overflow / no-leverage / no-look-ahead), guard boundaries (exactly-5-day
+  hold and exactly-30-day wash-sale both correctly allowed), survivorship disclosure.
+  Suite **261**.
+
+> **QA insight (Portfolio Manager lens):** monthly rebalancing yields **+$4,185
+> realized vs −$242 for daily** (86 vs 1,360 trades) — churn is value-destructive,
+> empirically backing the turnover/tax guards shipped in PR #9.
+
+---
+
 ## [2026-06-14] — Paper-shadow 100× + after-tax scorecard + turnover discipline  ·  ~17:30 PT
 
 Edge-upgrade batch P0/P0.5. Three shipped changes + two planning docs.
