@@ -1293,10 +1293,17 @@ class TestPublishSpyDataSource:
             if "publish" in sys.modules:
                 del sys.modules["publish"]
 
+    def _et_today(self):
+        # publish._fetch_spy_from_snapshot uses ET; the test's "today" must match
+        # it or the snapshot reads as stale during the ET/PT date-straddle window
+        # (~9pm–midnight Pacific), making this test fail ~3 hours every day.
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+
     def test_happy_path_reads_spy_from_snapshot(self, tmp_path):
         """Returns SPY close from market_snapshot.json when dated today."""
-        from datetime import date
-        today = date.today().isoformat()
+        today = self._et_today()
         self._write(tmp_path, "market_snapshot.json", {
             "date": today,
             "prices": {"SPY": {"close": 735.15, "open": 728.0}},
@@ -1320,8 +1327,7 @@ class TestPublishSpyDataSource:
 
     def test_returns_none_when_spy_absent_from_prices(self, tmp_path):
         """Snapshot dated today but SPY not in prices → returns None."""
-        from datetime import date
-        today = date.today().isoformat()
+        today = self._et_today()
         self._write(tmp_path, "market_snapshot.json", {
             "date": today,
             "prices": {"AAPL": {"close": 200.0}},
@@ -1331,8 +1337,7 @@ class TestPublishSpyDataSource:
 
     def test_returns_none_when_spy_close_is_zero(self, tmp_path):
         """SPY close=0 (bad data) → returns None to trigger fallback."""
-        from datetime import date
-        today = date.today().isoformat()
+        today = self._et_today()
         self._write(tmp_path, "market_snapshot.json", {
             "date": today,
             "prices": {"SPY": {"close": 0}},
@@ -1967,7 +1972,7 @@ class TestTickerHistoryHelpers:
 
     def test_recently_exited_includes_recent_closed(self, tmp_path, monkeypatch):
         from datetime import date
-        today = date.today().isoformat()
+        today = date.today().isoformat()   # recently_exited() uses local date.today()
         entries = [{
             "ticker": "AAPL", "action": "BUY", "status": "closed",
             "thesis": "cloud growth", "expected_return": 0.1,
@@ -2668,3 +2673,85 @@ class TestBacktestReport:
         rep = build_report(run_backtest(quant_momentum_vol, snapshot=load_snapshot()))
         assert rep["trading_days"] > 100 and rep["n_trades"] > 0
         assert rep["strategy"]["total_return"] is not None and rep["spy"] is not None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Edge cases / failure scenarios (QA hardening pass)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ec_bars(prices, s=1_700_000_000_000, step=86_400_000):
+    return [{"date": s + i * step, "open": p, "high": p * 1.01, "low": p * 0.99,
+             "close": p, "volume": 1e6} for i, p in enumerate(prices)]
+
+
+class TestBacktestEdgeCases:
+    """Degenerate inputs must not crash and must return sane defaults."""
+
+    def test_no_spy_yields_empty_benchmark(self):
+        from backtest.engine import run_backtest
+        from backtest.strategies import quant_momentum_vol
+        snap = {"history": {"AAA": _ec_bars([100 * 1.01 ** i for i in range(40)])}, "fundamentals": {}}
+        r = run_backtest(quant_momentum_vol, snapshot=snap, warmup=22)
+        assert r["benchmark_curve"] == []          # no SPY → no benchmark, no crash
+
+    def test_warmup_past_history_makes_no_trades(self):
+        from backtest.engine import run_backtest
+        from backtest.strategies import quant_momentum_vol
+        snap = {"history": {"SPY": _ec_bars([100] * 40), "AAA": _ec_bars([100 * 1.01 ** i for i in range(40)])},
+                "fundamentals": {}}
+        r = run_backtest(quant_momentum_vol, snapshot=snap, warmup=100)
+        assert r["transactions"] == []
+        assert all(v == r["initial_capital"] for _, v in r["equity_curve"])  # flat at cash
+
+    def test_empty_history_does_not_crash(self):
+        from backtest.engine import run_backtest
+        from backtest.strategies import quant_momentum_vol
+        r = run_backtest(quant_momentum_vol, snapshot={"history": {}, "fundamentals": {}}, warmup=22)
+        assert r["equity_curve"] == [] and r["final_equity"] == r["initial_capital"]
+
+    def test_report_on_empty_result_is_safe(self):
+        from backtest.report import build_report
+        rep = build_report({"equity_curve": [], "benchmark_curve": [], "transactions": [],
+                            "initial_capital": 50_000.0, "final_equity": 50_000.0, "traded_notional_total": 0.0})
+        assert rep["spy"] is None and rep["n_trades"] == 0 and rep["tax_estimate"] == 0.0
+
+    def test_no_leverage_or_negative_equity(self):
+        from backtest.engine import run_backtest
+        from backtest.strategies import quant_momentum_vol
+        snap = {"history": {"SPY": _ec_bars([100 * 1.001 ** i for i in range(40)]),
+                            "AAA": _ec_bars([100 * 1.01 ** i for i in range(40)])}, "fundamentals": {}}
+        r = run_backtest(quant_momentum_vol, snapshot=snap, initial_capital=10_000.0, warmup=22)
+        eqs = [v for _, v in r["equity_curve"]]
+        assert all(v > 0 for v in eqs)                 # never negative equity
+        assert max(eqs) < 10_000 * 5                   # no leverage blow-up
+
+    def test_report_discloses_survivorship_bias(self):
+        # honesty guard: the universe is current survivors only — must be caveated
+        from backtest.report import build_report
+        rep = build_report({"equity_curve": [("d1", 50_000.0), ("d2", 50_500.0)],
+                            "benchmark_curve": [("d1", 50_000.0), ("d2", 50_100.0)],
+                            "transactions": [], "initial_capital": 50_000.0,
+                            "final_equity": 50_500.0, "traded_notional_total": 0.0})
+        assert any("survivor" in c.lower() for c in rep["caveats"])
+
+
+class TestGuardrailBoundaries:
+    """Off-by-one boundaries on the holding-period and wash-sale windows."""
+
+    def test_min_hold_exactly_5_trading_days_allowed(self):
+        import guardrails as g
+        # Fri 2026-06-05 → Fri 2026-06-12 = exactly 5 trading days; '< 5' blocks, so 5 is allowed
+        kept, rej = g.enforce_min_holding_period(
+            [{"ticker": "X", "action": "SELL", "target_weight": 0.0}], {"positions": []},
+            transactions=[{"ticker": "X", "action": "BUY", "date": "2026-06-05", "dry_run": False}],
+            today="2026-06-12")
+        assert len(kept) == 1 and rej == []
+
+    def test_wash_sale_exactly_30_days_allowed(self):
+        import guardrails as g
+        # sold 2026-05-15, today 2026-06-14 = 30 days; '< 30' blocks, so 30 is allowed
+        kept, rej = g.enforce_wash_sale_reentry(
+            [{"ticker": "X", "action": "BUY", "target_weight": 0.08}],
+            transactions=[{"ticker": "X", "action": "SELL", "date": "2026-05-15", "dry_run": False}],
+            today="2026-06-14")
+        assert len(kept) == 1 and rej == []
