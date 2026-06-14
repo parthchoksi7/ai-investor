@@ -13,6 +13,32 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+---
+
+## [2026-06-14] — QA batch: crash-safety fix + 60 new tests (302 → 362)  ·  ~PT  ·  fix/fmp-stable-api
+
+End-to-end QA/UAT review of the full pipeline. One latent crash-safety defect found and fixed; 13 new test classes locking in untested code paths across every module.
+
+### Fixed — `journal._load` corrupt-JSON crash
+- **`journal._load()`** now wraps `json.load()` in `try/except (JSONDecodeError, ValueError)`. Previously a corrupt/truncated `transactions.json` or `decision_journal.json` (disk error, partial write) would raise an unhandled exception — the most dangerous timing is *after* orders are placed. The atomic `os.replace()` write pattern reduces the window, but does not eliminate it on power-loss. Now degrades gracefully to the empty default instead of crashing.
+
+### Test — 60 new tests across 13 classes (302 → 362 total)
+
+| Class | Count | What was missing |
+|---|---|---|
+| `TestLoadListCorruptJSON` | 3 | Locks in the `_load` fix: corrupt/truncated/dict JSON → `[]` |
+| `TestAppendCheck` | 7 | `health.append_check` was entirely untested — creates from scratch, escalates status, overwrites check, rebuilds alerts, ABORTED > FAILED, stores kwargs |
+| `TestComputeQty` | 13 | `execute._compute_qty` never tested directly — all BUY/SELL/HOLD paths, `available_qty` cap, missing price, ticker-not-in-positions |
+| `TestTaxLotsAdditional` | 8 | Oversell (no negative lots), multi-ticker independence, ticker filter, `holding_days` null/bad-date edge cases |
+| `TestPortfolioCurveEdgeCases` | 4 | Non-list log, missing `portfolio_snapshot`, null `total_value`, `timestamp` key fallback |
+| `TestAlignEdgeCases` | 2 | Portfolio predating SPY → empty result; bars with null close skipped by `_spy_curve` |
+| `TestValidateDecisionsAdditional` | 4 | Empty ticker, `None` target_weight (TypeError path), holdings-only SELL passes universe check, HOLD doesn't increment `passed` |
+| `TestEnforceWashSaleEdgeCases` | 2 | Malformed sell-date → guard skipped → BUY passes; multiple SELLs uses most-recent (max) |
+| `TestPreflightGateMissingPending` | 2 | No pending file + fresh snapshot → PROCEED; malformed snapshot.json → SKIP/RETRY |
+| `TestCostModelEdgeCases` | 4 | Both gains zero, zero notional, zero-return net edge, LT rate yields higher net than ST |
+| `TestRecordRunRotation` | 2 | Agent log capped at 90; oldest entry dropped first |
+| `TestRecentlyExitedEdgeCases` | 3 | Bad exit date silently skipped; empty exits excluded; `open` status excluded |
+
 ### Added — SECProvider: free EDGAR fundamentals for the full universe
 - **`data_providers.SECProvider`** — uses the SEC EDGAR company-facts XBRL API
   (`data.sec.gov/api/xbrl/companyfacts`) to source `gross_margin`,
