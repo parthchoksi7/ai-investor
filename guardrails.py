@@ -52,6 +52,14 @@ MIN_ORDER_NOTIONAL       = 5.00
 GFV_WINDOW_TRADING_DAYS  = 2
 MAX_SECTOR_WEIGHT        = 0.25   # hard cap on projected post-trade sector weight
 
+# Turnover / tax discipline (this is a CALIFORNIA TOP-BRACKET TAXABLE account).
+# Every sale realizes a SHORT-TERM gain taxed at ~54% (37% fed + 3.8% NIIT +
+# 13.3% CA), so the dominant after-tax lever is simply trading LESS. These two
+# controls are deliberately stronger than the GFV guard above: they exist to cut
+# the documented weekly momentum-rotation churn, not to manage settlement.
+MIN_HOLDING_TRADING_DAYS = 5    # don't SELL a name bought < 5 trading days ago (risk exits exempt)
+WASH_SALE_REENTRY_DAYS   = 30   # don't BUY a name SOLD within 30 calendar days (wash-sale + anti-churn)
+
 
 # Static ticker → sector map for the current universe. The data layer carries
 # no sector field (free-tier Polygon returns no fundamentals), so the 25%
@@ -207,22 +215,131 @@ def _trading_days_since(buy_date: str, today: str) -> int:
     return days
 
 
+def _last_live_trade_date(ticker: str, transactions: list, side: str) -> str | None:
+    """Most recent broker-accepted (non-dry-run) `side` ('BUY'|'SELL') date for ticker.
+
+    Single source of truth for "what counts as a real prior trade" — both the
+    holding-period and wash-sale guards depend on it, so they can never disagree
+    on what a live fill is.
+    """
+    side = side.upper()
+    dates = [
+        tx.get("date") for tx in transactions
+        if tx.get("ticker") == ticker
+        and str(tx.get("action", "")).upper() == side
+        and not tx.get("dry_run")
+        and tx.get("date")
+    ]
+    return max(dates) if dates else None
+
+
 def _last_live_buy_date(ticker: str, transactions: list) -> str | None:
-    """Most recent broker-accepted (non-dry-run) BUY date for ticker.
+    """Most recent broker-accepted BUY date for ticker.
 
     Runs at validation time, so the current run's own decisions are not in
     transactions.json yet — that is correct: a same-batch BUY+SELL of one
     ticker is rejected separately by rule 4, so there is nothing same-day
     to look up here. Do not "fix" this by including pending decisions.
     """
-    dates = [
-        tx.get("date") for tx in transactions
-        if tx.get("ticker") == ticker
-        and str(tx.get("action", "")).upper() == "BUY"
-        and not tx.get("dry_run")
-        and tx.get("date")
-    ]
-    return max(dates) if dates else None
+    return _last_live_trade_date(ticker, transactions, "BUY")
+
+
+def _last_live_sell_date(ticker: str, transactions: list) -> str | None:
+    """Most recent broker-accepted SELL date for ticker (wash-sale/anti-churn guard)."""
+    return _last_live_trade_date(ticker, transactions, "SELL")
+
+
+def enforce_min_holding_period(
+    decisions: list[dict],
+    portfolio: dict,
+    transactions: list | None = None,
+    kill_active: bool = False,
+    min_holding_days: int = MIN_HOLDING_TRADING_DAYS,
+    today: str | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """Reject discretionary SELLs of names bought < min_holding_days trading days ago.
+
+    Anti-churn / tax control. In a CA top-bracket taxable account every sale is a
+    short-term gain (~54%), so cutting round-trip frequency is the dominant
+    after-tax lever. Returns (kept, rejected); rejected entries carry a
+    `rejected_reason` and are folded into the decision_validation health check.
+
+    Exemptions / safe defaults:
+      - kill_active → return everything untouched (risk exits must never be blocked).
+      - A SELL whose ticker has NO in-log BUY date is NOT blocked. A position
+        opened before transaction logging (most current holdings) can't be proven
+        recent, and a long-held exit is exactly the trade we must allow.
+      - BUY / HOLD pass through.
+
+    Caveat: blocking a SELL can strand a same-batch BUY that named it as
+    source_of_capital — that BUY may then fail at the broker for lack of cash.
+    Accepted: the whole point is fewer trades, and per-order execution isolation
+    already tolerates a single unfilled order.
+    """
+    if kill_active:
+        return list(decisions), []     # risk regime: never block exits (skip the file read)
+    if transactions is None:
+        transactions = _load_list(TRANSACTIONS_FILE)
+
+    today = today or datetime.now(_ET).strftime("%Y-%m-%d")
+    kept, rejected = [], []
+    for d in decisions:
+        if str(d.get("action", "")).upper() != "SELL":
+            kept.append(d)
+            continue
+        ticker   = d.get("ticker", "")
+        buy_date = _last_live_buy_date(ticker, transactions)
+        if buy_date and _trading_days_since(buy_date, today) < min_holding_days:
+            reason = (f"min-holding: bought {buy_date}, < {min_holding_days} "
+                      f"trading days ago (anti-churn/tax)")
+            rejected.append({**d, "rejected_reason": reason})
+            print(f"   🚫 HOLDING REJECT: SELL {ticker} — {reason}")
+        else:
+            kept.append(d)
+    return kept, rejected
+
+
+def enforce_wash_sale_reentry(
+    decisions: list[dict],
+    transactions: list | None = None,
+    window_days: int = WASH_SALE_REENTRY_DAYS,
+    today: str | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """Reject BUYs of names SOLD within `window_days` calendar days.
+
+    Hardens and widens the soft `recently_exited` PM warning (10d, prompt-only)
+    into a code control (30d, enforced). Re-buying a just-sold name is the churn
+    pattern, and within 30 calendar days a *loss* sale triggers the IRS wash-sale
+    rule (disallowing the harvested loss). This block is intentionally broader
+    than the IRS rule — it also blocks gain re-entries — because the goal here is
+    to cut turnover in a high-churn taxable account. Returns (kept, rejected).
+    """
+    if transactions is None:
+        transactions = _load_list(TRANSACTIONS_FILE)
+    today_date = (datetime.strptime(today, "%Y-%m-%d").date()
+                  if today else datetime.now(_ET).date())
+
+    kept, rejected = [], []
+    for d in decisions:
+        if str(d.get("action", "")).upper() != "BUY":
+            kept.append(d)
+            continue
+        ticker    = d.get("ticker", "")
+        sell_date = _last_live_sell_date(ticker, transactions)
+        days = None
+        if sell_date:
+            try:
+                days = (today_date - datetime.strptime(sell_date, "%Y-%m-%d").date()).days
+            except ValueError:
+                days = None
+        if days is not None and 0 <= days < window_days:
+            reason = (f"wash-sale/anti-churn: sold {sell_date}, {days}d ago "
+                      f"(< {window_days}d re-entry block)")
+            rejected.append({**d, "rejected_reason": reason})
+            print(f"   🚫 REENTRY REJECT: BUY {ticker} — {reason}")
+        else:
+            kept.append(d)
+    return kept, rejected
 
 
 def validate_decisions(
