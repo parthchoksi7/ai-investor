@@ -2787,37 +2787,185 @@ class TestDataProviders:
         assert p.estimates("AAPL") is None
 
     def test_fmp_fundamentals_field_mapping(self, monkeypatch):
+        # stable API: margins/debt/PE from ratios-ttm, FCF-yield/EV from key-metrics-ttm
         from data_providers import FMPProvider
         p = FMPProvider(api_key="x")
-        monkeypatch.setattr(p, "_get", lambda *a, **k: [{
-            "grossProfitMarginTTM": 0.4612, "operatingProfitMarginTTM": 0.301,
-            "debtEquityRatioTTM": 1.23, "peRatioTTM": 28.4,
-            "freeCashFlowYieldTTM": 0.035, "enterpriseValueMultipleTTM": 19.1,
-            "freeCashFlowPerShareTTM": 6.0, "revenuePerShareTTM": 24.0,
-        }])
+        def fake_get(path, **k):
+            if path == "ratios-ttm":
+                return [{"grossProfitMarginTTM": 0.4612, "operatingProfitMarginTTM": 0.301,
+                         "debtToEquityRatioTTM": 1.23, "priceToEarningsRatioTTM": 28.4}]
+            if path == "key-metrics-ttm":
+                return [{"freeCashFlowYieldTTM": 0.035, "evToEBITDATTM": 19.1}]
+            return None
+        monkeypatch.setattr(p, "_get", fake_get)
         f = p.fundamentals("AAPL")
         assert f["gross_margin"] == 0.4612 and f["operating_margin"] == 0.301
         assert f["debt_to_equity"] == 1.23 and f["pe_ratio"] == 28.4
         assert f["fcf_yield"] == 0.035 and f["ev_ebitda"] == 19.1
-        assert f["fcf_margin"] == 0.25                # 6.0 / 24.0
 
     def test_fmp_next_earnings_picks_soonest_future(self, monkeypatch):
+        # stable 'earnings' endpoint: per-symbol rows with a date (epsActual null = upcoming)
         from data_providers import FMPProvider
         p = FMPProvider(api_key="x")
         monkeypatch.setattr(p, "_get", lambda *a, **k: [
-            {"symbol": "AAPL", "date": "2020-01-01"},   # past → ignored
-            {"symbol": "AAPL", "date": "2099-09-09"},
-            {"symbol": "AAPL", "date": "2099-07-01"},   # soonest future
-            {"symbol": "MSFT", "date": "2099-06-01"},   # wrong ticker → ignored
+            {"date": "2020-01-01", "epsActual": 1.0},    # past → ignored
+            {"date": "2099-09-09", "epsActual": None},
+            {"date": "2099-07-01", "epsActual": None},   # soonest future
         ])
         assert p.next_earnings_date("AAPL") == "2099-07-01"
 
     def test_get_provider_factory(self, monkeypatch):
         import data_providers as dp
         monkeypatch.delenv("FMP_API_KEY", raising=False)
-        assert isinstance(dp.get_provider(), dp.StubProvider)   # no key → stub
+        assert isinstance(dp.get_provider(), dp.SECProvider)    # no key → EDGAR (free)
         monkeypatch.setenv("FMP_API_KEY", "k")
-        assert isinstance(dp.get_provider(), dp.FMPProvider)    # key → FMP
+        assert isinstance(dp.get_provider(), dp.FMPProvider)    # key → FMP (all 6 factors)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SECProvider — EDGAR fundamentals, free, no key, ~100% US equity coverage.
+#  Tests use mocked HTTP to avoid live EDGAR calls.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSECProvider:
+    """SECProvider via mocked HTTP so no EDGAR calls hit the network."""
+
+    # Minimal EDGAR company_tickers.json payload for AAPL
+    TICKERS_RESP = {"0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."}}
+
+    # Minimal us-gaap facts for AAPL: revenue, gross profit, operating income,
+    # equity, long-term debt — all as 10-K entries.
+    FACTS_RESP = {
+        "facts": {
+            "us-gaap": {
+                "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                    "units": {"USD": [
+                        {"end": "2024-09-28", "val": 391035000000, "form": "10-K"},
+                        {"end": "2023-09-30", "val": 383285000000, "form": "10-K"},
+                    ]}
+                },
+                "GrossProfit": {
+                    "units": {"USD": [
+                        {"end": "2024-09-28", "val": 180683000000, "form": "10-K"},
+                    ]}
+                },
+                "OperatingIncomeLoss": {
+                    "units": {"USD": [
+                        {"end": "2024-09-28", "val": 123216000000, "form": "10-K"},
+                    ]}
+                },
+                "StockholdersEquity": {
+                    "units": {"USD": [
+                        {"end": "2024-09-28", "val": 56950000000, "form": "10-K"},
+                    ]}
+                },
+                "LongTermDebt": {
+                    "units": {"USD": [
+                        {"end": "2024-09-28", "val": 85750000000, "form": "10-K"},
+                    ]}
+                },
+            }
+        }
+    }
+
+    def _make_provider(self, monkeypatch):
+        from data_providers import SECProvider
+        import requests
+        p = SECProvider(timeout=5)
+        call_log = []
+
+        def fake_get(url, **kwargs):
+            call_log.append(url)
+            import types, json as _json
+            resp = types.SimpleNamespace()
+            if "company_tickers" in url:
+                resp.json = lambda: self.TICKERS_RESP
+            else:
+                resp.json = lambda: self.FACTS_RESP
+            return resp
+
+        monkeypatch.setattr(requests, "get", fake_get)
+        return p, call_log
+
+    def test_ratios_computed_from_annual_10k(self, monkeypatch):
+        p, _ = self._make_provider(monkeypatch)
+        f = p.fundamentals("AAPL")
+        assert f is not None
+        # gross_margin = 180_683 / 391_035 ≈ 0.4621
+        assert abs(f["gross_margin"] - round(180683000000 / 391035000000, 4)) < 1e-6
+        # operating_margin = 123_216 / 391_035 ≈ 0.3151
+        assert abs(f["operating_margin"] - round(123216000000 / 391035000000, 4)) < 1e-6
+        # debt_to_equity = 85_750 / 56_950 ≈ 1.5057
+        assert abs(f["debt_to_equity"] - round(85750000000 / 56950000000, 4)) < 1e-6
+
+    def test_picks_most_recent_annual_entry(self, monkeypatch):
+        # Two 10-K revenue entries; should pick the later end date.
+        p, _ = self._make_provider(monkeypatch)
+        f = p.fundamentals("AAPL")
+        # 391_035 (2024-09-28) beats 383_285 (2023-09-30)
+        expected_gm = round(180683000000 / 391035000000, 4)
+        assert f["gross_margin"] == expected_gm
+
+    def test_unknown_ticker_returns_none(self, monkeypatch):
+        from data_providers import SECProvider
+        import requests, types
+        p = SECProvider(timeout=5)
+        monkeypatch.setattr(requests, "get",
+                            lambda url, **kw: types.SimpleNamespace(json=lambda: self.TICKERS_RESP))
+        assert p.fundamentals("ZZZZ") is None   # not in CIK map
+
+    def test_no_earnings_or_estimates(self, monkeypatch):
+        p, _ = self._make_provider(monkeypatch)
+        assert p.next_earnings_date("AAPL") is None
+        assert p.estimates("AAPL") is None
+
+    def test_cik_map_loaded_once(self, monkeypatch):
+        p, calls = self._make_provider(monkeypatch)
+        p.fundamentals("AAPL")
+        p.fundamentals("AAPL")
+        tickers_calls = [c for c in calls if "company_tickers" in c]
+        assert len(tickers_calls) == 1     # CIK map fetched once, cached in-instance
+
+    def test_empty_equity_omits_debt_ratio(self, monkeypatch):
+        from data_providers import SECProvider
+        import requests, types
+        p = SECProvider(timeout=5)
+        facts = {
+            "facts": {"us-gaap": {
+                "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
+                "GrossProfit": {"units": {"USD": [{"end": "2024-01-01", "val": 400, "form": "10-K"}]}},
+                "StockholdersEquity": {"units": {"USD": [{"end": "2024-01-01", "val": 0, "form": "10-K"}]}},
+                "LongTermDebt": {"units": {"USD": [{"end": "2024-01-01", "val": 500, "form": "10-K"}]}},
+            }}
+        }
+        def fake_get(url, **kw):
+            r = types.SimpleNamespace()
+            r.json = (lambda: self.TICKERS_RESP) if "company_tickers" in url else (lambda: facts)
+            return r
+        monkeypatch.setattr(requests, "get", fake_get)
+        f = p.fundamentals("AAPL")
+        assert "gross_margin" in f         # computed fine
+        assert "debt_to_equity" not in f   # equity=0 → guard prevents divide-by-zero
+
+    def test_http_error_returns_none(self, monkeypatch):
+        from data_providers import SECProvider
+        import requests, types
+        p = SECProvider(timeout=5)
+        call_n = [0]
+        def fake_get(url, **kw):
+            call_n[0] += 1
+            r = types.SimpleNamespace()
+            if "company_tickers" in url:
+                r.json = lambda: self.TICKERS_RESP
+            else:
+                raise requests.exceptions.ConnectionError("offline")
+            return r
+        monkeypatch.setattr(requests, "get", fake_get)
+        assert p.fundamentals("AAPL") is None   # network error → None, never raises
+
+    def test_conforms_to_protocol(self):
+        from data_providers import SECProvider, MarketDataProvider
+        assert isinstance(SECProvider(), MarketDataProvider)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3051,3 +3199,551 @@ class TestFeatureInteractions:
         d, _ = g.enforce_net_edge(d, prices)
         tickers = {x["ticker"] for x in d}
         assert "NVDA" in tickers and "MRK" in tickers
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  #1 — provider enrichment cache (alternate-day 50/50, FMP free-tier safe)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestProviderEnrichmentCache:
+    def test_group_stable_and_binary(self):
+        import market_data as md
+        g = md._provider_group("AAPL")
+        assert g == md._provider_group("AAPL") and g in (0, 1)   # deterministic, 0/1
+
+    def test_stub_provider_is_noop(self, monkeypatch):
+        # Tests inject StubProvider to get a no-op without real HTTP calls.
+        import market_data as md, data_providers
+        from datetime import date
+        monkeypatch.setattr(data_providers, "get_provider", lambda: data_providers.StubProvider())
+        fund = {}
+        assert md._enrich_with_provider(["AAPL"], fund, today=date(2026, 6, 15)) == {}
+        assert fund == {}                                        # untouched, no HTTP
+
+    def test_fetches_on_group_day_and_caches(self, tmp_path, monkeypatch):
+        import market_data as md, data_providers, json
+        from datetime import date, timedelta
+        monkeypatch.setattr(md, "PROVIDER_CACHE", str(tmp_path / "pc.json"))
+        monkeypatch.setenv("FMP_API_KEY", "x")
+        class FakeP:
+            def fundamentals(self, t): return {"pe_ratio": 30}
+            def next_earnings_date(self, t): return "2026-07-30"
+        monkeypatch.setattr(data_providers, "get_provider", lambda: FakeP())
+        d = date(2026, 6, 15)
+        while d.toordinal() % 2 != md._provider_group("AAPL"):   # land on AAPL's group day
+            d += timedelta(days=1)
+        fund = {}
+        ec = md._enrich_with_provider(["AAPL"], fund, today=d)
+        assert ec["AAPL"] == "2026-07-30" and fund["AAPL"]["pe_ratio"] == 30
+        assert json.load(open(tmp_path / "pc.json"))["AAPL"]["fetched"] == d.isoformat()
+
+    def test_off_group_day_uses_cache_no_fetch(self, tmp_path, monkeypatch):
+        import market_data as md, data_providers, json
+        from datetime import date, timedelta
+        cache_path = tmp_path / "pc.json"
+        cache_path.write_text(json.dumps({"AAPL": {"fundamentals": {"pe_ratio": 25},
+                              "next_earnings": "2026-08-01", "fetched": "2026-06-10"}}))
+        monkeypatch.setattr(md, "PROVIDER_CACHE", str(cache_path))
+        monkeypatch.setenv("FMP_API_KEY", "x")
+        fetched = []
+        class FakeP:
+            def fundamentals(self, t): fetched.append(t); return {"pe_ratio": 99}
+            def next_earnings_date(self, t): return "x"
+        monkeypatch.setattr(data_providers, "get_provider", lambda: FakeP())
+        d = date(2026, 6, 15)
+        while d.toordinal() % 2 == md._provider_group("AAPL"):   # land OFF AAPL's group day
+            d += timedelta(days=1)
+        fund = {}
+        ec = md._enrich_with_provider(["AAPL"], fund, today=d)
+        assert fetched == []                          # not its day → no fetch
+        assert fund["AAPL"]["pe_ratio"] == 25         # served from cache
+        assert ec["AAPL"] == "2026-08-01"
+
+    def test_premium_empty_ticker_backoff(self, tmp_path, monkeypatch):
+        # FMP free tier 402s on ~65% of names → empty cache entry; don't re-hit it
+        # every 2 days (30-day backoff) so the daily call budget isn't wasted.
+        import market_data as md, data_providers, json
+        from datetime import date, timedelta
+        cache_path = tmp_path / "pc.json"
+        monkeypatch.setattr(md, "PROVIDER_CACHE", str(cache_path))
+        monkeypatch.setenv("FMP_API_KEY", "x")
+        fetched = []
+        class FakeP:
+            def fundamentals(self, t): fetched.append(t); return {"pe_ratio": 1}
+            def next_earnings_date(self, t): return None
+        monkeypatch.setattr(data_providers, "get_provider", lambda: FakeP())
+        d = date(2026, 6, 15)
+        while d.toordinal() % 2 != md._provider_group("AAPL"):     # AAPL's group day
+            d += timedelta(days=1)
+        cache_path.write_text(json.dumps({"AAPL": {"fundamentals": None, "next_earnings": None,
+                              "fetched": (d - timedelta(days=5)).isoformat()}}))   # empty, 5d old
+        md._enrich_with_provider(["AAPL"], {}, today=d)
+        assert fetched == []     # empty entry, age 5 < 30-day backoff → not re-fetched
+
+
+# ── journal._load — corrupt-JSON resilience ───────────────────────────────────
+
+class TestLoadListCorruptJSON:
+    def test_corrupt_json_returns_empty_list(self, tmp_path):
+        import journal
+        path = str(tmp_path / "bad.json")
+        (tmp_path / "bad.json").write_text("{invalid json{{")
+        assert journal._load_list(path) == []
+
+    def test_dict_json_coerced_to_list(self, tmp_path):
+        import journal
+        path = str(tmp_path / "dict.json")
+        (tmp_path / "dict.json").write_text('{"key": "value"}')
+        assert journal._load_list(path) == []
+
+    def test_truncated_json_returns_empty_list(self, tmp_path):
+        import journal
+        path = str(tmp_path / "trunc.json")
+        (tmp_path / "trunc.json").write_text('[{"ticker": "AAPL", "action')
+        assert journal._load_list(path) == []
+
+
+# ── health.append_check ───────────────────────────────────────────────────────
+
+class TestAppendCheck:
+    def _hp(self, tmp_path):
+        return str(tmp_path / "health.json")
+
+    def test_creates_from_scratch_when_no_file(self, tmp_path, monkeypatch):
+        import health
+        monkeypatch.setattr(health, "HEALTH_FILE", self._hp(tmp_path))
+        result = health.append_check("step", health.OK, "all good")
+        assert result["checks"]["step"]["status"] == health.OK
+        assert result["overall_status"] == health.OK
+
+    def test_adds_to_existing_data(self, tmp_path, monkeypatch):
+        import health
+        hp = self._hp(tmp_path)
+        monkeypatch.setattr(health, "HEALTH_FILE", hp)
+        seed = {"run_id": "r1", "date": "2026-01-01",
+                "checks": {"old": {"status": "OK", "message": ""}},
+                "alerts": [], "overall_status": "OK"}
+        (tmp_path / "health.json").write_text(json.dumps(seed))
+        health.append_check("new_check", health.FAILED, "broke")
+        result = json.loads((tmp_path / "health.json").read_text())
+        assert "old" in result["checks"] and "new_check" in result["checks"]
+
+    def test_overwrites_existing_check(self, tmp_path, monkeypatch):
+        import health
+        hp = self._hp(tmp_path)
+        monkeypatch.setattr(health, "HEALTH_FILE", hp)
+        seed = {"run_id": "r1", "date": "2026-01-01",
+                "checks": {"step": {"status": "OK", "message": "first"}},
+                "alerts": [], "overall_status": "OK"}
+        (tmp_path / "health.json").write_text(json.dumps(seed))
+        health.append_check("step", health.DEGRADED, "second")
+        result = json.loads((tmp_path / "health.json").read_text())
+        assert result["checks"]["step"]["status"] == health.DEGRADED
+        assert result["checks"]["step"]["message"] == "second"
+
+    def test_escalates_overall_status(self, tmp_path, monkeypatch):
+        import health
+        hp = self._hp(tmp_path)
+        monkeypatch.setattr(health, "HEALTH_FILE", hp)
+        seed = {"run_id": "r1", "date": "2026-01-01",
+                "checks": {"ok_step": {"status": "OK", "message": ""}},
+                "alerts": [], "overall_status": "OK"}
+        (tmp_path / "health.json").write_text(json.dumps(seed))
+        health.append_check("bad_step", health.FAILED, "exploded")
+        result = json.loads((tmp_path / "health.json").read_text())
+        assert result["overall_status"] == health.FAILED
+
+    def test_rebuilds_alerts_list(self, tmp_path, monkeypatch):
+        import health
+        hp = self._hp(tmp_path)
+        monkeypatch.setattr(health, "HEALTH_FILE", hp)
+        health.append_check("good", health.OK, "fine")
+        health.append_check("bad", health.FAILED, "broken")
+        result = json.loads((tmp_path / "health.json").read_text())
+        assert any("bad" in a for a in result["alerts"])
+        assert not any("good" in a for a in result["alerts"])
+
+    def test_aborted_beats_failed(self, tmp_path, monkeypatch):
+        import health
+        hp = self._hp(tmp_path)
+        monkeypatch.setattr(health, "HEALTH_FILE", hp)
+        seed = {"run_id": "r1", "date": "2026-01-01",
+                "checks": {"f": {"status": "FAILED", "message": "bad"}},
+                "alerts": ["[FAILED] f: bad"], "overall_status": "FAILED"}
+        (tmp_path / "health.json").write_text(json.dumps(seed))
+        health.append_check("abort_step", health.ABORTED, "aborted")
+        result = json.loads((tmp_path / "health.json").read_text())
+        assert result["overall_status"] == health.ABORTED
+
+    def test_kwargs_stored(self, tmp_path, monkeypatch):
+        import health
+        monkeypatch.setattr(health, "HEALTH_FILE", self._hp(tmp_path))
+        health.append_check("step", health.OK, "ok", extra_field="hello", count=42)
+        result = json.loads((tmp_path / "health.json").read_text())
+        assert result["checks"]["step"]["extra_field"] == "hello"
+        assert result["checks"]["step"]["count"] == 42
+
+
+# ── execute._compute_qty ──────────────────────────────────────────────────────
+
+class TestComputeQty:
+    def _qty(self, target_weight, action, ticker, portfolio, prices):
+        from execute import _compute_qty
+        return _compute_qty(target_weight, action, ticker, portfolio, prices)
+
+    def _portfolio(self, total=1000.0, positions=None):
+        return {"total_value": total, "positions": positions or []}
+
+    def test_buy_no_existing_holdings(self):
+        qty = self._qty(0.10, "BUY", "AAPL", self._portfolio(), {"AAPL": {"close": 100.0}})
+        assert abs(qty - 1.0) < 1e-5  # $100 / $100 = 1.0 shares
+
+    def test_buy_already_at_target(self):
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "1.0", "available_qty": "1.0"}])
+        qty = self._qty(0.10, "BUY", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert qty == 0.0
+
+    def test_buy_above_target(self):
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "2.0", "available_qty": "2.0"}])
+        qty = self._qty(0.10, "BUY", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert qty == 0.0
+
+    def test_buy_partial_top_up(self):
+        # Holds 0.5 sh; target=10% of $1000=$100; current=$50; delta=$50 → 0.5 sh
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "0.5", "available_qty": "0.5"}])
+        qty = self._qty(0.10, "BUY", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert abs(qty - 0.5) < 1e-5
+
+    def test_sell_full_exit_returns_available_qty(self):
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "3.0", "available_qty": "3.0"}])
+        qty = self._qty(0.0, "SELL", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert qty == 3.0
+
+    def test_sell_full_exit_capped_by_available(self):
+        # Held 3.0 but broker says only 2.5 sellable
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "3.0", "available_qty": "2.5"}])
+        qty = self._qty(0.0, "SELL", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert qty == 2.5
+
+    def test_sell_partial_reduce(self):
+        # Holds 3 sh ($300, 30%); target 10% ($100); sell $200 = 2.0 sh
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "3.0", "available_qty": "3.0"}])
+        qty = self._qty(0.10, "SELL", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert abs(qty - 2.0) < 1e-5
+
+    def test_sell_partial_reduce_capped_by_available(self):
+        # Needs to sell 2.0 sh but only 1.5 available
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "3.0", "available_qty": "1.5"}])
+        qty = self._qty(0.10, "SELL", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert abs(qty - 1.5) < 1e-5
+
+    def test_sell_already_at_target(self):
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "1.0", "available_qty": "1.0"}])
+        qty = self._qty(0.10, "SELL", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert qty == 0.0
+
+    def test_hold_returns_zero(self):
+        qty = self._qty(0.0, "HOLD", "AAPL", self._portfolio(), {"AAPL": {"close": 100.0}})
+        assert qty == 0.0
+
+    def test_missing_price_returns_zero(self):
+        qty = self._qty(0.10, "BUY", "AAPL", self._portfolio(), {})
+        assert qty == 0.0
+
+    def test_ticker_not_in_positions(self):
+        # AAPL not in positions list → current_qty=0, treat as new position
+        port = self._portfolio(1000.0, [{"symbol": "MSFT", "qty": "5.0", "available_qty": "5.0"}])
+        qty = self._qty(0.10, "BUY", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert abs(qty - 1.0) < 1e-5
+
+    def test_available_qty_fallback_to_qty(self):
+        # available_qty absent in position dict → falls back to qty
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "3.0"}])
+        qty = self._qty(0.0, "SELL", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert qty == 3.0  # full exit, fallback available_qty == qty
+
+
+# ── tax_lots — edge cases ─────────────────────────────────────────────────────
+
+class TestTaxLotsAdditional:
+    def test_empty_transactions(self):
+        from tax_lots import open_lots
+        assert open_lots([]) == {}
+
+    def test_all_lots_consumed_by_sell(self):
+        from tax_lots import open_lots
+        txs = [
+            {"action": "BUY", "ticker": "AAPL", "qty": 2, "price": 100, "date": "2026-01-01"},
+            {"action": "SELL", "ticker": "AAPL", "qty": 2, "price": 110, "date": "2026-01-10"},
+        ]
+        assert "AAPL" not in open_lots(txs)
+
+    def test_oversell_clamps_to_zero(self):
+        from tax_lots import open_lots
+        txs = [
+            {"action": "BUY", "ticker": "AAPL", "qty": 1, "price": 100, "date": "2026-01-01"},
+            {"action": "SELL", "ticker": "AAPL", "qty": 5, "price": 110, "date": "2026-01-10"},
+        ]
+        assert "AAPL" not in open_lots(txs)  # no negative lots
+
+    def test_multi_ticker_independent(self):
+        from tax_lots import open_lots
+        txs = [
+            {"action": "BUY",  "ticker": "AAPL", "qty": 2, "price": 100, "date": "2026-01-01"},
+            {"action": "BUY",  "ticker": "MSFT", "qty": 3, "price": 50,  "date": "2026-01-02"},
+            {"action": "SELL", "ticker": "MSFT", "qty": 5, "price": 50,  "date": "2026-01-05"},
+        ]
+        result = open_lots(txs)
+        assert "AAPL" in result       # AAPL untouched by MSFT sell
+        assert "MSFT" not in result   # MSFT oversold → 0 remaining
+
+    def test_ticker_filter(self):
+        from tax_lots import open_lots
+        txs = [
+            {"action": "BUY", "ticker": "AAPL", "qty": 2, "price": 100, "date": "2026-01-01"},
+            {"action": "BUY", "ticker": "MSFT", "qty": 3, "price": 50,  "date": "2026-01-01"},
+        ]
+        result = open_lots(txs, ticker="AAPL")
+        assert isinstance(result, list)
+        assert len(result) == 1 and result[0]["qty"] == 2.0
+
+    def test_holding_days_today_default(self):
+        from tax_lots import holding_days
+        from datetime import date
+        assert holding_days(date.today().isoformat()) == 0
+
+    def test_holding_days_null_acquired_returns_none(self):
+        from tax_lots import holding_days
+        assert holding_days(None) is None
+
+    def test_holding_days_invalid_today_returns_none(self):
+        from tax_lots import holding_days
+        assert holding_days("2026-01-01", today="not-a-date") is None
+
+
+# ── performance._portfolio_curve — edge cases ─────────────────────────────────
+
+class TestPortfolioCurveEdgeCases:
+    def test_non_list_agent_log_returns_empty(self, tmp_path):
+        from performance import _portfolio_curve
+        path = str(tmp_path / "log.json")
+        (tmp_path / "log.json").write_text('{"run_id": "x"}')
+        assert _portfolio_curve(path) == []
+
+    def test_missing_portfolio_snapshot_skipped(self, tmp_path):
+        from performance import _portfolio_curve
+        path = str(tmp_path / "log.json")
+        (tmp_path / "log.json").write_text(json.dumps([
+            {"run_id": "a", "date": "2026-06-01"},
+        ]))
+        assert _portfolio_curve(path) == []
+
+    def test_missing_total_value_skipped(self, tmp_path):
+        from performance import _portfolio_curve
+        path = str(tmp_path / "log.json")
+        (tmp_path / "log.json").write_text(json.dumps([
+            {"run_id": "a", "date": "2026-06-01", "portfolio_snapshot": {"total_value": None}},
+        ]))
+        assert _portfolio_curve(path) == []
+
+    def test_timestamp_key_fallback(self, tmp_path):
+        from performance import _portfolio_curve
+        path = str(tmp_path / "log.json")
+        (tmp_path / "log.json").write_text(json.dumps([
+            {"run_id": "a", "timestamp": "2026-06-01T14:00:00Z",
+             "portfolio_snapshot": {"total_value": 510.0}},
+        ]))
+        assert _portfolio_curve(path) == [("2026-06-01", 510.0)]
+
+
+# ── performance._align — edge cases ──────────────────────────────────────────
+
+class TestAlignEdgeCases:
+    def test_portfolio_predates_spy_returns_empty(self):
+        from performance import _align
+        portfolio = [("2020-01-01", 1000.0)]
+        spy = {"2026-01-01": 500.0}
+        dates, pv, sv = _align(portfolio, spy)
+        assert dates == [] and pv == [] and sv == []
+
+    def test_spy_bars_missing_close_skipped(self, tmp_path):
+        from performance import _spy_curve
+        path = str(tmp_path / "snap.json")
+        (tmp_path / "snap.json").write_text(json.dumps({
+            "history": {
+                "SPY": [
+                    {"date": 1748736000000, "close": 500.0},
+                    {"date": 1748822400000, "close": None},
+                ]
+            }
+        }))
+        result = _spy_curve(path)
+        assert len(result) == 1
+        assert all(v is not None for v in result.values())
+
+
+# ── guardrails.validate_decisions — additional edge cases ─────────────────────
+
+class TestValidateDecisionsAdditional:
+    def _portfolio(self):
+        return {"total_value": 1000.0, "positions": []}
+
+    def test_missing_ticker_field_rejected(self):
+        from guardrails import validate_decisions
+        decisions = [{"action": "BUY", "ticker": "", "target_weight": 0.05, "qty": 0.5}]
+        kept, report = validate_decisions(
+            decisions, self._portfolio(), {"AAPL": {"close": 100.0}}, ["AAPL"], transactions=[])
+        assert len(kept) == 0
+        assert any("missing ticker" in r["reason"] for r in report["rejected"])
+
+    def test_none_target_weight_rejected(self):
+        from guardrails import validate_decisions
+        decisions = [{"action": "BUY", "ticker": "AAPL", "target_weight": None, "qty": 0.5}]
+        kept, report = validate_decisions(
+            decisions, self._portfolio(), {"AAPL": {"close": 100.0}}, ["AAPL"], transactions=[])
+        assert len(kept) == 0
+        assert any("not a number" in r["reason"] for r in report["rejected"])
+
+    def test_holdings_ticker_sell_passes_universe_check(self):
+        # Ticker in holdings but not in candidates → SELL must pass (universe = candidates | holdings)
+        from guardrails import validate_decisions
+        portfolio = {"total_value": 1000.0,
+                     "positions": [{"symbol": "XYZ", "qty": "2.0", "available_qty": "2.0"}]}
+        decisions = [{"action": "SELL", "ticker": "XYZ", "target_weight": 0.0, "qty": 2.0}]
+        kept, report = validate_decisions(
+            decisions, portfolio, {"XYZ": {"close": 100.0}}, candidates=[], transactions=[])
+        assert not any(r["ticker"] == "XYZ" for r in report["rejected"])
+        assert len(kept) == 1
+
+    def test_hold_does_not_increment_passed_counter(self):
+        from guardrails import validate_decisions
+        decisions = [{"action": "HOLD", "ticker": "AAPL", "target_weight": 0.0}]
+        kept, report = validate_decisions(
+            decisions, self._portfolio(), {"AAPL": {"close": 100.0}}, ["AAPL"], transactions=[])
+        assert report["passed"] == 0  # HOLD takes early path — never counted
+        assert len(kept) == 1        # but HOLD is in the kept list
+
+
+# ── guardrails.enforce_wash_sale_reentry — edge cases ────────────────────────
+
+class TestEnforceWashSaleEdgeCases:
+    def test_bad_sell_date_format_passes_through(self):
+        from guardrails import enforce_wash_sale_reentry
+        txs = [{"ticker": "AAPL", "action": "SELL", "date": "not-a-date", "dry_run": False}]
+        decisions = [{"action": "BUY", "ticker": "AAPL", "target_weight": 0.05, "qty": 0.5}]
+        kept, rejected = enforce_wash_sale_reentry(
+            decisions, transactions=txs, today="2026-06-14")
+        assert len(kept) == 1 and len(rejected) == 0
+
+    def test_multiple_sells_uses_most_recent(self):
+        # One sell 40d ago (outside window), one sell 5d ago (inside 30d window)
+        # _last_live_sell_date = max() = 5d ago → BUY rejected
+        from guardrails import enforce_wash_sale_reentry
+        txs = [
+            {"ticker": "AAPL", "action": "SELL", "date": "2026-05-05", "dry_run": False},
+            {"ticker": "AAPL", "action": "SELL", "date": "2026-06-09", "dry_run": False},
+        ]
+        decisions = [{"action": "BUY", "ticker": "AAPL", "target_weight": 0.05, "qty": 0.5}]
+        kept, rejected = enforce_wash_sale_reentry(
+            decisions, transactions=txs, today="2026-06-14")
+        assert len(rejected) == 1 and len(kept) == 0
+
+
+# ── preflight_gate — missing pending file / malformed snapshot ────────────────
+
+class TestPreflightGateMissingPending(TestPreflightGate):
+    def test_proceed_with_no_pending_file(self, tmp_path):
+        today = self._today_et()
+        self._write(tmp_path, "market_snapshot.json",
+                    {"date": today, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 200}})
+        # no pending_decisions.json written at all → falls through to snapshot check → PROCEED
+        assert self._run(tmp_path) == 0
+
+    def test_malformed_snapshot_returns_skip_retry(self, tmp_path):
+        (tmp_path / "market_snapshot.json").write_text("{invalid json")
+        assert self._run(tmp_path) == 10
+
+
+# ── cost_model — zero inputs, LT rate, zero notional ─────────────────────────
+
+class TestCostModelEdgeCases:
+    def test_tax_on_realized_both_zero(self):
+        from cost_model import tax_on_realized
+        tax, cf = tax_on_realized(0, 0)
+        assert tax == 0.0 and cf == 0.0
+
+    def test_round_trip_cost_zero_notional(self):
+        from cost_model import round_trip_cost
+        assert round_trip_cost(0) == 0.0
+
+    def test_net_edge_zero_return(self):
+        from cost_model import net_edge, round_trip_cost
+        result = net_edge(0.0, notional=1000)
+        assert result["gross"] == 0.0
+        assert result["tax"] == 0.0
+        assert abs(result["net"] - (-round_trip_cost(1000))) < 1e-4
+
+    def test_net_edge_lt_rate_higher_net_than_st(self):
+        from cost_model import net_edge
+        st = net_edge(0.05, notional=1000, short_term=True)
+        lt = net_edge(0.05, notional=1000, short_term=False)
+        assert lt["net"] > st["net"]  # LT rate ~37% < ST rate ~54% → more left after tax
+
+
+# ── journal.record_run — rotation at 90 entries ───────────────────────────────
+
+class TestRecordRunRotation:
+    def test_agent_log_capped_at_90(self, tmp_path, monkeypatch):
+        import journal
+        log_path = str(tmp_path / "agent_log.json")
+        monkeypatch.setattr(journal, "AGENT_LOG_FILE", log_path)
+        existing = [{"run_id": f"r{i}", "date": f"2026-01-{(i % 28) + 1:02d}"} for i in range(90)]
+        (tmp_path / "agent_log.json").write_text(json.dumps(existing))
+        journal.record_run("r90", {"date": "2026-04-01"})
+        result = json.loads((tmp_path / "agent_log.json").read_text())
+        assert len(result) == 90
+
+    def test_oldest_entry_dropped_first(self, tmp_path, monkeypatch):
+        import journal
+        log_path = str(tmp_path / "agent_log.json")
+        monkeypatch.setattr(journal, "AGENT_LOG_FILE", log_path)
+        existing = [{"run_id": f"r{i}"} for i in range(90)]
+        (tmp_path / "agent_log.json").write_text(json.dumps(existing))
+        journal.record_run("r90", {"date": "2026-04-01"})
+        result = json.loads((tmp_path / "agent_log.json").read_text())
+        ids = [r["run_id"] for r in result]
+        assert "r0" not in ids    # oldest dropped
+        assert "r90" in ids       # newest preserved
+
+
+# ── journal.recently_exited — edge cases ─────────────────────────────────────
+
+class TestRecentlyExitedEdgeCases:
+    def test_bad_exit_date_skipped(self, tmp_path, monkeypatch):
+        import journal
+        jpath = str(tmp_path / "journal.json")
+        monkeypatch.setattr(journal, "JOURNAL_FILE", jpath)
+        entries = [{"ticker": "AAPL", "status": "closed", "exits": [{"date": "not-a-date"}]}]
+        (tmp_path / "journal.json").write_text(json.dumps(entries))
+        result = journal.recently_exited(within_days=10)
+        assert "AAPL" not in result  # bad date → silently skipped, no exception
+
+    def test_closed_entry_with_empty_exits_excluded(self, tmp_path, monkeypatch):
+        import journal
+        jpath = str(tmp_path / "journal.json")
+        monkeypatch.setattr(journal, "JOURNAL_FILE", jpath)
+        entries = [{"ticker": "AAPL", "status": "closed", "exits": []}]
+        (tmp_path / "journal.json").write_text(json.dumps(entries))
+        result = journal.recently_exited(within_days=10)
+        assert "AAPL" not in result
+
+    def test_open_entry_not_included(self, tmp_path, monkeypatch):
+        import journal
+        from datetime import date
+        jpath = str(tmp_path / "journal.json")
+        monkeypatch.setattr(journal, "JOURNAL_FILE", jpath)
+        entries = [{"ticker": "AAPL", "status": "open",
+                    "exits": [{"date": date.today().isoformat()}]}]
+        (tmp_path / "journal.json").write_text(json.dumps(entries))
+        result = journal.recently_exited(within_days=10)
+        assert "AAPL" not in result  # status != "closed" → never included

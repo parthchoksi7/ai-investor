@@ -14,6 +14,7 @@ load_dotenv()
 
 POLYGON_KEY = os.getenv("POLYGON_API_KEY")
 FUNDAMENTALS_CACHE = "fundamentals_cache.json"
+PROVIDER_CACHE = "provider_cache.json"   # provider enrichment (#1), alternate-day 50/50 cache
 
 WATCHLIST = [
     # Mega-cap Tech / AI / Cloud
@@ -265,6 +266,89 @@ def get_ticker_news(ticker: str, limit: int = 5) -> list[dict]:
         return []
 
 
+def _provider_group(ticker: str) -> int:
+    """Stable alternate-day group (0 or 1) for a ticker via a deterministic hash.
+
+    Python's built-in hash() is per-process salted, so it would not be stable
+    across runs — use hashlib. Half the universe is in each group; a group refreshes
+    on the days whose ordinal matches it, so each ticker refreshes every ~2 days and
+    any single day fetches only ~half the universe.
+    """
+    import hashlib
+    return int(hashlib.md5(ticker.encode()).hexdigest(), 16) % 2
+
+
+def _enrich_with_provider(all_tickers: list, fundamentals: dict, today=None) -> dict:
+    """Overlay real provider fundamentals + a verified earnings calendar onto the
+    snapshot, using an ALTERNATE-DAY 50/50 cache.
+
+    The universe is split into two hash groups; one group refreshes each day
+    (alternating by calendar-date ordinal), and only if its cached entry is missing
+    or ≥ 2 days old. ~½ the universe (~50 tickers) is fetched per day, each ticker
+    refreshes every ~2 days, and the full universe is covered in 2 days.
+
+    Provider selection (from data_providers.get_provider()):
+      - FMP_API_KEY set → FMPProvider: all 6 factors + earnings calendar (250/day limit).
+      - No key          → SECProvider: 3 quality factors from EDGAR (free, no limit).
+      - StubProvider    → immediate no-op (test injection point).
+
+    Mutates `fundamentals` with the provider overlay; returns earnings_calendar.
+    """
+    from datetime import date as _date
+    earnings_calendar: dict = {}
+
+    from data_providers import get_provider, StubProvider
+    provider = get_provider()
+    if isinstance(provider, StubProvider):
+        return earnings_calendar   # test stub → no-op, no HTTP
+    today = today or _date.today()
+    today_group = today.toordinal() % 2               # alternates every calendar day
+
+    cache: dict = {}
+    if os.path.isfile(PROVIDER_CACHE):
+        try:
+            with open(PROVIDER_CACHE) as f:
+                cache = json.load(f)
+        except Exception:
+            cache = {}
+
+    refreshed = 0
+    for t in all_tickers:
+        entry = cache.get(t)
+        age = None
+        if entry and entry.get("fetched"):
+            try:
+                age = (today - _date.fromisoformat(entry["fetched"])).days
+            except (ValueError, TypeError):
+                age = None
+        # Coverage-aware TTL: a ticker that returned real data refreshes every 2
+        # days; one that came back empty (non-US, ADR, or FMP premium-only) waits
+        # 30 days before re-checking so the daily budget isn't burned on misses.
+        has_data = bool(entry and (entry.get("fundamentals") or entry.get("next_earnings")))
+        ttl = 2 if (entry is None or has_data) else 30
+        due = entry is None or age is None or age >= ttl
+        if _provider_group(t) == today_group and due:
+            entry = {"fundamentals":  provider.fundamentals(t),
+                     "next_earnings": provider.next_earnings_date(t),
+                     "fetched":       today.isoformat()}
+            cache[t] = entry
+            refreshed += 1
+        if entry:
+            if entry.get("fundamentals"):
+                fundamentals[t] = {**(fundamentals.get(t) or {}), **entry["fundamentals"]}
+            if entry.get("next_earnings"):
+                earnings_calendar[t] = entry["next_earnings"]
+
+    tmp = PROVIDER_CACHE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(cache, f, indent=2)
+    os.replace(tmp, PROVIDER_CACHE)
+    if refreshed or earnings_calendar:
+        print(f"   📅 Provider enrichment: refreshed {refreshed} ticker(s) today; "
+              f"{len(earnings_calendar)} earnings date(s) live")
+    return earnings_calendar
+
+
 def get_market_snapshot(force: bool = False) -> dict:
     """
     Full market snapshot:
@@ -396,25 +480,10 @@ def get_market_snapshot(force: bool = False) -> dict:
     source    = mcp_source or "live_polygon_yfinance"
     data_date = mcp_data.get("date", "unknown") if mcp_source else today_str
 
-    # ── Real-data enrichment (#1) ────────────────────────────────────────────
-    # Overlay provider fundamentals (so quant quality/valuation go live) and a
-    # verified earnings calendar. With no FMP_API_KEY, get_provider() returns a
-    # StubProvider whose methods return None instantly — a pure no-op, so the
-    # free-tier path is unchanged (no extra HTTP, no regression). Defensive: a
-    # provider error never breaks the snapshot.
+    # ── Real-data enrichment (#1) — alternate-day 50/50 cache (FMP or SEC EDGAR) ──
     earnings_calendar: dict = {}
     try:
-        from data_providers import get_provider
-        _provider = get_provider()
-        for t in all_tickers:
-            real_f = _provider.fundamentals(t)
-            if real_f:
-                fundamentals[t] = {**(fundamentals.get(t) or {}), **real_f}
-            ed = _provider.next_earnings_date(t)
-            if ed:
-                earnings_calendar[t] = ed
-        if earnings_calendar:
-            print(f"   📅 Earnings calendar: {len(earnings_calendar)} ticker(s) from provider")
+        earnings_calendar = _enrich_with_provider(all_tickers, fundamentals)
     except Exception as e:
         print(f"   ⚠ provider enrichment skipped: {e}")
 

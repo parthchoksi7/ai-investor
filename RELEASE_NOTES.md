@@ -13,7 +13,77 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
-_Nothing pending — see the dated release below._
+---
+
+## [2026-06-14] — QA batch: crash-safety fix + 60 new tests (302 → 362)  ·  ~PT  ·  fix/fmp-stable-api
+
+End-to-end QA/UAT review of the full pipeline. One latent crash-safety defect found and fixed; 13 new test classes locking in untested code paths across every module.
+
+### Fixed — `journal._load` corrupt-JSON crash
+- **`journal._load()`** now wraps `json.load()` in `try/except (JSONDecodeError, ValueError)`. Previously a corrupt/truncated `transactions.json` or `decision_journal.json` (disk error, partial write) would raise an unhandled exception — the most dangerous timing is *after* orders are placed. The atomic `os.replace()` write pattern reduces the window, but does not eliminate it on power-loss. Now degrades gracefully to the empty default instead of crashing.
+
+### Test — 60 new tests across 13 classes (302 → 362 total)
+
+| Class | Count | What was missing |
+|---|---|---|
+| `TestLoadListCorruptJSON` | 3 | Locks in the `_load` fix: corrupt/truncated/dict JSON → `[]` |
+| `TestAppendCheck` | 7 | `health.append_check` was entirely untested — creates from scratch, escalates status, overwrites check, rebuilds alerts, ABORTED > FAILED, stores kwargs |
+| `TestComputeQty` | 13 | `execute._compute_qty` never tested directly — all BUY/SELL/HOLD paths, `available_qty` cap, missing price, ticker-not-in-positions |
+| `TestTaxLotsAdditional` | 8 | Oversell (no negative lots), multi-ticker independence, ticker filter, `holding_days` null/bad-date edge cases |
+| `TestPortfolioCurveEdgeCases` | 4 | Non-list log, missing `portfolio_snapshot`, null `total_value`, `timestamp` key fallback |
+| `TestAlignEdgeCases` | 2 | Portfolio predating SPY → empty result; bars with null close skipped by `_spy_curve` |
+| `TestValidateDecisionsAdditional` | 4 | Empty ticker, `None` target_weight (TypeError path), holdings-only SELL passes universe check, HOLD doesn't increment `passed` |
+| `TestEnforceWashSaleEdgeCases` | 2 | Malformed sell-date → guard skipped → BUY passes; multiple SELLs uses most-recent (max) |
+| `TestPreflightGateMissingPending` | 2 | No pending file + fresh snapshot → PROCEED; malformed snapshot.json → SKIP/RETRY |
+| `TestCostModelEdgeCases` | 4 | Both gains zero, zero notional, zero-return net edge, LT rate yields higher net than ST |
+| `TestRecordRunRotation` | 2 | Agent log capped at 90; oldest entry dropped first |
+| `TestRecentlyExitedEdgeCases` | 3 | Bad exit date silently skipped; empty exits excluded; `open` status excluded |
+
+### Added — SECProvider: free EDGAR fundamentals for the full universe
+- **`data_providers.SECProvider`** — uses the SEC EDGAR company-facts XBRL API
+  (`data.sec.gov/api/xbrl/companyfacts`) to source `gross_margin`,
+  `operating_margin`, and `debt_to_equity` for ~100% of US-listed equities.
+  Completely free, no API key, no rate-limit concerns. Powers the full **quality
+  score** for every ticker in the watchlist (was all-N/A without `FMP_API_KEY`).
+- **`get_provider()` factory** now returns `SECProvider` (not the inert `StubProvider`)
+  when no `FMP_API_KEY` is present. Existing behaviour when FMP key is set is
+  unchanged — `FMPProvider` still wins and supplies all 6 factors + earnings calendar.
+- **`_enrich_with_provider()`** no longer requires `FMP_API_KEY` to proceed; the
+  `StubProvider` check is kept as a test injection point.
+- **Provider chain (priority order):**
+  1. `FMP_API_KEY` set → `FMPProvider`: all 6 quant factors + earnings calendar + estimates
+  2. No key → `SECProvider`: 3 quality factors (gross_margin / operating_margin / D/E); no earnings calendar
+  3. Test fixtures → `StubProvider`: deterministic no-op
+
+> **What EDGAR does NOT provide:** P/E, FCF yield, EV/EBITDA (price-dependent ratios), and
+> the forward earnings calendar. Those still require `FMP_API_KEY`.
+
+(+8 tests: `TestSECProvider` — ratio computation, most-recent annual, zero-equity guard,
+HTTP error → None, CIK map loaded once, Protocol conformance.)
+
+### Fixed — #1 FMP provider migrated to the stable API
+- FMP deprecated the legacy `/api/v3` endpoints for keys issued after 2025-08-31
+  (they 403 "Legacy Endpoint"), so `FMPProvider` was returning `None` even with a
+  valid key (graceful no-op — no regression, just no data). Migrated to the
+  `/stable` API with **live-validated** endpoints + field names:
+  `ratios-ttm` + `key-metrics-ttm` (fundamentals), `earnings` (calendar),
+  `analyst-estimates`. Confirmed against AAPL/NVDA/JPM — real margins, P/E,
+  FCF yield, EV/EBITDA, and verified next-earnings dates now flow into the
+  snapshot. **#1 is now active with `FMP_API_KEY` set.**
+- **Alternate-day 50/50 enrichment cache** (`market_data._enrich_with_provider`,
+  `provider_cache.json`) — the universe is hash-split into two groups; one refreshes
+  each day, so ~50 tickers × 3 stable-API calls ≈ **150 FMP calls/day** (under the
+  250/day free-tier limit), each ticker refreshes every ~2 days. **Coverage-aware
+  backoff:** FMP free tier covers only **~35%** of the universe (the rest 402
+  "premium only"); empty/premium tickers are re-checked every 30 days, not every 2,
+  so the budget isn't wasted on them. Cache persisted via `actions/cache`.
+- **`market_data.yml`** now passes `FMP_API_KEY` to the fetch step (was missing) and
+  persists `provider_cache.json`.
+
+> **Coverage reality (FMP free tier):** ~35/100 tickers return all 6 factors (mega-caps:
+> AAPL/MSFT/NVDA/GOOGL/META/AMZN/JPM/BAC/GS/COST/NFLX…); the other ~65 get 3 quality
+> factors from EDGAR + momentum+vol from Polygon. Full 6-factor coverage for all tickers
+> needs a paid FMP tier (~$22/mo).
 
 ---
 
