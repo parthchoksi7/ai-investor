@@ -396,15 +396,38 @@ def get_market_snapshot(force: bool = False) -> dict:
     source    = mcp_source or "live_polygon_yfinance"
     data_date = mcp_data.get("date", "unknown") if mcp_source else today_str
 
+    # ── Real-data enrichment (#1) ────────────────────────────────────────────
+    # Overlay provider fundamentals (so quant quality/valuation go live) and a
+    # verified earnings calendar. With no FMP_API_KEY, get_provider() returns a
+    # StubProvider whose methods return None instantly — a pure no-op, so the
+    # free-tier path is unchanged (no extra HTTP, no regression). Defensive: a
+    # provider error never breaks the snapshot.
+    earnings_calendar: dict = {}
+    try:
+        from data_providers import get_provider
+        _provider = get_provider()
+        for t in all_tickers:
+            real_f = _provider.fundamentals(t)
+            if real_f:
+                fundamentals[t] = {**(fundamentals.get(t) or {}), **real_f}
+            ed = _provider.next_earnings_date(t)
+            if ed:
+                earnings_calendar[t] = ed
+        if earnings_calendar:
+            print(f"   📅 Earnings calendar: {len(earnings_calendar)} ticker(s) from provider")
+    except Exception as e:
+        print(f"   ⚠ provider enrichment skipped: {e}")
+
     return {
-        "date":            today_str,
-        "fetched_at":      datetime.now(timezone.utc).isoformat(),
-        "_source":         source,
-        "_data_date":      data_date,
-        "prices":          prices,
-        "history":         history,
-        "fundamentals":    fundamentals,
-        "news":            articles,
-        "ticker_news":     ticker_news,
-        "news_discovered": news_discovered,
+        "date":             today_str,
+        "fetched_at":       datetime.now(timezone.utc).isoformat(),
+        "_source":          source,
+        "_data_date":       data_date,
+        "prices":           prices,
+        "history":          history,
+        "fundamentals":     fundamentals,
+        "earnings_calendar": earnings_calendar,
+        "news":             articles,
+        "ticker_news":      ticker_news,
+        "news_discovered":  news_discovered,
     }
