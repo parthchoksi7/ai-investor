@@ -13,7 +13,26 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
-_Nothing pending — see the dated release below._
+### Added — #6 net-edge gate (tax-aware trade filter)
+- **`tax_lots.py`** — read-only FIFO open-lot accounting (qty / cost basis /
+  acquired date) derived from `transactions.json` on demand; persists nothing, so
+  it stays out of the money/state path. Plus `holding_days()`.
+- **`guardrails.enforce_net_edge`** (using `cost_model.net_edge`) — rejects a BUY
+  whose expected return, after round-trip cost **and ~54% CA short-term tax**, is
+  below `MIN_NET_EDGE`. **Conditional** on an explicit `expected_return`: a
+  decision without one is passed through (no regression). **SELLs exempt** (exits
+  never blocked). Wired into `main.py` after the turnover/sector guards; folded
+  into the `decision_validation` health check.
+- **PM now emits `expected_return`** (gross fraction over the 1–3 mo horizon) — so
+  the gate has input, and the journal's feedback loop (`thesis_correct` threshold)
+  gets a real expectation instead of 0.
+
+> Makes "is this trade worth it after CA tax?" a **code-level control** rather than
+> a hope. Mechanism (fewer marginal trades → less short-term tax) is consistent
+> with the backtest finding that monthly rebalance (+$4,185) >> daily (−$242).
+> `MIN_NET_EDGE` defaults to $0 (must be net-positive after tax+cost); tunable.
+
+(+8 tests: `TestTaxLots`, `TestNetEdgeGate`. Suite **269**.)
 
 ---
 
