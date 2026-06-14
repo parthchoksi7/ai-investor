@@ -84,6 +84,9 @@ def build_report(result: dict) -> dict:
             "SPY is price-return (no dividends). Costs = effective spread + slippage (cost_model).",
             "After-tax subtracts CA tax on realized gains (mostly short-term in a <1yr window); "
             "unrealized gains untaxed (deferred), matching the SPY-hold alternative.",
+            "SURVIVORSHIP BIAS: the universe is only tickers in today's snapshot (no delisted/"
+            "bankrupt names) and is FIXED over the whole window — this biases returns upward. "
+            "A point-in-time universe is needed before trusting the absolute numbers.",
             "~10 months of bars from a single snapshot — short sample; not yet a skill claim.",
         ],
     }

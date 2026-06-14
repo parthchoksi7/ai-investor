@@ -13,6 +13,12 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+_Nothing pending — see the dated release below._
+
+---
+
+## [2026-06-14] — P1: quant backtest harness + cost_model spine + QA hardening  ·  ~22:15 PT  ·  PR #10
+
 ### Added
 - **`cost_model.py`** — shared cost & tax spine (P1 foundation for the backtest
   #3 and the future net-edge gate #6). Holds the CA top-bracket tax rates +
@@ -33,6 +39,22 @@ DEPLOYMENT.md §7.0). Newest first.
   > **−0.03%** over ~10 months vs SPY **+8.77%** — gross alpha **−8.8%**, 23.6×
   > annual turnover. The deterministic layer has **no demonstrated edge** at this
   > config; this is exactly the validation P1 exists to provide.
+
+### Fixed (QA hardening — two independent review passes, all personas)
+- **Timezone-flaky test** — `TestPublishSpyDataSource` computed "today" with local
+  `date.today()` (Pacific) while the production function uses ET, so it failed ~3
+  hours **every day** (the midnight-ET-to-midnight-PT window). Now uses ET to match.
+- **Survivorship-bias caveat** — the backtest report now discloses that the universe
+  is only tickers in today's snapshot (no delisted names) and fixed over the window,
+  so absolute returns are biased upward.
+- **+8 edge-case regression tests** — degenerate backtests (no SPY / empty history /
+  warmup overflow / no-leverage / no-look-ahead), guard boundaries (exactly-5-day
+  hold and exactly-30-day wash-sale both correctly allowed), survivorship disclosure.
+  Suite **261**.
+
+> **QA insight (Portfolio Manager lens):** monthly rebalancing yields **+$4,185
+> realized vs −$242 for daily** (86 vs 1,360 trades) — churn is value-destructive,
+> empirically backing the turnover/tax guards shipped in PR #9.
 
 ---
 

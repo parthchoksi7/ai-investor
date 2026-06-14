@@ -300,6 +300,20 @@ This prevents the silent all-50 quant score failure mode where agents run but pr
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
 
+## Changelog — Jun 14 2026 (P1 backtest harness + cost_model spine + QA hardening)
+
+FINAL_PLAN P1 — the validation foundation. All **offline tooling** (not in the live
+trade path). PR #10.
+
+| Change | Why |
+|--------|-----|
+| `feat(cost_model)` **`cost_model.py`** — shared spine: CA ST/LT tax + IRS-style netting (`tax_on_realized`), `round_trip_cost`, `net_edge`. `performance.py` delegates tax to it (single source of truth). | The backtest (#3) and the future net-edge gate (#6) must compute identical economics; centralizing prevents drift. |
+| `feat(backtest)` **`backtest/`** — event-loop harness reusing `quant_engine.score_all_tickers` unchanged, next-open fills (no look-ahead), `cost_model` costs, momentum/inverse-vol strategy, after-tax-vs-SPY report. `python -m backtest`. **No LLM in the backtest.** | First honest verdict: the quant-only strategy returns **−0.03% vs SPY +8.77%** (no edge yet) — surfaced instead of shipped on faith. |
+| `fix(test)` **timezone-flaky test** — `TestPublishSpyDataSource` used local `date.today()` vs the function's ET, failing ~3 hrs/day. Now ET. | Found in QA; would have intermittently red-flagged CI / blocked deploys in the ET/PT straddle window. |
+| `docs(backtest)` **survivorship-bias caveat** in the report. | The universe is current survivors only (no delisted names) → upward bias; must be disclosed. |
+
+> **QA:** two independent review passes (all thread personas), edge-case battery, +25 tests over the batch → **261 passing**. Subagent `/code-review` was rate-limited; a thorough manual review covered look-ahead, leverage, tax netting, guard boundaries, degenerate inputs — no actionable correctness findings. **PM insight:** monthly rebalance (+$4,185 realized) vastly beats daily (−$242) — churn is value-destructive.
+
 ## Changelog — Jun 14 2026 (paper-shadow + after-tax + turnover discipline)
 
 Edge-upgrade batch P0/P0.5 from the FINAL_PLAN roadmap. All changes are
