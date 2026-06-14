@@ -7,9 +7,16 @@ A fully automated daily equity trading system. Every weekday at 9:45 AM ET, a sc
 ## Architecture
 
 ```
+GitHub Actions (market_data.yml · 7:00 / 8:00 / 8:30 AM ET)
+    ├── fetch_snapshot.py  → Polygon API: 210-day OHLCV + news
+    ├── data_providers.py  → Provider enrichment (SEC EDGAR free, or FMP with key)
+    │     SECProvider      →   gross_margin / operating_margin / debt_to_equity (all tickers)
+    │     FMPProvider      →   + pe_ratio / fcf_yield / ev_ebitda + earnings calendar (key req.)
+    └── market_snapshot.json committed to repo ← cloud routine reads this
+
 Scheduled Routine (Anthropic Cloud, 9:45 AM ET weekdays)
     │
-    ├── market_data.py     → Polygon API: 210-day OHLCV + fundamentals (weekly cached)
+    ├── market_data.py     → reads committed snapshot (OHLCV + enriched fundamentals)
     ├── quant_engine.py    → Deterministic scoring: momentum / quality / valuation / risk
     ├── analysis.py        → 7-agent Claude pipeline (see below)
     ├── execute.py         → Robinhood MCP: place orders on agentic account only
@@ -36,7 +43,8 @@ Haiku runs for each of up to 20 candidates. Sonnet runs 3 times total. Prompt ca
 | File | Purpose |
 |------|---------|
 | `main.py` | Entry point — 9-step orchestration with full health tracking |
-| `market_data.py` | Polygon.io: prices, 210-day history, fundamentals, news |
+| `market_data.py` | Polygon.io: prices, 210-day history, fundamentals, news; calls `_enrich_with_provider()` |
+| `data_providers.py` | Provider abstraction: `SECProvider` (EDGAR, free, no key) / `FMPProvider` (key req.) / `StubProvider` (tests); `get_provider()` factory |
 | `quant_engine.py` | Pure Python scoring (no LLM) |
 | `analysis.py` | 7-agent pipeline |
 | `execute.py` | Robinhood order execution via `robin_stocks` |
@@ -51,6 +59,7 @@ Haiku runs for each of up to 20 candidates. Sonnet runs 3 times total. Prompt ca
 | `system_health.json` | Written every run; push triggers `alert.yml` |
 | `fundamentals_cache.json` | Weekly fundamentals cache (avoid re-fetching daily) |
 | `portfolio_peak.json` | Tracks portfolio peak for drawdown kill switch |
+| `provider_cache.json` | Alternate-day 50/50 enrichment cache (EDGAR/FMP fundamentals); persisted via `actions/cache` |
 
 ## Robinhood Account
 
@@ -493,6 +502,8 @@ Manual checks (GitHub UI / `gh`):
 ## Known Limitations
 
 - Cloud quant scores are real (full 210-day history) because the committed `market_snapshot.json` is the primary source; they only degrade toward 50 in the `mcp_market_data.json` fallback, which the pre-flight gate + main.py abort prevent from running. So "no trades" from a missing snapshot is intended (the day is skipped), not a silent all-50 run.
+- **Fundamentals coverage (quality + valuation factors):** `SECProvider` (no key required) sources gross_margin / operating_margin / debt_to_equity from SEC EDGAR for virtually all US-listed equities. P/E, FCF yield, and EV/EBITDA require `FMP_API_KEY`; without it those three fields remain N/A. Forward earnings calendar also requires `FMP_API_KEY`. See `data_providers.py` for the full provider chain.
+- **FMP free-tier coverage:** only ~35% of the 100-ticker watchlist (mega-caps: AAPL, MSFT, NVDA, GOOGL, META, JPM, BAC, GS, etc.) returns data on the free plan; the rest 402 "premium only". The alternate-day 50/50 cache + 30-day backoff for empty tickers keeps usage under the 250/day free limit.
 - **Drawdown peak does not account for deposits.** `portfolio_peak.json` tracks raw `total_value`. Funding the account (a deposit) inflates `total_value` → a new apparent peak, so the kill-switch drawdown math (`(peak − current) / peak`) measures from a peak that includes deposited cash, not investment performance. After any deposit/withdrawal, manually reset `portfolio_peak.json["peak"]` to the post-deposit value (see Manual Execution Runbook Scenario C).
 - `market_data.py` makes ~90 API calls per run locally (one per ticker for 210-day history) plus up to 5 Polygon calls for news (1 summary + 4 per-ticker). Polygon free tier = 5 calls/minute — news calls are placed FIRST (before the history loop) to guarantee a fresh budget window.
 - DST: GitHub Actions crons (`market_data.yml`, `health_check.yml`) are auto-updated by `.github/workflows/update_dst.yml` on March 15 and November 8. Both Anthropic routine crons require manual updates — see the EOD note and Daily Cycle note under Automated Execution above.
@@ -530,6 +541,10 @@ pytest test_pipeline.py -v
 | `TestReturnCorrelations` / `TestCroCorrelationInjection` | `quant_engine.py` / `analysis.py` | Pairwise return correlation; CRO `user_msg` carries a real correlation block (none when no history) |
 | `TestPerformanceReport` | `performance.py` | Metrics on known curves, epoch-ms SPY parse, as-of alignment, end-to-end report, missing-file safety |
 | `TestScoreAllTickers` (updated) | `quant_engine.py` | Honest composite: all-4 factors when fundamentals present; drops + renormalizes momentum+volatility when absent; neutral when no factor has data |
+| `TestDataProviders` | `data_providers.py` | StubProvider contract; FMPProvider no-key degradation; FMP stable-API field mapping; earnings soonest-future; factory returns SECProvider (no key) / FMPProvider (key) |
+| `TestSECProvider` | `data_providers.py` | EDGAR ratio computation from 10-K; most-recent annual entry; unknown ticker → None; no earnings/estimates; CIK map loaded once; zero-equity guard; HTTP error → None; Protocol conformance |
+| `TestProviderEnrichmentCache` | `market_data.py` | Group determinism (0/1); StubProvider → no-op; fetch on group day + cache; cache served on off-day; 30-day backoff for empty entries |
+| `TestEarningsGateAndFabrication` | `analysis.py` | Phase 3.2: skip LLM when calendar shows no event in 90d; run when event within 90d; no-calendar falls back to prior behavior; fabrication guard overrides model's date guess |
 
 ## Manual Execution Runbook
 

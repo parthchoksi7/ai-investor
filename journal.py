@@ -21,8 +21,11 @@ KILL_DRAWDOWN_THRESHOLD = 0.20
 
 def _load(path: str, default):
     if os.path.isfile(path):
-        with open(path) as f:
-            return json.load(f)
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, ValueError):
+            return default
     return default
 
 

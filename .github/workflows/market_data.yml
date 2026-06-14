@@ -28,10 +28,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Restore fundamentals cache
+      - name: Restore fundamentals + provider cache
         uses: actions/cache@v5
         with:
-          path: fundamentals_cache.json
+          path: |
+            fundamentals_cache.json
+            provider_cache.json
           key: fundamentals-${{ runner.os }}-${{ github.run_number }}
           restore-keys: |
             fundamentals-${{ runner.os }}-
@@ -41,6 +43,7 @@ jobs:
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
         run: python fetch_snapshot.py
 
       - name: Commit market_snapshot.json to repo
