@@ -13,7 +13,27 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
-_Nothing pending — see the dated release below._
+### Added — #1 real data (provider layer) + Phase 3.2 earnings gate
+- **`data_providers.py`** — `MarketDataProvider` Protocol + `StubProvider`
+  (testable without a key) + `FMPProvider` (Financial Modeling Prep) + `get_provider()`
+  factory. Degrades gracefully: no `FMP_API_KEY` → stub → `None` → free-tier
+  fallback, **zero regression**.
+- **`market_data.get_market_snapshot()`** now overlays provider `fundamentals`
+  (so quant quality/valuation go live — no `quant_engine` change) and a verified
+  `earnings_calendar`. No-op without a key.
+- **`analysis.run_earnings_catalyst_analyst`** — injects the **verified** earnings
+  date with a **fabrication guard** (the calendar date overrides the model's
+  guess; flags `earnings_date_corrected`), and **IMPROVEMENTS_SPEC Phase 3.2**:
+  when a real calendar exists, **skips the LLM call** for names with no event in
+  90 days (no token spend, no all-default noise to the PM). Falls back to current
+  behavior when no calendar is available.
+
+> ⚠️ **VENDOR KEY BLOCKER:** set `FMP_API_KEY` in `.env` (local) and as a GitHub
+> Actions secret (for `market_data.yml`) to activate real data. Until then the
+> stub path runs — identical to today's free-tier behavior. FMP field mappings
+> are best-effort vs the v3 schema; validate against a live response.
+
+(+11 tests: `TestDataProviders`, `TestEarningsGateAndFabrication`. Suite **272**.)
 
 ---
 
