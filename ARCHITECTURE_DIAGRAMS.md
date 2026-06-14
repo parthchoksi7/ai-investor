@@ -33,7 +33,7 @@ flowchart TB
     MAIN --> QUANT["quant_engine.py<br/>deterministic scores"]
     QUANT --> AGENTS["analysis.py<br/>7-agent Claude pipeline"]
     AGENTS --> GUARD["guardrails<br/>validate · turnover · sector cap"]
-    GUARD --> EXEC["execute.py → Robinhood MCP<br/>orders on acct 994046696"]
+    GUARD --> EXEC["execute.py → Robinhood MCP<br/>orders on acct YOUR_ACCOUNT_NUMBER"]
     EXEC --> LOG["Log: trades.csv · journal ·<br/>transactions · agent_log · health"]
     LOG --> PUSH["git commit + push"]
 

@@ -63,7 +63,7 @@ Haiku runs for each of up to 20 candidates. Sonnet runs 3 times total. Prompt ca
 
 ## Robinhood Account
 
-- **Agentic account number:** `994046696`
+- **Agentic account number:** `YOUR_ACCOUNT_NUMBER`
 - **Account type:** Cash, individual, `agentic_allowed=true`
 - **Starting capital:** $500
 - All other accounts (`agentic_allowed=false`) are never touched by this system.
@@ -162,7 +162,7 @@ POLYGON_API_KEY=...
 ROBINHOOD_USERNAME=...
 ROBINHOOD_PASSWORD=...
 ROBINHOOD_MFA_SECRET=...    # TOTP secret from authenticator app
-ROBINHOOD_ACCOUNT_NUMBER=994046696
+ROBINHOOD_ACCOUNT_NUMBER=YOUR_ACCOUNT_NUMBER
 DRY_RUN=true                # set false to actually execute
 ```
 
@@ -563,7 +563,7 @@ Use this when the scheduled routine fails or you need to intervene.
 3. For each BUY or SELL decision (**never TSLA**):
    - Use `decision["qty"]` directly — it is pre-computed fractional shares. **Do NOT round to whole shares.**
    - If `qty` is missing (old file), fall back to: `round(target_weight × total_value / current_price, 6)` — `total_value` from `mcp_portfolio.json`
-   - Place: `place_equity_order(account_number='994046696', symbol=ticker, side='buy'|'sell', quantity=qty, type='market', time_in_force='gfd')`
+   - Place: `place_equity_order(account_number='YOUR_ACCOUNT_NUMBER', symbol=ticker, side='buy'|'sell', quantity=qty, type='market', time_in_force='gfd')`
    - Skip HOLD decisions entirely. Skip a trade only if `qty == 0`. A qty of 0.648 is a valid fractional order — place it.
 4. After **all** orders are placed, stamp execution:
    ```

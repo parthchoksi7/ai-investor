@@ -53,10 +53,10 @@ STEP 1 — Fetch portfolio via Robinhood MCP
 ═══════════════════════════════════════════════
 
 Call in order:
-1. get_accounts() — confirm account 994046696 is present with agentic_allowed=true.
+1. get_accounts() — confirm account YOUR_ACCOUNT_NUMBER is present with agentic_allowed=true.
    If not found or agentic_allowed=false, STOP immediately.
-2. get_portfolio(account_number='994046696') — for cash and total_value
-3. get_equity_positions(account_number='994046696') — for holdings
+2. get_portfolio(account_number='YOUR_ACCOUNT_NUMBER') — for cash and total_value
+3. get_equity_positions(account_number='YOUR_ACCOUNT_NUMBER') — for holdings
 
 Write mcp_portfolio.json with this exact structure:
 {
@@ -198,7 +198,7 @@ For each decision where action is BUY or SELL:
      (re-send the SAME ref_id only if you retry the SAME order after a transport failure;
      never reuse it for a different order):
      place_equity_order(
-       account_number='994046696',
+       account_number='YOUR_ACCOUNT_NUMBER',
        symbol=<ticker>,
        side='buy' or 'sell',
        quantity=<qty from step 1>,

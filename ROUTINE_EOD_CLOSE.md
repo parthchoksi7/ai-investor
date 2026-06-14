@@ -43,9 +43,9 @@ Run the EOD Close Snapshot — record the official 4 PM closing portfolio value 
 
 STEP 1 — Get portfolio via Robinhood MCP
 Call:
-- get_accounts() — confirm account 994046696 is present
-- get_portfolio(account_number='994046696') — for cash and total_value
-- get_equity_positions(account_number='994046696') — for holdings
+- get_accounts() — confirm account YOUR_ACCOUNT_NUMBER is present
+- get_portfolio(account_number='YOUR_ACCOUNT_NUMBER') — for cash and total_value
+- get_equity_positions(account_number='YOUR_ACCOUNT_NUMBER') — for holdings
 - get_equity_quotes for each held ticker (to get current_price)
 
 Write mcp_portfolio.json in this exact format:

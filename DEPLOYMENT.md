@@ -50,7 +50,7 @@ This runs automatically with real money. There is no human in the loop.
 
 ### Glossary
 
-**Agentic account** — A dedicated Robinhood account (number: `994046696`) used only by this system. It is separate from any personal Robinhood account. Every order must target this account explicitly via `account_number=AGENTIC_ACCOUNT`. If this argument is missing from an `rh.orders.*` call, the order goes to the default account — a serious bug.
+**Agentic account** — A dedicated Robinhood account (number: `YOUR_ACCOUNT_NUMBER`) used only by this system. It is separate from any personal Robinhood account. Every order must target this account explicitly via `account_number=AGENTIC_ACCOUNT`. If this argument is missing from an `rh.orders.*` call, the order goes to the default account — a serious bug.
 
 **DRY_RUN** — An environment variable. When `DRY_RUN=true`, the system runs the full pipeline and logs decisions but places no real orders. Always start here. Set to `false` only in production.
 
@@ -72,7 +72,7 @@ This runs automatically with real money. There is no human in the loop.
 
 Always activate the virtual environment first. Every Python command in this document assumes it is active:
 ```bash
-cd /Users/parthchoksi/ai-projects/ai-investor
+cd /path/to/ai-investor
 source venv/bin/activate
 # You should see (venv) at the start of your prompt
 ```
@@ -133,7 +133,7 @@ POLYGON_API_KEY=...          # not expired; verify with a sample ticker
 ROBINHOOD_USERNAME=...
 ROBINHOOD_PASSWORD=...
 ROBINHOOD_MFA_SECRET=...     # TOTP secret (not a code — a base32 secret)
-ROBINHOOD_ACCOUNT_NUMBER=994046696   # must be the agentic account
+ROBINHOOD_ACCOUNT_NUMBER=YOUR_ACCOUNT_NUMBER   # must be the agentic account
 DRY_RUN=true                 # ALWAYS start with dry run
 SUPABASE_URL=...
 SUPABASE_SERVICE_KEY=...
@@ -367,7 +367,7 @@ Expected output: `✅ Kill switch tests passed`
 ### 3.4 BLOCKED_TICKERS enforcement
 ```bash
 python3 - <<'EOF'
-import os; os.environ["DRY_RUN"] = "true"; os.environ["ROBINHOOD_ACCOUNT_NUMBER"] = "994046696"
+import os; os.environ["DRY_RUN"] = "true"; os.environ["ROBINHOOD_ACCOUNT_NUMBER"] = "YOUR_ACCOUNT_NUMBER"
 from execute import place_order
 result = place_order("TSLA", "BUY", 1)
 assert result.get("blocked"), f"TSLA should be blocked, got: {result}"
@@ -429,7 +429,7 @@ try:
         json.dump(mcp, f)
 
     os.environ["DRY_RUN"] = "true"
-    os.environ["ROBINHOOD_ACCOUNT_NUMBER"] = "994046696"
+    os.environ["ROBINHOOD_ACCOUNT_NUMBER"] = "YOUR_ACCOUNT_NUMBER"
     # Note: execute.py must be importable from original_dir — run this from project root
     import sys; sys.path.insert(0, original_dir)
     from execute import get_portfolio_summary
@@ -631,7 +631,7 @@ EOF
 Before any deployment, snapshot the current Robinhood agentic account state:
 ```bash
 python3 - <<'EOF'
-import os; os.environ["DRY_RUN"] = "true"; os.environ["ROBINHOOD_ACCOUNT_NUMBER"] = "994046696"
+import os; os.environ["DRY_RUN"] = "true"; os.environ["ROBINHOOD_ACCOUNT_NUMBER"] = "YOUR_ACCOUNT_NUMBER"
 from execute import get_portfolio_summary
 p = get_portfolio_summary()
 print(f"Cash: ${p['cash']:,.2f}")
@@ -854,7 +854,7 @@ Compare expected positions (from `pending_decisions.json`) against actual Robinh
 python3 - <<'EOF'
 import os, json
 os.environ["DRY_RUN"] = "true"
-os.environ["ROBINHOOD_ACCOUNT_NUMBER"] = "994046696"
+os.environ["ROBINHOOD_ACCOUNT_NUMBER"] = "YOUR_ACCOUNT_NUMBER"
 
 from execute import get_portfolio_summary
 portfolio = get_portfolio_summary()
@@ -1196,7 +1196,7 @@ grep DRY_RUN .env
 If you see `ModuleNotFoundError: No module named 'anthropic'` or similar, you forgot `source venv/bin/activate`. Every Python command in this document assumes the venv is active.
 
 **Running tests from the wrong directory**
-All tests must be run from `/Users/parthchoksi/ai-projects/ai-investor/` (the project root). If you `cd` somewhere else, imports will fail. Check:
+All tests must be run from `/path/to/ai-investor/` (the project root). If you `cd` somewhere else, imports will fail. Check:
 ```bash
 pwd  # should print the project root
 ```
