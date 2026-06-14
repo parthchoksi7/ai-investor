@@ -13,6 +13,28 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — SECProvider: free EDGAR fundamentals for the full universe
+- **`data_providers.SECProvider`** — uses the SEC EDGAR company-facts XBRL API
+  (`data.sec.gov/api/xbrl/companyfacts`) to source `gross_margin`,
+  `operating_margin`, and `debt_to_equity` for ~100% of US-listed equities.
+  Completely free, no API key, no rate-limit concerns. Powers the full **quality
+  score** for every ticker in the watchlist (was all-N/A without `FMP_API_KEY`).
+- **`get_provider()` factory** now returns `SECProvider` (not the inert `StubProvider`)
+  when no `FMP_API_KEY` is present. Existing behaviour when FMP key is set is
+  unchanged — `FMPProvider` still wins and supplies all 6 factors + earnings calendar.
+- **`_enrich_with_provider()`** no longer requires `FMP_API_KEY` to proceed; the
+  `StubProvider` check is kept as a test injection point.
+- **Provider chain (priority order):**
+  1. `FMP_API_KEY` set → `FMPProvider`: all 6 quant factors + earnings calendar + estimates
+  2. No key → `SECProvider`: 3 quality factors (gross_margin / operating_margin / D/E); no earnings calendar
+  3. Test fixtures → `StubProvider`: deterministic no-op
+
+> **What EDGAR does NOT provide:** P/E, FCF yield, EV/EBITDA (price-dependent ratios), and
+> the forward earnings calendar. Those still require `FMP_API_KEY`.
+
+(+8 tests: `TestSECProvider` — ratio computation, most-recent annual, zero-equity guard,
+HTTP error → None, CIK map loaded once, Protocol conformance.)
+
 ### Fixed — #1 FMP provider migrated to the stable API
 - FMP deprecated the legacy `/api/v3` endpoints for keys issued after 2025-08-31
   (they 403 "Legacy Endpoint"), so `FMPProvider` was returning `None` even with a
@@ -32,10 +54,10 @@ DEPLOYMENT.md §7.0). Newest first.
 - **`market_data.yml`** now passes `FMP_API_KEY` to the fetch step (was missing) and
   persists `provider_cache.json`.
 
-> **Coverage reality (free tier):** ~35/100 tickers return real data (mega-caps:
-> AAPL/MSFT/NVDA/GOOGL/META/AMZN/JPM/BAC/GS/COST/NFLX…); the other ~65 (HD, LLY,
-> AVGO, CRM, CAT, most SaaS/semis) stay momentum+vol (graceful). Full coverage
-> needs a paid FMP tier (~$22/mo) or a broader-coverage vendor.
+> **Coverage reality (FMP free tier):** ~35/100 tickers return all 6 factors (mega-caps:
+> AAPL/MSFT/NVDA/GOOGL/META/AMZN/JPM/BAC/GS/COST/NFLX…); the other ~65 get 3 quality
+> factors from EDGAR + momentum+vol from Polygon. Full 6-factor coverage for all tickers
+> needs a paid FMP tier (~$22/mo).
 
 ---
 
