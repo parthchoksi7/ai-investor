@@ -14,7 +14,7 @@ load_dotenv()
 
 POLYGON_KEY = os.getenv("POLYGON_API_KEY")
 FUNDAMENTALS_CACHE = "fundamentals_cache.json"
-PROVIDER_CACHE = "provider_cache.json"   # FMP enrichment (#1), hash-staggered weekly cache
+PROVIDER_CACHE = "provider_cache.json"   # provider enrichment (#1), alternate-day 50/50 cache
 
 WATCHLIST = [
     # Mega-cap Tech / AI / Cloud
@@ -480,7 +480,7 @@ def get_market_snapshot(force: bool = False) -> dict:
     source    = mcp_source or "live_polygon_yfinance"
     data_date = mcp_data.get("date", "unknown") if mcp_source else today_str
 
-    # ── Real-data enrichment (#1) — hash-staggered weekly cache, free-tier safe ──
+    # ── Real-data enrichment (#1) — alternate-day 50/50 cache (FMP or SEC EDGAR) ──
     earnings_calendar: dict = {}
     try:
         earnings_calendar = _enrich_with_provider(all_tickers, fundamentals)
