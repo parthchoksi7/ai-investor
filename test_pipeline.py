@@ -3053,3 +3053,82 @@ class TestFeatureInteractions:
         d, _ = g.enforce_net_edge(d, prices)
         tickers = {x["ticker"] for x in d}
         assert "NVDA" in tickers and "MRK" in tickers
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  #1 — provider enrichment cache (alternate-day 50/50, FMP free-tier safe)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestProviderEnrichmentCache:
+    def test_group_stable_and_binary(self):
+        import market_data as md
+        g = md._provider_group("AAPL")
+        assert g == md._provider_group("AAPL") and g in (0, 1)   # deterministic, 0/1
+
+    def test_no_key_is_noop(self, monkeypatch):
+        import market_data as md
+        from datetime import date
+        monkeypatch.delenv("FMP_API_KEY", raising=False)
+        fund = {}
+        assert md._enrich_with_provider(["AAPL"], fund, today=date(2026, 6, 15)) == {}
+        assert fund == {}                                        # untouched, no HTTP
+
+    def test_fetches_on_group_day_and_caches(self, tmp_path, monkeypatch):
+        import market_data as md, data_providers, json
+        from datetime import date, timedelta
+        monkeypatch.setattr(md, "PROVIDER_CACHE", str(tmp_path / "pc.json"))
+        monkeypatch.setenv("FMP_API_KEY", "x")
+        class FakeP:
+            def fundamentals(self, t): return {"pe_ratio": 30}
+            def next_earnings_date(self, t): return "2026-07-30"
+        monkeypatch.setattr(data_providers, "get_provider", lambda: FakeP())
+        d = date(2026, 6, 15)
+        while d.toordinal() % 2 != md._provider_group("AAPL"):   # land on AAPL's group day
+            d += timedelta(days=1)
+        fund = {}
+        ec = md._enrich_with_provider(["AAPL"], fund, today=d)
+        assert ec["AAPL"] == "2026-07-30" and fund["AAPL"]["pe_ratio"] == 30
+        assert json.load(open(tmp_path / "pc.json"))["AAPL"]["fetched"] == d.isoformat()
+
+    def test_off_group_day_uses_cache_no_fetch(self, tmp_path, monkeypatch):
+        import market_data as md, data_providers, json
+        from datetime import date, timedelta
+        cache_path = tmp_path / "pc.json"
+        cache_path.write_text(json.dumps({"AAPL": {"fundamentals": {"pe_ratio": 25},
+                              "next_earnings": "2026-08-01", "fetched": "2026-06-10"}}))
+        monkeypatch.setattr(md, "PROVIDER_CACHE", str(cache_path))
+        monkeypatch.setenv("FMP_API_KEY", "x")
+        fetched = []
+        class FakeP:
+            def fundamentals(self, t): fetched.append(t); return {"pe_ratio": 99}
+            def next_earnings_date(self, t): return "x"
+        monkeypatch.setattr(data_providers, "get_provider", lambda: FakeP())
+        d = date(2026, 6, 15)
+        while d.toordinal() % 2 == md._provider_group("AAPL"):   # land OFF AAPL's group day
+            d += timedelta(days=1)
+        fund = {}
+        ec = md._enrich_with_provider(["AAPL"], fund, today=d)
+        assert fetched == []                          # not its day → no fetch
+        assert fund["AAPL"]["pe_ratio"] == 25         # served from cache
+        assert ec["AAPL"] == "2026-08-01"
+
+    def test_premium_empty_ticker_backoff(self, tmp_path, monkeypatch):
+        # FMP free tier 402s on ~65% of names → empty cache entry; don't re-hit it
+        # every 2 days (30-day backoff) so the daily call budget isn't wasted.
+        import market_data as md, data_providers, json
+        from datetime import date, timedelta
+        cache_path = tmp_path / "pc.json"
+        monkeypatch.setattr(md, "PROVIDER_CACHE", str(cache_path))
+        monkeypatch.setenv("FMP_API_KEY", "x")
+        fetched = []
+        class FakeP:
+            def fundamentals(self, t): fetched.append(t); return {"pe_ratio": 1}
+            def next_earnings_date(self, t): return None
+        monkeypatch.setattr(data_providers, "get_provider", lambda: FakeP())
+        d = date(2026, 6, 15)
+        while d.toordinal() % 2 != md._provider_group("AAPL"):     # AAPL's group day
+            d += timedelta(days=1)
+        cache_path.write_text(json.dumps({"AAPL": {"fundamentals": None, "next_earnings": None,
+                              "fetched": (d - timedelta(days=5)).isoformat()}}))   # empty, 5d old
+        md._enrich_with_provider(["AAPL"], {}, today=d)
+        assert fetched == []     # empty entry, age 5 < 30-day backoff → not re-fetched

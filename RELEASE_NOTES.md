@@ -22,6 +22,20 @@ DEPLOYMENT.md §7.0). Newest first.
   `analyst-estimates`. Confirmed against AAPL/NVDA/JPM — real margins, P/E,
   FCF yield, EV/EBITDA, and verified next-earnings dates now flow into the
   snapshot. **#1 is now active with `FMP_API_KEY` set.**
+- **Alternate-day 50/50 enrichment cache** (`market_data._enrich_with_provider`,
+  `provider_cache.json`) — the universe is hash-split into two groups; one refreshes
+  each day, so ~50 tickers × 3 stable-API calls ≈ **150 FMP calls/day** (under the
+  250/day free-tier limit), each ticker refreshes every ~2 days. **Coverage-aware
+  backoff:** FMP free tier covers only **~35%** of the universe (the rest 402
+  "premium only"); empty/premium tickers are re-checked every 30 days, not every 2,
+  so the budget isn't wasted on them. Cache persisted via `actions/cache`.
+- **`market_data.yml`** now passes `FMP_API_KEY` to the fetch step (was missing) and
+  persists `provider_cache.json`.
+
+> **Coverage reality (free tier):** ~35/100 tickers return real data (mega-caps:
+> AAPL/MSFT/NVDA/GOOGL/META/AMZN/JPM/BAC/GS/COST/NFLX…); the other ~65 (HD, LLY,
+> AVGO, CRM, CAT, most SaaS/semis) stay momentum+vol (graceful). Full coverage
+> needs a paid FMP tier (~$22/mo) or a broader-coverage vendor.
 
 ---
 
