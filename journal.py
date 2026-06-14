@@ -193,7 +193,10 @@ def _reconcile_trade_log(run_id: str, fills: dict) -> int:
             if fill.get("price"):
                 row["price"] = f"{float(fill['price']):.4f}"
                 if row.get("qty"):
-                    row["total_value"] = f"{float(row['qty']) * float(fill['price']):.2f}"
+                    notional = float(row["qty"]) * float(fill["price"])
+                    row["total_value"] = f"{notional:.2f}"
+                    # Keep the paper-shadow twin in lockstep with the live fill.
+                    row["total_value_100x"] = f"{notional * execute.SHADOW_MULTIPLIER:.2f}"
         else:
             row["dry_run"] = "True"
             row["broker_order_id"] = ""

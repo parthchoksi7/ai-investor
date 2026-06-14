@@ -751,6 +751,30 @@ EOF
 
 ## 7. Deployment Steps
 
+### 7.0 Pre-deploy gates (MANDATORY — both required before §7.2 commit)
+
+These two gates run **before** the git commit for every deploy. Neither is
+optional for P0/P1 changes regardless of diff size.
+
+**7.0.1 — Update `RELEASE_NOTES.md`**
+- The change must already be described under `[Unreleased]` (add it in the same
+  PR as the code).
+- On deploy, **move `[Unreleased]` into a new dated release block** at the top of
+  the history: `## [YYYY-MM-DD] — <summary>  ·  ~HH:MM PT  ·  <short-hashes>`.
+  Leave a fresh empty `[Unreleased]` section above it.
+- A deploy with code changes but no `RELEASE_NOTES.md` update **fails this gate**.
+  (A regression test asserts an `[Unreleased]` section exists — see §12 /
+  `TestReleaseNotes`.)
+
+**7.0.2 — Expert code review**
+- Run an **expert code review on the full diff** and resolve every finding before
+  committing. In Claude Code: `/code-review high` (use `/code-review ultra` for P0
+  execution-path changes — it launches the deeper multi-agent cloud review).
+- The reviewer (or the review agent) must complete the §11.2 checklist and leave a
+  written verdict in the PR/commit. Unresolved P0/P1 findings **block the deploy**.
+- Solo-developer note: the §11 24-hour cooling period still applies to P0/P1; the
+  automated expert review supplements it, it does not replace the cool-off.
+
 ### 7.1 Local validation (always)
 
 > ⚠️ **Never run the dry-run pipeline during market hours on a trading day.** `DRY_RUN=true python main.py` overwrites `pending_decisions.json` with `executed_at: null` and today's date. If that file is then committed/pushed (or the day's cycle already executed), a later routine attempt (10:45/11:45/12:45 ET) sees "not executed + fresh data" and **places the day's orders again — double-fill**. Run it after 4 PM ET or on a non-trading day, and never stage `pending_decisions.json` from a local run. If you must skip this step on a trading day, document the skip in the commit message.
