@@ -17,6 +17,78 @@ _Nothing pending — see the dated release below._
 
 ---
 
+## [2026-06-14] — Edge batch: #1 real data + #6 net-edge gate + #2 forecast ledger  ·  ~23:20 PT  ·  PR #11/#12/#13
+
+Deployed together after two persona test rounds (289 unit tests + 14 cross-feature
+interaction probes, all green). 5.1 (structured output) deferred — needs a live
+API dry-run. `FMP_API_KEY` still needed to activate #1's real data (no-op until then).
+
+### Added — #1 real data (provider layer) + Phase 3.2 earnings gate
+- **`data_providers.py`** — `MarketDataProvider` Protocol + `StubProvider`
+  (testable without a key) + `FMPProvider` (Financial Modeling Prep) + `get_provider()`
+  factory. Degrades gracefully: no `FMP_API_KEY` → stub → `None` → free-tier
+  fallback, **zero regression**.
+- **`market_data.get_market_snapshot()`** now overlays provider `fundamentals`
+  (so quant quality/valuation go live — no `quant_engine` change) and a verified
+  `earnings_calendar`. No-op without a key.
+- **`analysis.run_earnings_catalyst_analyst`** — injects the **verified** earnings
+  date with a **fabrication guard** (the calendar date overrides the model's
+  guess; flags `earnings_date_corrected`), and **IMPROVEMENTS_SPEC Phase 3.2**:
+  when a real calendar exists, **skips the LLM call** for names with no event in
+  90 days (no token spend, no all-default noise to the PM). Falls back to current
+  behavior when no calendar is available.
+
+> ⚠️ **VENDOR KEY BLOCKER:** set `FMP_API_KEY` in `.env` (local) and as a GitHub
+> Actions secret (for `market_data.yml`) to activate real data. Until then the
+> stub path runs — identical to today's free-tier behavior. FMP field mappings
+> are best-effort vs the v3 schema; validate against a live response.
+
+(+11 tests: `TestDataProviders`, `TestEarningsGateAndFabrication`.)
+
+### Added — #6 net-edge gate (tax-aware trade filter)
+- **`tax_lots.py`** — read-only FIFO open-lot accounting (qty / cost basis /
+  acquired date) derived from `transactions.json` on demand; persists nothing, so
+  it stays out of the money/state path. Plus `holding_days()`.
+- **`guardrails.enforce_net_edge`** (using `cost_model.net_edge`) — rejects a BUY
+  whose expected return, after round-trip cost **and ~54% CA short-term tax**, is
+  below `MIN_NET_EDGE`. **Conditional** on an explicit `expected_return`: a
+  decision without one is passed through (no regression). **SELLs exempt** (exits
+  never blocked). Wired into `main.py` after the turnover/sector guards; folded
+  into the `decision_validation` health check.
+- **PM now emits `expected_return`** (gross fraction over the 1–3 mo horizon) — so
+  the gate has input, and the journal's feedback loop (`thesis_correct` threshold)
+  gets a real expectation instead of 0.
+
+> Makes "is this trade worth it after CA tax?" a **code-level control** rather than
+> a hope. Mechanism (fewer marginal trades → less short-term tax) is consistent
+> with the backtest finding that monthly rebalance (+$4,185) >> daily (−$242).
+> `MIN_NET_EDGE` defaults to $0 (must be net-positive after tax+cost); tunable.
+
+(+8 tests: `TestTaxLots`, `TestNetEdgeGate`.)
+
+### Added — #2 forecast ledger (the learning clock)
+- **`calibration.py`** — `log_forecasts()` appends each run's structured agent
+  forecasts (quant composite, research confidence, earnings alpha, devil's-advocate
+  risk, position hold score) to `forecasts.jsonl`, one row per (agent, ticker,
+  field) with the entry price + horizon. **OBSERVATIONAL — logging only, wired
+  after `record_run`, never affects a decision and never raises into the pipeline.**
+- `score_matured()` joins matured forecasts to realized forward returns from the
+  snapshot history (idempotent) → `forecasts_scored.jsonl`.
+- `agent_scorecard()` — per-agent rank-IC + sign-hit-rate with **shrinkage toward a
+  no-skill prior** (`ic_shrunk = ic·n/(n+k)`), so a lucky handful can't read as
+  signal. Nothing sizes a trade on it yet — it's a scoreboard, gated behind sample
+  size (future work).
+
+> Scores the **full candidate universe** every run (not just executed trades), so
+> it accrues hundreds of labeled forecasts/month — the only way to beat the
+> small-sample problem on a $500 book. The ledger files are gitignored.
+
+(+5 tests: `TestCalibrationLedger`.)
+
+> **Integrated suite: 285 passing** (#1 + #6 + #2 together).
+
+---
+
 ## [2026-06-14] — P1: quant backtest harness + cost_model spine + QA hardening  ·  ~22:15 PT  ·  PR #10
 
 ### Added

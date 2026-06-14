@@ -59,6 +59,7 @@ MAX_SECTOR_WEIGHT        = 0.25   # hard cap on projected post-trade sector weig
 # the documented weekly momentum-rotation churn, not to manage settlement.
 MIN_HOLDING_TRADING_DAYS = 5    # don't SELL a name bought < 5 trading days ago (risk exits exempt)
 WASH_SALE_REENTRY_DAYS   = 30   # don't BUY a name SOLD within 30 calendar days (wash-sale + anti-churn)
+MIN_NET_EDGE             = 0.0  # $ floor: a BUY's expected edge must clear cost + CA ST tax (#6; tunable)
 
 
 # Static ticker → sector map for the current universe. The data layer carries
@@ -453,3 +454,53 @@ def validate_decisions(
         report["passed"] += 1
 
     return validated, report
+
+
+def enforce_net_edge(
+    decisions: list[dict],
+    prices: dict,
+    min_net_edge: float = MIN_NET_EDGE,
+) -> tuple[list[dict], list[dict]]:
+    """Reject BUYs whose expected NET edge < min_net_edge after round-trip cost +
+    CA short-term tax (cost_model.net_edge).
+
+    Conditional on an explicit `expected_return` (the PM's gross-return estimate,
+    a fraction): a decision without one is NOT evaluated — pass it through, so
+    there is no regression before the PM reliably emits the field. SELLs are
+    exempt: exits / de-risking must never be blocked by an edge floor. Returns
+    (kept, rejected); rejected entries carry a `rejected_reason` (folded into the
+    decision_validation health check in main.py).
+
+    Why it matters: in a CA top-bracket taxable account a short-term gain is taxed
+    ~54%, so a marginal BUY whose expected edge barely clears the gross hurdle is
+    net-negative after tax + friction. This gate makes "is it worth it after tax?"
+    a code-level control rather than a hope.
+    """
+    from cost_model import net_edge
+    kept, rejected = [], []
+    for d in decisions:
+        action = str(d.get("action", "")).upper()
+        try:
+            er = float(d.get("expected_return"))
+        except (TypeError, ValueError):
+            er = 0.0
+        if action != "BUY" or er <= 0:
+            kept.append(d)
+            continue
+        ticker   = d.get("ticker", "")
+        qty      = float(d.get("qty") or 0)
+        price    = float((prices.get(ticker) or {}).get("close", 0) or 0)
+        notional = qty * price
+        if notional <= 0:
+            kept.append(d)
+            continue
+        ne = net_edge(er, notional, short_term=True)
+        if ne["net"] < min_net_edge:
+            reason = (f"net edge ${ne['net']:.2f} < ${min_net_edge:.2f} floor after "
+                      f"cost ${ne['cost']:.2f} + CA ST tax ${ne['tax']:.2f} "
+                      f"(gross ${ne['gross']:.2f} on {er:.1%} expected return)")
+            rejected.append({**d, "rejected_reason": reason})
+            print(f"   🚫 NET-EDGE REJECT: BUY {ticker} — {reason}")
+        else:
+            kept.append(d)
+    return kept, rejected

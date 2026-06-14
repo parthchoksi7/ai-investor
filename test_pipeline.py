@@ -2755,3 +2755,299 @@ class TestGuardrailBoundaries:
             transactions=[{"ticker": "X", "action": "SELL", "date": "2026-05-15", "dry_run": False}],
             today="2026-06-14")
         assert len(kept) == 1 and rej == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  data_providers — real-data abstraction (#1). Tested against the StubProvider;
+#  FMPProvider degrades gracefully without a key (no hard failure, no regression).
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestDataProviders:
+    def test_stub_returns_configured_data(self):
+        from data_providers import StubProvider
+        p = StubProvider(
+            fundamentals={"AAPL": {"gross_margin": 0.45, "pe_ratio": 30}},
+            earnings={"AAPL": "2026-07-28"},
+            estimates={"AAPL": {"eps": 2.1}})
+        assert p.fundamentals("AAPL") == {"gross_margin": 0.45, "pe_ratio": 30}
+        assert p.next_earnings_date("AAPL") == "2026-07-28"
+        assert p.estimates("AAPL") == {"eps": 2.1}
+        assert p.fundamentals("UNKNOWN") is None      # unknown ticker → None contract
+
+    def test_stub_conforms_to_protocol(self):
+        from data_providers import StubProvider, MarketDataProvider
+        assert isinstance(StubProvider(), MarketDataProvider)
+
+    def test_fmp_without_key_degrades_gracefully(self, monkeypatch):
+        monkeypatch.delenv("FMP_API_KEY", raising=False)
+        from data_providers import FMPProvider
+        p = FMPProvider(api_key=None)
+        assert p.fundamentals("AAPL") is None         # no key → None, never raises
+        assert p.next_earnings_date("AAPL") is None
+        assert p.estimates("AAPL") is None
+
+    def test_fmp_fundamentals_field_mapping(self, monkeypatch):
+        from data_providers import FMPProvider
+        p = FMPProvider(api_key="x")
+        monkeypatch.setattr(p, "_get", lambda *a, **k: [{
+            "grossProfitMarginTTM": 0.4612, "operatingProfitMarginTTM": 0.301,
+            "debtEquityRatioTTM": 1.23, "peRatioTTM": 28.4,
+            "freeCashFlowYieldTTM": 0.035, "enterpriseValueMultipleTTM": 19.1,
+            "freeCashFlowPerShareTTM": 6.0, "revenuePerShareTTM": 24.0,
+        }])
+        f = p.fundamentals("AAPL")
+        assert f["gross_margin"] == 0.4612 and f["operating_margin"] == 0.301
+        assert f["debt_to_equity"] == 1.23 and f["pe_ratio"] == 28.4
+        assert f["fcf_yield"] == 0.035 and f["ev_ebitda"] == 19.1
+        assert f["fcf_margin"] == 0.25                # 6.0 / 24.0
+
+    def test_fmp_next_earnings_picks_soonest_future(self, monkeypatch):
+        from data_providers import FMPProvider
+        p = FMPProvider(api_key="x")
+        monkeypatch.setattr(p, "_get", lambda *a, **k: [
+            {"symbol": "AAPL", "date": "2020-01-01"},   # past → ignored
+            {"symbol": "AAPL", "date": "2099-09-09"},
+            {"symbol": "AAPL", "date": "2099-07-01"},   # soonest future
+            {"symbol": "MSFT", "date": "2099-06-01"},   # wrong ticker → ignored
+        ])
+        assert p.next_earnings_date("AAPL") == "2099-07-01"
+
+    def test_get_provider_factory(self, monkeypatch):
+        import data_providers as dp
+        monkeypatch.delenv("FMP_API_KEY", raising=False)
+        assert isinstance(dp.get_provider(), dp.StubProvider)   # no key → stub
+        monkeypatch.setenv("FMP_API_KEY", "k")
+        assert isinstance(dp.get_provider(), dp.FMPProvider)    # key → FMP
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Earnings agent gate (Phase 3.2) + fabrication guard (#1). With a real calendar:
+#  skip the LLM for names with no event in 90d; override the model's date guess.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestEarningsGateAndFabrication:
+    def _md(self, calendar=None, date="2026-06-14"):
+        return {"date": date, "prices": {"AAPL": {"close": 200}},
+                "earnings_calendar": calendar or {}, "ticker_news": {}, "news": []}
+
+    def test_within_90d_boundaries(self):
+        import analysis
+        assert analysis._within_90d(None, "2026-06-14") is False
+        assert analysis._within_90d("2026-06-14", "2026-06-14") is True    # today
+        assert analysis._within_90d("2026-09-12", "2026-06-14") is True    # +90
+        assert analysis._within_90d("2026-09-13", "2026-06-14") is False   # +91
+        assert analysis._within_90d("2026-06-13", "2026-06-14") is False   # past
+
+    def test_gate_skips_when_calendar_present_no_event(self, monkeypatch):
+        import analysis
+        called = []
+        monkeypatch.setattr(analysis, "_safe_call", lambda *a, **k: called.append(1) or {})
+        r = analysis.run_earnings_catalyst_analyst("AAPL", self._md(calendar={"AAPL": "2026-12-01"}))
+        assert r.get("skipped_no_catalyst") is True and r["earnings_alpha_score"] is None
+        assert called == []                                # NO LLM call — Phase 3.2
+
+    def test_runs_when_event_within_90d(self, monkeypatch):
+        import analysis
+        called = []
+        monkeypatch.setattr(analysis, "_safe_call",
+                            lambda *a, **k: called.append(1) or {"next_earnings_est": "2026-07-01", "earnings_alpha_score": 7})
+        r = analysis.run_earnings_catalyst_analyst("AAPL", self._md(calendar={"AAPL": "2026-07-01"}))
+        assert called == [1] and r["earnings_alpha_score"] == 7
+
+    def test_no_calendar_runs_as_before(self, monkeypatch):
+        import analysis
+        called = []
+        monkeypatch.setattr(analysis, "_safe_call", lambda *a, **k: called.append(1) or {"earnings_alpha_score": 5})
+        r = analysis.run_earnings_catalyst_analyst("AAPL", self._md(calendar={}))
+        assert called == [1] and "skipped_no_catalyst" not in r    # no regression on free tier
+
+    def test_fabrication_guard_overrides_model_date(self, monkeypatch):
+        import analysis
+        monkeypatch.setattr(analysis, "_safe_call",
+                            lambda *a, **k: {"next_earnings_est": "2026-08-15", "earnings_alpha_score": 6})
+        r = analysis.run_earnings_catalyst_analyst("AAPL", self._md(calendar={"AAPL": "2026-07-01"}))
+        assert r["next_earnings_est"] == "2026-07-01"        # verified calendar wins
+        assert r["next_earnings_est_model"] == "2026-08-15" and r["earnings_date_corrected"] is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  #6 — tax-lot accounting + net-edge gate (reject BUYs not worth it after CA tax)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestTaxLots:
+    def _tx(self, action, ticker, qty, price, date, dry=False):
+        return {"action": action, "ticker": ticker, "qty": qty, "price": price,
+                "date": date, "timestamp": date + "T00:00:00+00:00", "dry_run": dry}
+
+    def test_open_lots_after_fifo(self):
+        import tax_lots
+        txs = [self._tx("BUY", "AAPL", 10, 100, "2026-01-02"),
+               self._tx("BUY", "AAPL", 10, 110, "2026-01-03"),
+               self._tx("SELL", "AAPL", 15, 130, "2026-01-10")]
+        lots = tax_lots.open_lots(txs, "AAPL")
+        # FIFO: first lot (10@100) fully consumed; second (10@110) reduced to 5
+        assert len(lots) == 1
+        assert lots[0]["qty"] == 5.0 and lots[0]["cost_basis"] == 110
+        assert lots[0]["acquired"] == "2026-01-03"
+
+    def test_open_lots_excludes_dry_run(self):
+        import tax_lots
+        assert tax_lots.open_lots([self._tx("BUY", "X", 5, 10, "2026-01-01", dry=True)], "X") == []
+
+    def test_holding_days(self):
+        import tax_lots
+        assert tax_lots.holding_days("2026-01-01", "2026-01-31") == 30
+        assert tax_lots.holding_days("bad", "2026-01-31") is None
+
+
+class TestNetEdgeGate:
+    def _prices(self):
+        return {"NVDA": {"close": 100.0}}
+
+    def test_no_expected_return_passes_through(self):
+        import guardrails as g
+        kept, rej = g.enforce_net_edge([{"ticker": "NVDA", "action": "BUY", "qty": 4}], self._prices())
+        assert len(kept) == 1 and rej == []          # not evaluated without expected_return
+
+    def test_sell_is_exempt(self):
+        import guardrails as g
+        kept, rej = g.enforce_net_edge(
+            [{"ticker": "NVDA", "action": "SELL", "qty": 4, "expected_return": 0.01}], self._prices())
+        assert len(kept) == 1 and rej == []
+
+    def test_marginal_buy_rejected_after_tax(self):
+        import guardrails as g
+        # 0.01% expected on a $400 BUY: gross $0.04 < cost $0.12 → net < 0
+        kept, rej = g.enforce_net_edge(
+            [{"ticker": "NVDA", "action": "BUY", "qty": 4, "expected_return": 0.0001}],
+            self._prices(), min_net_edge=0.0)
+        assert kept == [] and len(rej) == 1 and "net edge" in rej[0]["rejected_reason"]
+
+    def test_healthy_edge_kept(self):
+        import guardrails as g
+        # 10% on $400 = $40 gross; net after ~54% tax ≈ $18 > 0 → kept
+        kept, rej = g.enforce_net_edge(
+            [{"ticker": "NVDA", "action": "BUY", "qty": 4, "expected_return": 0.10}],
+            self._prices(), min_net_edge=0.0)
+        assert len(kept) == 1 and rej == []
+
+    def test_tunable_floor_rejects(self):
+        import guardrails as g
+        # same ~$18 net edge, but a $25 floor rejects it
+        kept, rej = g.enforce_net_edge(
+            [{"ticker": "NVDA", "action": "BUY", "qty": 4, "expected_return": 0.10}],
+            self._prices(), min_net_edge=25.0)
+        assert kept == [] and len(rej) == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  #2 — calibration forecast ledger (observational; no trade-path change)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCalibrationLedger:
+    def _pstate(self):
+        return {
+            "quant_scores":    {"AAPL": {"composite_score": 80}, "MSFT": {"composite_score": 60}},
+            "research":        {"AAPL": {"confidence": 8}},
+            "earnings":        {"AAPL": {"earnings_alpha_score": 7}},
+            "devils_advocate": {"AAPL": {"overall_risk_score": 4}},
+            "position_reviews": {"AAPL": {"hold_score": 9}},
+        }
+
+    def test_log_forecasts_shape(self, tmp_path):
+        import calibration, json
+        path = str(tmp_path / "f.jsonl")
+        n = calibration.log_forecasts("r1", "2026-06-14", self._pstate(), ["AAPL", "MSFT"],
+                                      {"AAPL": {"close": 200}, "MSFT": {"close": 100}}, path=path)
+        assert n == 6                     # AAPL: 5 agents, MSFT: quant only
+        rows = [json.loads(l) for l in open(path)]
+        aq = next(r for r in rows if r["ticker"] == "AAPL" and r["agent"] == "quant")
+        assert aq["value"] == 80 and aq["entry_price"] == 200 and aq["horizon_days"] == 21
+
+    def test_log_forecasts_skips_missing_price(self, tmp_path):
+        import calibration
+        n = calibration.log_forecasts("r1", "2026-06-14",
+                                      {"quant_scores": {"AAPL": {"composite_score": 80}}},
+                                      ["AAPL"], {"AAPL": {}}, path=str(tmp_path / "f.jsonl"))
+        assert n == 0
+
+    def test_score_matured_joins_forward_return(self, tmp_path):
+        import calibration, json
+        ledger, scored = str(tmp_path / "f.jsonl"), str(tmp_path / "s.jsonl")
+        with open(ledger, "w") as f:
+            f.write(json.dumps({"run_id": "r1", "date": "2026-01-02", "agent": "quant",
+                                "field": "composite_score", "ticker": "AAPL", "value": 80,
+                                "entry_price": 100.0, "horizon_days": 5}) + "\n")
+        snap = {"history": {"AAPL": [{"date": "2026-01-08", "close": 110.0}]}}   # >= entry+5d
+        assert calibration.score_matured(snap, ledger_path=ledger, scored_path=scored) == 1
+        r = json.loads(open(scored).readline())
+        assert r["realized_return"] == 0.1 and r["future_price"] == 110.0
+        assert calibration.score_matured(snap, ledger_path=ledger, scored_path=scored) == 0  # idempotent
+
+    def test_score_matured_skips_immature(self, tmp_path):
+        import calibration, json
+        ledger, scored = str(tmp_path / "f.jsonl"), str(tmp_path / "s.jsonl")
+        with open(ledger, "w") as f:
+            f.write(json.dumps({"run_id": "r1", "date": "2026-01-02", "agent": "quant",
+                                "field": "composite_score", "ticker": "AAPL", "value": 80,
+                                "entry_price": 100.0, "horizon_days": 5}) + "\n")
+        snap = {"history": {"AAPL": [{"date": "2026-01-05", "close": 105.0}]}}   # before maturity
+        assert calibration.score_matured(snap, ledger_path=ledger, scored_path=scored) == 0
+
+    def test_agent_scorecard_shrinks_small_sample(self, tmp_path):
+        import calibration, json
+        scored, card = str(tmp_path / "s.jsonl"), str(tmp_path / "card.json")
+        with open(scored, "w") as f:
+            for i in range(5):
+                f.write(json.dumps({"run_id": f"r{i}", "agent": "quant", "field": "composite_score",
+                                    "ticker": "AAPL", "value": float(i), "realized_return": i / 100}) + "\n")
+        out = calibration.agent_scorecard(scored_path=scored, out_path=card, shrink_k=50)
+        k = "quant.composite_score"
+        assert out[k]["n"] == 5 and out[k]["ic"] == 1.0
+        assert out[k]["ic_shrunk"] == round(5 / 55, 3)        # shrunk far below the raw IC
+        assert out[k]["ic_shrunk"] < out[k]["ic"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Cross-feature interaction regressions (#1 × #6 × #2 integrated)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestFeatureInteractions:
+    def test_skipped_earnings_not_logged_by_ledger(self, tmp_path):
+        # #1 Phase 3.2 emits earnings_alpha_score=None (skipped); #2 must drop it (non-numeric)
+        import calibration
+        pstate = {"quant_scores": {"AAPL": {"composite_score": 80}},
+                  "earnings": {"AAPL": {"earnings_alpha_score": None, "skipped_no_catalyst": True}},
+                  "research": {"AAPL": {"confidence": 7}}}
+        n = calibration.log_forecasts("r1", "2026-06-14", pstate, ["AAPL"],
+                                      {"AAPL": {"close": 200}}, path=str(tmp_path / "f.jsonl"))
+        assert n == 2          # quant + research logged; None earnings dropped, no crash
+
+    def test_net_edge_coerces_string_expected_return(self):
+        # the PM emits expected_return; a stringified "0.0001" must still be evaluated
+        import guardrails as g
+        kept, rej = g.enforce_net_edge(
+            [{"ticker": "X", "action": "BUY", "qty": 4, "expected_return": "0.0001"}],
+            {"X": {"close": 100}})
+        assert len(kept) + len(rej) == 1 and len(rej) == 1     # tiny edge → rejected
+
+    def test_net_edge_garbage_expected_return_passes(self):
+        import guardrails as g
+        kept, rej = g.enforce_net_edge(
+            [{"ticker": "X", "action": "BUY", "qty": 4, "expected_return": "abc"}],
+            {"X": {"close": 100}})
+        assert len(kept) == 1 and rej == []                    # unparseable → not evaluated
+
+    def test_all_four_guards_chain(self):
+        # min-hold → wash-sale → sector → net-edge all run without crashing; a valid BUY+SELL survive
+        import guardrails as g
+        decisions = [{"ticker": "NVDA", "action": "BUY", "qty": 4, "target_weight": 0.08, "expected_return": 0.10},
+                     {"ticker": "MRK", "action": "SELL", "qty": 2, "target_weight": 0.0}]
+        portfolio = {"total_value": 500.0, "positions": []}
+        prices = {"NVDA": {"close": 100.0}, "MRK": {"close": 50.0}}
+        d, _ = g.enforce_min_holding_period(decisions, portfolio, transactions=[], today="2026-06-14")
+        d, _ = g.enforce_wash_sale_reentry(d, transactions=[], today="2026-06-14")
+        d, _ = g.enforce_sector_limits(d, portfolio)
+        d, _ = g.enforce_net_edge(d, prices)
+        tickers = {x["ticker"] for x in d}
+        assert "NVDA" in tickers and "MRK" in tickers
