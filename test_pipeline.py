@@ -2556,3 +2556,115 @@ class TestCostModel:
                                           {"term": "LT", "gain": -400.0}])
         tax, _ = cost_model.tax_on_realized(1000.0, -400.0)
         assert s["realized_tax_estimate"] == tax
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  backtest — quant-only harness (P1): engine, strategies, report
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _bt_bars(prices, start_ms=1_700_000_000_000, step=86_400_000):
+    return [{"date": start_ms + i * step, "open": p, "high": p * 1.01,
+             "low": p * 0.99, "close": p, "volume": 1e6} for i, p in enumerate(prices)]
+
+
+class TestBacktestStrategies:
+    def _scores(self):
+        return {
+            "SPY":  {"data_available": True, "momentum_available": True, "composite_score": 99, "volatility": 12},
+            "WIN":  {"data_available": True, "momentum_available": True, "composite_score": 90, "volatility": 20},
+            "MID":  {"data_available": True, "momentum_available": True, "composite_score": 70, "volatility": 40},
+            "LOWS": {"data_available": True, "momentum_available": True, "composite_score": 40, "volatility": 15},
+            "NODATA": {"data_available": False, "momentum_available": False, "composite_score": 95},
+        }
+
+    def test_excludes_benchmarks_and_low_composite_and_nodata(self):
+        from backtest.strategies import quant_momentum_vol
+        w = quant_momentum_vol(self._scores(), top_n=8, min_composite=50)
+        assert "SPY" not in w and "QQQ" not in w
+        assert "LOWS" not in w          # below min_composite
+        assert "NODATA" not in w        # no real data
+        assert set(w) == {"WIN", "MID"}
+
+    def test_caps_weight_and_inverse_vol(self):
+        from backtest.strategies import quant_momentum_vol
+        # 0.50 cap so it doesn't bind on a 2-name book — lets inverse-vol show
+        w = quant_momentum_vol(self._scores(), top_n=8, max_weight=0.50, min_composite=50)
+        assert all(v <= 0.50 + 1e-9 for v in w.values())
+        assert w["WIN"] > w["MID"]      # lower vol → larger inverse-vol weight
+
+    def test_empty_when_nothing_qualifies(self):
+        from backtest.strategies import quant_momentum_vol
+        assert quant_momentum_vol({"AAA": {"data_available": True, "momentum_available": True,
+                                           "composite_score": 10, "volatility": 20}}, min_composite=50) == {}
+
+
+class TestBacktestEngine:
+    def _snapshot(self):
+        win  = [100 * (1.005 ** i) for i in range(30)]   # steady up, low vol → high score
+        lose = [100 * (0.99 ** i) for i in range(30)]    # steady down → filtered out
+        spy  = [100 * (1.001 ** i) for i in range(30)]
+        return {"history": {"SPY": _bt_bars(spy), "WIN": _bt_bars(win), "LOSE": _bt_bars(lose)},
+                "fundamentals": {}}
+
+    def test_runs_and_buys_the_winner_not_the_loser(self):
+        from backtest.engine import run_backtest
+        from backtest.strategies import quant_momentum_vol
+        # top_n=1 → only the highest-composite name (the uptrending WIN) is held
+        res = run_backtest(lambda sc: quant_momentum_vol(sc, top_n=1, min_composite=50),
+                           snapshot=self._snapshot(),
+                           initial_capital=10_000.0, rebalance_days=5, warmup=22)
+        assert len(res["equity_curve"]) == 30
+        buys = {t["ticker"] for t in res["transactions"] if t["action"] == "BUY"}
+        assert "WIN" in buys
+        assert "LOSE" not in buys
+        assert res["benchmark_curve"]            # SPY curve present
+
+    def test_fills_at_next_open_no_lookahead(self):
+        from backtest.engine import run_backtest
+        from backtest.strategies import quant_momentum_vol
+        snap = self._snapshot()
+        res = run_backtest(quant_momentum_vol, snapshot=snap,
+                           initial_capital=10_000.0, rebalance_days=5, warmup=22)
+        # first WIN buy must fill at a bar OPEN price (next-open fill), never a close
+        win_open_prices = {round(b["open"], 6) for b in snap["history"]["WIN"]}
+        first_win = next(t for t in res["transactions"] if t["ticker"] == "WIN")
+        assert round(first_win["price"], 6) in win_open_prices
+
+
+class TestBacktestReport:
+    def test_metrics_known_curve(self):
+        from backtest.report import _metrics
+        m = _metrics([("d1", 100.0), ("d2", 110.0), ("d3", 55.0)])
+        assert m["total_return"] == pytest.approx(-0.45, abs=1e-6)
+        assert m["max_drawdown"] == pytest.approx(-0.5, abs=1e-6)
+
+    def test_after_tax_reduces_return_on_realized_gain(self):
+        from backtest.report import build_report
+        result = {
+            "equity_curve":          [("d1", 10_000.0), ("d2", 10_500.0)],
+            "benchmark_curve":       [("d1", 10_000.0), ("d2", 10_100.0)],
+            "transactions": [
+                {"action": "BUY",  "ticker": "X", "qty": 10, "price": 100.0,
+                 "date": "2026-01-02", "timestamp": "2026-01-02T00:00:00+00:00", "dry_run": False},
+                {"action": "SELL", "ticker": "X", "qty": 10, "price": 120.0,
+                 "date": "2026-01-09", "timestamp": "2026-01-09T00:00:00+00:00", "dry_run": False},
+            ],
+            "initial_capital": 10_000.0, "final_equity": 10_500.0, "traded_notional_total": 2_200.0,
+        }
+        rep = build_report(result)
+        assert rep["realized_gain"] == 200.0
+        assert rep["tax_estimate"] == 108.0                       # 200 * 0.54
+        assert rep["after_tax_final_equity"] == 10_392.0          # 10500 - 108
+        assert rep["after_tax_alpha_vs_spy"] < rep["alpha_total_return"]   # tax bites
+
+    def test_real_snapshot_backtest_smoke(self):
+        # CI smoke: the full quant-only backtest on the committed snapshot completes.
+        import os
+        if not os.path.isfile("market_snapshot.json"):
+            pytest.skip("no market_snapshot.json")
+        from backtest.engine import run_backtest, load_snapshot
+        from backtest.strategies import quant_momentum_vol
+        from backtest.report import build_report
+        rep = build_report(run_backtest(quant_momentum_vol, snapshot=load_snapshot()))
+        assert rep["trading_days"] > 100 and rep["n_trades"] > 0
+        assert rep["strategy"]["total_return"] is not None and rep["spy"] is not None

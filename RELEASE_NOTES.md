@@ -20,6 +20,19 @@ DEPLOYMENT.md §7.0). Newest first.
   estimate (`round_trip_cost`), and `net_edge()` (gross − cost − CA tax).
   `performance.py` now imports the rates + netting from it (single source of
   truth), so simulated and live economics can't drift. (+9 tests; suite **245**.)
+- **`backtest/` — quant-only backtest harness (#3 / P1).** Event loop over the
+  `market_snapshot.json` history that reuses `quant_engine.score_all_tickers`
+  unchanged (scores exactly what live scores), fills at next-day open (no
+  look-ahead), and imports `cost_model` for after-cost/after-tax economics.
+  Includes a momentum/inverse-vol strategy, an after-tax-vs-SPY report
+  (CAGR/vol/Sharpe/max-DD/turnover, gross & net-of-tax), and `python -m backtest`.
+  **No LLM in the backtest** (a frozen model knows the future — the LLM layer is
+  forward-tested, not backtested). (+8 tests; suite **253**.)
+
+  > **First result (honest):** the quant-only momentum/vol strategy returned
+  > **−0.03%** over ~10 months vs SPY **+8.77%** — gross alpha **−8.8%**, 23.6×
+  > annual turnover. The deterministic layer has **no demonstrated edge** at this
+  > config; this is exactly the validation P1 exists to provide.
 
 ---
 
