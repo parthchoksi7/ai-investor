@@ -2818,3 +2818,53 @@ class TestDataProviders:
         assert isinstance(dp.get_provider(), dp.StubProvider)   # no key → stub
         monkeypatch.setenv("FMP_API_KEY", "k")
         assert isinstance(dp.get_provider(), dp.FMPProvider)    # key → FMP
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Earnings agent gate (Phase 3.2) + fabrication guard (#1). With a real calendar:
+#  skip the LLM for names with no event in 90d; override the model's date guess.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestEarningsGateAndFabrication:
+    def _md(self, calendar=None, date="2026-06-14"):
+        return {"date": date, "prices": {"AAPL": {"close": 200}},
+                "earnings_calendar": calendar or {}, "ticker_news": {}, "news": []}
+
+    def test_within_90d_boundaries(self):
+        import analysis
+        assert analysis._within_90d(None, "2026-06-14") is False
+        assert analysis._within_90d("2026-06-14", "2026-06-14") is True    # today
+        assert analysis._within_90d("2026-09-12", "2026-06-14") is True    # +90
+        assert analysis._within_90d("2026-09-13", "2026-06-14") is False   # +91
+        assert analysis._within_90d("2026-06-13", "2026-06-14") is False   # past
+
+    def test_gate_skips_when_calendar_present_no_event(self, monkeypatch):
+        import analysis
+        called = []
+        monkeypatch.setattr(analysis, "_safe_call", lambda *a, **k: called.append(1) or {})
+        r = analysis.run_earnings_catalyst_analyst("AAPL", self._md(calendar={"AAPL": "2026-12-01"}))
+        assert r.get("skipped_no_catalyst") is True and r["earnings_alpha_score"] is None
+        assert called == []                                # NO LLM call — Phase 3.2
+
+    def test_runs_when_event_within_90d(self, monkeypatch):
+        import analysis
+        called = []
+        monkeypatch.setattr(analysis, "_safe_call",
+                            lambda *a, **k: called.append(1) or {"next_earnings_est": "2026-07-01", "earnings_alpha_score": 7})
+        r = analysis.run_earnings_catalyst_analyst("AAPL", self._md(calendar={"AAPL": "2026-07-01"}))
+        assert called == [1] and r["earnings_alpha_score"] == 7
+
+    def test_no_calendar_runs_as_before(self, monkeypatch):
+        import analysis
+        called = []
+        monkeypatch.setattr(analysis, "_safe_call", lambda *a, **k: called.append(1) or {"earnings_alpha_score": 5})
+        r = analysis.run_earnings_catalyst_analyst("AAPL", self._md(calendar={}))
+        assert called == [1] and "skipped_no_catalyst" not in r    # no regression on free tier
+
+    def test_fabrication_guard_overrides_model_date(self, monkeypatch):
+        import analysis
+        monkeypatch.setattr(analysis, "_safe_call",
+                            lambda *a, **k: {"next_earnings_est": "2026-08-15", "earnings_alpha_score": 6})
+        r = analysis.run_earnings_catalyst_analyst("AAPL", self._md(calendar={"AAPL": "2026-07-01"}))
+        assert r["next_earnings_est"] == "2026-07-01"        # verified calendar wins
+        assert r["next_earnings_est_model"] == "2026-08-15" and r["earnings_date_corrected"] is True

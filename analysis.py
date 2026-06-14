@@ -507,18 +507,49 @@ Output JSON (fill in every field):
 
 # ── Agent 3: Earnings & Catalyst Analyst ─────────────────────────────────────
 
+def _within_90d(date_str: str | None, today: str) -> bool:
+    """True if date_str (YYYY-MM-DD) is in [today, today+90]. None/unparseable → False."""
+    if not date_str:
+        return False
+    try:
+        from datetime import date as _date
+        d = _date.fromisoformat(str(date_str)[:10])
+        t = _date.fromisoformat(str(today)[:10])
+    except (ValueError, TypeError):
+        return False
+    return 0 <= (d - t).days <= 90
+
+
 def run_earnings_catalyst_analyst(ticker: str, market_data: dict) -> dict:
     data = market_data["prices"].get(ticker, {})
     news = _ticker_news(ticker, market_data)
 
+    # Verified earnings calendar (#1). When a real calendar is available, Phase 3.2
+    # gates the LLM call: skip names with no event in the next 90 days (don't spend
+    # tokens to emit a constant, and don't feed all-default noise to the PM). With
+    # NO calendar (free-tier / no key) we can't know the date, so we run as before
+    # — no regression.
+    calendar      = market_data.get("earnings_calendar") or {}
+    has_calendar  = bool(calendar)
+    verified_date = calendar.get(ticker)
+
+    if has_calendar and not _within_90d(verified_date, market_data.get("date", "")):
+        return {"earnings_alpha_score": None, "skipped_no_catalyst": True,
+                "next_earnings_est": verified_date or "none",
+                "beat_probability": "N/A", "guidance_cut_probability": "N/A",
+                "key_catalysts_90d": []}
+
+    verified_line = (f"VERIFIED next earnings date (from calendar): {verified_date} — "
+                     f"use this EXACT date; do not invent another.\n" if verified_date else "")
+
     user_msg = f"""\
 TICKER: {ticker}
 Price: ${data.get('close', 'N/A')}  Date: {market_data['date']}
-
+{verified_line}
 NEWS:
 {news}
 
-Use your training knowledge of {ticker}'s typical earnings calendar and business cycle. \
+Use your training knowledge of {ticker}'s business cycle. \
 All fields must be filled in — do not return empty arrays or placeholder values.
 
 Output JSON (fill in every field):
@@ -532,12 +563,19 @@ Output JSON (fill in every field):
   "expected_move_pct": 4
 }}"""
 
-    return _safe_call(
+    result = _safe_call(
         MODEL_FAST, _cached_system(_EARNINGS_SYSTEM), user_msg,
         default={"earnings_alpha_score": 5, "beat_probability": "MEDIUM",
                  "guidance_cut_probability": "LOW", "key_catalysts_90d": []},
         max_tokens=600,
     )
+
+    # Fabrication guard: the verified calendar date wins over the model's guess.
+    if verified_date and result.get("next_earnings_est") != verified_date:
+        result["next_earnings_est_model"] = result.get("next_earnings_est")
+        result["next_earnings_est"]       = verified_date
+        result["earnings_date_corrected"] = True
+    return result
 
 
 # ── Agent 4: Devil's Advocate ─────────────────────────────────────────────────
