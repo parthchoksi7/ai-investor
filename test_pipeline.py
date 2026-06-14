@@ -2496,3 +2496,63 @@ class TestReleaseNotes:
             text = f.read()
         assert "## [Unreleased]" in text, \
             "RELEASE_NOTES.md needs an '## [Unreleased]' section for the next deploy"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  cost_model — shared cost & tax spine (P1: backtest + future net-edge gate)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCostModel:
+    def test_tax_both_gains_at_their_rates(self):
+        import cost_model
+        tax, cf = cost_model.tax_on_realized(1000.0, 200.0)
+        assert tax == round(1000 * cost_model.CA_SHORT_TERM_RATE
+                            + 200 * cost_model.CA_LONG_TERM_RATE, 2)
+        assert cf == 0.0
+
+    def test_tax_lt_loss_offsets_st_gain(self):
+        import cost_model
+        tax, cf = cost_model.tax_on_realized(1000.0, -400.0)
+        assert tax == round(600 * cost_model.CA_SHORT_TERM_RATE, 2)  # 324.0
+        assert cf == 0.0
+
+    def test_tax_st_loss_offsets_lt_gain_with_carryforward(self):
+        import cost_model
+        tax, cf = cost_model.tax_on_realized(-1500.0, 1000.0)
+        assert tax == 0.0
+        assert cf == 500.0
+
+    def test_tax_both_losses_carry_forward(self):
+        import cost_model
+        tax, cf = cost_model.tax_on_realized(-200.0, -100.0)
+        assert tax == 0.0
+        assert cf == 300.0
+
+    def test_round_trip_cost_scales_linearly_with_notional(self):
+        import cost_model
+        assert cost_model.round_trip_cost(2000.0) == round(2 * cost_model.round_trip_cost(1000.0), 4)
+
+    def test_round_trip_cost_vol_adds_slippage(self):
+        import cost_model
+        assert cost_model.round_trip_cost(1000.0, annualized_vol=0.30) > cost_model.round_trip_cost(1000.0)
+
+    def test_net_edge_taxes_only_positive_post_cost_gain(self):
+        import cost_model
+        e = cost_model.net_edge(0.02, 1000.0)            # +2% on $1000 = $20 gross
+        assert e["gross"] == 20.0 and e["cost"] > 0
+        assert e["tax"] == round((e["gross"] - e["cost"]) * cost_model.CA_SHORT_TERM_RATE, 4)
+        assert e["net"] == round(e["gross"] - e["cost"] - e["tax"], 4)
+        assert e["net"] < e["gross"]                     # tax + cost both bite
+
+    def test_net_edge_no_tax_on_loss(self):
+        import cost_model
+        e = cost_model.net_edge(-0.01, 1000.0)
+        assert e["tax"] == 0.0 and e["net"] < 0
+
+    def test_performance_delegates_to_cost_model(self):
+        # the live scorecard and the spine must agree on tax
+        import performance, cost_model
+        s = performance.realized_summary([{"term": "ST", "gain": 1000.0},
+                                          {"term": "LT", "gain": -400.0}])
+        tax, _ = cost_model.tax_on_realized(1000.0, -400.0)
+        assert s["realized_tax_estimate"] == tax
