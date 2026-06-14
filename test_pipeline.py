@@ -3279,3 +3279,471 @@ class TestProviderEnrichmentCache:
                               "fetched": (d - timedelta(days=5)).isoformat()}}))   # empty, 5d old
         md._enrich_with_provider(["AAPL"], {}, today=d)
         assert fetched == []     # empty entry, age 5 < 30-day backoff → not re-fetched
+
+
+# ── journal._load — corrupt-JSON resilience ───────────────────────────────────
+
+class TestLoadListCorruptJSON:
+    def test_corrupt_json_returns_empty_list(self, tmp_path):
+        import journal
+        path = str(tmp_path / "bad.json")
+        (tmp_path / "bad.json").write_text("{invalid json{{")
+        assert journal._load_list(path) == []
+
+    def test_dict_json_coerced_to_list(self, tmp_path):
+        import journal
+        path = str(tmp_path / "dict.json")
+        (tmp_path / "dict.json").write_text('{"key": "value"}')
+        assert journal._load_list(path) == []
+
+    def test_truncated_json_returns_empty_list(self, tmp_path):
+        import journal
+        path = str(tmp_path / "trunc.json")
+        (tmp_path / "trunc.json").write_text('[{"ticker": "AAPL", "action')
+        assert journal._load_list(path) == []
+
+
+# ── health.append_check ───────────────────────────────────────────────────────
+
+class TestAppendCheck:
+    def _hp(self, tmp_path):
+        return str(tmp_path / "health.json")
+
+    def test_creates_from_scratch_when_no_file(self, tmp_path, monkeypatch):
+        import health
+        monkeypatch.setattr(health, "HEALTH_FILE", self._hp(tmp_path))
+        result = health.append_check("step", health.OK, "all good")
+        assert result["checks"]["step"]["status"] == health.OK
+        assert result["overall_status"] == health.OK
+
+    def test_adds_to_existing_data(self, tmp_path, monkeypatch):
+        import health
+        hp = self._hp(tmp_path)
+        monkeypatch.setattr(health, "HEALTH_FILE", hp)
+        seed = {"run_id": "r1", "date": "2026-01-01",
+                "checks": {"old": {"status": "OK", "message": ""}},
+                "alerts": [], "overall_status": "OK"}
+        (tmp_path / "health.json").write_text(json.dumps(seed))
+        health.append_check("new_check", health.FAILED, "broke")
+        result = json.loads((tmp_path / "health.json").read_text())
+        assert "old" in result["checks"] and "new_check" in result["checks"]
+
+    def test_overwrites_existing_check(self, tmp_path, monkeypatch):
+        import health
+        hp = self._hp(tmp_path)
+        monkeypatch.setattr(health, "HEALTH_FILE", hp)
+        seed = {"run_id": "r1", "date": "2026-01-01",
+                "checks": {"step": {"status": "OK", "message": "first"}},
+                "alerts": [], "overall_status": "OK"}
+        (tmp_path / "health.json").write_text(json.dumps(seed))
+        health.append_check("step", health.DEGRADED, "second")
+        result = json.loads((tmp_path / "health.json").read_text())
+        assert result["checks"]["step"]["status"] == health.DEGRADED
+        assert result["checks"]["step"]["message"] == "second"
+
+    def test_escalates_overall_status(self, tmp_path, monkeypatch):
+        import health
+        hp = self._hp(tmp_path)
+        monkeypatch.setattr(health, "HEALTH_FILE", hp)
+        seed = {"run_id": "r1", "date": "2026-01-01",
+                "checks": {"ok_step": {"status": "OK", "message": ""}},
+                "alerts": [], "overall_status": "OK"}
+        (tmp_path / "health.json").write_text(json.dumps(seed))
+        health.append_check("bad_step", health.FAILED, "exploded")
+        result = json.loads((tmp_path / "health.json").read_text())
+        assert result["overall_status"] == health.FAILED
+
+    def test_rebuilds_alerts_list(self, tmp_path, monkeypatch):
+        import health
+        hp = self._hp(tmp_path)
+        monkeypatch.setattr(health, "HEALTH_FILE", hp)
+        health.append_check("good", health.OK, "fine")
+        health.append_check("bad", health.FAILED, "broken")
+        result = json.loads((tmp_path / "health.json").read_text())
+        assert any("bad" in a for a in result["alerts"])
+        assert not any("good" in a for a in result["alerts"])
+
+    def test_aborted_beats_failed(self, tmp_path, monkeypatch):
+        import health
+        hp = self._hp(tmp_path)
+        monkeypatch.setattr(health, "HEALTH_FILE", hp)
+        seed = {"run_id": "r1", "date": "2026-01-01",
+                "checks": {"f": {"status": "FAILED", "message": "bad"}},
+                "alerts": ["[FAILED] f: bad"], "overall_status": "FAILED"}
+        (tmp_path / "health.json").write_text(json.dumps(seed))
+        health.append_check("abort_step", health.ABORTED, "aborted")
+        result = json.loads((tmp_path / "health.json").read_text())
+        assert result["overall_status"] == health.ABORTED
+
+    def test_kwargs_stored(self, tmp_path, monkeypatch):
+        import health
+        monkeypatch.setattr(health, "HEALTH_FILE", self._hp(tmp_path))
+        health.append_check("step", health.OK, "ok", extra_field="hello", count=42)
+        result = json.loads((tmp_path / "health.json").read_text())
+        assert result["checks"]["step"]["extra_field"] == "hello"
+        assert result["checks"]["step"]["count"] == 42
+
+
+# ── execute._compute_qty ──────────────────────────────────────────────────────
+
+class TestComputeQty:
+    def _qty(self, target_weight, action, ticker, portfolio, prices):
+        from execute import _compute_qty
+        return _compute_qty(target_weight, action, ticker, portfolio, prices)
+
+    def _portfolio(self, total=1000.0, positions=None):
+        return {"total_value": total, "positions": positions or []}
+
+    def test_buy_no_existing_holdings(self):
+        qty = self._qty(0.10, "BUY", "AAPL", self._portfolio(), {"AAPL": {"close": 100.0}})
+        assert abs(qty - 1.0) < 1e-5  # $100 / $100 = 1.0 shares
+
+    def test_buy_already_at_target(self):
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "1.0", "available_qty": "1.0"}])
+        qty = self._qty(0.10, "BUY", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert qty == 0.0
+
+    def test_buy_above_target(self):
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "2.0", "available_qty": "2.0"}])
+        qty = self._qty(0.10, "BUY", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert qty == 0.0
+
+    def test_buy_partial_top_up(self):
+        # Holds 0.5 sh; target=10% of $1000=$100; current=$50; delta=$50 → 0.5 sh
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "0.5", "available_qty": "0.5"}])
+        qty = self._qty(0.10, "BUY", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert abs(qty - 0.5) < 1e-5
+
+    def test_sell_full_exit_returns_available_qty(self):
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "3.0", "available_qty": "3.0"}])
+        qty = self._qty(0.0, "SELL", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert qty == 3.0
+
+    def test_sell_full_exit_capped_by_available(self):
+        # Held 3.0 but broker says only 2.5 sellable
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "3.0", "available_qty": "2.5"}])
+        qty = self._qty(0.0, "SELL", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert qty == 2.5
+
+    def test_sell_partial_reduce(self):
+        # Holds 3 sh ($300, 30%); target 10% ($100); sell $200 = 2.0 sh
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "3.0", "available_qty": "3.0"}])
+        qty = self._qty(0.10, "SELL", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert abs(qty - 2.0) < 1e-5
+
+    def test_sell_partial_reduce_capped_by_available(self):
+        # Needs to sell 2.0 sh but only 1.5 available
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "3.0", "available_qty": "1.5"}])
+        qty = self._qty(0.10, "SELL", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert abs(qty - 1.5) < 1e-5
+
+    def test_sell_already_at_target(self):
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "1.0", "available_qty": "1.0"}])
+        qty = self._qty(0.10, "SELL", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert qty == 0.0
+
+    def test_hold_returns_zero(self):
+        qty = self._qty(0.0, "HOLD", "AAPL", self._portfolio(), {"AAPL": {"close": 100.0}})
+        assert qty == 0.0
+
+    def test_missing_price_returns_zero(self):
+        qty = self._qty(0.10, "BUY", "AAPL", self._portfolio(), {})
+        assert qty == 0.0
+
+    def test_ticker_not_in_positions(self):
+        # AAPL not in positions list → current_qty=0, treat as new position
+        port = self._portfolio(1000.0, [{"symbol": "MSFT", "qty": "5.0", "available_qty": "5.0"}])
+        qty = self._qty(0.10, "BUY", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert abs(qty - 1.0) < 1e-5
+
+    def test_available_qty_fallback_to_qty(self):
+        # available_qty absent in position dict → falls back to qty
+        port = self._portfolio(1000.0, [{"symbol": "AAPL", "qty": "3.0"}])
+        qty = self._qty(0.0, "SELL", "AAPL", port, {"AAPL": {"close": 100.0}})
+        assert qty == 3.0  # full exit, fallback available_qty == qty
+
+
+# ── tax_lots — edge cases ─────────────────────────────────────────────────────
+
+class TestTaxLotsAdditional:
+    def test_empty_transactions(self):
+        from tax_lots import open_lots
+        assert open_lots([]) == {}
+
+    def test_all_lots_consumed_by_sell(self):
+        from tax_lots import open_lots
+        txs = [
+            {"action": "BUY", "ticker": "AAPL", "qty": 2, "price": 100, "date": "2026-01-01"},
+            {"action": "SELL", "ticker": "AAPL", "qty": 2, "price": 110, "date": "2026-01-10"},
+        ]
+        assert "AAPL" not in open_lots(txs)
+
+    def test_oversell_clamps_to_zero(self):
+        from tax_lots import open_lots
+        txs = [
+            {"action": "BUY", "ticker": "AAPL", "qty": 1, "price": 100, "date": "2026-01-01"},
+            {"action": "SELL", "ticker": "AAPL", "qty": 5, "price": 110, "date": "2026-01-10"},
+        ]
+        assert "AAPL" not in open_lots(txs)  # no negative lots
+
+    def test_multi_ticker_independent(self):
+        from tax_lots import open_lots
+        txs = [
+            {"action": "BUY",  "ticker": "AAPL", "qty": 2, "price": 100, "date": "2026-01-01"},
+            {"action": "BUY",  "ticker": "MSFT", "qty": 3, "price": 50,  "date": "2026-01-02"},
+            {"action": "SELL", "ticker": "MSFT", "qty": 5, "price": 50,  "date": "2026-01-05"},
+        ]
+        result = open_lots(txs)
+        assert "AAPL" in result       # AAPL untouched by MSFT sell
+        assert "MSFT" not in result   # MSFT oversold → 0 remaining
+
+    def test_ticker_filter(self):
+        from tax_lots import open_lots
+        txs = [
+            {"action": "BUY", "ticker": "AAPL", "qty": 2, "price": 100, "date": "2026-01-01"},
+            {"action": "BUY", "ticker": "MSFT", "qty": 3, "price": 50,  "date": "2026-01-01"},
+        ]
+        result = open_lots(txs, ticker="AAPL")
+        assert isinstance(result, list)
+        assert len(result) == 1 and result[0]["qty"] == 2.0
+
+    def test_holding_days_today_default(self):
+        from tax_lots import holding_days
+        from datetime import date
+        assert holding_days(date.today().isoformat()) == 0
+
+    def test_holding_days_null_acquired_returns_none(self):
+        from tax_lots import holding_days
+        assert holding_days(None) is None
+
+    def test_holding_days_invalid_today_returns_none(self):
+        from tax_lots import holding_days
+        assert holding_days("2026-01-01", today="not-a-date") is None
+
+
+# ── performance._portfolio_curve — edge cases ─────────────────────────────────
+
+class TestPortfolioCurveEdgeCases:
+    def test_non_list_agent_log_returns_empty(self, tmp_path):
+        from performance import _portfolio_curve
+        path = str(tmp_path / "log.json")
+        (tmp_path / "log.json").write_text('{"run_id": "x"}')
+        assert _portfolio_curve(path) == []
+
+    def test_missing_portfolio_snapshot_skipped(self, tmp_path):
+        from performance import _portfolio_curve
+        path = str(tmp_path / "log.json")
+        (tmp_path / "log.json").write_text(json.dumps([
+            {"run_id": "a", "date": "2026-06-01"},
+        ]))
+        assert _portfolio_curve(path) == []
+
+    def test_missing_total_value_skipped(self, tmp_path):
+        from performance import _portfolio_curve
+        path = str(tmp_path / "log.json")
+        (tmp_path / "log.json").write_text(json.dumps([
+            {"run_id": "a", "date": "2026-06-01", "portfolio_snapshot": {"total_value": None}},
+        ]))
+        assert _portfolio_curve(path) == []
+
+    def test_timestamp_key_fallback(self, tmp_path):
+        from performance import _portfolio_curve
+        path = str(tmp_path / "log.json")
+        (tmp_path / "log.json").write_text(json.dumps([
+            {"run_id": "a", "timestamp": "2026-06-01T14:00:00Z",
+             "portfolio_snapshot": {"total_value": 510.0}},
+        ]))
+        assert _portfolio_curve(path) == [("2026-06-01", 510.0)]
+
+
+# ── performance._align — edge cases ──────────────────────────────────────────
+
+class TestAlignEdgeCases:
+    def test_portfolio_predates_spy_returns_empty(self):
+        from performance import _align
+        portfolio = [("2020-01-01", 1000.0)]
+        spy = {"2026-01-01": 500.0}
+        dates, pv, sv = _align(portfolio, spy)
+        assert dates == [] and pv == [] and sv == []
+
+    def test_spy_bars_missing_close_skipped(self, tmp_path):
+        from performance import _spy_curve
+        path = str(tmp_path / "snap.json")
+        (tmp_path / "snap.json").write_text(json.dumps({
+            "history": {
+                "SPY": [
+                    {"date": 1748736000000, "close": 500.0},
+                    {"date": 1748822400000, "close": None},
+                ]
+            }
+        }))
+        result = _spy_curve(path)
+        assert len(result) == 1
+        assert all(v is not None for v in result.values())
+
+
+# ── guardrails.validate_decisions — additional edge cases ─────────────────────
+
+class TestValidateDecisionsAdditional:
+    def _portfolio(self):
+        return {"total_value": 1000.0, "positions": []}
+
+    def test_missing_ticker_field_rejected(self):
+        from guardrails import validate_decisions
+        decisions = [{"action": "BUY", "ticker": "", "target_weight": 0.05, "qty": 0.5}]
+        kept, report = validate_decisions(
+            decisions, self._portfolio(), {"AAPL": {"close": 100.0}}, ["AAPL"], transactions=[])
+        assert len(kept) == 0
+        assert any("missing ticker" in r["reason"] for r in report["rejected"])
+
+    def test_none_target_weight_rejected(self):
+        from guardrails import validate_decisions
+        decisions = [{"action": "BUY", "ticker": "AAPL", "target_weight": None, "qty": 0.5}]
+        kept, report = validate_decisions(
+            decisions, self._portfolio(), {"AAPL": {"close": 100.0}}, ["AAPL"], transactions=[])
+        assert len(kept) == 0
+        assert any("not a number" in r["reason"] for r in report["rejected"])
+
+    def test_holdings_ticker_sell_passes_universe_check(self):
+        # Ticker in holdings but not in candidates → SELL must pass (universe = candidates | holdings)
+        from guardrails import validate_decisions
+        portfolio = {"total_value": 1000.0,
+                     "positions": [{"symbol": "XYZ", "qty": "2.0", "available_qty": "2.0"}]}
+        decisions = [{"action": "SELL", "ticker": "XYZ", "target_weight": 0.0, "qty": 2.0}]
+        kept, report = validate_decisions(
+            decisions, portfolio, {"XYZ": {"close": 100.0}}, candidates=[], transactions=[])
+        assert not any(r["ticker"] == "XYZ" for r in report["rejected"])
+        assert len(kept) == 1
+
+    def test_hold_does_not_increment_passed_counter(self):
+        from guardrails import validate_decisions
+        decisions = [{"action": "HOLD", "ticker": "AAPL", "target_weight": 0.0}]
+        kept, report = validate_decisions(
+            decisions, self._portfolio(), {"AAPL": {"close": 100.0}}, ["AAPL"], transactions=[])
+        assert report["passed"] == 0  # HOLD takes early path — never counted
+        assert len(kept) == 1        # but HOLD is in the kept list
+
+
+# ── guardrails.enforce_wash_sale_reentry — edge cases ────────────────────────
+
+class TestEnforceWashSaleEdgeCases:
+    def test_bad_sell_date_format_passes_through(self):
+        from guardrails import enforce_wash_sale_reentry
+        txs = [{"ticker": "AAPL", "action": "SELL", "date": "not-a-date", "dry_run": False}]
+        decisions = [{"action": "BUY", "ticker": "AAPL", "target_weight": 0.05, "qty": 0.5}]
+        kept, rejected = enforce_wash_sale_reentry(
+            decisions, transactions=txs, today="2026-06-14")
+        assert len(kept) == 1 and len(rejected) == 0
+
+    def test_multiple_sells_uses_most_recent(self):
+        # One sell 40d ago (outside window), one sell 5d ago (inside 30d window)
+        # _last_live_sell_date = max() = 5d ago → BUY rejected
+        from guardrails import enforce_wash_sale_reentry
+        txs = [
+            {"ticker": "AAPL", "action": "SELL", "date": "2026-05-05", "dry_run": False},
+            {"ticker": "AAPL", "action": "SELL", "date": "2026-06-09", "dry_run": False},
+        ]
+        decisions = [{"action": "BUY", "ticker": "AAPL", "target_weight": 0.05, "qty": 0.5}]
+        kept, rejected = enforce_wash_sale_reentry(
+            decisions, transactions=txs, today="2026-06-14")
+        assert len(rejected) == 1 and len(kept) == 0
+
+
+# ── preflight_gate — missing pending file / malformed snapshot ────────────────
+
+class TestPreflightGateMissingPending(TestPreflightGate):
+    def test_proceed_with_no_pending_file(self, tmp_path):
+        today = self._today_et()
+        self._write(tmp_path, "market_snapshot.json",
+                    {"date": today, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 200}})
+        # no pending_decisions.json written at all → falls through to snapshot check → PROCEED
+        assert self._run(tmp_path) == 0
+
+    def test_malformed_snapshot_returns_skip_retry(self, tmp_path):
+        (tmp_path / "market_snapshot.json").write_text("{invalid json")
+        assert self._run(tmp_path) == 10
+
+
+# ── cost_model — zero inputs, LT rate, zero notional ─────────────────────────
+
+class TestCostModelEdgeCases:
+    def test_tax_on_realized_both_zero(self):
+        from cost_model import tax_on_realized
+        tax, cf = tax_on_realized(0, 0)
+        assert tax == 0.0 and cf == 0.0
+
+    def test_round_trip_cost_zero_notional(self):
+        from cost_model import round_trip_cost
+        assert round_trip_cost(0) == 0.0
+
+    def test_net_edge_zero_return(self):
+        from cost_model import net_edge, round_trip_cost
+        result = net_edge(0.0, notional=1000)
+        assert result["gross"] == 0.0
+        assert result["tax"] == 0.0
+        assert abs(result["net"] - (-round_trip_cost(1000))) < 1e-4
+
+    def test_net_edge_lt_rate_higher_net_than_st(self):
+        from cost_model import net_edge
+        st = net_edge(0.05, notional=1000, short_term=True)
+        lt = net_edge(0.05, notional=1000, short_term=False)
+        assert lt["net"] > st["net"]  # LT rate ~37% < ST rate ~54% → more left after tax
+
+
+# ── journal.record_run — rotation at 90 entries ───────────────────────────────
+
+class TestRecordRunRotation:
+    def test_agent_log_capped_at_90(self, tmp_path, monkeypatch):
+        import journal
+        log_path = str(tmp_path / "agent_log.json")
+        monkeypatch.setattr(journal, "AGENT_LOG_FILE", log_path)
+        existing = [{"run_id": f"r{i}", "date": f"2026-01-{(i % 28) + 1:02d}"} for i in range(90)]
+        (tmp_path / "agent_log.json").write_text(json.dumps(existing))
+        journal.record_run("r90", {"date": "2026-04-01"})
+        result = json.loads((tmp_path / "agent_log.json").read_text())
+        assert len(result) == 90
+
+    def test_oldest_entry_dropped_first(self, tmp_path, monkeypatch):
+        import journal
+        log_path = str(tmp_path / "agent_log.json")
+        monkeypatch.setattr(journal, "AGENT_LOG_FILE", log_path)
+        existing = [{"run_id": f"r{i}"} for i in range(90)]
+        (tmp_path / "agent_log.json").write_text(json.dumps(existing))
+        journal.record_run("r90", {"date": "2026-04-01"})
+        result = json.loads((tmp_path / "agent_log.json").read_text())
+        ids = [r["run_id"] for r in result]
+        assert "r0" not in ids    # oldest dropped
+        assert "r90" in ids       # newest preserved
+
+
+# ── journal.recently_exited — edge cases ─────────────────────────────────────
+
+class TestRecentlyExitedEdgeCases:
+    def test_bad_exit_date_skipped(self, tmp_path, monkeypatch):
+        import journal
+        jpath = str(tmp_path / "journal.json")
+        monkeypatch.setattr(journal, "JOURNAL_FILE", jpath)
+        entries = [{"ticker": "AAPL", "status": "closed", "exits": [{"date": "not-a-date"}]}]
+        (tmp_path / "journal.json").write_text(json.dumps(entries))
+        result = journal.recently_exited(within_days=10)
+        assert "AAPL" not in result  # bad date → silently skipped, no exception
+
+    def test_closed_entry_with_empty_exits_excluded(self, tmp_path, monkeypatch):
+        import journal
+        jpath = str(tmp_path / "journal.json")
+        monkeypatch.setattr(journal, "JOURNAL_FILE", jpath)
+        entries = [{"ticker": "AAPL", "status": "closed", "exits": []}]
+        (tmp_path / "journal.json").write_text(json.dumps(entries))
+        result = journal.recently_exited(within_days=10)
+        assert "AAPL" not in result
+
+    def test_open_entry_not_included(self, tmp_path, monkeypatch):
+        import journal
+        from datetime import date
+        jpath = str(tmp_path / "journal.json")
+        monkeypatch.setattr(journal, "JOURNAL_FILE", jpath)
+        entries = [{"ticker": "AAPL", "status": "open",
+                    "exits": [{"date": date.today().isoformat()}]}]
+        (tmp_path / "journal.json").write_text(json.dumps(entries))
+        result = journal.recently_exited(within_days=10)
+        assert "AAPL" not in result  # status != "closed" → never included
