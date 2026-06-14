@@ -13,7 +13,15 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
-_Nothing pending — see the dated release below._
+### Fixed — #1 FMP provider migrated to the stable API
+- FMP deprecated the legacy `/api/v3` endpoints for keys issued after 2025-08-31
+  (they 403 "Legacy Endpoint"), so `FMPProvider` was returning `None` even with a
+  valid key (graceful no-op — no regression, just no data). Migrated to the
+  `/stable` API with **live-validated** endpoints + field names:
+  `ratios-ttm` + `key-metrics-ttm` (fundamentals), `earnings` (calendar),
+  `analyst-estimates`. Confirmed against AAPL/NVDA/JPM — real margins, P/E,
+  FCF yield, EV/EBITDA, and verified next-earnings dates now flow into the
+  snapshot. **#1 is now active with `FMP_API_KEY` set.**
 
 ---
 

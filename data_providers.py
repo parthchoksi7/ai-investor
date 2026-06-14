@@ -65,16 +65,22 @@ class StubProvider:
 
 
 class FMPProvider:
-    """Financial Modeling Prep client. Returns None/{} without a key (graceful)."""
+    """Financial Modeling Prep client (stable API). Returns None/{} without a key.
 
-    BASE = "https://financialmodelingprep.com/api/v3"
+    Endpoints + field names validated against a live response on 2026-06-14. The
+    legacy `/api/v3` endpoints are deprecated for keys issued after 2025-08-31
+    (they 403 with "Legacy Endpoint"), so this uses the `/stable` API, which takes
+    the symbol as a query parameter.
+    """
 
-    def __init__(self, api_key: str | None = None, timeout: int = 10):
+    BASE = "https://financialmodelingprep.com/stable"
+
+    def __init__(self, api_key: str | None = None, timeout: int = 15):
         self.api_key = api_key or os.getenv("FMP_API_KEY")
         self.timeout = timeout
 
     def _get(self, path: str, **params):
-        """GET BASE/path; returns parsed JSON or None (no key / any error)."""
+        """GET BASE/path?…&apikey=…; returns parsed JSON or None (no key / any error)."""
         if not self.api_key:
             return None
         import requests
@@ -85,62 +91,57 @@ class FMPProvider:
         except Exception:
             return None
 
-    def fundamentals(self, ticker: str) -> dict | None:
-        """Map FMP TTM ratios → the field names quant_engine already consumes
-        (gross_margin / operating_margin / fcf_margin / debt_to_equity / pe_ratio
-        / fcf_yield / ev_ebitda). Validate field names against a live response."""
-        data = self._get(f"ratios-ttm/{ticker}")
-        d = data[0] if isinstance(data, list) and data else data
-        if not isinstance(d, dict):
+    @staticmethod
+    def _first(data) -> dict:
+        return data[0] if isinstance(data, list) and data and isinstance(data[0], dict) else {}
+
+    @staticmethod
+    def _num(d: dict, key: str):
+        v = d.get(key)
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
             return None
 
-        def num(key):
-            v = d.get(key)
-            try:
-                return float(v) if v is not None else None
-            except (TypeError, ValueError):
-                return None
-
+    def fundamentals(self, ticker: str) -> dict | None:
+        """Map FMP stable TTM ratios + key-metrics → the field names quant_engine
+        consumes. Margins / debt / P/E come from `ratios-ttm`; FCF yield and
+        EV/EBITDA from `key-metrics-ttm` (two calls)."""
+        r = self._first(self._get("ratios-ttm", symbol=ticker))
+        m = self._first(self._get("key-metrics-ttm", symbol=ticker))
         out: dict = {}
-        gm  = num("grossProfitMarginTTM")
-        om  = num("operatingProfitMarginTTM")
-        de  = num("debtEquityRatioTTM")
-        pe  = num("peRatioTTM")
-        fy  = num("freeCashFlowYieldTTM")
-        ev  = num("enterpriseValueMultipleTTM")
-        fcf = num("freeCashFlowPerShareTTM")
-        rps = num("revenuePerShareTTM")
+        gm = self._num(r, "grossProfitMarginTTM")
+        om = self._num(r, "operatingProfitMarginTTM")
+        de = self._num(r, "debtToEquityRatioTTM")
+        pe = self._num(r, "priceToEarningsRatioTTM")
+        fy = self._num(m, "freeCashFlowYieldTTM")
+        ev = self._num(m, "evToEBITDATTM")
         if gm is not None: out["gross_margin"]     = round(gm, 4)
         if om is not None: out["operating_margin"] = round(om, 4)
         if de is not None: out["debt_to_equity"]   = round(de, 4)
         if pe is not None: out["pe_ratio"]          = round(pe, 2)
         if fy is not None: out["fcf_yield"]         = round(fy, 4)
         if ev is not None: out["ev_ebitda"]         = round(ev, 2)
-        if fcf is not None and rps:
-            out["fcf_margin"] = round(fcf / rps, 4)
         return out or None
 
     def next_earnings_date(self, ticker: str) -> str | None:
-        """Soonest confirmed/estimated earnings date on or after today, else None."""
-        data = self._get("earning_calendar", symbol=ticker)
+        """Soonest earnings date on or after today (an upcoming event has a future
+        `date` with epsActual still null), else None."""
+        data = self._get("earnings", symbol=ticker)
         if not isinstance(data, list):
             return None
         today = date.today().isoformat()
         future = sorted(
             e["date"] for e in data
-            if isinstance(e, dict) and e.get("symbol") == ticker
-            and isinstance(e.get("date"), str) and e["date"] >= today
+            if isinstance(e, dict) and isinstance(e.get("date"), str) and e["date"] >= today
         )
         return future[0] if future else None
 
     def estimates(self, ticker: str) -> dict | None:
-        data = self._get(f"analyst-estimates/{ticker}", limit=1)
-        if not isinstance(data, list) or not data or not isinstance(data[0], dict):
-            return None
-        d = data[0]
+        d = self._first(self._get("analyst-estimates", symbol=ticker, period="annual", limit=1))
         out = {}
-        if d.get("estimatedEpsAvg") is not None:     out["eps"] = d["estimatedEpsAvg"]
-        if d.get("estimatedRevenueAvg") is not None: out["revenue"] = d["estimatedRevenueAvg"]
+        if d.get("epsAvg") is not None:     out["eps"] = d["epsAvg"]
+        if d.get("revenueAvg") is not None: out["revenue"] = d["revenueAvg"]
         return out or None
 
 
