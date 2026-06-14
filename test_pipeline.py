@@ -2755,3 +2755,71 @@ class TestGuardrailBoundaries:
             transactions=[{"ticker": "X", "action": "SELL", "date": "2026-05-15", "dry_run": False}],
             today="2026-06-14")
         assert len(kept) == 1 and rej == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  #2 — calibration forecast ledger (observational; no trade-path change)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCalibrationLedger:
+    def _pstate(self):
+        return {
+            "quant_scores":    {"AAPL": {"composite_score": 80}, "MSFT": {"composite_score": 60}},
+            "research":        {"AAPL": {"confidence": 8}},
+            "earnings":        {"AAPL": {"earnings_alpha_score": 7}},
+            "devils_advocate": {"AAPL": {"overall_risk_score": 4}},
+            "position_reviews": {"AAPL": {"hold_score": 9}},
+        }
+
+    def test_log_forecasts_shape(self, tmp_path):
+        import calibration, json
+        path = str(tmp_path / "f.jsonl")
+        n = calibration.log_forecasts("r1", "2026-06-14", self._pstate(), ["AAPL", "MSFT"],
+                                      {"AAPL": {"close": 200}, "MSFT": {"close": 100}}, path=path)
+        assert n == 6                     # AAPL: 5 agents, MSFT: quant only
+        rows = [json.loads(l) for l in open(path)]
+        aq = next(r for r in rows if r["ticker"] == "AAPL" and r["agent"] == "quant")
+        assert aq["value"] == 80 and aq["entry_price"] == 200 and aq["horizon_days"] == 21
+
+    def test_log_forecasts_skips_missing_price(self, tmp_path):
+        import calibration
+        n = calibration.log_forecasts("r1", "2026-06-14",
+                                      {"quant_scores": {"AAPL": {"composite_score": 80}}},
+                                      ["AAPL"], {"AAPL": {}}, path=str(tmp_path / "f.jsonl"))
+        assert n == 0
+
+    def test_score_matured_joins_forward_return(self, tmp_path):
+        import calibration, json
+        ledger, scored = str(tmp_path / "f.jsonl"), str(tmp_path / "s.jsonl")
+        with open(ledger, "w") as f:
+            f.write(json.dumps({"run_id": "r1", "date": "2026-01-02", "agent": "quant",
+                                "field": "composite_score", "ticker": "AAPL", "value": 80,
+                                "entry_price": 100.0, "horizon_days": 5}) + "\n")
+        snap = {"history": {"AAPL": [{"date": "2026-01-08", "close": 110.0}]}}   # >= entry+5d
+        assert calibration.score_matured(snap, ledger_path=ledger, scored_path=scored) == 1
+        r = json.loads(open(scored).readline())
+        assert r["realized_return"] == 0.1 and r["future_price"] == 110.0
+        assert calibration.score_matured(snap, ledger_path=ledger, scored_path=scored) == 0  # idempotent
+
+    def test_score_matured_skips_immature(self, tmp_path):
+        import calibration, json
+        ledger, scored = str(tmp_path / "f.jsonl"), str(tmp_path / "s.jsonl")
+        with open(ledger, "w") as f:
+            f.write(json.dumps({"run_id": "r1", "date": "2026-01-02", "agent": "quant",
+                                "field": "composite_score", "ticker": "AAPL", "value": 80,
+                                "entry_price": 100.0, "horizon_days": 5}) + "\n")
+        snap = {"history": {"AAPL": [{"date": "2026-01-05", "close": 105.0}]}}   # before maturity
+        assert calibration.score_matured(snap, ledger_path=ledger, scored_path=scored) == 0
+
+    def test_agent_scorecard_shrinks_small_sample(self, tmp_path):
+        import calibration, json
+        scored, card = str(tmp_path / "s.jsonl"), str(tmp_path / "card.json")
+        with open(scored, "w") as f:
+            for i in range(5):
+                f.write(json.dumps({"run_id": f"r{i}", "agent": "quant", "field": "composite_score",
+                                    "ticker": "AAPL", "value": float(i), "realized_return": i / 100}) + "\n")
+        out = calibration.agent_scorecard(scored_path=scored, out_path=card, shrink_k=50)
+        k = "quant.composite_score"
+        assert out[k]["n"] == 5 and out[k]["ic"] == 1.0
+        assert out[k]["ic_shrunk"] == round(5 / 55, 3)        # shrunk far below the raw IC
+        assert out[k]["ic_shrunk"] < out[k]["ic"]
