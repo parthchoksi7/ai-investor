@@ -2817,9 +2817,155 @@ class TestDataProviders:
     def test_get_provider_factory(self, monkeypatch):
         import data_providers as dp
         monkeypatch.delenv("FMP_API_KEY", raising=False)
-        assert isinstance(dp.get_provider(), dp.StubProvider)   # no key → stub
+        assert isinstance(dp.get_provider(), dp.SECProvider)    # no key → EDGAR (free)
         monkeypatch.setenv("FMP_API_KEY", "k")
-        assert isinstance(dp.get_provider(), dp.FMPProvider)    # key → FMP
+        assert isinstance(dp.get_provider(), dp.FMPProvider)    # key → FMP (all 6 factors)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  SECProvider — EDGAR fundamentals, free, no key, ~100% US equity coverage.
+#  Tests use mocked HTTP to avoid live EDGAR calls.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSECProvider:
+    """SECProvider via mocked HTTP so no EDGAR calls hit the network."""
+
+    # Minimal EDGAR company_tickers.json payload for AAPL
+    TICKERS_RESP = {"0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."}}
+
+    # Minimal us-gaap facts for AAPL: revenue, gross profit, operating income,
+    # equity, long-term debt — all as 10-K entries.
+    FACTS_RESP = {
+        "facts": {
+            "us-gaap": {
+                "RevenueFromContractWithCustomerExcludingAssessedTax": {
+                    "units": {"USD": [
+                        {"end": "2024-09-28", "val": 391035000000, "form": "10-K"},
+                        {"end": "2023-09-30", "val": 383285000000, "form": "10-K"},
+                    ]}
+                },
+                "GrossProfit": {
+                    "units": {"USD": [
+                        {"end": "2024-09-28", "val": 180683000000, "form": "10-K"},
+                    ]}
+                },
+                "OperatingIncomeLoss": {
+                    "units": {"USD": [
+                        {"end": "2024-09-28", "val": 123216000000, "form": "10-K"},
+                    ]}
+                },
+                "StockholdersEquity": {
+                    "units": {"USD": [
+                        {"end": "2024-09-28", "val": 56950000000, "form": "10-K"},
+                    ]}
+                },
+                "LongTermDebt": {
+                    "units": {"USD": [
+                        {"end": "2024-09-28", "val": 85750000000, "form": "10-K"},
+                    ]}
+                },
+            }
+        }
+    }
+
+    def _make_provider(self, monkeypatch):
+        from data_providers import SECProvider
+        import requests
+        p = SECProvider(timeout=5)
+        call_log = []
+
+        def fake_get(url, **kwargs):
+            call_log.append(url)
+            import types, json as _json
+            resp = types.SimpleNamespace()
+            if "company_tickers" in url:
+                resp.json = lambda: self.TICKERS_RESP
+            else:
+                resp.json = lambda: self.FACTS_RESP
+            return resp
+
+        monkeypatch.setattr(requests, "get", fake_get)
+        return p, call_log
+
+    def test_ratios_computed_from_annual_10k(self, monkeypatch):
+        p, _ = self._make_provider(monkeypatch)
+        f = p.fundamentals("AAPL")
+        assert f is not None
+        # gross_margin = 180_683 / 391_035 ≈ 0.4621
+        assert abs(f["gross_margin"] - round(180683000000 / 391035000000, 4)) < 1e-6
+        # operating_margin = 123_216 / 391_035 ≈ 0.3151
+        assert abs(f["operating_margin"] - round(123216000000 / 391035000000, 4)) < 1e-6
+        # debt_to_equity = 85_750 / 56_950 ≈ 1.5057
+        assert abs(f["debt_to_equity"] - round(85750000000 / 56950000000, 4)) < 1e-6
+
+    def test_picks_most_recent_annual_entry(self, monkeypatch):
+        # Two 10-K revenue entries; should pick the later end date.
+        p, _ = self._make_provider(monkeypatch)
+        f = p.fundamentals("AAPL")
+        # 391_035 (2024-09-28) beats 383_285 (2023-09-30)
+        expected_gm = round(180683000000 / 391035000000, 4)
+        assert f["gross_margin"] == expected_gm
+
+    def test_unknown_ticker_returns_none(self, monkeypatch):
+        from data_providers import SECProvider
+        import requests, types
+        p = SECProvider(timeout=5)
+        monkeypatch.setattr(requests, "get",
+                            lambda url, **kw: types.SimpleNamespace(json=lambda: self.TICKERS_RESP))
+        assert p.fundamentals("ZZZZ") is None   # not in CIK map
+
+    def test_no_earnings_or_estimates(self, monkeypatch):
+        p, _ = self._make_provider(monkeypatch)
+        assert p.next_earnings_date("AAPL") is None
+        assert p.estimates("AAPL") is None
+
+    def test_cik_map_loaded_once(self, monkeypatch):
+        p, calls = self._make_provider(monkeypatch)
+        p.fundamentals("AAPL")
+        p.fundamentals("AAPL")
+        tickers_calls = [c for c in calls if "company_tickers" in c]
+        assert len(tickers_calls) == 1     # CIK map fetched once, cached in-instance
+
+    def test_empty_equity_omits_debt_ratio(self, monkeypatch):
+        from data_providers import SECProvider
+        import requests, types
+        p = SECProvider(timeout=5)
+        facts = {
+            "facts": {"us-gaap": {
+                "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
+                "GrossProfit": {"units": {"USD": [{"end": "2024-01-01", "val": 400, "form": "10-K"}]}},
+                "StockholdersEquity": {"units": {"USD": [{"end": "2024-01-01", "val": 0, "form": "10-K"}]}},
+                "LongTermDebt": {"units": {"USD": [{"end": "2024-01-01", "val": 500, "form": "10-K"}]}},
+            }}
+        }
+        def fake_get(url, **kw):
+            r = types.SimpleNamespace()
+            r.json = (lambda: self.TICKERS_RESP) if "company_tickers" in url else (lambda: facts)
+            return r
+        monkeypatch.setattr(requests, "get", fake_get)
+        f = p.fundamentals("AAPL")
+        assert "gross_margin" in f         # computed fine
+        assert "debt_to_equity" not in f   # equity=0 → guard prevents divide-by-zero
+
+    def test_http_error_returns_none(self, monkeypatch):
+        from data_providers import SECProvider
+        import requests, types
+        p = SECProvider(timeout=5)
+        call_n = [0]
+        def fake_get(url, **kw):
+            call_n[0] += 1
+            r = types.SimpleNamespace()
+            if "company_tickers" in url:
+                r.json = lambda: self.TICKERS_RESP
+            else:
+                raise requests.exceptions.ConnectionError("offline")
+            return r
+        monkeypatch.setattr(requests, "get", fake_get)
+        assert p.fundamentals("AAPL") is None   # network error → None, never raises
+
+    def test_conforms_to_protocol(self):
+        from data_providers import SECProvider, MarketDataProvider
+        assert isinstance(SECProvider(), MarketDataProvider)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3065,10 +3211,11 @@ class TestProviderEnrichmentCache:
         g = md._provider_group("AAPL")
         assert g == md._provider_group("AAPL") and g in (0, 1)   # deterministic, 0/1
 
-    def test_no_key_is_noop(self, monkeypatch):
-        import market_data as md
+    def test_stub_provider_is_noop(self, monkeypatch):
+        # Tests inject StubProvider to get a no-op without real HTTP calls.
+        import market_data as md, data_providers
         from datetime import date
-        monkeypatch.delenv("FMP_API_KEY", raising=False)
+        monkeypatch.setattr(data_providers, "get_provider", lambda: data_providers.StubProvider())
         fund = {}
         assert md._enrich_with_provider(["AAPL"], fund, today=date(2026, 6, 15)) == {}
         assert fund == {}                                        # untouched, no HTTP
