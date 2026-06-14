@@ -25,13 +25,25 @@ Honesty caveats (printed in the report header):
 
 import json
 import os
+from collections import defaultdict, deque
 from datetime import datetime, timezone
 
-AGENT_LOG = "agent_log.json"
-SNAPSHOT  = "market_snapshot.json"
-REPORT    = "performance_report.json"
+AGENT_LOG    = "agent_log.json"
+SNAPSHOT     = "market_snapshot.json"
+TRANSACTIONS = "transactions.json"
+PORTFOLIO    = "mcp_portfolio.json"
+REPORT       = "performance_report.json"
 
 TRADING_DAYS = 252
+
+# California top-bracket combined marginal rates on trading gains (taxable
+# account). Short-term = ordinary income (37% fed + 3.8% NIIT + 13.3% CA);
+# long-term = 20% + 3.8% + 13.3% (CA gives no preferential cap-gains rate).
+# These are estimates for a scorecard, not tax advice — see caveats.
+CA_SHORT_TERM_RATE = 0.54
+CA_LONG_TERM_RATE  = 0.371
+LONG_TERM_DAYS     = 365      # held > 365 days → long-term
+MIN_SIGNIFICANT_DAYS = 60     # pre-registered: fewer trading days → "not significant"
 
 
 # ── curves ──────────────────────────────────────────────────────────────────
@@ -189,11 +201,249 @@ def print_report(report: dict) -> None:
     print("=" * 60 + "\n")
 
 
+# ── after-tax scorecard ──────────────────────────────────────────────────────
+#
+# The one number that matters for a CA top-bracket TAXABLE account: net return
+# AFTER short-term tax, vs just holding SPY in the same account (which defers all
+# tax). Realized gain and after-tax realized gain are tracked SEPARATELY so the
+# ~54% short-term drag is visible the moment a round-trip closes.
+
+def _days_between(buy_date, sell_date) -> int:
+    try:
+        a = datetime.strptime(str(buy_date)[:10], "%Y-%m-%d").date()
+        b = datetime.strptime(str(sell_date)[:10], "%Y-%m-%d").date()
+        return (b - a).days
+    except (ValueError, TypeError):
+        return 0
+
+
+def _load_transactions(path: str = TRANSACTIONS) -> list:
+    if not os.path.isfile(path):
+        return []
+    with open(path) as f:
+        data = json.load(f)
+    return data if isinstance(data, list) else []
+
+
+def _load_portfolio(path: str = PORTFOLIO) -> dict:
+    if not os.path.isfile(path):
+        return {}
+    with open(path) as f:
+        data = json.load(f)
+    return data if isinstance(data, dict) else {}
+
+
+def compute_realized_lots(transactions: list) -> tuple[list[dict], list[dict]]:
+    """FIFO-match SELLs against prior BUYs. Returns (realized_lots, uncovered).
+
+    realized_lots: one entry per matched (buy lot → sell) slice, carrying qty,
+      buy/sell price+date, holding_days, term ('ST'|'LT'), and gain ($).
+    uncovered:     SELL quantity with no in-log BUY to source a cost basis
+      (a position opened before transaction logging began). Reported, never
+      guessed — fabricating a basis would corrupt the realized-gain number.
+
+    dry_run rows are excluded; rows are processed in timestamp order so a SELL
+    only ever consumes lots bought before it.
+    """
+    txs = sorted(
+        (t for t in transactions if not t.get("dry_run")),
+        key=lambda t: (t.get("timestamp") or t.get("date") or ""),
+    )
+    lots: dict[str, deque] = defaultdict(deque)   # ticker → deque of [qty, price, date]
+    realized, uncovered = [], []
+
+    for t in txs:
+        action = str(t.get("action", "")).upper()
+        ticker = t.get("ticker", "")
+        qty    = float(t.get("qty") or 0)
+        price  = float(t.get("price") or 0)
+        date   = t.get("date") or (t.get("timestamp") or "")[:10]
+        if qty <= 0:
+            continue
+
+        if action == "BUY":
+            lots[ticker].append([qty, price, date])
+        elif action == "SELL":
+            remaining = qty
+            while remaining > 1e-9 and lots[ticker]:
+                lot  = lots[ticker][0]
+                take = min(remaining, lot[0])
+                holding = _days_between(lot[2], date)
+                realized.append({
+                    "ticker":       ticker,
+                    "qty":          round(take, 6),
+                    "buy_price":    lot[1],
+                    "sell_price":   price,
+                    "buy_date":     lot[2],
+                    "sell_date":    date,
+                    "holding_days": holding,
+                    "term":         "LT" if holding > LONG_TERM_DAYS else "ST",
+                    "gain":         round((price - lot[1]) * take, 2),
+                })
+                lot[0]    -= take
+                remaining -= take
+                if lot[0] <= 1e-9:
+                    lots[ticker].popleft()
+            if remaining > 1e-9:
+                uncovered.append({"ticker": ticker, "qty": round(remaining, 6), "sell_date": date})
+
+    return realized, uncovered
+
+
+def realized_summary(realized_lots: list[dict]) -> dict:
+    """Aggregate realized lots into pre-tax and AFTER-tax realized gain (separate).
+
+    Tax model (estimate): short-term and long-term net gains taxed at their CA
+    combined marginal rate; a net LOSS in a term is not monetized here — it is
+    surfaced as `loss_carryforward`. Cross-term and cross-year offsets are NOT
+    modeled (documented simplification).
+    """
+    st = round(sum(l["gain"] for l in realized_lots if l["term"] == "ST"), 2)
+    lt = round(sum(l["gain"] for l in realized_lots if l["term"] == "LT"), 2)
+    realized_pretax = round(st + lt, 2)
+
+    # IRS-style netting: net ST and LT separately, then a net loss in one term
+    # offsets a net gain in the other before tax; remaining net loss carries
+    # forward. (The $3k/yr ordinary-income offset cap, cross-YEAR carryover, and
+    # wash-sale disallowance are not modeled.)
+    carryforward = 0.0
+    if st >= 0 and lt >= 0:
+        tax = st * CA_SHORT_TERM_RATE + lt * CA_LONG_TERM_RATE
+    elif st < 0 and lt < 0:
+        tax = 0.0
+        carryforward = -(st + lt)
+    elif st < 0 <= lt:                  # ST loss offsets LT gain
+        net = lt + st
+        tax = max(0.0, net) * CA_LONG_TERM_RATE
+        carryforward = -min(0.0, net)
+    else:                               # lt < 0 <= st: LT loss offsets ST gain
+        net = st + lt
+        tax = max(0.0, net) * CA_SHORT_TERM_RATE
+        carryforward = -min(0.0, net)
+
+    tax = round(tax, 2)
+    return {
+        "realized_gain_pretax":    realized_pretax,
+        "short_term_gain":         st,
+        "long_term_gain":          lt,
+        "realized_tax_estimate":   tax,
+        "realized_gain_after_tax": round(realized_pretax - tax, 2),
+        "loss_carryforward":       round(carryforward, 2),
+        "n_realized_lots":         len(realized_lots),
+    }
+
+
+def after_tax_scorecard(transactions: list | None = None,
+                        portfolio: dict | None = None,
+                        agent_log_path: str = AGENT_LOG,
+                        snapshot_path: str = SNAPSHOT) -> dict:
+    """The honest scorecard: after-CA-tax net return vs holding SPY in this account.
+
+    Realized gain and after-tax realized gain are reported separately. Unrealized
+    gains on open positions are untaxed (deferred — same treatment as the SPY
+    buy-and-hold alternative), so the comparison is apples-to-apples.
+    """
+    if transactions is None:
+        transactions = _load_transactions()
+    if portfolio is None:
+        portfolio = _load_portfolio()
+
+    realized_lots, uncovered = compute_realized_lots(transactions)
+    rs = realized_summary(realized_lots)
+
+    unrealized = None
+    if portfolio.get("positions") is not None:
+        unrealized = round(sum(float(p.get("unrealized_pnl", 0) or 0)
+                               for p in portfolio.get("positions", [])), 2)
+
+    # Strategy vs SPY-hold from the equity curve.
+    dates, pv, sv = _align(_portfolio_curve(agent_log_path), _spy_curve(snapshot_path))
+    have_curve = len(pv) >= 2 and pv[0]
+    strat_ret = round(pv[-1] / pv[0] - 1, 4) if have_curve else None
+    spy_ret   = round(sv[-1] / sv[0] - 1, 4) if (len(sv) >= 2 and sv[0]) else None
+
+    current_value = pv[-1] if pv else (portfolio.get("total_value") if portfolio else None)
+    # After-tax mark: subtract the (future) tax liability on realized gains.
+    after_tax_value = (round(current_value - rs["realized_tax_estimate"], 2)
+                       if current_value is not None else None)
+    strat_after_tax_ret = (round(after_tax_value / pv[0] - 1, 4)
+                           if (after_tax_value is not None and have_curve) else None)
+    after_tax_alpha = (round(strat_after_tax_ret - spy_ret, 4)
+                       if (strat_after_tax_ret is not None and spy_ret is not None) else None)
+
+    n_days = len(dates)
+    return {
+        "generated_at":      datetime.now(timezone.utc).isoformat(),
+        "inception":         dates[0] if dates else None,
+        "as_of":             dates[-1] if dates else None,
+        "trading_days":      n_days,
+        "not_significant":   n_days < MIN_SIGNIFICANT_DAYS,
+        "tax_rates":         {"short_term": CA_SHORT_TERM_RATE, "long_term": CA_LONG_TERM_RATE},
+        "realized":          rs,                      # pre-tax AND after-tax, separate
+        "uncovered_sells":   uncovered,
+        "unrealized_gain_untaxed": unrealized,
+        "current_value":     round(current_value, 2) if current_value is not None else None,
+        "after_tax_value":   after_tax_value,
+        "strategy_return":            strat_ret,
+        "strategy_return_after_tax":  strat_after_tax_ret,
+        "spy_hold_return":            spy_ret,
+        "after_tax_alpha_vs_spy":     after_tax_alpha,
+        "caveats": [
+            f"Tax estimate uses CA top-bracket rates (ST {CA_SHORT_TERM_RATE:.0%}, "
+            f"LT {CA_LONG_TERM_RATE:.1%}); not tax advice. ST/LT netting is modeled "
+            "(IRS ordering); the $3k ordinary-income offset cap, cross-YEAR "
+            "carryover, and wash-sale disallowance are NOT.",
+            "Uncovered SELLs (no in-log cost basis — positions opened before "
+            "transaction logging) are excluded from realized gain, not guessed.",
+            "SPY is price-return (no dividends). Unrealized gains are untaxed "
+            "(deferred), matching the SPY buy-and-hold alternative.",
+            f"{'NOT STATISTICALLY SIGNIFICANT — ' if n_days < MIN_SIGNIFICANT_DAYS else ''}"
+            f"{n_days} trading day(s); needs ≥ {MIN_SIGNIFICANT_DAYS} before any "
+            "skill claim. Treat as plumbing, not proof.",
+        ],
+    }
+
+
+def _fmt_money(x) -> str:
+    return f"${x:,.2f}" if isinstance(x, (int, float)) else "n/a"
+
+
+def print_after_tax_scorecard(s: dict) -> None:
+    print("\n" + "=" * 60)
+    print("💸  AFTER-TAX SCORECARD — net of CA tax, vs holding SPY")
+    print("=" * 60)
+    if s.get("not_significant"):
+        print("   🚩 NOT STATISTICALLY SIGNIFICANT — too few days; plumbing, not proof.")
+    print(f"   Inception: {s['inception']}  →  As of: {s['as_of']}  "
+          f"({s['trading_days']} trading day(s))")
+    r = s["realized"]
+    print(f"\n   {'Realized gain (pre-tax)':<32}{_fmt_money(r['realized_gain_pretax']):>14}")
+    print(f"   {'  short-term / long-term':<32}"
+          f"{_fmt_money(r['short_term_gain'])} / {_fmt_money(r['long_term_gain'])}")
+    print(f"   {'Est. tax on realized gain':<32}{_fmt_money(-r['realized_tax_estimate']):>14}")
+    print(f"   {'Realized gain (AFTER tax)':<32}{_fmt_money(r['realized_gain_after_tax']):>14}")
+    if r["loss_carryforward"]:
+        print(f"   {'  (loss carryforward)':<32}{_fmt_money(r['loss_carryforward']):>14}")
+    print(f"   {'Unrealized gain (untaxed)':<32}{_fmt_money(s['unrealized_gain_untaxed']):>14}")
+    if s["uncovered_sells"]:
+        tks = ", ".join(sorted({u['ticker'] for u in s['uncovered_sells']}))
+        print(f"   ⚠  {len(s['uncovered_sells'])} uncovered SELL(s) excluded (no in-log basis): {tks}")
+    print(f"\n   {'Strategy return':<32}{_fmt_pct(s['strategy_return']):>14}")
+    print(f"   {'Strategy return (after tax)':<32}{_fmt_pct(s['strategy_return_after_tax']):>14}")
+    print(f"   {'SPY buy-and-hold return':<32}{_fmt_pct(s['spy_hold_return']):>14}")
+    print(f"   {'After-tax alpha vs SPY':<32}{_fmt_pct(s['after_tax_alpha_vs_spy']):>14}")
+    for c in s["caveats"]:
+        print(f"   ⚠  {c}")
+    print("=" * 60 + "\n")
+
+
 def main() -> None:
     report = build_report()
+    report["after_tax_scorecard"] = after_tax_scorecard()
     with open(REPORT, "w") as f:
         json.dump(report, f, indent=2)
     print_report(report)
+    print_after_tax_scorecard(report["after_tax_scorecard"])
     print(f"   📄 Written to {REPORT}")
 
 
