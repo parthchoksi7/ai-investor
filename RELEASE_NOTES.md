@@ -13,6 +13,16 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+_Nothing pending — see the dated release below._
+
+---
+
+## [2026-06-14] — Edge batch: #1 real data + #6 net-edge gate + #2 forecast ledger  ·  ~23:20 PT  ·  PR #11/#12/#13
+
+Deployed together after two persona test rounds (289 unit tests + 14 cross-feature
+interaction probes, all green). 5.1 (structured output) deferred — needs a live
+API dry-run. `FMP_API_KEY` still needed to activate #1's real data (no-op until then).
+
 ### Added — #1 real data (provider layer) + Phase 3.2 earnings gate
 - **`data_providers.py`** — `MarketDataProvider` Protocol + `StubProvider`
   (testable without a key) + `FMPProvider` (Financial Modeling Prep) + `get_provider()`

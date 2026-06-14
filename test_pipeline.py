@@ -3006,3 +3006,48 @@ class TestCalibrationLedger:
         assert out[k]["n"] == 5 and out[k]["ic"] == 1.0
         assert out[k]["ic_shrunk"] == round(5 / 55, 3)        # shrunk far below the raw IC
         assert out[k]["ic_shrunk"] < out[k]["ic"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Cross-feature interaction regressions (#1 × #6 × #2 integrated)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestFeatureInteractions:
+    def test_skipped_earnings_not_logged_by_ledger(self, tmp_path):
+        # #1 Phase 3.2 emits earnings_alpha_score=None (skipped); #2 must drop it (non-numeric)
+        import calibration
+        pstate = {"quant_scores": {"AAPL": {"composite_score": 80}},
+                  "earnings": {"AAPL": {"earnings_alpha_score": None, "skipped_no_catalyst": True}},
+                  "research": {"AAPL": {"confidence": 7}}}
+        n = calibration.log_forecasts("r1", "2026-06-14", pstate, ["AAPL"],
+                                      {"AAPL": {"close": 200}}, path=str(tmp_path / "f.jsonl"))
+        assert n == 2          # quant + research logged; None earnings dropped, no crash
+
+    def test_net_edge_coerces_string_expected_return(self):
+        # the PM emits expected_return; a stringified "0.0001" must still be evaluated
+        import guardrails as g
+        kept, rej = g.enforce_net_edge(
+            [{"ticker": "X", "action": "BUY", "qty": 4, "expected_return": "0.0001"}],
+            {"X": {"close": 100}})
+        assert len(kept) + len(rej) == 1 and len(rej) == 1     # tiny edge → rejected
+
+    def test_net_edge_garbage_expected_return_passes(self):
+        import guardrails as g
+        kept, rej = g.enforce_net_edge(
+            [{"ticker": "X", "action": "BUY", "qty": 4, "expected_return": "abc"}],
+            {"X": {"close": 100}})
+        assert len(kept) == 1 and rej == []                    # unparseable → not evaluated
+
+    def test_all_four_guards_chain(self):
+        # min-hold → wash-sale → sector → net-edge all run without crashing; a valid BUY+SELL survive
+        import guardrails as g
+        decisions = [{"ticker": "NVDA", "action": "BUY", "qty": 4, "target_weight": 0.08, "expected_return": 0.10},
+                     {"ticker": "MRK", "action": "SELL", "qty": 2, "target_weight": 0.0}]
+        portfolio = {"total_value": 500.0, "positions": []}
+        prices = {"NVDA": {"close": 100.0}, "MRK": {"close": 50.0}}
+        d, _ = g.enforce_min_holding_period(decisions, portfolio, transactions=[], today="2026-06-14")
+        d, _ = g.enforce_wash_sale_reentry(d, transactions=[], today="2026-06-14")
+        d, _ = g.enforce_sector_limits(d, portfolio)
+        d, _ = g.enforce_net_edge(d, prices)
+        tickers = {x["ticker"] for x in d}
+        assert "NVDA" in tickers and "MRK" in tickers
