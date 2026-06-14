@@ -371,6 +371,18 @@ def run_daily_cycle():
     record_run(run_id, pipeline_state)
     print(f"   📋 Agent log written (run_id={run_id})")
 
+    # Forecast ledger (#2) — log every agent's structured forecasts for later
+    # calibration. OBSERVATIONAL: logging only, never affects a decision, and
+    # never raises into the pipeline.
+    try:
+        from calibration import log_forecasts
+        _n_fc = log_forecasts(run_id, today, pipeline_state,
+                              pipeline_state.get("candidates", []), market_data["prices"])
+        if _n_fc:
+            print(f"   🧮 Logged {_n_fc} forecast(s) to forecasts.jsonl")
+    except Exception as _e:
+        print(f"   ⚠ forecast logging skipped: {_e}")
+
     with open("pending_decisions.json", "w") as _f:
         _json.dump({
             "run_id":               run_id,

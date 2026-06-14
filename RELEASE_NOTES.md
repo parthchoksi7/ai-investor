@@ -56,6 +56,27 @@ DEPLOYMENT.md §7.0). Newest first.
 
 (+8 tests: `TestTaxLots`, `TestNetEdgeGate`.)
 
+### Added — #2 forecast ledger (the learning clock)
+- **`calibration.py`** — `log_forecasts()` appends each run's structured agent
+  forecasts (quant composite, research confidence, earnings alpha, devil's-advocate
+  risk, position hold score) to `forecasts.jsonl`, one row per (agent, ticker,
+  field) with the entry price + horizon. **OBSERVATIONAL — logging only, wired
+  after `record_run`, never affects a decision and never raises into the pipeline.**
+- `score_matured()` joins matured forecasts to realized forward returns from the
+  snapshot history (idempotent) → `forecasts_scored.jsonl`.
+- `agent_scorecard()` — per-agent rank-IC + sign-hit-rate with **shrinkage toward a
+  no-skill prior** (`ic_shrunk = ic·n/(n+k)`), so a lucky handful can't read as
+  signal. Nothing sizes a trade on it yet — it's a scoreboard, gated behind sample
+  size (future work).
+
+> Scores the **full candidate universe** every run (not just executed trades), so
+> it accrues hundreds of labeled forecasts/month — the only way to beat the
+> small-sample problem on a $500 book. The ledger files are gitignored.
+
+(+5 tests: `TestCalibrationLedger`.)
+
+> **Integrated suite: 285 passing** (#1 + #6 + #2 together).
+
 ---
 
 ## [2026-06-14] — P1: quant backtest harness + cost_model spine + QA hardening  ·  ~22:15 PT  ·  PR #10
