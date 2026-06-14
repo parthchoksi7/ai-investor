@@ -2755,3 +2755,66 @@ class TestGuardrailBoundaries:
             transactions=[{"ticker": "X", "action": "SELL", "date": "2026-05-15", "dry_run": False}],
             today="2026-06-14")
         assert len(kept) == 1 and rej == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  data_providers — real-data abstraction (#1). Tested against the StubProvider;
+#  FMPProvider degrades gracefully without a key (no hard failure, no regression).
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestDataProviders:
+    def test_stub_returns_configured_data(self):
+        from data_providers import StubProvider
+        p = StubProvider(
+            fundamentals={"AAPL": {"gross_margin": 0.45, "pe_ratio": 30}},
+            earnings={"AAPL": "2026-07-28"},
+            estimates={"AAPL": {"eps": 2.1}})
+        assert p.fundamentals("AAPL") == {"gross_margin": 0.45, "pe_ratio": 30}
+        assert p.next_earnings_date("AAPL") == "2026-07-28"
+        assert p.estimates("AAPL") == {"eps": 2.1}
+        assert p.fundamentals("UNKNOWN") is None      # unknown ticker → None contract
+
+    def test_stub_conforms_to_protocol(self):
+        from data_providers import StubProvider, MarketDataProvider
+        assert isinstance(StubProvider(), MarketDataProvider)
+
+    def test_fmp_without_key_degrades_gracefully(self, monkeypatch):
+        monkeypatch.delenv("FMP_API_KEY", raising=False)
+        from data_providers import FMPProvider
+        p = FMPProvider(api_key=None)
+        assert p.fundamentals("AAPL") is None         # no key → None, never raises
+        assert p.next_earnings_date("AAPL") is None
+        assert p.estimates("AAPL") is None
+
+    def test_fmp_fundamentals_field_mapping(self, monkeypatch):
+        from data_providers import FMPProvider
+        p = FMPProvider(api_key="x")
+        monkeypatch.setattr(p, "_get", lambda *a, **k: [{
+            "grossProfitMarginTTM": 0.4612, "operatingProfitMarginTTM": 0.301,
+            "debtEquityRatioTTM": 1.23, "peRatioTTM": 28.4,
+            "freeCashFlowYieldTTM": 0.035, "enterpriseValueMultipleTTM": 19.1,
+            "freeCashFlowPerShareTTM": 6.0, "revenuePerShareTTM": 24.0,
+        }])
+        f = p.fundamentals("AAPL")
+        assert f["gross_margin"] == 0.4612 and f["operating_margin"] == 0.301
+        assert f["debt_to_equity"] == 1.23 and f["pe_ratio"] == 28.4
+        assert f["fcf_yield"] == 0.035 and f["ev_ebitda"] == 19.1
+        assert f["fcf_margin"] == 0.25                # 6.0 / 24.0
+
+    def test_fmp_next_earnings_picks_soonest_future(self, monkeypatch):
+        from data_providers import FMPProvider
+        p = FMPProvider(api_key="x")
+        monkeypatch.setattr(p, "_get", lambda *a, **k: [
+            {"symbol": "AAPL", "date": "2020-01-01"},   # past → ignored
+            {"symbol": "AAPL", "date": "2099-09-09"},
+            {"symbol": "AAPL", "date": "2099-07-01"},   # soonest future
+            {"symbol": "MSFT", "date": "2099-06-01"},   # wrong ticker → ignored
+        ])
+        assert p.next_earnings_date("AAPL") == "2099-07-01"
+
+    def test_get_provider_factory(self, monkeypatch):
+        import data_providers as dp
+        monkeypatch.delenv("FMP_API_KEY", raising=False)
+        assert isinstance(dp.get_provider(), dp.StubProvider)   # no key → stub
+        monkeypatch.setenv("FMP_API_KEY", "k")
+        assert isinstance(dp.get_provider(), dp.FMPProvider)    # key → FMP
