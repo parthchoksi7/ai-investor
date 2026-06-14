@@ -280,28 +280,27 @@ def _provider_group(ticker: str) -> int:
 
 def _enrich_with_provider(all_tickers: list, fundamentals: dict, today=None) -> dict:
     """Overlay real provider fundamentals + a verified earnings calendar onto the
-    snapshot, using an ALTERNATE-DAY 50/50 cache so it fits the FMP free tier.
+    snapshot, using an ALTERNATE-DAY 50/50 cache.
 
     The universe is split into two hash groups; one group refreshes each day
     (alternating by calendar-date ordinal), and only if its cached entry is missing
-    or ≥ 2 days old. So ~½ the universe (~50 tickers × 3 stable-API calls = ~150
-    calls) is fetched per day << the 250/day free-tier limit, each ticker refreshes
-    every ~2 days, and the full universe is covered in 2 days. The cache
-    (PROVIDER_CACHE) holds the other group's data between refreshes. With NO
-    FMP_API_KEY this is a pure no-op (returns {}, cache untouched) — the exact prior
-    free-tier behavior, no regression.
+    or ≥ 2 days old. ~½ the universe (~50 tickers) is fetched per day, each ticker
+    refreshes every ~2 days, and the full universe is covered in 2 days.
+
+    Provider selection (from data_providers.get_provider()):
+      - FMP_API_KEY set → FMPProvider: all 6 factors + earnings calendar (250/day limit).
+      - No key          → SECProvider: 3 quality factors from EDGAR (free, no limit).
+      - StubProvider    → immediate no-op (test injection point).
 
     Mutates `fundamentals` with the provider overlay; returns earnings_calendar.
     """
     from datetime import date as _date
     earnings_calendar: dict = {}
-    if not os.getenv("FMP_API_KEY"):
-        return earnings_calendar                      # no key → no-op (no HTTP, no cache)
 
     from data_providers import get_provider, StubProvider
     provider = get_provider()
     if isinstance(provider, StubProvider):
-        return earnings_calendar
+        return earnings_calendar   # test stub → no-op, no HTTP
     today = today or _date.today()
     today_group = today.toordinal() % 2               # alternates every calendar day
 
@@ -323,9 +322,8 @@ def _enrich_with_provider(all_tickers: list, fundamentals: dict, today=None) -> 
             except (ValueError, TypeError):
                 age = None
         # Coverage-aware TTL: a ticker that returned real data refreshes every 2
-        # days; a ticker that came back empty (FMP free tier covers ~35% of the
-        # universe — the rest 402 "premium only") is re-checked only every 30 days,
-        # so the daily budget isn't burned re-hitting the ~65 premium-only names.
+        # days; one that came back empty (non-US, ADR, or FMP premium-only) waits
+        # 30 days before re-checking so the daily budget isn't burned on misses.
         has_data = bool(entry and (entry.get("fundamentals") or entry.get("next_earnings")))
         ttl = 2 if (entry is None or has_data) else 30
         due = entry is None or age is None or age >= ttl
