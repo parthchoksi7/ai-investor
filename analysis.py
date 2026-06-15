@@ -253,7 +253,10 @@ def _record_call(model: str, max_tokens: int, response) -> None:
         pass
 
 
-def _call(model: str, system: str | list, user_msg: str, max_tokens: int = 600) -> str:
+def _call(model: str, system: str | list, user_msg: str,
+          max_tokens: int = 600) -> tuple[str, str | None]:
+    """Return (text, stop_reason). stop_reason == "max_tokens" means the output
+    was truncated at the cap — the caller uses this to skip pointless retries."""
     response = _get_client().messages.create(
         model=model,
         max_tokens=max_tokens,
@@ -261,7 +264,7 @@ def _call(model: str, system: str | list, user_msg: str, max_tokens: int = 600) 
         messages=[{"role": "user", "content": user_msg}],
     )
     _record_call(model, max_tokens, response)
-    return response.content[0].text.strip()
+    return response.content[0].text.strip(), response.stop_reason
 
 
 def _cached_system(prompt: str) -> list:
@@ -293,14 +296,27 @@ def _parse_json(text: str, default):
     # Truncation recovery: response hit max_tokens mid-JSON so closing braces are missing.
     # Count unmatched braces and append enough "}" to close the object, then retry.
     if result is None and '{' in text:
-        # Strip any trailing partial string or comma before trying to close
-        truncated = re.sub(r',?\s*"[^"]*$', '', text.rstrip())
-        truncated = re.sub(r',\s*$', '', truncated)
-        open_braces = truncated.count('{') - truncated.count('}')
-        open_arrays = truncated.count('[') - truncated.count(']')
+        # First, try to preserve a value that was cut open mid-string: close the
+        # dangling string and any open arrays/objects. This keeps a partial (but
+        # real) first field — e.g. a long "bear_case" — instead of discarding it
+        # and collapsing to the default.
+        candidate = re.sub(r',\s*$', '', text.rstrip())
+        if len(re.findall(r'(?<!\\)"', candidate)) % 2 == 1:
+            candidate += '"'
+        open_braces = candidate.count('{') - candidate.count('}')
+        open_arrays = candidate.count('[') - candidate.count(']')
         suffix = ']' * max(open_arrays, 0) + '}' * max(open_braces, 0)
-        if suffix:
-            result = _try(truncated + suffix)
+        result = _try(candidate + suffix)
+
+        # Last resort: drop the trailing partial token entirely, then close.
+        if result is None:
+            truncated = re.sub(r',?\s*"[^"]*$', '', text.rstrip())
+            truncated = re.sub(r',\s*$', '', truncated)
+            open_braces = truncated.count('{') - truncated.count('}')
+            open_arrays = truncated.count('[') - truncated.count(']')
+            suffix = ']' * max(open_arrays, 0) + '}' * max(open_braces, 0)
+            if suffix:
+                result = _try(truncated + suffix)
 
     if result is None:
         return default
@@ -317,11 +333,14 @@ def _parse_json(text: str, default):
 def _safe_call(model, system, user_msg, default, max_tokens=600, retries=2):
     for attempt in range(retries + 1):
         try:
-            raw = _call(model, system, user_msg, max_tokens=max_tokens)
+            raw, stop_reason = _call(model, system, user_msg, max_tokens=max_tokens)
             result = _parse_json(raw, default)
             # If result is identical to the default, the response was likely empty/truncated
             # under API load — treat as retryable rather than silently accepting blank fields.
-            if result == default and attempt < retries:
+            # Exception: a max_tokens truncation is deterministic — retrying the same prompt
+            # at the same cap reproduces the same over-long output, so accept the best-effort
+            # parse instead of burning identical calls.
+            if result == default and stop_reason != "max_tokens" and attempt < retries:
                 raise ValueError(f"Response parsed to default (raw_len={len(raw)}) — retrying")
             return result
         except Exception as e:
@@ -652,9 +671,10 @@ EARNINGS ASSESSMENT:
 Use your training knowledge of {ticker} to construct a rigorous bear case. \
 All fields must be non-empty — do not return blank strings or empty arrays.
 
-Output JSON (fill in every field):
+Output JSON (fill in every field). Keep "bear_case" to 2-3 tight sentences \
+(the single strongest argument, not an essay) and each list item to one short phrase:
 {{
-  "bear_case": "the strongest argument against owning this stock",
+  "bear_case": "the strongest argument against owning this stock, in 2-3 sentences",
   "weakest_assumptions": ["assumption 1", "assumption 2"],
   "hidden_risks": ["risk 1"],
   "crowding_risk": "MEDIUM",
@@ -668,7 +688,10 @@ Output JSON (fill in every field):
         MODEL_FAST, _cached_system(_DEVILS_SYSTEM), user_msg,
         default={"bear_case": "", "overall_risk_score": 5,
                  "recommend_reject": False, "hidden_risks": []},
-        max_tokens=800,
+        # The hostile prompt elicits a verbose bear_case (~1.1k tokens end-to-end);
+        # 800 truncated it mid-JSON → empty defaults. Headroom + the conciseness cap
+        # above keep the full object inside the budget.
+        max_tokens=1500,
     )
 
 
