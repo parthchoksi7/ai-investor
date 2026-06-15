@@ -936,9 +936,50 @@ git checkout <known_good_sha> -- execute.py main.py analysis.py journal.py
 # Run regression tests again (Section 3) before re-enabling the routine
 ```
 
-### 9.3 pending_decisions.json manual stamp (emergency)
+### 9.3 Automated crash-state reconciliation (`reconcile.py`) — try this FIRST
 
-> **Danger.** Only do this if you are certain that orders were placed in Robinhood but `executed_at` was never written — for example, the routine crashed between the order placement step and the stamp step. If you stamp a file for a run where orders were NOT placed, the routine will think the run is done and will not re-execute, meaning your portfolio will not be rebalanced today. Verify in Robinhood's order history first.
+When a run crashes after `execution_started_at` is stamped but before `executed_at`
+(the "Scenario B" state), the preflight gate now runs `reconcile.py` automatically
+and prints a diff-driven classification. It is **report-only inside the gate** (it
+never re-trades and never mutates state on a retry-able check). Use it before any
+manual stamp:
+
+```bash
+# 1. Read-only: diff LIVE broker positions vs the intended orders.
+python reconcile.py
+#    Writes reconciliation_report.json and prints one of:
+#      NONE_FILLED      → no order reached the broker (live == pre-trade)
+#      ALL_FILLED       → every order landed (crash was after fills, before stamp)
+#      MANUAL_REQUIRED  → partial / unexpected drift → DO NOT auto-act (see 9.4)
+#    Exit code: 0 for NONE/ALL/NO_CRASH, 2 for MANUAL_REQUIRED.
+
+# 2. Apply the PROVABLY-SAFE remediation, only for NONE_FILLED / ALL_FILLED:
+python reconcile.py --apply
+#    ALL_FILLED  → stamps executed_at (today is DONE).
+#    NONE_FILLED → clears the stale execution_started_at (day may be re-attempted).
+#    MANUAL_REQUIRED → refuses to change anything; go to 9.4.
+
+# 3. Commit + push so the next scheduled attempt sees the reconciled state AND so
+#    the health alert fires (reconcile writes a crash_reconciliation health check;
+#    alert.yml triggers on a pushed system_health.json):
+git add pending_decisions.json reconciliation_report.json system_health.json
+git commit -m "ops: reconcile crash state (<NONE_FILLED|ALL_FILLED>)"
+git push
+```
+
+**Always verify against Robinhood's order history before trusting `--apply`.** The
+reconciler diffs quantities; a same-day external transfer or dividend reinvestment
+could in principle confound the diff, in which case it returns MANUAL_REQUIRED.
+
+> **Note.** A MANUAL_REQUIRED result records a `FAILED` `crash_reconciliation`
+> health check. For the GitHub issue to open, the crash-state preflight must
+> commit+push `system_health.json` (step 3 above) — the gate itself does not push.
+
+### 9.4 pending_decisions.json manual stamp (emergency)
+
+> **Danger.** Use this only if `reconcile.py` (9.3) returned MANUAL_REQUIRED or is
+> unavailable, AND you are certain that orders were placed in Robinhood but
+> `executed_at` was never written — for example, the routine crashed between the order placement step and the stamp step. If you stamp a file for a run where orders were NOT placed, the routine will think the run is done and will not re-execute, meaning your portfolio will not be rebalanced today. Verify in Robinhood's order history first.
 
 **Before running this, answer all of the following:**
 - [ ] I have opened Robinhood and confirmed orders appear in the account's history for today's run

@@ -14,5 +14,10 @@ agent_scorecards.json
 # Analysis / recovery artifacts — regenerated from logs on demand.
 deliberation_stats.json
 reconciliation_report.json
+# A12 reproducibility manifest + exported prompts (regenerated each run from
+# analysis.py constants) and B16 append-only health history.
+reproducibility.json
+prompts/
+health_history.jsonl
 # FMP provider cache (#1) — persisted in CI via actions/cache, transient locally.
 provider_cache.json

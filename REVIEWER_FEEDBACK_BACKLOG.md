@@ -70,7 +70,26 @@ rates with wide error, not conclusions):**
 
 **Generated artifacts (git-ignored data, regenerate via the scripts):**
 `agent_scorecards.json` (calibration), `reconciliation_report.json` (reconcile),
-`deliberation_stats.json` (B14/B16), `performance_report.json` (A4).
+`deliberation_stats.json` (B14/B16), `performance_report.json` (A4),
+`reproducibility.json` + `prompts/` (A12), `health_history.jsonl` (B16).
+
+### Second sprint follow-ups (2026-06-15)
+
+- **A12** DONE — per-call resolved-model + token-usage capture
+  (`analysis._record_call`) and `analysis.export_reproducibility` →
+  `reproducibility.json` + hashed prompt export, wired into `main.py`. Closes the
+  token/cost gap too. Sampling recorded (not pinned).
+- **B16 health-history** DONE — `health.save()` now appends a compact line to
+  `health_history.jsonl` (append-only), so abort/uptime base rates become
+  computable over time. (Preflight-level SKIP_RETRY skips still leave no row —
+  they are "no run", not "aborted run".)
+- **A7 alerting** DONE — `reconcile._record_health` writes a `crash_reconciliation`
+  health check (FAILED on MANUAL_REQUIRED) so `alert.yml` can open an issue;
+  recovery runbook added at `DEPLOYMENT.md` §9.3 (`reconcile.py` / `--apply`).
+- **Hardening** — the wash-sale pre-sale flag call in `main.py` is now wrapped so
+  an annotation failure can never break the trade path (it is observational).
+- C2 external pre-registration DONE — AsPredicted #296637
+  (https://aspredicted.org/zm7a2p.pdf), wired into the paper + `calibration._meta`.
 
 ---
 
@@ -263,7 +282,13 @@ rates with wide error, not conclusions):**
   returned by the API per run, alongside the existing `market_snapshot.json`.
 - **What it takes:** log the resolved model ID + sampling params per agent call;
   publish prompt templates; document the reproducibility package in the repo.
-- **Status:** OPEN.
+- **Status:** ✅ DONE (2026-06-15). `analysis._record_call` captures the resolved
+  `response.model` snapshot + token usage per call; `analysis.export_reproducibility`
+  writes `reproducibility.json` (resolved snapshots, usage, sampling params, SDK
+  version) + verbatim prompt files with SHA-256 hashes, called per run from
+  `main.py`. This also closes the B14 per-agent **token/cost** gap (usage is now
+  captured). ⚠ Sampling params are **recorded as API defaults, not pinned** —
+  pinning would change live behavior and is deferred as a deliberate change.
 
 ---
 

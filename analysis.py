@@ -217,6 +217,42 @@ Focus on: Avoiding catastrophic losses."""
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+# ── A12 reproducibility: per-run model/sampling/usage manifest ────────────────
+# The released code lets a reader inspect the pipeline, but exact replay of a
+# historical decision needs the RESOLVED model snapshot (not just the family
+# alias), the sampling params, and the prompts. We capture all three per run.
+# Sampling note: temperature / top_p are NOT set on the call, so they use the
+# Anthropic API default (temperature 1.0). We RECORD that rather than pin it —
+# pinning would change behavior and must be a deliberate, separate change.
+SAMPLING_PARAMS = {"temperature": "api_default(1.0)", "top_p": "api_default"}
+
+_RUN_MANIFEST: dict = {"calls": {}}
+
+
+def _record_call(model: str, max_tokens: int, response) -> None:
+    """Accumulate resolved model + token usage per requested model. Best-effort —
+    instrumentation must never affect the call result or raise into the pipeline."""
+    try:
+        c = _RUN_MANIFEST["calls"].setdefault(
+            model, {"n_calls": 0, "resolved_models": [], "max_tokens_seen": [],
+                    "input_tokens": 0, "output_tokens": 0,
+                    "cache_read_tokens": 0, "cache_creation_tokens": 0})
+        c["n_calls"] += 1
+        resolved = getattr(response, "model", None)
+        if resolved and resolved not in c["resolved_models"]:
+            c["resolved_models"].append(resolved)
+        if max_tokens not in c["max_tokens_seen"]:
+            c["max_tokens_seen"].append(max_tokens)
+        u = getattr(response, "usage", None)
+        if u is not None:
+            c["input_tokens"]          += getattr(u, "input_tokens", 0) or 0
+            c["output_tokens"]         += getattr(u, "output_tokens", 0) or 0
+            c["cache_read_tokens"]     += getattr(u, "cache_read_input_tokens", 0) or 0
+            c["cache_creation_tokens"] += getattr(u, "cache_creation_input_tokens", 0) or 0
+    except Exception:
+        pass
+
+
 def _call(model: str, system: str | list, user_msg: str, max_tokens: int = 600) -> str:
     response = _get_client().messages.create(
         model=model,
@@ -224,6 +260,7 @@ def _call(model: str, system: str | list, user_msg: str, max_tokens: int = 600) 
         system=system,
         messages=[{"role": "user", "content": user_msg}],
     )
+    _record_call(model, max_tokens, response)
     return response.content[0].text.strip()
 
 
@@ -1048,3 +1085,66 @@ def get_trade_decisions(
         "final_decisions": decisions,
     }
     return decisions, pipeline_state
+
+
+# ── A12 reproducibility export ────────────────────────────────────────────────
+
+def export_reproducibility(path: str = "reproducibility.json",
+                           prompts_dir: str = "prompts",
+                           run_id: str | None = None, date: str | None = None) -> dict:
+    """Write a per-run reproducibility manifest: resolved model snapshots + token
+    usage (from this run's calls), sampling params, the verbatim agent prompts,
+    and their SHA-256 hashes. Lets another researcher reproduce a decision exactly
+    (PAPER_DRAFT §6.11). Best-effort — wrap the caller; never break the pipeline.
+    """
+    import hashlib
+    from datetime import datetime, timezone
+
+    prompts = {
+        "regime":          _REGIME_SYSTEM,
+        "research":        _RESEARCH_SYSTEM,
+        "earnings":        _EARNINGS_SYSTEM,
+        "devils_advocate": _DEVILS_SYSTEM,
+        "position_review": _POSITION_REVIEW_SYSTEM,
+        "portfolio_manager": _PM_SYSTEM,
+        "cro":             _CRO_SYSTEM,
+    }
+    prompt_meta = {}
+    try:
+        os.makedirs(prompts_dir, exist_ok=True)
+    except Exception:
+        prompts_dir = None
+    for name, text in prompts.items():
+        meta = {"sha256_16": hashlib.sha256(text.encode()).hexdigest()[:16],
+                "chars": len(text)}
+        if prompts_dir:
+            try:
+                with open(os.path.join(prompts_dir, f"{name}.txt"), "w") as f:
+                    f.write(text)
+                meta["file"] = f"{prompts_dir}/{name}.txt"
+            except Exception:
+                pass
+        prompt_meta[name] = meta
+
+    try:
+        import anthropic
+        lib_version = getattr(anthropic, "__version__", "unknown")
+    except Exception:
+        lib_version = "unknown"
+
+    manifest = {
+        "run_id":       run_id,
+        "date":         date,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "models":       {"fast": MODEL_FAST, "smart": MODEL_SMART},
+        "sampling":     SAMPLING_PARAMS,
+        "anthropic_sdk": lib_version,
+        "calls":        _RUN_MANIFEST.get("calls", {}),  # resolved snapshots + usage
+        "prompts":      prompt_meta,
+        "note": ("Resolved model snapshots and token usage are this run's actual "
+                 "API values. Sampling uses Anthropic API defaults (not pinned). "
+                 "Prompt text is exported verbatim with SHA-256 hashes."),
+    }
+    with open(path, "w") as f:
+        json.dump(manifest, f, indent=2)
+    return manifest
