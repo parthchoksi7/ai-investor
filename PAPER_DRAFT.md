@@ -320,6 +320,8 @@ The pipeline runs seven agents in a structured sequence. Agents 2–5 analyze
 individual tickers in parallel; agents 1, 6, and 7 operate at the portfolio
 level in sequence.
 
+**Table 1. The seven-agent pipeline.**
+
 | # | Agent | Model | Scope | Output |
 |---|-------|-------|-------|--------|
 | 1 | Market Regime Strategist | Sonnet | Portfolio | Risk-On / Neutral / Risk-Off + macro factors |
@@ -669,38 +671,81 @@ The account uses only long equity positions with no leverage, options, or
 short selling.
 
 **No investment performance claims are made in this paper.** The sample size
-is below the internally established 60-trading-day threshold, and no
-statistically meaningful inference can yet be drawn about investment edge,
-Sharpe ratio, or benchmark-relative return.
+is below the pre-registered 60-trading-day threshold, and no statistically
+meaningful inference can yet be drawn about investment edge, Sharpe ratio, or
+benchmark-relative return.
 
-We report observational system behavior only:
+What we *can* report is the measured behavior of the pipeline. Earlier drafts
+described this behavior with denominator-free phrases ("fired on several
+occasions", "set `recommend_reject` on some names") — exactly the kind of
+hit-only anecdote this paper criticizes. We replace those here with base rates
+computed from the agent and run logs (`deliberation_stats.py`). These are
+descriptive statistics of the deliberation, not evidence of skill, and the
+sample is small: **10 logged pipeline runs over 2026-06-08 to 2026-06-12 (5
+trading days; multiple runs per day reflect the retry schedule).** They should be
+read as base rates with wide error, and they will firm up as the deployment
+accumulates runs.
+
+**Table 2. Deliberation and operational base rates** (10 logged runs).
+
+| Measure | Value | Denominator |
+|---|---|---|
+| CRO full-veto rate | 30% | 3 / 10 runs |
+| Devil's-Advocate `recommend_reject` rate | 0% | 0 / 132 ticker-evaluations |
+| Position-review REDUCE/EXIT rate | 49% | 37 / 75 reviews |
+| PM proposed-trade rate vs candidate slots | 22% | 43 / 200 |
+| Trades after deterministic guardrails | 19 | 43 proposed → 19 executed |
+| No-trade run rate | 70% | 7 / 10 runs |
+| Executed trades per run | 1.9 | 19 / 10 |
+| One-way portfolio turnover (period) | ≈ 0.63 | sell notional / avg book |
+| Kill-switch-active runs | 0 | 0 / 10 |
+| Regime mix | NEUTRAL 8, RISK_ON 2 | 10 runs |
+
+Three observations follow directly, and we state them without spin:
+
+- **The CRO is an active gate, not decoration.** It fully vetoed the trade list on
+  30% of runs. We do *not* characterize these as good or bad calls — judging
+  vetoes from outcomes requires the full vetoed-versus-approved comparison (the
+  CRO ablation, Section 6.3); a 30% intervention rate only establishes that the
+  layer is materially engaged.
+- **The Devil's Advocate's veto signal was vacuous in this window.** It set
+  `recommend_reject` zero times across 132 ticker-evaluations. There is therefore
+  currently *no* reject signal whose information coefficient could be measured
+  (Section 6.3, item 5 is blocked until the flag fires). This is a measured fact
+  that bears on the untested "adversarial framing adds value" hypothesis
+  (Section 6.2): either the flag's threshold/prompt is mis-calibrated, or the bear
+  case is, in practice, never decisive enough to recommend rejection — and it is
+  worth noting the Devil's Advocate runs on the weaker model (Section 3.4), which
+  the model-parity ablation (Section 6.3) should probe.
+- **The deterministic layer materially reshapes LLM output.** The Portfolio
+  Manager proposed 43 trades; 19 survived the guardrails (turnover, wash-sale,
+  sector, and net-edge filters). The separation in Section 4.1 is not cosmetic:
+  more than half of proposed trades were dropped by code, not by an LLM.
+
+Safety-path observations (these remain qualitative — the relevant events are rare
+by design):
 
 - The pre-flight gate has correctly aborted runs on days with stale market
-  snapshots caused by GitHub Actions scheduling delays. No stale-data trades
-  have been executed.
-- The CRO veto has fired on several occasions, dropping PM-recommended trades
-  citing same-sector concentration. We deliberately do not characterize these
-  as good or bad calls: judging them from a handful of cases, without the full
-  set of vetoed-versus-approved outcomes, would be confirmation bias. A
-  like-for-like outcome comparison is deferred to the CRO ablation (Section 6.3).
-- The Devil's Advocate has set `recommend_reject` on some names. We do not
-  report selected cases where the bear case later played out, because a
-  hit-only narrative with no base rate is not evidence. The signal's value is
-  an empirical question answered by its information coefficient over the full
-  flagged-versus-unflagged set (Section 6.3), not by anecdotes.
-- No duplicate execution has occurred. The stamp-first protocol has correctly
-  prevented re-execution on multiple retry attempts following a successful
-  primary run.
-- The `execution_started_at` / no `executed_at` crash recovery state has not
-  yet been triggered in production; its manual recovery path has been tested
-  in a staging environment only.
+  snapshots caused by GitHub Actions scheduling delays; no stale-data trades have
+  been executed. (Aborted runs are not yet counted with a denominator: aborts
+  exit before writing to the agent log, and `system_health.json` is overwritten
+  each run, so an abort rate requires health-history retention — noted as a
+  near-term logging fix.)
+- No duplicate execution has occurred; the stamp-first protocol has correctly
+  prevented re-execution on retry attempts following a successful primary run.
+- The `execution_started_at` / no-`executed_at` crash-recovery state has not been
+  triggered in production. Recovery is now automated rather than manual: the
+  pre-flight gate runs a reconciliation pass (`reconcile.py`) that diffs live
+  broker positions against the intended orders and emits a specific,
+  diff-driven recovery classification (no-fill / all-filled / manual); it remains
+  fail-safe (it never re-trades and, in the gate, never mutates state). This path
+  has been tested with synthetic crash states; it has not fired in production.
 
-We emphasize that even these operational observations are reported without
-denominators — number of runs, trades, aborts, and vetoes — and a
-denominator-free count is exactly the kind of evidence we criticize elsewhere in
-this paper. Reporting these base rates is a feasible near-term analysis pass over
-the existing run logs (Section 6.3, item 12) and is a precondition for any of
-the statements above to count as evidence rather than anecdote.
+The realized short-term/long-term holding-period split — which would replace the
+worst-case tax assumption in Section 6.6 with a measured number — is not yet
+reportable: every closed position to date was opened before transaction logging
+began, so it has no in-log cost basis to match (9 such "uncovered" sells). The
+split will populate as positions opened under logging are later sold.
 
 ---
 
@@ -830,14 +875,15 @@ test, not a point estimate.
     not only SPY. Beating SPY while underperforming a momentum ETF would mean the
     system merely captures the momentum premium at higher cost.
 
-12. **Deliberation descriptive statistics** *(feasible now)*: The system has
-    logged every agent's output since deployment. Independently of returns, we
-    can and should report the behavioral statistics of the pipeline: CRO veto
-    rate, Devil's Advocate `recommend_reject` rate, PM HOLD rate, the frequency
-    with which the Devil's Advocate flag coincides with a PM decision to not buy,
-    and inter-agent disagreement. This converts qualitative architecture claims
-    into measurable behavior and requires no additional market data — only an
-    analysis pass over the existing agent log.
+12. **Deliberation descriptive statistics** *(done — reported in Section 5,
+    Table 2)*: The behavioral statistics of the pipeline — CRO veto rate,
+    Devil's-Advocate `recommend_reject` rate, PM trade/no-trade rate, the
+    proposed-versus-executed gap after guardrails, position-review REDUCE/EXIT
+    rate, turnover, and regime mix — are now computed from the existing logs
+    (`deliberation_stats.py`) and reported as base rates. Remaining gap:
+    per-agent token/cost is not yet logged (it lands with the reproducibility
+    package, Section 6.11), and an abort/uptime rate needs health-history
+    retention.
 
 ### 6.4 LLM Backtest Contamination
 
