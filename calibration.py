@@ -9,26 +9,63 @@ scored them. This module closes that loop WITHOUT touching the trade path:
   score_matured()   joins forecasts whose horizon has elapsed to the realized
                     forward return (from price history) → forecasts_scored.jsonl.
   agent_scorecard() reports per-agent skill (rank-IC, sign-hit-rate) with
-                    SHRINKAGE toward a no-skill prior, so a handful of forecasts
-                    can't masquerade as signal.
+                    SHRINKAGE toward a no-skill prior, BLOCK-SAMPLED effective-N
+                    statistics, and a Benjamini-Hochberg multiplicity control, so
+                    a handful of overlapping forecasts can't masquerade as signal.
 
 Scoring the FULL candidate universe (not just executed trades) is deliberate: it
 accrues hundreds of (forecast, outcome) pairs per month, beating the small-sample
 problem long before the trade count would. Nothing here weights or sizes a trade
 — that stays gated behind a sample threshold (future work). This is the data
 clock you want started.
+
+Measurement-bias fixes (see PAPER_DRAFT §3.7, REVIEWER_FEEDBACK_BACKLOG A1/A2/A3):
+
+  A1 — Executable entry, no one-bar look-ahead. The forward return is measured
+       from the NEXT SESSION'S OPEN (the first price actually tradable after the
+       signal), derived at scoring time — NOT from the signal-day close the
+       signal was computed on. `signal_close` is retained on each row for
+       reference only; it is never the return base. This matches backtest/engine
+       (signal at close(t) → fill at open(t+1)).
+
+  A2 — Overlapping-window correction. Daily forecasts on a 21-day horizon share
+       20/21 of their return window, so raw N massively overstates independence.
+       The scorecard reports a BLOCK-SAMPLED IC/hit-rate over non-overlapping
+       ~horizon-spaced observations and bases every confidence interval and
+       p-value on that effective N, not the raw count.
+
+  A3 — Multiplicity control + one pre-registered primary metric. One IC + one
+       hit-rate is computed per (agent, field) across several series; reporting
+       the best is data dredging. A Benjamini-Hochberg adjustment is applied
+       across all metrics, and ONE metric is pre-registered as primary:
+       quant.composite_score at the 21-day horizon (see PRIMARY_METRIC). It is
+       the deterministic foundation with the largest, most stable sample; if even
+       it shows no rank-IC, the LLM layer on top is building on sand.
 """
 
 import json
 import math
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, date, timedelta, timezone
 
 LEDGER    = "forecasts.jsonl"
 SCORED    = "forecasts_scored.jsonl"
 SCORECARD = "agent_scorecards.json"
 
 DEFAULT_HORIZON = 21   # ~1 trading month
+
+SCHEMA_VERSION  = 2    # 2 = executable-entry semantics (A1); rows < 2 are legacy
+
+# A3 — the single pre-registered primary metric + horizon. Commit this BEFORE
+# reading results and (ideally) register it externally (OSF/AsPredicted). The
+# headline skill number is THIS one; everything else is secondary and BH-adjusted.
+PRIMARY_METRIC  = ("quant", "composite_score")
+PRIMARY_HORIZON = 21
+BH_ALPHA        = 0.05
+# Externally pre-registered (immutable, timestamped) — the primary metric,
+# horizon, executable-entry basis, total-return benchmark, BH control, and the
+# 60-trading-day reporting threshold. See PREREGISTRATION.md / PAPER_DRAFT §4.4.
+PREREGISTRATION_URL = "https://aspredicted.org/zm7a2p.pdf"  # AsPredicted #296637
 
 # agent -> (pipeline_state key, field, orientation). orientation = +1 when a
 # HIGHER value should predict a HIGHER forward return, -1 when higher predicts
@@ -68,11 +105,16 @@ def log_forecasts(run_id: str, date_str: str, pipeline_state: dict,
     """Append this run's per-(agent, ticker) numeric forecasts. Returns the count.
 
     Logging only — never raises into the caller's critical path (wrap the call).
+
+    `signal_close` is stamped for REFERENCE ONLY (the close the signal was
+    computed on). It is NOT the return base: score_matured() derives the
+    executable entry (next-session open) at scoring time so there is no one-bar
+    look-ahead (A1).
     """
     rows = []
     for ticker in candidates:
-        entry = (prices.get(ticker) or {}).get("close")
-        if not entry:
+        signal_close = (prices.get(ticker) or {}).get("close")
+        if not signal_close:
             continue
         for agent, (key, field, _sign) in _FORECASTS.items():
             v = (pipeline_state.get(key, {}).get(ticker) or {}).get(field)
@@ -80,7 +122,8 @@ def log_forecasts(run_id: str, date_str: str, pipeline_state: dict,
                 rows.append({
                     "run_id": run_id, "date": date_str, "agent": agent, "field": field,
                     "ticker": ticker, "value": float(v),
-                    "entry_price": float(entry), "horizon_days": horizon_days,
+                    "signal_close": float(signal_close), "horizon_days": horizon_days,
+                    "schema": SCHEMA_VERSION,
                 })
     if rows:
         _append_jsonl(path, rows)
@@ -88,24 +131,34 @@ def log_forecasts(run_id: str, date_str: str, pipeline_state: dict,
 
 
 def _history_to_series(history: dict) -> dict:
-    """{ticker: [bars]} → {ticker: sorted [(iso_date, close)]}. Bars carry an
-    epoch-ms or ISO `date`."""
+    """{ticker: [bars]} → {ticker: sorted [(iso_date, open, close)]}. Bars carry an
+    epoch-ms or ISO `date`; `open` may be missing on some feeds (kept as None)."""
     out: dict[str, list] = {}
     for t, bars in (history or {}).items():
         s = []
         for b in bars:
-            raw, close = b.get("date"), b.get("close")
+            raw, op, close = b.get("date"), b.get("open"), b.get("close")
             if raw is None or close is None:
                 continue
             iso = (datetime.fromtimestamp(raw / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
                    if isinstance(raw, (int, float)) else str(raw)[:10])
-            s.append((iso, float(close)))
+            s.append((iso, (float(op) if op is not None else None), float(close)))
         out[t] = sorted(s)
     return out
 
 
-def _price_on_or_after(series: list, target_iso: str):
-    for d, c in series:
+def _next_open_after(series: list, signal_iso: str):
+    """Executable entry: (date, open) of the first bar STRICTLY AFTER the signal
+    date. This is the price actually tradable the morning after the signal (A1).
+    Returns (None, None) if there is no later bar or its open is missing."""
+    for d, op, _c in series:
+        if d > signal_iso and op is not None:
+            return d, op
+    return None, None
+
+
+def _close_on_or_after(series: list, target_iso: str):
+    for d, _op, c in series:
         if d >= target_iso:
             return c
     return None
@@ -113,7 +166,12 @@ def _price_on_or_after(series: list, target_iso: str):
 
 def score_matured(snapshot: dict, ledger_path: str = LEDGER,
                   scored_path: str = SCORED) -> int:
-    """Score forecasts whose horizon has elapsed against realized forward return.
+    """Score forecasts whose horizon has elapsed against the realized forward return.
+
+    A1: the return is measured from the NEXT SESSION'S OPEN (executable entry,
+    derived here) to the close on/after entry + horizon days — never from the
+    signal-day close. A forecast with no next-session bar yet (or no open on it)
+    is treated as immature and skipped until it matures.
 
     Idempotent: a (run_id, agent, field, ticker) already in scored_path is skipped,
     so re-running never double-counts. Returns the number newly scored.
@@ -128,19 +186,30 @@ def score_matured(snapshot: dict, ledger_path: str = LEDGER,
         if key in scored_keys:
             continue
         s = series.get(fc.get("ticker"))
-        entry = fc.get("entry_price")
-        if not s or not entry:
+        signal_date = fc.get("date")
+        if not s or not signal_date:
             continue
+
+        # A1: executable entry = next-session open (no signal-close look-ahead).
+        entry_date, entry = _next_open_after(s, signal_date)
+        if not entry:
+            continue  # next session not available yet → immature, retry next run
+
         try:
-            target = (datetime.fromisoformat(fc["date"]).date()
-                      + timedelta(days=int(fc.get("horizon_days", DEFAULT_HORIZON)))).isoformat()
+            horizon = int(fc.get("horizon_days", DEFAULT_HORIZON))
+            target = (date.fromisoformat(entry_date) + timedelta(days=horizon)).isoformat()
         except (ValueError, TypeError, KeyError):
             continue
-        future_px = _price_on_or_after(s, target)
-        if future_px:
-            out.append({**fc, "future_price": future_px,
-                        "realized_return": round((future_px - entry) / entry, 5)})
-            scored_keys.add(key)
+
+        exit_px = _close_on_or_after(s, target)
+        if exit_px is None:
+            continue  # horizon not yet elapsed in the available history
+
+        out.append({**fc, "entry_date": entry_date, "entry_price": round(entry, 4),
+                    "future_price": exit_px,
+                    "realized_return": round((exit_px - entry) / entry, 5),
+                    "basis": "next_open"})
+        scored_keys.add(key)
     if out:
         _append_jsonl(scored_path, out)
     return len(out)
@@ -169,13 +238,75 @@ def _spearman(xs: list, ys: list):
     return cov / (sx * sy)
 
 
+def _norm_sf(z: float) -> float:
+    """Two-sided survival probability 2·(1−Φ(|z|)) via erf — no scipy dependency."""
+    return math.erfc(abs(z) / math.sqrt(2))
+
+
+def _ic_pvalue(ic, n: int):
+    """Approximate two-sided p-value for a rank-IC under H0: IC=0.
+
+    Uses the standard z ≈ IC·√(n−1) large-sample approximation. `n` MUST be the
+    effective (block-sampled, non-overlapping) count, not the raw overlapping
+    count — passing raw n understates the p-value (overstates significance)."""
+    if ic is None or n is None or n < 4:
+        return None
+    z = ic * math.sqrt(n - 1)
+    return round(min(1.0, _norm_sf(z)), 4)
+
+
+def _block_sample(rows: list, horizon: int) -> list:
+    """A2: collapse overlapping forecasts to a non-overlapping effective sample.
+
+    Per ticker, sort by date and greedily keep forecasts spaced ≥ horizon CALENDAR
+    days apart, so the 21-day return windows of the kept rows do not overlap and
+    can be treated as approximately independent. Rows with no parseable date pass
+    through (small test/legacy samples). The kept set is pooled across tickers."""
+    by_t: dict = {}
+    for r in rows:
+        by_t.setdefault(r.get("ticker"), []).append(r)
+    kept = []
+    for _t, rs in by_t.items():
+        rs = sorted(rs, key=lambda r: r.get("date") or "")
+        last = None
+        for r in rs:
+            d = r.get("date")
+            try:
+                dd = date.fromisoformat(str(d)[:10])
+            except (ValueError, TypeError):
+                kept.append(r)
+                continue
+            if last is None or (dd - last).days >= horizon:
+                kept.append(r)
+                last = dd
+    return kept
+
+
+def _ic_hit(rows: list, sign: int):
+    """(ic, hit_rate, n) over rows carrying numeric value + realized_return."""
+    vals = [x["value"] for x in rows if isinstance(x.get("value"), (int, float))]
+    rets = [x["realized_return"] for x in rows if isinstance(x.get("realized_return"), (int, float))]
+    n = min(len(vals), len(rets))
+    if n == 0:
+        return None, None, 0
+    vals, rets = vals[:n], rets[:n]
+    ic = _spearman(vals, rets)
+    mean = sum(vals) / n
+    hits = sum(1 for v, rr in zip(vals, rets) if (sign * (v - mean)) * rr > 0)
+    return ic, round(hits / n, 3), n
+
+
 def agent_scorecard(scored_path: str = SCORED, out_path: str = SCORECARD,
                     shrink_k: int = 50) -> dict:
-    """Per (agent.field): n, rank-IC, sign-hit-rate, SHRUNK IC, 95% CI half-width.
+    """Per (agent.field): raw + block-sampled IC, hit-rate, shrunk IC, effective-N
+    CI, and a Benjamini-Hochberg-adjusted p-value. Plus a `_meta` block naming the
+    pre-registered primary metric.
 
-    `ic_shrunk = ic * n/(n+shrink_k)` pulls small samples toward 0 (no skill), so a
-    lucky handful of forecasts doesn't read as signal. Nothing consumes this to
-    size trades yet — it is a scoreboard, gated behind sample size (future work).
+    `ic_shrunk = ic · n/(n+shrink_k)` pulls small samples toward 0 (no skill). The
+    *honest* significance read is `ic_block` / `p_value_bh` on the block sample
+    (A2/A3): the raw `ic` over overlapping daily windows overstates precision.
+    Nothing consumes this to size trades yet — it is a scoreboard, gated behind
+    sample size (future work).
     """
     groups: dict = {}
     for r in _iter_jsonl(scored_path):
@@ -184,24 +315,63 @@ def agent_scorecard(scored_path: str = SCORED, out_path: str = SCORECARD,
     orient = {agent: sign for agent, (_k, _f, sign) in _FORECASTS.items()}
     card: dict = {}
     for (agent, field), rows in groups.items():
-        vals = [x["value"] for x in rows if isinstance(x.get("value"), (int, float))]
-        rets = [x["realized_return"] for x in rows if isinstance(x.get("realized_return"), (int, float))]
-        n = min(len(vals), len(rets))
-        vals, rets = vals[:n], rets[:n]
+        sgn = orient.get(agent, +1)
+        horizon = next((int(r["horizon_days"]) for r in rows
+                        if isinstance(r.get("horizon_days"), (int, float))), DEFAULT_HORIZON)
+
+        ic, hit, n = _ic_hit(rows, sgn)                       # raw (overlapping)
         if n == 0:
             continue
-        ic   = _spearman(vals, rets)
-        mean = sum(vals) / n
-        sgn  = orient.get(agent, +1)
-        hits = sum(1 for v, rr in zip(vals, rets) if (sgn * (v - mean)) * rr > 0)
+        block = _block_sample(rows, horizon)                  # A2: effective sample
+        ic_b, hit_b, n_b = _ic_hit(block, sgn)
+        n_eff = max(1, round(n / horizon)) if horizon else n  # quick scalar effective N
+
         card[f"{agent}.{field}"] = {
             "n": n,
+            "n_effective":  n_b,           # non-overlapping block count (use THIS)
+            "n_eff_approx": n_eff,         # n/horizon sanity scalar
             "ic":           round(ic, 3) if ic is not None else None,
+            "ic_block":     round(ic_b, 3) if ic_b is not None else None,
             "ic_shrunk":    round(ic * n / (n + shrink_k), 3) if ic is not None else None,
-            "hit_rate":     round(hits / n, 3),
-            "ci_halfwidth": round(1.96 / math.sqrt(n), 3),
+            "hit_rate":     hit,
+            "hit_rate_block": hit_b,
+            "ci_halfwidth": round(1.96 / math.sqrt(n_b), 3) if n_b else None,  # on effective N
+            "p_value":      _ic_pvalue(ic_b, n_b),            # block IC, effective N
             "orientation":  sgn,
+            "horizon_days": horizon,
+            "is_primary":   (agent, field) == PRIMARY_METRIC,
         }
+
+    # A3: Benjamini-Hochberg across all metrics that produced a p-value.
+    pvals = [(k, card[k]["p_value"]) for k in card if card[k].get("p_value") is not None]
+    m = len(pvals)
+    for k in card:
+        card[k]["p_value_bh"] = None
+        card[k]["significant_bh"] = None
+    if m:
+        pvals.sort(key=lambda x: x[1])
+        adj = []
+        for rank, (k, p) in enumerate(pvals, start=1):
+            adj.append((k, min(1.0, p * m / rank)))
+        # step-up monotonicity: a smaller-rank q can't exceed a larger-rank q
+        for i in range(len(adj) - 2, -1, -1):
+            adj[i] = (adj[i][0], min(adj[i][1], adj[i + 1][1]))
+        for k, q in adj:
+            card[k]["p_value_bh"] = round(q, 4)
+            card[k]["significant_bh"] = q < BH_ALPHA
+
+    primary_key = f"{PRIMARY_METRIC[0]}.{PRIMARY_METRIC[1]}"
+    card["_meta"] = {
+        "primary_metric":  primary_key,
+        "primary_horizon": PRIMARY_HORIZON,
+        "n_metrics":       m,
+        "bh_alpha":        BH_ALPHA,
+        "preregistration": PREREGISTRATION_URL,
+        "note": ("Headline skill = the primary metric only; all others are "
+                 "BH-adjusted secondary. Read ic_block / p_value_bh on the "
+                 "effective (block-sampled) N, not the raw overlapping ic."),
+    }
+
     with open(out_path, "w") as f:
         json.dump(card, f, indent=2)
     return card

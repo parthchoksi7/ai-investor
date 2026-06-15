@@ -343,6 +343,68 @@ def enforce_wash_sale_reentry(
     return kept, rejected
 
 
+def flag_wash_sale_presale(
+    decisions: list[dict],
+    prices: dict,
+    transactions: list | None = None,
+    window_days: int = WASH_SALE_REENTRY_DAYS,
+    today: str | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """FLAG (never block) loss SELLs within `window_days` of a purchase — the
+    PRE-sale side of IRS §1091.
+
+    enforce_wash_sale_reentry covers the POST-sale side (blocking a re-buy of a
+    just-sold name). This covers the pre-sale side: selling a recently-bought lot
+    at a loss. Together they bracket the full ±30-day wash-sale window.
+
+    Policy is FLAG-AND-ALLOW by design (goal: maximize after-tax return). A wash
+    sale does not destroy the loss — it DEFERS it onto the replacement lot's cost
+    basis, so the only cost is timing. Blocking a risk- or conviction-driven exit
+    to preserve that small timing benefit would expose real capital to further
+    loss — exactly backwards. The flag (a) lets tax accounting defer the loss
+    rather than double-count it as harvested, and (b) makes the event auditable.
+
+    Uses tax_lots.open_lots (read-only FIFO over transactions), so it sees the
+    pre-run lot state — the current run's own SELL is correctly not yet present.
+    Returns (decisions, flagged); `decisions` length is unchanged. Matched SELLs
+    gain a `wash_sale_presale` annotation.
+    """
+    if transactions is None:
+        transactions = _load_list(TRANSACTIONS_FILE)
+    today = today or datetime.now(_ET).strftime("%Y-%m-%d")
+    from tax_lots import open_lots, holding_days
+
+    flagged: list[dict] = []
+    for d in decisions:
+        if str(d.get("action", "")).upper() != "SELL":
+            continue
+        ticker  = d.get("ticker", "")
+        sell_px = (prices.get(ticker) or {}).get("close")
+        if not sell_px:
+            continue
+        recent_loss_lots = []
+        for lot in open_lots(transactions, ticker):
+            held = holding_days(lot.get("acquired"), today)
+            basis = lot.get("cost_basis", 0) or 0
+            if held is not None and 0 <= held < window_days and float(sell_px) < basis:
+                recent_loss_lots.append({**lot, "held_days": held})
+        if recent_loss_lots:
+            info = {
+                "window_days": window_days,
+                "sell_price":  float(sell_px),
+                "lots":        recent_loss_lots,
+                "note": (f"loss exit within {window_days}d of purchase — IRS §1091 "
+                         "wash sale: the loss is DEFERRED onto the replacement "
+                         "basis, not lost. ALLOWED (capital-risk exit outranks tax "
+                         "timing); flagged for accounting/audit."),
+            }
+            d["wash_sale_presale"] = info
+            flagged.append({"ticker": ticker, **info})
+            print(f"   ⚠ WASH-SALE FLAG (allowed): SELL {ticker} — "
+                  f"loss within {window_days}d of purchase")
+    return decisions, flagged
+
+
 def validate_decisions(
     decisions: list[dict],
     portfolio: dict,

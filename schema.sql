@@ -16,7 +16,9 @@ create table public.portfolio_snapshots (
   created_at                timestamptz default now(),
   updated_at                timestamptz default now(),
   close_value               numeric,
-  close_at                  timestamptz
+  close_at                  timestamptz,
+  net_exposure              numeric,    -- A4: 1 − cash/total_value (point-in-time)
+  realized_beta             numeric     -- A4: trailing beta vs SPY total return
 );
 
 -- All executed trades (append-only, one row per order)
@@ -70,6 +72,11 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.positions            TO service_r
 -- Migration: add close_value and close_at to portfolio_snapshots (run once if table already exists)
 -- ALTER TABLE public.portfolio_snapshots ADD COLUMN IF NOT EXISTS close_value numeric;
 -- ALTER TABLE public.portfolio_snapshots ADD COLUMN IF NOT EXISTS close_at timestamptz;
+
+-- Migration: A4 — net_exposure + realized_beta (run once if table already exists).
+-- Full script with notes: migrations/2026-06-14_add_exposure_beta.sql
+-- ALTER TABLE public.portfolio_snapshots ADD COLUMN IF NOT EXISTS net_exposure numeric;
+-- ALTER TABLE public.portfolio_snapshots ADD COLUMN IF NOT EXISTS realized_beta numeric;
 
 -- Market snapshots (one row per trading day — written by GitHub Actions, read by cloud routine)
 CREATE TABLE IF NOT EXISTS public.market_snapshots (

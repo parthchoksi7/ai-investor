@@ -36,6 +36,16 @@ REPORT       = "performance_report.json"
 
 TRADING_DAYS = 252
 
+# A4 — SPY TOTAL return, not price return. The portfolio curve is the brokerage
+# account's total value, which captures dividends paid in as cash → it is a
+# total-return series. Comparing it against a price-return SPY flatters the
+# portfolio by ~the dividend yield. We correct this by grossing the SPY price
+# series up to a total-return basis (the snapshot only carries raw OHLC, so an
+# exact adjusted-close series is unavailable offline; this is a documented,
+# directionally-correct estimate that removes the flattering bias). SPY's
+# trailing dividend yield is ~1.2–1.3%/yr.
+SPY_DIVIDEND_YIELD = 0.0125
+
 # Tax rates + ST/LT netting live in cost_model (single source of truth, shared
 # with the backtest and the future net-edge gate). Imported into this namespace
 # so performance.CA_SHORT_TERM_RATE / .LONG_TERM_DAYS still resolve.
@@ -107,6 +117,75 @@ def _align(portfolio: list[tuple[str, float]],
     return dates, pv, sv
 
 
+# ── A4: total-return SPY, net exposure, realized beta ─────────────────────────
+
+def _spy_total_return(dates: list[str], sv: list[float],
+                      div_yield: float = SPY_DIVIDEND_YIELD) -> list[float]:
+    """Gross a price-return SPY series up to a TOTAL-return basis (A4).
+
+    tr(t) = price(t) · (1 + div_yield · days_since_inception/365). This adds the
+    accrued dividend the price series omits, so the SPY benchmark is measured on
+    the same dividend-inclusive basis as the portfolio's total-value curve. A
+    documented estimate (exact adjusted close is unavailable from the raw-OHLC
+    snapshot), but it removes the directional bias rather than ignoring it."""
+    if not dates or not sv:
+        return list(sv)
+    try:
+        d0 = datetime.strptime(dates[0][:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return list(sv)
+    out = []
+    for d, v in zip(dates, sv):
+        try:
+            days = (datetime.strptime(d[:10], "%Y-%m-%d").date() - d0).days
+        except (ValueError, TypeError):
+            days = 0
+        out.append(v * (1 + div_yield * max(0, days) / 365.0))
+    return out
+
+
+def _avg_net_exposure(agent_log_path: str = AGENT_LOG) -> float | None:
+    """Average invested fraction (1 − cash/total_value) across logged runs.
+
+    The book holds cash (8–15 names + dividend/residual cash), so it runs below
+    full market exposure; raw return vs a fully-invested SPY is therefore not
+    risk-matched. Reporting average net exposure makes that explicit (A4)."""
+    if not os.path.isfile(agent_log_path):
+        return None
+    with open(agent_log_path) as f:
+        log = json.load(f)
+    if not isinstance(log, list):
+        return None
+    exps = []
+    for run in log:
+        snap = run.get("portfolio_snapshot") or {}
+        tv, cash = snap.get("total_value"), snap.get("cash")
+        if tv and cash is not None and float(tv) > 0:
+            exps.append(1.0 - float(cash) / float(tv))
+    return round(sum(exps) / len(exps), 4) if exps else None
+
+
+def _beta(pv: list[float], sv: list[float]) -> float | None:
+    """Realized beta = cov(rp, rm)/var(rm) on aligned daily returns (A4).
+
+    With only a handful of days this is noisy; reported with a sample-size caveat,
+    not as a precise estimate."""
+    if len(pv) < 3 or len(sv) < 3:
+        return None
+    rp = [pv[i] / pv[i - 1] - 1 for i in range(1, len(pv)) if pv[i - 1]]
+    rm = [sv[i] / sv[i - 1] - 1 for i in range(1, len(sv)) if sv[i - 1]]
+    n = min(len(rp), len(rm))
+    if n < 2:
+        return None
+    rp, rm = rp[:n], rm[:n]
+    mp, mm = sum(rp) / n, sum(rm) / n
+    var_m = sum((x - mm) ** 2 for x in rm)
+    if var_m == 0:
+        return None
+    cov = sum((rp[i] - mp) * (rm[i] - mm) for i in range(n))
+    return round(cov / var_m, 3)
+
+
 # ── metrics ─────────────────────────────────────────────────────────────────
 
 def _mean(xs: list[float]) -> float:
@@ -149,11 +228,22 @@ def build_report(agent_log_path: str = AGENT_LOG,
     spy       = _spy_curve(snapshot_path)
     dates, pv, sv = _align(portfolio, spy)
 
-    port_m = _metrics(pv)
-    spy_m  = _metrics(sv)
-    spread = None
+    # A4: total-return SPY (dividend-inclusive, same basis as the portfolio's
+    # total-value curve) is the honest benchmark; price-return is kept for
+    # transparency. Alpha is reported against TOTAL return.
+    sv_tr = _spy_total_return(dates, sv)
+
+    port_m   = _metrics(pv)
+    spy_m    = _metrics(sv)        # price return (reference)
+    spy_tr_m = _metrics(sv_tr)     # total return (headline benchmark)
+
+    net_exposure = _avg_net_exposure(agent_log_path)
+    beta = _beta(pv, sv_tr)
+
+    alpha_tr = alpha_pr = None
     if pv and sv:
-        spread = round(port_m["cumulative_return"] - spy_m["cumulative_return"], 4)
+        alpha_pr = round(port_m["cumulative_return"] - spy_m["cumulative_return"], 4)
+        alpha_tr = round(port_m["cumulative_return"] - spy_tr_m["cumulative_return"], 4)
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -161,13 +251,21 @@ def build_report(agent_log_path: str = AGENT_LOG,
         "as_of":        dates[-1] if dates else None,
         "trading_days": len(dates),
         "caveats": [
-            "SPY is PRICE return (no dividends) — understates the index ~1.3%/yr.",
-            "Portfolio figure includes cash drag.",
-            "Few trading days of history — Sharpe is not yet meaningful.",
+            f"SPY is reported on a TOTAL-return basis (price + ~{SPY_DIVIDEND_YIELD:.2%}/yr "
+            "dividend gross-up), matching the portfolio's dividend-inclusive total-value "
+            "curve. Price-return SPY is kept as a reference only.",
+            f"Average net exposure ≈ {net_exposure if net_exposure is not None else 'n/a'} "
+            "(book holds cash); raw return vs a fully-invested SPY is NOT risk-matched. "
+            "See realized beta.",
+            "Few trading days of history — Sharpe and beta are not yet meaningful.",
         ],
-        "portfolio": port_m,
-        "spy":       spy_m,
-        "alpha_cumulative_return": spread,   # portfolio minus SPY, both price-return
+        "portfolio":        port_m,
+        "spy":              spy_m,        # price return (reference)
+        "spy_total_return": spy_tr_m,     # total return (headline)
+        "net_exposure":     net_exposure,
+        "realized_beta":    beta,
+        "alpha_cumulative_return":           alpha_tr,   # vs SPY TOTAL return (headline)
+        "alpha_cumulative_return_vs_price":  alpha_pr,   # vs price return (reference)
         "portfolio_curve": [{"date": d, "value": round(v, 2)} for d, v in zip(dates, pv)],
     }
 
@@ -178,13 +276,13 @@ def _fmt_pct(x) -> str:
 
 def print_report(report: dict) -> None:
     print("\n" + "=" * 60)
-    print("📊  PERFORMANCE — Portfolio vs SPY (local, price-return)")
+    print("📊  PERFORMANCE — Portfolio vs SPY (local; SPY total-return + price-return)")
     print("=" * 60)
     print(f"   Inception: {report['inception']}  →  As of: {report['as_of']}  "
           f"({report['trading_days']} trading day(s))")
     for c in report["caveats"]:
         print(f"   ⚠  {c}")
-    print(f"\n   {'metric':<22}{'PORTFOLIO':>14}{'SPY':>14}")
+    print(f"\n   {'metric':<22}{'PORTFOLIO':>14}{'SPY (TR)':>14}{'SPY (PR)':>14}")
     rows = [
         ("Cumulative return", "cumulative_return", True),
         ("Max drawdown",      "max_drawdown",      True),
@@ -192,10 +290,15 @@ def print_report(report: dict) -> None:
         ("Sharpe (rf=0)",     "sharpe",            False),
     ]
     for label, key, is_pct in rows:
-        p, s = report["portfolio"].get(key), report["spy"].get(key)
+        p  = report["portfolio"].get(key)
+        tr = report.get("spy_total_return", {}).get(key)
+        pr = report["spy"].get(key)
         fmt = _fmt_pct if is_pct else (lambda x: f"{x:>.2f}" if isinstance(x, (int, float)) else "n/a")
-        print(f"   {label:<22}{fmt(p):>14}{fmt(s):>14}")
-    print(f"\n   Alpha (cumulative, vs SPY): {_fmt_pct(report['alpha_cumulative_return'])}")
+        print(f"   {label:<22}{fmt(p):>14}{fmt(tr):>14}{fmt(pr):>14}")
+    print(f"\n   Net exposure (avg):  {report.get('net_exposure')}")
+    print(f"   Realized beta:       {report.get('realized_beta')}")
+    print(f"   Alpha (vs SPY total return): {_fmt_pct(report['alpha_cumulative_return'])}")
+    print(f"   Alpha (vs SPY price return): {_fmt_pct(report.get('alpha_cumulative_return_vs_price'))}")
     print("=" * 60 + "\n")
 
 
@@ -336,11 +439,14 @@ def after_tax_scorecard(transactions: list | None = None,
         unrealized = round(sum(float(p.get("unrealized_pnl", 0) or 0)
                                for p in portfolio.get("positions", [])), 2)
 
-    # Strategy vs SPY-hold from the equity curve.
+    # Strategy vs SPY-hold from the equity curve. A4: SPY on a TOTAL-return basis
+    # (dividend-inclusive) to match the portfolio's total-value curve — comparing
+    # against price-return SPY would flatter the strategy by ~the dividend yield.
     dates, pv, sv = _align(_portfolio_curve(agent_log_path), _spy_curve(snapshot_path))
+    sv_tr = _spy_total_return(dates, sv)
     have_curve = len(pv) >= 2 and pv[0]
     strat_ret = round(pv[-1] / pv[0] - 1, 4) if have_curve else None
-    spy_ret   = round(sv[-1] / sv[0] - 1, 4) if (len(sv) >= 2 and sv[0]) else None
+    spy_ret   = round(sv_tr[-1] / sv_tr[0] - 1, 4) if (len(sv_tr) >= 2 and sv_tr[0]) else None
 
     current_value = pv[-1] if pv else (portfolio.get("total_value") if portfolio else None)
     # After-tax mark: subtract the (future) tax liability on realized gains.
@@ -375,8 +481,9 @@ def after_tax_scorecard(transactions: list | None = None,
             "carryover, and wash-sale disallowance are NOT.",
             "Uncovered SELLs (no in-log cost basis — positions opened before "
             "transaction logging) are excluded from realized gain, not guessed.",
-            "SPY is price-return (no dividends). Unrealized gains are untaxed "
-            "(deferred), matching the SPY buy-and-hold alternative.",
+            f"SPY is TOTAL return (price + ~{SPY_DIVIDEND_YIELD:.2%}/yr dividend gross-up), "
+            "matching the portfolio's dividend-inclusive curve. Unrealized gains are "
+            "untaxed (deferred), matching the SPY buy-and-hold alternative.",
             f"{'NOT STATISTICALLY SIGNIFICANT — ' if n_days < MIN_SIGNIFICANT_DAYS else ''}"
             f"{n_days} trading day(s); needs ≥ {MIN_SIGNIFICANT_DAYS} before any "
             "skill claim. Treat as plumbing, not proof.",

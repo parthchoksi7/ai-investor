@@ -2357,7 +2357,10 @@ class TestAfterTaxScorecard:
         assert s["realized"]["realized_tax_estimate"] == 108.0       # 200 * 0.54
         assert s["realized"]["realized_gain_after_tax"] == 92.0      # separate tracking
         assert s["strategy_return"] == 0.20
-        assert s["spy_hold_return"] == pytest.approx(0.10, abs=1e-9)
+        # A4: SPY hold is now TOTAL return (price 0.10 + ~1.25%/yr dividend gross-up
+        # over the 7-day window) — slightly above the 0.10 price return.
+        assert s["spy_hold_return"] == pytest.approx(0.10 + 0.0125 * 7 / 365, abs=2e-4)
+        assert s["spy_hold_return"] > 0.10
         assert s["strategy_return_after_tax"] == pytest.approx(0.092, abs=1e-9)  # (1200-108)/1000-1
         assert s["after_tax_alpha_vs_spy"] < 0   # the headline: tax turns alpha negative
 
@@ -2478,6 +2481,153 @@ class TestWashSaleReentry:
             [{"ticker": "MRK", "action": "SELL"}, {"ticker": "MS", "action": "HOLD"}],
             transactions=self._txs(("MRK", "2026-06-14")), today="2026-06-15")
         assert len(kept) == 2 and rej == []
+
+
+class TestWashSalePresaleFlag:
+    """A6: FLAG (never block) loss SELLs within 30d of a purchase (pre-sale §1091)."""
+
+    def _buy(self, ticker, date, qty, price):
+        return {"ticker": ticker, "action": "BUY", "date": date, "qty": qty,
+                "price": price, "dry_run": False}
+
+    def test_flags_recent_loss_exit_but_keeps_it(self):
+        import guardrails
+        # Bought MRK @100 ten days ago; now selling @90 (a loss) → flag, not block.
+        txs = [self._buy("MRK", "2026-06-04", 1, 100.0)]
+        decs = [{"ticker": "MRK", "action": "SELL", "target_weight": 0.0}]
+        out, flagged = guardrails.flag_wash_sale_presale(
+            decs, {"MRK": {"close": 90.0}}, transactions=txs, today="2026-06-14")
+        assert len(out) == 1                         # never removed
+        assert len(flagged) == 1 and flagged[0]["ticker"] == "MRK"
+        assert out[0]["wash_sale_presale"]["lots"][0]["held_days"] == 10
+
+    def test_no_flag_when_exit_is_a_gain(self):
+        import guardrails
+        txs = [self._buy("MRK", "2026-06-04", 1, 100.0)]
+        decs = [{"ticker": "MRK", "action": "SELL", "target_weight": 0.0}]
+        out, flagged = guardrails.flag_wash_sale_presale(
+            decs, {"MRK": {"close": 120.0}}, transactions=txs, today="2026-06-14")
+        assert flagged == [] and "wash_sale_presale" not in out[0]
+
+    def test_no_flag_when_purchase_older_than_window(self):
+        import guardrails
+        txs = [self._buy("MRK", "2026-04-01", 1, 100.0)]   # > 30d ago
+        decs = [{"ticker": "MRK", "action": "SELL", "target_weight": 0.0}]
+        out, flagged = guardrails.flag_wash_sale_presale(
+            decs, {"MRK": {"close": 90.0}}, transactions=txs, today="2026-06-14")
+        assert flagged == [] and "wash_sale_presale" not in out[0]
+
+    def test_buy_decisions_untouched(self):
+        import guardrails
+        out, flagged = guardrails.flag_wash_sale_presale(
+            [{"ticker": "MRK", "action": "BUY"}], {"MRK": {"close": 90.0}},
+            transactions=[], today="2026-06-14")
+        assert flagged == [] and len(out) == 1
+
+
+class TestCrashReconciliation:
+    """A7: pure diff of intended vs actual post-crash holdings (no network)."""
+
+    def test_all_filled(self):
+        import reconcile
+        r = reconcile.build_reconciliation(
+            pre_positions=[{"symbol": "AAPL", "qty": 1.0}],
+            decisions=[{"ticker": "AAPL", "action": "BUY", "qty": 1.0}],
+            live_positions=[{"symbol": "AAPL", "qty": 2.0}])
+        assert r["classification"] == reconcile.RECONCILED_ALL
+        assert r["counts"]["filled"] == 1
+
+    def test_none_filled(self):
+        import reconcile
+        r = reconcile.build_reconciliation(
+            pre_positions=[{"symbol": "AAPL", "qty": 1.0}],
+            decisions=[{"ticker": "AAPL", "action": "BUY", "qty": 1.0}],
+            live_positions=[{"symbol": "AAPL", "qty": 1.0}])     # unchanged
+        assert r["classification"] == reconcile.RECONCILED_NONE
+        assert r["counts"]["not_filled"] == 1
+
+    def test_full_exit_filled(self):
+        import reconcile
+        r = reconcile.build_reconciliation(
+            pre_positions=[{"symbol": "MSFT", "qty": 2.0}],
+            decisions=[{"ticker": "MSFT", "action": "SELL", "qty": 2.0}],
+            live_positions=[])                                    # position gone
+        assert r["classification"] == reconcile.RECONCILED_ALL
+
+    def test_partial_is_manual(self):
+        import reconcile
+        r = reconcile.build_reconciliation(
+            pre_positions=[{"symbol": "AAPL", "qty": 1.0}, {"symbol": "MSFT", "qty": 2.0}],
+            decisions=[{"ticker": "AAPL", "action": "BUY", "qty": 1.0},
+                       {"ticker": "MSFT", "action": "SELL", "qty": 2.0}],
+            live_positions=[{"symbol": "AAPL", "qty": 2.0}, {"symbol": "MSFT", "qty": 2.0}])
+        assert r["classification"] == reconcile.MANUAL_REQUIRED  # AAPL filled, MSFT not
+
+    def test_unexpected_drift_is_manual(self):
+        import reconcile
+        r = reconcile.build_reconciliation(
+            pre_positions=[{"symbol": "AAPL", "qty": 1.0}],
+            decisions=[{"ticker": "AAPL", "action": "BUY", "qty": 1.0}],
+            live_positions=[{"symbol": "AAPL", "qty": 2.0}, {"symbol": "NVDA", "qty": 5.0}])
+        assert r["classification"] == reconcile.MANUAL_REQUIRED
+        assert r["unexpected_changes"][0]["ticker"] == "NVDA"
+
+    def test_no_crash_when_executed_at_present(self, tmp_path):
+        import reconcile, json
+        p = tmp_path / "pending.json"
+        p.write_text(json.dumps({"run_id": "r1", "execution_started_at": "t0",
+                                 "executed_at": "t1", "decisions": []}))
+        r = reconcile.reconcile_crash_state(pending_path=str(p), live_positions=[])
+        assert r["classification"] == reconcile.NO_CRASH
+
+
+class TestDeliberationStats:
+    """B14/B16: behavioral + operational base rates from logs (no market data)."""
+
+    def _log(self):
+        return [
+            {"date": "2026-06-08", "candidates": ["AAPL", "MSFT"],
+             "cro": {"approved": True, "rejected_tickers": []},
+             "devils_advocate": {"AAPL": {"recommend_reject": True},
+                                 "MSFT": {"recommend_reject": False}},
+             "research": {"AAPL": {"confidence": 8}, "MSFT": {"confidence": 5}},
+             "portfolio_manager_proposed": [{"ticker": "MSFT", "action": "BUY"}],
+             "final_decisions": [{"ticker": "MSFT", "action": "BUY"}],
+             "position_reviews": {"NVDA": {"recommended_action": "HOLD"}},
+             "regime": {"regime": "NEUTRAL"}, "kill_switch_active": False,
+             "portfolio_snapshot": {"total_value": 1000.0}},
+            {"date": "2026-06-09", "candidates": ["AAPL"],
+             "cro": {"approved": False, "rejected_tickers": ["AAPL"]},
+             "devils_advocate": {"AAPL": {"recommend_reject": False}},
+             "research": {"AAPL": {"confidence": 6}},
+             "portfolio_manager_proposed": [], "final_decisions": [],
+             "position_reviews": {}, "regime": {"regime": "RISK_ON"},
+             "kill_switch_active": False, "portfolio_snapshot": {"total_value": 1000.0}},
+        ]
+
+    def test_deliberation_base_rates(self):
+        import deliberation_stats as ds
+        d = ds.deliberation_stats(self._log())
+        assert d["n_runs"] == 2
+        assert d["cro"]["full_veto_rate"] == 0.5            # 1 of 2 runs vetoed
+        assert d["devils_advocate"]["n_evaluated"] == 3 and d["devils_advocate"]["rejects"] == 1
+        # AAPL DA-flagged in run 1, PM did not buy AAPL → coincidence 1/1
+        assert d["da_flag_pm_no_buy"]["coincidence_rate"] == 1.0
+        # AAPL run1: confidence 8 ≥7 AND recommend_reject True → 1 conflict
+        assert d["bull_bear_conflict"]["conflicts"] == 1
+
+    def test_operational_turnover_and_holding(self):
+        import deliberation_stats as ds
+        txns = [{"action": "BUY", "ticker": "MSFT", "qty": 2, "price": 100.0,
+                 "date": "2026-06-08", "timestamp": "2026-06-08T00:00:00+00:00"},
+                {"action": "SELL", "ticker": "MSFT", "qty": 2, "price": 110.0,
+                 "date": "2026-06-09", "timestamp": "2026-06-09T00:00:00+00:00"}]
+        o = ds.operational_stats(self._log(), txns)
+        assert o["trades"]["total"] == 1 and o["trades"]["buys"] == 1
+        assert o["trades"]["no_trade_run_rate"] == 0.5
+        assert o["holding_period"]["n_realized_lots"] == 1
+        assert o["holding_period"]["short_term_lots"] == 1   # 1-day hold → ST
+        assert o["turnover"]["sell_notional"] == 220.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3110,7 +3260,9 @@ class TestCalibrationLedger:
         assert n == 6                     # AAPL: 5 agents, MSFT: quant only
         rows = [json.loads(l) for l in open(path)]
         aq = next(r for r in rows if r["ticker"] == "AAPL" and r["agent"] == "quant")
-        assert aq["value"] == 80 and aq["entry_price"] == 200 and aq["horizon_days"] == 21
+        # A1: signal_close is reference-only (the close the signal was computed on),
+        # NOT the return base — score_matured derives the executable next-open entry.
+        assert aq["value"] == 80 and aq["signal_close"] == 200 and aq["horizon_days"] == 21
 
     def test_log_forecasts_skips_missing_price(self, tmp_path):
         import calibration
@@ -3120,26 +3272,48 @@ class TestCalibrationLedger:
         assert n == 0
 
     def test_score_matured_joins_forward_return(self, tmp_path):
+        # A1: entry is the NEXT-SESSION OPEN after the signal date, not the signal
+        # close. Signal 2026-01-02 → entry = open(2026-01-05)=100 → exit = close
+        # on/after entry+5d (2026-01-10) = 110 → return 0.10.
         import calibration, json
         ledger, scored = str(tmp_path / "f.jsonl"), str(tmp_path / "s.jsonl")
         with open(ledger, "w") as f:
             f.write(json.dumps({"run_id": "r1", "date": "2026-01-02", "agent": "quant",
                                 "field": "composite_score", "ticker": "AAPL", "value": 80,
-                                "entry_price": 100.0, "horizon_days": 5}) + "\n")
-        snap = {"history": {"AAPL": [{"date": "2026-01-08", "close": 110.0}]}}   # >= entry+5d
+                                "signal_close": 98.0, "horizon_days": 5, "schema": 2}) + "\n")
+        snap = {"history": {"AAPL": [
+            {"date": "2026-01-05", "open": 100.0, "close": 101.0},   # next session → entry open
+            {"date": "2026-01-12", "open": 109.0, "close": 110.0},   # >= entry+5d → exit close
+        ]}}
         assert calibration.score_matured(snap, ledger_path=ledger, scored_path=scored) == 1
         r = json.loads(open(scored).readline())
-        assert r["realized_return"] == 0.1 and r["future_price"] == 110.0
+        assert r["entry_price"] == 100.0 and r["future_price"] == 110.0
+        assert r["realized_return"] == 0.1 and r["basis"] == "next_open"
         assert calibration.score_matured(snap, ledger_path=ledger, scored_path=scored) == 0  # idempotent
 
     def test_score_matured_skips_immature(self, tmp_path):
+        # Entry session exists, but horizon hasn't elapsed in available history.
         import calibration, json
         ledger, scored = str(tmp_path / "f.jsonl"), str(tmp_path / "s.jsonl")
         with open(ledger, "w") as f:
             f.write(json.dumps({"run_id": "r1", "date": "2026-01-02", "agent": "quant",
                                 "field": "composite_score", "ticker": "AAPL", "value": 80,
-                                "entry_price": 100.0, "horizon_days": 5}) + "\n")
-        snap = {"history": {"AAPL": [{"date": "2026-01-05", "close": 105.0}]}}   # before maturity
+                                "signal_close": 98.0, "horizon_days": 5, "schema": 2}) + "\n")
+        snap = {"history": {"AAPL": [
+            {"date": "2026-01-05", "open": 100.0, "close": 101.0},   # entry exists
+            {"date": "2026-01-07", "open": 104.0, "close": 105.0},   # < entry+5d → not matured
+        ]}}
+        assert calibration.score_matured(snap, ledger_path=ledger, scored_path=scored) == 0
+
+    def test_score_matured_skips_no_next_session(self, tmp_path):
+        # A1: a forecast logged with no later bar yet has no executable entry → skip.
+        import calibration, json
+        ledger, scored = str(tmp_path / "f.jsonl"), str(tmp_path / "s.jsonl")
+        with open(ledger, "w") as f:
+            f.write(json.dumps({"run_id": "r1", "date": "2026-01-02", "agent": "quant",
+                                "field": "composite_score", "ticker": "AAPL", "value": 80,
+                                "signal_close": 98.0, "horizon_days": 5, "schema": 2}) + "\n")
+        snap = {"history": {"AAPL": [{"date": "2026-01-02", "open": 97.0, "close": 98.0}]}}
         assert calibration.score_matured(snap, ledger_path=ledger, scored_path=scored) == 0
 
     def test_agent_scorecard_shrinks_small_sample(self, tmp_path):
