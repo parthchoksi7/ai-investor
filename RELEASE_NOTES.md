@@ -15,6 +15,23 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ---
 
+## [2026-06-15] — Devil's Advocate empties fixed (truncation, not throughput)  ·  ~PT  ·  main
+
+Daily-cycle reports were flagging **DEGRADED — most Devil's Advocate (Agent 4) responses came back empty even after retries** (e.g. 15–17 of 20 candidates). Root-caused and fixed.
+
+### Fixed — Agent 4 truncated mid-JSON, collapsing to the empty default
+- **Not an API-throughput problem.** Diagnosed deterministically: the same tickers (JPM, BAC, GS, MRK, NVDA, META, …) failed on *every* run while others (AMGN) never did — and Research (same model, same machinery, same run) had **zero** empties. Throughput would scatter failures randomly and hit Research too.
+- **Real cause:** the hostile Devil's Advocate prompt elicits a long, essay-style `bear_case` (~3.3k chars / ~1.1k tokens end-to-end), but the call was capped at **`max_tokens=800`**. Every response hit `stop_reason=max_tokens` and was truncated *inside* the first big string field. `_parse_json`'s recovery then stripped that whole value and returned the literal `default` (`bear_case: ""`), so `_safe_call` saw `result == default`, retried the *identical* prompt twice (same truncation), and returned the default — hence "empty even after retries."
+- **`run_devils_advocate`** — `max_tokens` 800 → **1500**, plus a prompt instruction to keep `bear_case` to 2–3 sentences and list items to short phrases. Output now lands at ~1.1k tokens with `stop_reason=end_turn`; all previously-failing tickers return populated, sensible bear cases.
+- **`_safe_call`** — now threads `stop_reason` from `_call` and **does not retry on `max_tokens` truncation** (deterministic — an identical prompt at the same cap reproduces the same over-long output; retrying just burned calls).
+- **`_parse_json`** — truncation recovery now **closes an unterminated string value** (preserving a partial first field, e.g. a cut-off `bear_case`) before falling back to the old strip-and-close path. This also recovers the "cut right after a number" case that was previously documented as unhandled.
+
+### Test
+- `TestParseJson::test_truncated_first_string_value_is_preserved` and `::test_truncated_after_first_field_recovers_remaining` lock in the recovery behavior.
+- `_call` stubs updated to the new `(text, stop_reason)` signature. Full suite green (**382 passing**).
+
+---
+
 ## [2026-06-14] — QA batch: crash-safety fix + 60 new tests (302 → 362)  ·  ~PT  ·  fix/fmp-stable-api
 
 End-to-end QA/UAT review of the full pipeline. One latent crash-safety defect found and fixed; 13 new test classes locking in untested code paths across every module.

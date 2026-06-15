@@ -393,16 +393,19 @@ assert _parse_json("not json at all", {"default": True}) == {"default": True}
 # Empty string → returns default
 assert _parse_json("", []) == []
 
-# Truncation recovery: Haiku hit max_tokens mid-string inside a list (most common real failure)
-# The partial incomplete item is stripped; the complete prior items survive.
+# Truncation recovery: Haiku hit max_tokens mid-string inside a list (most common real failure).
+# Recovery now closes the unterminated string, so the partial item is PRESERVED (Jun 15 2026 change) —
+# a cut-open first field like Devil's Advocate "bear_case" is kept rather than discarded to default.
 truncated = '{"ticker": "NVDA", "catalysts": ["AI capex cycle", "china expor'
 result = _parse_json(truncated, {})
 assert isinstance(result, dict) and result != {}, f"Should recover truncated mid-list JSON, got: {result}"
 assert result.get("ticker") == "NVDA", f"Ticker missing after recovery: {result}"
-assert result.get("catalysts") == ["AI capex cycle"], f"Should keep complete list items: {result}"
-# Note: recovery does NOT handle truncation after a complete number value (e.g. ..., "confidence": 75)
-# because the brace-regex misidentifies the closing " of the preceding key. Primary mitigation
-# for that case is the max_tokens increase (Jun 11 2026: Agent 2 600→1000, Agent 4 500→800).
+assert result.get("catalysts") == ["AI capex cycle", "china expor"], f"Should keep partial item: {result}"
+
+# Truncation right after a complete number value now recovers too (was unhandled before Jun 15 2026).
+assert _parse_json('{"ticker": "NVDA", "confidence": 75', {}) == {"ticker": "NVDA", "confidence": 75}
+# Primary mitigation remains the max_tokens budget (Jun 15 2026: Agent 4 800→1500 + bear_case length cap);
+# recovery is defense-in-depth. A max_tokens truncation is NOT retried (deterministic — see _safe_call).
 
 print("✅ JSON parse resilience tests passed")
 EOF
@@ -608,7 +611,7 @@ from analysis import MODEL_FAST, MODEL_SMART, MAX_CANDIDATES
 #   Agent 1 (Regime, Sonnet):      700
 #   Agent 2 (Research, Haiku):    1000
 #   Agent 3 (Earnings, Haiku):     600
-#   Agent 4 (Devil's Adv, Haiku):  800
+#   Agent 4 (Devil's Adv, Haiku): 1500  (raised from 800 Jun 15 2026 — 800 truncated the bear_case)
 #   Agent 5 (Position, Haiku):     600
 #   Agent 6 (PM, Sonnet):         2000
 #   Agent 7 (CRO, Sonnet):        1200
@@ -1031,7 +1034,7 @@ These are documented risks in the current system. Any deployment that touches th
 | SELL qty not bounded by sellable shares | `execute.py:_compute_qty` | ~~Medium~~ **Fixed `8f0b2e9`** | `_compute_qty` now caps SELL to `available_qty` (from `shares_available_for_sells`) |
 | Full portfolio churn on bad PM output | `main.py` | ~~Medium~~ **Fixed `8f0b2e9`** | Circuit breaker halts execution if SELL notional > 50% of portfolio |
 | Transient Anthropic 529 overloads kill agent pipeline | `analysis.py` | ~~High~~ **Fixed `7652b9d`** | All agents retry 2× with 30s/60s backoff on 529 responses |
-| Haiku response truncated mid-JSON when max_tokens too low | `analysis.py:_parse_json` | ~~High~~ **Fixed `61ab95a`** | Raised max_tokens per agent (700–1000 range); added truncation recovery in `_parse_json` (brace-counting + suffix append) |
+| Haiku response truncated mid-JSON when max_tokens too low | `analysis.py:_parse_json` | ~~High~~ **Fixed `61ab95a`, re-fixed Jun 15 2026** | Raised max_tokens per agent. Recurred for **Devil's Advocate** (800 still truncated its long `bear_case` → empty default on most large-cap tickers, surfaced as "DEGRADED — 15–17/20 DA empty"). Fix: Agent 4 → **1500** + prompt caps `bear_case` to 2–3 sentences; `_parse_json` recovery now preserves a cut-open first-field string; `_safe_call` skips retries on `stop_reason=max_tokens` (deterministic, retrying wasted calls) |
 | `decision_journal.json` initialized as `{}` (empty dict) on first run | `journal.py:record_trade` | ~~Medium~~ **Fixed `b8ec88d`** | Added `isinstance(journal, list)` guard; resets to `[]` when file contains `{}` |
 | GitHub Actions scheduled cron silently skipped | `market_data.yml` | ~~Medium~~ **Mitigated `2b21c7f`** | 3 staggered triggers (7:00/8:00/8:30 AM EDT) — one silent skip can't strand the routine. Safety dispatch remains the highest-reliability option |
 

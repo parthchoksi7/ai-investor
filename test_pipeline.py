@@ -69,6 +69,23 @@ class TestParseJson:
     def test_invalid_json_returns_default(self):
         assert self._parse('not json at all', {"x": 0}) == {"x": 0}
 
+    def test_truncated_first_string_value_is_preserved(self):
+        """Regression: a response cut open mid-string (hit max_tokens inside the
+        first big field, e.g. Devil's Advocate "bear_case") must keep the partial
+        value, not collapse to the default. See _safe_call truncation handling."""
+        default = {"bear_case": "", "overall_risk_score": 5}
+        truncated = '```json\n{\n  "bear_case": "JPM faces NIM compression and cyclical IB reven'
+        result = self._parse(truncated, default)
+        assert result != default
+        assert result["bear_case"].startswith("JPM faces NIM compression")
+
+    def test_truncated_after_first_field_recovers_remaining(self):
+        """Cut in a later field still closes the object and keeps earlier fields."""
+        default = {"bear_case": ""}
+        truncated = '{"bear_case": "valuation looks stretched", "weakest_assumptions": ["margins hold'
+        result = self._parse(truncated, default)
+        assert result["bear_case"] == "valuation looks stretched"
+
 
 # ── health.py ─────────────────────────────────────────────────────────────────
 
@@ -2047,7 +2064,7 @@ class TestMemoryInjectedIntoAgents:
         captured = {}
         def _fake_call(model, system, user_msg, max_tokens=600):
             captured["user_msg"] = user_msg
-            return "[]"  # valid JSON; PM expects an array, research a dict
+            return "[]", "end_turn"  # valid JSON; PM expects an array, research a dict
         monkeypatch.setattr(analysis, "_call", _fake_call)
         return analysis, captured
 
@@ -2117,7 +2134,7 @@ class TestCroCorrelationInjection:
         captured = {}
         def _fake_call(model, system, user_msg, max_tokens=600):
             captured["user_msg"] = user_msg
-            return '{"approved": true, "risk_budget_used": 30, "rejected_tickers": []}'
+            return '{"approved": true, "risk_budget_used": 30, "rejected_tickers": []}', "end_turn"
         monkeypatch.setattr(analysis, "_call", _fake_call)
 
         portfolio = {"total_value": 1000.0, "cash": 0.0, "positions": []}
@@ -2135,7 +2152,7 @@ class TestCroCorrelationInjection:
         captured = {}
         def _fake_call(model, system, user_msg, max_tokens=600):
             captured["user_msg"] = user_msg
-            return '{"approved": true, "rejected_tickers": []}'
+            return '{"approved": true, "rejected_tickers": []}', "end_turn"
         monkeypatch.setattr(analysis, "_call", _fake_call)
         portfolio = {"total_value": 1000.0, "cash": 0.0, "positions": []}
         decisions = [{"ticker": "A", "action": "BUY", "target_weight": 0.10}]
