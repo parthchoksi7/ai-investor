@@ -25,7 +25,7 @@ from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, StalePortfolioError, DRY_RUN
 from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions, close_position, get_ticker_history, recently_exited, _load_list, TRANSACTIONS_FILE
-from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge
+from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, flag_wash_sale_presale
 from publish      import publish_to_supabase
 from health       import HealthTracker, OK, DEGRADED, FAILED, ABORTED
 
@@ -238,6 +238,19 @@ def run_daily_cycle():
     # cost + CA short-term tax, falls below the floor. No-op until the PM emits an
     # expected_return; SELLs exempt. Runs last (final economic filter).
     decisions, netedge_rejected = enforce_net_edge(decisions, market_data["prices"])
+
+    # Wash-sale PRE-sale FLAG (A6) — the post-sale re-buy block above covers one
+    # side of IRS §1091; this flags (never blocks) a loss exit within 30d of a
+    # purchase, the other side. Flag-and-allow: a wash sale only defers the loss,
+    # so a risk/conviction exit must not be blocked to preserve tax timing. The
+    # annotation rides on the SELL decision into pending_decisions.json for audit.
+    decisions, washsale_flagged = flag_wash_sale_presale(
+        decisions, market_data["prices"], transactions=_txs)
+    if washsale_flagged:
+        health.record("wash_sale_presale", DEGRADED,
+                      message=f"{len(washsale_flagged)} loss SELL(s) within 30d of "
+                              "purchase flagged (allowed; loss deferred per §1091)",
+                      flagged=washsale_flagged)
 
     for r in holding_rejected + reentry_rejected + sector_rejected + netedge_rejected:
         validation_report["rejected"].append(

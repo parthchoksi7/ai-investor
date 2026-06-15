@@ -76,14 +76,25 @@ def _fetch_spy_prev_close(polygon_key: str) -> float | None:
     return None
 
 
-def _get_spy_cumulative(supabase_client, spy_close: float | None) -> float | None:
-    """Compute SPY cumulative return vs inception (first row with a non-null spy_close)."""
+# A4 — SPY total-return gross-up. The portfolio curve is dividend-inclusive
+# (dividends land as account cash), so the dashboard must benchmark against SPY
+# TOTAL return, not price return, or it flatters the portfolio by ~the dividend
+# yield. The snapshot carries only raw closes, so we add the accrued dividend as
+# a documented gross-up (~1.25%/yr pro-rated by days since inception). Written
+# into the existing spy_cumulative_return_pct column — no schema change.
+SPY_DIVIDEND_YIELD = 0.0125
+
+
+def _get_spy_cumulative(supabase_client, spy_close: float | None,
+                        today: str | None = None) -> float | None:
+    """SPY cumulative TOTAL return (%) vs inception (first row with a non-null
+    spy_close). Price return from closes + a dividend gross-up by days elapsed."""
     if spy_close is None:
         return None
     try:
         resp = (
             supabase_client.table("portfolio_snapshots")
-            .select("spy_close")
+            .select("spy_close, date")
             .not_.is_("spy_close", "null")
             .order("date", desc=False)
             .limit(1)
@@ -95,7 +106,17 @@ def _get_spy_cumulative(supabase_client, spy_close: float | None) -> float | Non
         inception_spy = float(rows[0]["spy_close"])
         if inception_spy <= 0:
             return None
-        return round((spy_close - inception_spy) / inception_spy * 100, 4)
+        price_ret = (spy_close - inception_spy) / inception_spy
+        # Dividend gross-up by days since inception (total-return basis).
+        div = 0.0
+        try:
+            from datetime import date as _date
+            d0 = _date.fromisoformat(str(rows[0].get("date"))[:10])
+            d1 = _date.fromisoformat(str(today)[:10]) if today else datetime.now(_ET).date()
+            div = SPY_DIVIDEND_YIELD * max(0, (d1 - d0).days) / 365.0
+        except (ValueError, TypeError):
+            div = 0.0
+        return round((price_ret + div) * 100, 4)
     except Exception:
         return None
 
@@ -220,7 +241,6 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     spy_close = _fetch_spy_from_snapshot()
     if spy_close is None and polygon_key:
         spy_close = _fetch_spy_prev_close(polygon_key)
-    spy_cumulative = _get_spy_cumulative(client, spy_close)
 
     # ── Upsert portfolio snapshot ──────────────────────────────────────────────
     # When GitHub Actions publishes a snapshot committed after midnight UTC,
@@ -231,6 +251,9 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
         today = snapshot_written_at[:10]
     else:
         today = datetime.now(_ET).strftime("%Y-%m-%d")  # ET matches the rest of the pipeline
+    # SPY cumulative on a TOTAL-return basis (A4) — needs `today` for the dividend
+    # gross-up, so it is computed after the date is resolved.
+    spy_cumulative = _get_spy_cumulative(client, spy_close, today=today)
     cumulative_return = round((total_value - STARTING_CAPITAL) / STARTING_CAPITAL * 100, 4)
 
     snapshot_row: dict = {
@@ -269,7 +292,38 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     if spy_cumulative is not None:
         snapshot_row["spy_cumulative_return_pct"] = spy_cumulative
 
-    client.table("portfolio_snapshots").upsert(snapshot_row).execute()
+    # A4: net exposure (point-in-time) + realized beta (trailing, best-effort).
+    # net_exposure is exact from this snapshot; realized_beta needs a return
+    # history, reused from performance.build_report (reads committed agent_log +
+    # market_snapshot). Both are optional columns — skip silently if unavailable
+    # so a missing column or a too-short history never breaks the publish.
+    if total_value:
+        snapshot_row["net_exposure"] = round(1.0 - cash / total_value, 4)
+    try:
+        from performance import build_report
+        beta = build_report().get("realized_beta")
+        if beta is not None:
+            snapshot_row["realized_beta"] = beta
+    except Exception as e:
+        print(f"   ⚠ realized_beta skipped: {str(e)[:120]}")
+
+    # Defensive against deploy ordering: if the A4 migration
+    # (migrations/2026-06-14_add_exposure_beta.sql) has not been run yet, the new
+    # columns don't exist and the upsert would error. Retry once without the
+    # optional A4 keys so a missing migration degrades the dashboard rather than
+    # breaking the publish entirely.
+    _A4_KEYS = ("net_exposure", "realized_beta")
+    try:
+        client.table("portfolio_snapshots").upsert(snapshot_row).execute()
+    except Exception as e:
+        if any(k in str(e) for k in _A4_KEYS) and any(k in snapshot_row for k in _A4_KEYS):
+            for k in _A4_KEYS:
+                snapshot_row.pop(k, None)
+            print("   ⚠ net_exposure/realized_beta columns missing — run "
+                  "migrations/2026-06-14_add_exposure_beta.sql. Publishing without them.")
+            client.table("portfolio_snapshots").upsert(snapshot_row).execute()
+        else:
+            raise
     print(f"   📊 Snapshot published: value=${total_value:,.2f} return={cumulative_return:+.2f}%"
           + (f" spy={spy_cumulative:+.2f}%" if spy_cumulative is not None else ""))
 

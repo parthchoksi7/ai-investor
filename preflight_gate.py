@@ -118,8 +118,24 @@ def main() -> int:
             f"run_id={pending.get('run_id')}, "
             f"started_at={pending.get('execution_started_at')}) but executed_at was "
             "never stamped — a prior attempt crashed mid-execution. Orders may have "
-            "been placed. DO NOT re-run. Recover manually via Scenario B in CLAUDE.md."
+            "been placed. DO NOT re-run."
         )
+        # A7: automatically diff LIVE broker positions against the intended orders
+        # and emit a SPECIFIC, diff-driven recovery alert instead of a generic
+        # "recover manually" note. Report-only here (apply=False): the gate stays
+        # fail-safe and never mutates state on a retry-able check. A human (or a
+        # dedicated recovery step) runs `python reconcile.py --apply` after review
+        # to perform the provably-safe remediation, if any.
+        try:
+            from reconcile import reconcile_crash_state
+            rep = reconcile_crash_state(apply=False)
+            print(f"   Reconciliation: {rep.get('classification', '?').upper()} — "
+                  f"{rep.get('recommended_action', '')}")
+            print("   See reconciliation_report.json; run `python reconcile.py --apply` "
+                  "to apply a provably-safe remediation, or recover via Scenario B in CLAUDE.md.")
+        except Exception as e:
+            print(f"   ⚠ Auto-reconciliation unavailable ({str(e)[:160]}). "
+                  "Recover manually via Scenario B in CLAUDE.md.")
         return SKIP_DONE
 
     # 2. Freshness — is market_snapshot.json dated today with enough history?
