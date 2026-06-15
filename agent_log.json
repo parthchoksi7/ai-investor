@@ -11044,5 +11044,1616 @@
         }
       ]
     }
+  },
+  {
+    "run_id": "20260615-135006",
+    "date": "2026-06-15",
+    "regime": {
+      "regime": "RISK_ON",
+      "confidence": 72,
+      "growth_value": "GROWTH",
+      "favored_factors": [
+        "momentum",
+        "large_cap_tech",
+        "AI_infrastructure",
+        "defense_government_IT",
+        "geopolitical_risk_resolution"
+      ],
+      "avoid_factors": [
+        "small_cap_speculative",
+        "high_yield_credit",
+        "consumer_discretionary_low_income",
+        "labor_sensitive_sectors"
+      ],
+      "key_observations": [
+        "SPY and QQQ both trading above 50DMA and 200DMA, confirming broad uptrend with technical support intact",
+        "QQQ 3M return of +21.65% significantly outpacing SPY +12.3%, confirming strong GROWTH over VALUE leadership with technology/AI driving outperformance",
+        "Trump-Iran deal announcement is a meaningful geopolitical risk-off release, acting as a near-term tailwind for risk assets and suppressing energy risk premium",
+        "Federal Reserve interest rate decision pending Wednesday under new chairman Kevin Warsh introduces policy uncertainty; markets appear to be pricing in a neutral-to-dovish stance",
+        "Shadow unemployment at 6.2 million discouraged workers \u2014 exceeding 2008 crisis levels \u2014 signals significant underlying labor market deterioration despite surface-level equity strength; this divergence is a latent systemic risk",
+        "M1 return of -0.08% for SPY suggests very short-term momentum stall, but 3M and 6M trends remain strongly positive \u2014 regime is durable but not accelerating",
+        "Major M&A activity (Fox-Roku $22B, Berkshire-Alphabet $10B add) signals institutional risk appetite is elevated and animal spirits are active",
+        "AI-driven product integrations (Wix-Microsoft 365 Copilot) reinforcing narrative of productivity infrastructure spending cycle continuation",
+        "SpaceX IPO sentiment and leveraged ETF launches indicate speculative froth in narrative-driven assets; a sentiment-driven valuation environment typically characterizes late-stage risk-on conditions",
+        "Liquidity conditions appear accommodative but Fed decision Wednesday is a binary event that could shift the regime rapidly; confidence held below 80 pending that clarity"
+      ]
+    },
+    "candidates": [
+      "JPM",
+      "MRK",
+      "MS",
+      "TGT",
+      "PANW",
+      "C",
+      "GS",
+      "LIN",
+      "EOG",
+      "WFC",
+      "TJX",
+      "UPS",
+      "AMGN",
+      "AAPL",
+      "EQIX",
+      "PLD",
+      "LLY",
+      "JNJ",
+      "BAC",
+      "AMT"
+    ],
+    "quant_scores": {
+      "BAC": {
+        "ticker": "BAC",
+        "data_available": true,
+        "composite_score": 85.1,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "momentum_score": 93.9,
+        "momentum_available": true,
+        "return_1m": 12.98,
+        "return_3m": 20.53,
+        "return_6m": 4.71,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 70.0,
+        "quality_available": true,
+        "valuation_score": 83.3,
+        "valuation_available": true,
+        "volatility": 20.9,
+        "beta": 0.63,
+        "volatility_score": 90.9,
+        "volatility_available": true
+      },
+      "GS": {
+        "ticker": "GS",
+        "data_available": true,
+        "composite_score": 68.3,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "momentum_score": 100.0,
+        "momentum_available": true,
+        "return_1m": 11.72,
+        "return_3m": 36.46,
+        "return_6m": 20.67,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 55.0,
+        "quality_available": true,
+        "valuation_score": 30.0,
+        "valuation_available": true,
+        "volatility": 31.8,
+        "beta": 1.59,
+        "volatility_score": 74.1,
+        "volatility_available": true
+      },
+      "MRK": {
+        "ticker": "MRK",
+        "data_available": true,
+        "composite_score": 82.4,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 83.4,
+        "momentum_available": true,
+        "return_1m": 4.94,
+        "return_3m": 3.74,
+        "return_6m": 23.91,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 27.2,
+        "beta": 0.39,
+        "volatility_score": 81.2,
+        "volatility_available": true
+      },
+      "PANW": {
+        "ticker": "PANW",
+        "data_available": true,
+        "composite_score": 73.5,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 100.0,
+        "momentum_available": true,
+        "return_1m": 22.75,
+        "return_3m": 67.42,
+        "return_6m": 44.91,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 52.8,
+        "beta": 1.16,
+        "volatility_score": 41.8,
+        "volatility_available": true
+      },
+      "PLD": {
+        "ticker": "PLD",
+        "data_available": true,
+        "composite_score": 90.1,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 89.8,
+        "momentum_available": true,
+        "return_1m": 4.75,
+        "return_3m": 13.8,
+        "return_6m": 16.49,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 21.2,
+        "beta": 0.72,
+        "volatility_score": 90.5,
+        "volatility_available": true
+      },
+      "AMT": {
+        "ticker": "AMT",
+        "data_available": true,
+        "composite_score": 82.1,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 83.6,
+        "momentum_available": true,
+        "return_1m": 8.68,
+        "return_3m": 3.49,
+        "return_6m": 6.91,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 27.8,
+        "beta": 0.21,
+        "volatility_score": 80.3,
+        "volatility_available": true
+      },
+      "EQIX": {
+        "ticker": "EQIX",
+        "data_available": true,
+        "composite_score": 80.8,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 68.3,
+        "momentum_available": true,
+        "return_1m": -1.5,
+        "return_3m": 9.4,
+        "return_6m": 45.27,
+        "above_50dma": false,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 17.7,
+        "beta": 0.58,
+        "volatility_score": 95.9,
+        "volatility_available": true
+      },
+      "C": {
+        "ticker": "C",
+        "data_available": true,
+        "composite_score": 90.1,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 100.0,
+        "momentum_available": true,
+        "return_1m": 12.68,
+        "return_3m": 32.93,
+        "return_6m": 27.13,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 29.2,
+        "beta": 1.26,
+        "volatility_score": 78.2,
+        "volatility_available": true
+      },
+      "EOG": {
+        "ticker": "EOG",
+        "data_available": true,
+        "composite_score": 71.8,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 67.4,
+        "momentum_available": true,
+        "return_1m": 1.27,
+        "return_3m": 3.08,
+        "return_6m": 24.76,
+        "above_50dma": false,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 29.9,
+        "beta": -1.02,
+        "volatility_score": 77.1,
+        "volatility_available": true
+      },
+      "AAPL": {
+        "ticker": "AAPL",
+        "data_available": true,
+        "composite_score": 73.6,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "momentum_score": 75.0,
+        "momentum_available": true,
+        "return_1m": -2.59,
+        "return_3m": 16.5,
+        "return_6m": 4.62,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 76.7,
+        "quality_available": true,
+        "valuation_score": 50.0,
+        "valuation_available": true,
+        "volatility": 23.1,
+        "beta": 0.76,
+        "volatility_score": 87.6,
+        "volatility_available": true
+      },
+      "WFC": {
+        "ticker": "WFC",
+        "data_available": true,
+        "composite_score": 85.0,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 88.2,
+        "momentum_available": true,
+        "return_1m": 13.87,
+        "return_3m": 13.64,
+        "return_6m": -6.69,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 27.3,
+        "beta": 0.42,
+        "volatility_score": 81.1,
+        "volatility_available": true
+      },
+      "AMGN": {
+        "ticker": "AMGN",
+        "data_available": true,
+        "composite_score": 81.5,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 78.4,
+        "momentum_available": true,
+        "return_1m": 6.37,
+        "return_3m": -2.27,
+        "return_6m": 14.26,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 24.6,
+        "beta": 0.58,
+        "volatility_score": 85.3,
+        "volatility_available": true
+      },
+      "TGT": {
+        "ticker": "TGT",
+        "data_available": true,
+        "composite_score": 89.9,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 100.0,
+        "momentum_available": true,
+        "return_1m": 11.32,
+        "return_3m": 16.34,
+        "return_6m": 45.74,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 29.4,
+        "beta": 0.35,
+        "volatility_score": 77.8,
+        "volatility_available": true
+      },
+      "JNJ": {
+        "ticker": "JNJ",
+        "data_available": true,
+        "composite_score": 87.1,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 80.1,
+        "momentum_available": true,
+        "return_1m": 5.14,
+        "return_3m": 0.3,
+        "return_6m": 17.92,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 18.0,
+        "beta": 0.06,
+        "volatility_score": 95.4,
+        "volatility_available": true
+      },
+      "LIN": {
+        "ticker": "LIN",
+        "data_available": true,
+        "composite_score": 86.7,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 81.6,
+        "momentum_available": true,
+        "return_1m": 2.33,
+        "return_3m": 6.34,
+        "return_6m": 34.2,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 19.6,
+        "beta": 0.09,
+        "volatility_score": 92.9,
+        "volatility_available": true
+      },
+      "LLY": {
+        "ticker": "LLY",
+        "data_available": true,
+        "composite_score": 82.6,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 97.8,
+        "momentum_available": true,
+        "return_1m": 11.74,
+        "return_3m": 15.21,
+        "return_6m": 14.41,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 38.1,
+        "beta": 0.73,
+        "volatility_score": 64.4,
+        "volatility_available": true
+      },
+      "MS": {
+        "ticker": "MS",
+        "data_available": true,
+        "composite_score": 91.6,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 100.0,
+        "momentum_available": true,
+        "return_1m": 10.43,
+        "return_3m": 38.95,
+        "return_6m": 20.4,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 26.9,
+        "beta": 1.24,
+        "volatility_score": 81.6,
+        "volatility_available": true
+      },
+      "TJX": {
+        "ticker": "TJX",
+        "data_available": true,
+        "composite_score": 88.9,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 90.5,
+        "momentum_available": true,
+        "return_1m": 14.92,
+        "return_3m": 8.71,
+        "return_6m": 8.85,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 23.5,
+        "beta": 0.34,
+        "volatility_score": 86.9,
+        "volatility_available": true
+      },
+      "JPM": {
+        "ticker": "JPM",
+        "data_available": true,
+        "composite_score": 88.5,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 88.0,
+        "momentum_available": true,
+        "return_1m": 6.82,
+        "return_3m": 13.73,
+        "return_6m": 4.42,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 22.1,
+        "beta": 0.72,
+        "volatility_score": 89.1,
+        "volatility_available": true
+      },
+      "UPS": {
+        "ticker": "UPS",
+        "data_available": true,
+        "composite_score": 82.1,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "momentum_score": 92.1,
+        "momentum_available": true,
+        "return_1m": 9.8,
+        "return_3m": 11.2,
+        "return_6m": 8.49,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 50,
+        "quality_available": false,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 34.5,
+        "beta": 1.14,
+        "volatility_score": 70.0,
+        "volatility_available": true
+      }
+    },
+    "research": {
+      "MRK": {
+        "thesis": "Merck's oncology pipeline inflection combined with Keytruda patent cliff mitigation strategies and emerging market growth are underpriced relative to near-term earnings acceleration and mid-cycle portfolio rebalancing.",
+        "consensus_view": "Market views Merck as a mature pharma compounder facing Keytruda revenue cliff post-2028, with modest mid-single digit growth through 2027-2028 driven by incremental oncology wins and HPV vaccine expansion. Valuation reflects defensive positioning (~15-16x P/E) appropriate for an aging blockbuster portfolio with limited upside catalysts. Stock has been range-bound as investors await clarity on post-Keytruda revenue composition.",
+        "variant_view": "The market is underweighting the magnitude and timing of oncology pipeline contribution through 2025-2027, specifically underestimating: (1) Winrevoy (pralsetinib) ramp trajectory in RET-driven cancers with competitive moat; (2) MK-1084 (HER2Dx ADC) potential in HER2-low breast cancer representing large TAM expansion; (3) combination therapy data superiority of existing agents creating durable revenue floors ahead of Keytruda decline. Additionally, consensus misses that emerging market HPV/cancer therapy penetration and royalty optimization from Eisai partnerships creates hidden earnings leverage not reflected in guidance.",
+        "catalysts": [
+          "ASCO/ESMO data presentations showing MK-1084 or combination therapy superiority in phase 2/3 trials (2024-2025)",
+          "Pralsetinib approval in additional RET-positive indications expanding eligible patient population materially above expectations",
+          "Q2/Q3 2024 earnings beats driven by HPV vaccine demand surge in emerging markets and early oncology uptake acceleration",
+          "Analyst consensus EPS revisions upward as pipeline probability-weighted NPV recalculated post-recent trial readouts",
+          "Strategic partnership or licensing deal involving early-stage assets demonstrating management's conviction on pipeline quality",
+          "Keytruda combination therapy label wins reducing standalone competition and defending revenue base post-2028"
+        ],
+        "key_risks": [
+          "Keytruda durability longer than modeled, delaying need for pipeline contribution and compressing valuation multiple expansion timeline",
+          "Competitive oncology programs (Bristol Myers Squibb, Roche HER2Dx ADCs) prove superior in head-to-head or Phase 3 comparators, truncating TAM",
+          "Regulatory delays or safety signals emerging in MK-1084 or pralsetinib programs, pushing revenue realization beyond consensus 2026-2027 window",
+          "Emerging market price compression on HPV vaccines and generics faster than company guidance, eroding margin assumptions",
+          "Broader biotech/pharma valuation contraction if macro/rates environment shifts, compressing sector multiples independent of pipeline merit",
+          "Management execution risk on manufacturing scale-up or commercial launch coordination across multiple new oncology assets simultaneously"
+        ],
+        "invalidates_if": [
+          "Keytruda patent cliff accelerates unexpectedly (generic entry <2027) without sufficient pipeline contribution offsetting revenue loss",
+          "Phase 3 failures or missed efficacy targets in lead oncology programs (Winrevoy in additional indications, MK-1084 comparative studies)",
+          "Guidance reduced by >10% on pipeline probability adjustments or emerging market headwinds in next two earnings calls",
+          "Competitor gains material share in core indications through superior efficacy/tolerability data, compressing Merck's positioning",
+          "Emerging market geopolitical risk (China policy shifts, India IP tightening) materially constrains HPV/oncology expansion assumptions",
+          "Management change or strategic pivot signaling loss of confidence in internal pipeline driving sentiment reset"
+        ],
+        "confidence": 6,
+        "evidence_quality": 5
+      },
+      "C": {
+        "thesis": "Citigroup is undervalued relative to its peer group due to market underestimation of management's execution on the multi-year transformation, with multiple expansion likely as ROE normalizes toward 12-13% and capital return accelerates.",
+        "consensus_view": "Citigroup remains a challenged universal bank with legacy complexity, elevated cost base, and execution risk on restructuring; the market prices it as a value trap with structural headwinds from deposit competition and lower rates, deserving a below-peer multiple despite improved profitability metrics.",
+        "variant_view": "The market has overcorrected on C's challenges and is pricing in persistent underperformance despite: (1) tangible progress on cost reduction (target $20B opex by 2026 is >90% achieved), (2) improving loan yields supporting NII resilience, (3) institutional banking and wealth management showing genuine competitive traction, and (4) capital deployment capacity that's been artificially suppressed but is now inflecting higher. Valuation at ~0.75-0.80x tangible book value is disconnected from a 12%+ ROE trajectory.",
+        "catalysts": [
+          "Q4 earnings beat on NII guidance and cost targets, prompting analyst estimate revisions upward for 2025-2026",
+          "Quarterly capital return acceleration (dividend raise or buyback expansion) signaling confidence in capital generation",
+          "Institutional client wins or deposit stabilization data showing competitive positioning improvement",
+          "Operating leverage inflection as revenue growth outpaces cost growth in 2025",
+          "Peer multiple compression narrative reversal if C trades toward 0.95-1.05x TBV on comparable ROE",
+          "Strategic clarity on non-core or underperforming units (exiting specific geographies/products)"
+        ],
+        "key_risks": [
+          "Economic recession triggers loan losses faster than modeled, compressing NII and increasing credit costs simultaneously",
+          "Deposit outflows resurface if rates remain higher for longer, pressuring NIM expansion thesis",
+          "Regulatory capital requirements remain elevated longer than expected, limiting capital return acceleration",
+          "Competitive pressure in institutional banking intensifies from better-capitalized/simpler peers (JPM, GS)",
+          "Management execution falters on cost reduction timeline, pushing 2026 opex targets beyond $20B",
+          "Technology/cyber risks materialize given legacy infrastructure criticality at a systemically important institution"
+        ],
+        "invalidates_if": [
+          "NII trajectory turns negative year-over-year despite stable rate environment",
+          "Credit losses accelerate sharply (loan loss provision % of loans exceeds 1.2% run rate)",
+          "Capital ratios decline meaningfully, forcing further regulatory constraints on buybacks",
+          "Cost reduction program is reset/abandoned, signaling structural operational issues",
+          "Large client defection or relationship losses in institutional banking materialize",
+          "Return on tangible equity falls below 10% in 2025E, suggesting structural ROE depression"
+        ],
+        "confidence": 6,
+        "evidence_quality": 5
+      },
+      "MS": {
+        "thesis": "MS is re-rating higher as investment banking normalization and wealth management scale drive earnings growth that consensus has structurally underestimated post-pandemic.",
+        "consensus_view": "Market views MS as a cyclical beaten-down investment bank facing structural headwinds from lower rates, trading volatility compression, and M&A normalization. Consensus expects single-digit earnings growth and values the stock as a defensive dividend play trading near historical averages, with lingering concerns about capital return capacity and competitive share loss to larger players.",
+        "variant_view": "Consensus conflates cyclical trough with structural decline. MS's wealth management business (now 47%+ of revenue) is a secular growth engine with sub-3% revenue CAGR embedded in guidance\u2014this dramatically underestimates margin expansion from scale and platform consolidation. IB normalization is not decline; it returns to historical 10-12% ROIC levels. The stock's technical strength (momentum 100, above 50/200 MAs, 39% 3M return) reflects institutional recognition that the consensus narrative is stale.",
+        "catalysts": [
+          "Q4 earnings beat on wealth management revenue growth exceeding 8%+ driven by AUM growth and market appreciation, forcing upward revisions to FY25-26",
+          "Capital return announcements (accelerated buyback or special dividend) once regulatory capital buffers are clarified, unlocking valuation multiple expansion",
+          "M&A pipeline acceleration in 2Q-3Q 2024 as deal-making rebounds; IB revenue surprise to upside signals consensus recession fears were overblown",
+          "Wealth management margin expansion story crystalizes as advisors hit productivity thresholds and tech investments compound; consensus models currently assume flat margins",
+          "Dividend yield/payout ratio normalization triggers institutional rotation into MS as yield-starved income investors reweight into banks"
+        ],
+        "key_risks": [
+          "Recession materializes and wipes out M&A/trading activity simultaneously; wealth management outflows spike and AUM contracts",
+          "Rising rates invert yield curve further, compressing NII and forcing deposit competition that erodes treasury margins faster than model assumes",
+          "Regulatory capital requirements increase unexpectedly post-regional banking stress, forcing capital conservation and reducing return flexibility",
+          "Wealth management fails to achieve expected scale economies; advisor productivity declines as market cap gains reverse, forcing compensation resets",
+          "Competitive loss to larger rivals (JPM, BofA) in both IB wallet share and WM advisor recruitment accelerates faster than historical patterns"
+        ],
+        "invalidates_if": [
+          "Wealth management revenue growth slows below 3% YoY for two consecutive quarters despite positive market conditions",
+          "MS loses >$50B in AUM net outflows; advisor attrition exceeds 8% annually",
+          "Capital return announcements are shelved due to regulatory pressure or CET1 ratio falls below 12%",
+          "IB revenue fails to recover toward $2.5B+ quarterly run-rate by Q3 2024 despite market normalization",
+          "Consensus earnings estimates for FY25 are cut by >10% due to operational deterioration rather than macro shock"
+        ],
+        "confidence": 7,
+        "evidence_quality": 6
+      },
+      "TGT": {
+        "thesis": "Target's operational leverage from omnichannel efficiency and margin discipline is underappreciated, with consensus underestimating sustainable mid-single-digit comp growth and 50+ bps of annual gross margin expansion.",
+        "consensus_view": "Market views Target as a mature retailer facing secular headwinds from e-commerce, with limited growth catalysts beyond same-store sales stability. Consensus expects low-to-mid single digit comp growth, flat-to-modest margin expansion, and values the stock primarily on dividend yield and defensive characteristics rather than earnings growth.",
+        "variant_view": "Target has fundamentally shifted its competitive positioning through Drive Up, same-day services, and supply chain optimization that competitors struggle to replicate at scale. Gross margins are structurally expanding as mix shifts toward higher-margin services and private label penetration deepens\u2014this is not yet reflected in forward guidance. Volume leverage from consistent comps can drive 100+ bps of operating leverage over next 2-3 years, with international expansion upside still unpriced.",
+        "catalysts": [
+          "Q3-Q4 2024 earnings beats driven by better-than-expected gross margin expansion as private label and services revenue accelerate",
+          "Formal guidance raise for 2025 reflecting sustained comp growth and margin expansion, signaling confidence in structural improvements",
+          "Analyst consensus upgrade cycle as margin beats repeat and visibility improves on omnichannel cost absorption completing",
+          "Market rotation into 'quality compounders' during rate-cutting cycles, where Target's consistent returns on capital and FCF generation gain valuation multiple",
+          "Comparable retailer stumbles (Gap, Macy's) relative underperformance that resets perception of Target as industry leader"
+        ],
+        "key_risks": [
+          "Discretionary consumer spending deterioration in recession or sharp labor cost inflation eroding margin gains faster than offsets",
+          "Amazon intensifies grocery/consumables competition in core Target categories, pressuring both volume and mix",
+          "Private label quality issues or supply chain disruption damage brand trust and reduce margin uplift potential",
+          "Aggressive wage inflation or inventory normalization forces guidance cuts despite operational improvements",
+          "Market multiple compression if rates stay higher longer, disproportionately hurting dividend payers relative to growth stocks"
+        ],
+        "invalidates_if": [
+          "Comps turn negative for 2+ consecutive quarters, signaling structural demand loss rather than market share gains",
+          "Gross margins compress below 28% and fail to recover, indicating private label/services strategy underperformance",
+          "Operating cash flow declines YoY despite flat-to-positive comps, suggesting working capital or capex efficiency deteriorates",
+          "Market share loss in apparel or home categories to specialty competitors, showing inability to defend core business",
+          "Same-day services adoption plateaus below 40-50% of customer base, indicating execution or unit economics issues"
+        ],
+        "confidence": 7,
+        "evidence_quality": 6
+      },
+      "GS": {
+        "thesis": "GS is positioned to significantly outperform as rising rates and bond market volatility drive higher fixed income trading revenues and investment banking fees, while the market remains anchored to obsolete consensus on net interest margin compression.",
+        "consensus_view": "GS trades as a cyclical financial with modest earnings growth prospects; consensus expects modest NII expansion from higher rates but views the investment bank as structurally challenged due to dealmaking drought and assumes competitive pressure from larger rivals in capital markets.",
+        "variant_view": "The current 19-year high Treasury yields create a structural tailwind for GS's FICC trading franchise (historically 35-40% of revenues) that the market is severely underpricing. Rising rate volatility directly correlates with fixed income client hedging demand. Simultaneously, the dealmaking cycle shows early signs of inflection (M&A pipelines rebuilding post-election), and GS's fee-per-deal economics remain superior to peers despite volume discount. The quality score of 55 reflects balance sheet strength the market ignores.",
+        "catalysts": [
+          "Q2/Q3 2026 earnings beat on FICC trading revenue as bond volatility persists above historical averages",
+          "Announcement of significant M&A or capital markets transaction that signals dealmaking cycle recovery and validates GS's advisory pipeline",
+          "Further Treasury yield rises above 5.0% triggering mark-to-market gains on GS's substantial bond holdings and client hedging flows",
+          "Formal capital return acceleration (buyback authorization or special dividend) as CET1 ratios exceed regulatory minimums",
+          "Peer earnings disappointments in wealth management or consumer banking that highlight GS's relative operational leverage to trading and investment banking"
+        ],
+        "key_risks": [
+          "Sudden Treasury yield reversal or Fed pivot to rate cuts deflates fixed income trading volumes before dealmaking cycle fully inflects",
+          "Regulatory pressure on proprietary trading limits or capital requirements forces revenue-generating risk assets off balance sheet",
+          "Competitive encroachment from mega-cap banks (JPM, BofA) in boutique advisory or restructuring advisory where GS maintains premium positioning",
+          "Inability to execute on dealmaking recovery\u2014if capital constraints or client risk appetite remain subdued, thesis relies entirely on transient trading volatility",
+          "Geopolitical escalation (Iran war mentioned in news) destabilizes markets and reduces institutional client risk appetite, collapsing option flows"
+        ],
+        "invalidates_if": [
+          "Treasury yields collapse below 4.0% and remain anchored there for 6+ months, eliminating rate volatility premium",
+          "GS misses FICC trading revenue expectations in next two earnings reports despite elevated bond market volatility",
+          "M&A deal volume contracts further YoY and no inflection evidence emerges by Q4 2026",
+          "Regulatory changes materially restrict GS's fixed income market-making or proprietary positioning",
+          "Credit cycle deteriorates (spreads widen, default rates spike) reducing client hedging demand and forcing risk-off positioning"
+        ],
+        "confidence": 7,
+        "evidence_quality": 6
+      },
+      "EOG": {
+        "thesis": "EOG's low-cost, high-return upstream assets combined with disciplined capital allocation position it to outperform through commodity cycles, but the market is undervaluing its competitive moat and free cash flow generation potential as energy transition fears suppress valuations.",
+        "consensus_view": "EOG is a commodity cyclical energy company facing secular headwinds from energy transition; investors view it as a declining-cash-flow business dependent on oil/gas prices, best held defensively only for near-term dividend yield while avoiding long-term structural exposure.",
+        "variant_view": "EOG's sub-$10/barrel finding costs and returns-focused culture create a durable competitive advantage that persists across commodity cycles; the market has extrapolated peak capex/production levels as permanent, ignoring management's proven ability to flex spending with cycles and redeploy cash to shareholders\u2014the company is more capital-light and flexible than consensus assumes.",
+        "catalysts": [
+          "Oil prices sustaining above $80/bbl, triggering FCF surprise upside and accelerated shareholder returns (buybacks) that drive multiple re-rating from undervaluation",
+          "Earnings beat cycle as realized prices outpace guidance and production from high-return projects (Powder Basin, Uinta) demonstrates operational excellence vs. peer set",
+          "Strategic asset sale or JV announcement on lower-return properties, crystallizing value and resetting market perception toward 'portfolio optimizer' vs. 'commodity player'",
+          "Quarterly result showing dividend increase or accelerated buyback program signaling management confidence in structural cash generation",
+          "Energy policy shift (carbon pricing, permitting constraints ease) reducing future discount rate applied to reserves and long-cycle projects"
+        ],
+        "key_risks": [
+          "Sustained crude oil prices <$70/bbl compressing FCF below guidance and forcing capex cuts, negating thesis on cash generation",
+          "Accelerated energy transition reducing long-term demand for hydrocarbon reserves, structurally impairing asset value and forcing reserve write-downs",
+          "Execution risk on major projects (production delays, cost overruns) damaging operational credibility and cash flow delivery",
+          "Regulatory/political risk (windfall taxes, export restrictions, ESG-driven divestment) reducing realized prices or limiting development optionality",
+          "Peer consolidation creating scale advantages in cost structure that erode EOG's low-cost moat in soft commodity environment"
+        ],
+        "invalidates_if": [
+          "Oil remains sub-$60/bbl for sustained period, indicating structural demand collapse vs. cyclical trough",
+          "EOG announces material reserve impairments or loses exploration acreage to regulatory action",
+          "Management execution deteriorates with production misses, cost inflation, or capital overruns on flagship projects",
+          "Debt/leverage materially increases, signaling cash generation worse than guided due to commodity cycle deterioration",
+          "Market shift to carbon-constrained scenario becomes dominant (e.g., major institutional investor divestment mandates) making energy stocks uninvestable regardless of cash flow"
+        ],
+        "confidence": 6,
+        "evidence_quality": 5
+      },
+      "WFC": {
+        "thesis": "Wells Fargo is repricing higher as management executes a multi-year operational turnaround with improving capital return capacity, while the market remains anchored to legacy scandal narratives and structural headwinds that are gradually resolving.",
+        "consensus_view": "WFC is a mature, structurally challenged megabank with persistent regulatory overhang, limited growth, and execution risk on cost reduction initiatives. The stock trades at a discount to peers due to perceived ongoing reputational damage, higher compliance costs, and difficulty retaining top talent. Investors view it as a value trap with limited upside.",
+        "variant_view": "The 2016 scandal overhang is substantially priced in and the company has genuinely reformed its control environment; management is executing a credible cost rationalization (targeting $8B in cost reductions through 2026) that will drive 40+ bps of margin expansion. Capital constraints are easing post-stress test normalization, enabling meaningful share buybacks. The stock offers asymmetric risk/reward as regulatory tailwinds, improved operating leverage, and dividend growth acceleration remain underappreciated.",
+        "catalysts": [
+          "Q4 earnings beat with raised FY guidance showing margin expansion tracking ahead of schedule",
+          "Announcement of accelerated share repurchase program following CCAR approval with higher capital return authorization",
+          "Completion of legacy remediation milestones that unlock regulatory restrictions (improved CCAR buffer, potential removal of asset cap)",
+          "Positive capital markets sentiment toward financial sector with Fed rate expectations stabilizing or market breadth widening to include 'challenged' names",
+          "Analyst estimate revisions higher as cost saves flow through faster than modeled and deposit franchise stabilizes",
+          "Management commentary confirming organic deposit inflows as customer switching narratives reverse"
+        ],
+        "key_risks": [
+          "Recession triggers credit loss cycle significantly outpacing management guidance; commercial real estate deterioration accelerates",
+          "Fed maintains higher-for-longer rates but deposit competition intensifies, compressing NIM faster than cost saves offset",
+          "New regulatory findings or operational lapses trigger additional consent orders, delaying capital return authorization",
+          "Unexpected C-suite departure or strategy reversal undermines confidence in turnaround execution",
+          "Competitive losses in wealth management or commercial banking persist, reversing revenue stabilization assumptions",
+          "Macro shock forces management to reduce dividend or halt buyback program, triggering multiple compression"
+        ],
+        "invalidates_if": [
+          "WFC misses cost reduction targets for two consecutive quarters or extends timeline materially",
+          "Management fails to obtain CCAR approval or faces new asset cap restrictions",
+          "Net interest margin declines >10 bps despite rate stability due to deposit mix deterioration",
+          "Loan loss provisions spike above 40 bps of average loans in a non-recessionary environment",
+          "Significant customer deposit outflows resume or market share losses accelerate in core products",
+          "Regulatory investigation initiated into material operational or compliance failure"
+        ],
+        "confidence": 6,
+        "evidence_quality": 5
+      },
+      "JPM": {
+        "thesis": "JPM's net interest margin expansion from higher-for-longer rates will be materially underestimated by consensus, driving earnings beats and multiple re-rating as the market has priced in rate cuts that are unlikely given persistent inflation dynamics.",
+        "consensus_view": "JPM is a high-quality financial services franchise trading at fair value with earnings largely factored in; the market expects Fed rate cuts in H2 2026 which will compress NIM and limit upside. Wealth management and capital markets are mature, with growth limited to low-single digits.",
+        "variant_view": "The bond market signal (19-year high Treasury yields) reveals consensus underestimation of inflationary persistence. JPM's deposit franchise and short-duration liability base generate significant NIM expansion optionality that remains unpriced. The market is extrapolating 2024-2025 rate-cut expectations into 2026, but geopolitical shocks (Iran war referenced in news) and energy inflation suggest rates stay elevated longer. JPM's Q2 NIM guidance is likely conservative; capital markets revenue (M&A, capital raising) accelerates as corporate clients respond to sustained high-rate environment.",
+        "catalysts": [
+          "Q2 2026 earnings with NIM beat and raised guidance on rates staying higher-for-longer",
+          "Fed messaging shift: hawkish dot plot or forward guidance extending rate-cut timeline into 2027",
+          "Capital markets surge in M&A/ECM/DCM as corporates refinance and restructure in high-rate regime",
+          "Credit normalization: loan loss reserve releases as consumer resilience holds despite rate expectations",
+          "Wealth management AUM acceleration as equity markets rally on inflation repricing (rate-resilient businesses command premiums)"
+        ],
+        "key_risks": [
+          "Unexpected recession forces Fed emergency rate cuts, compressing NIM faster than deposit runoff occurs",
+          "Credit deterioration in consumer (auto, credit card) or commercial real estate forces reserve builds that offset NIM gains",
+          "Deposit flight accelerates if rate competition intensifies or money market fund spreads compress (regulatory risk)",
+          "Capital markets downturn triggered by geopolitical de-escalation or financial stability concern (removes M&A/equity issuance catalyst)",
+          "Market reprices duration risk and equity valuations compress despite JPM fundamentals (macro headwind to CIB revenues)"
+        ],
+        "invalidates_if": [
+          "Fed cuts rates to 3% or below in 2026 (indicates recession signal JPM cannot hedge)",
+          "JPM's NIM compresses below 1.95% in Q2-Q3 2026 (contradicts higher-for-longer thesis)",
+          "Credit card or auto charge-offs exceed 2.5-3.0% of outstanding (signals consumer stress not in consensus)",
+          "Deposit betas spike above 40% and funding costs rise despite rate stability (structural liability issue)",
+          "Management guides NIM down or reduces return on equity targets due to rate expectations"
+        ],
+        "confidence": 7,
+        "evidence_quality": 6
+      },
+      "LIN": {
+        "thesis": "LIN's defensive cash generation, structural cost advantages, and underappreciated exposure to energy transition capex cycles position it to outperform through an economic slowdown while maintaining premium valuation multiple expansion as growth stabilizes.",
+        "consensus_view": "LIN is a mature, slow-growth industrial gas duopoly trading at a fair 28-30x forward P/E, benefiting from steady dividend growth and modest mid-single-digit volume growth. Market views it as a defensive safe haven but lacks excitement on earnings acceleration. Current strength reflects macro de-risking and quality flows rather than specific LIN catalysts.",
+        "variant_view": "Market significantly underweights the magnitude of industrial transition capex beginning 2024-2026, particularly in hydrogen production (energy transition), semiconductor fab buildout (geopolitical reshoring), and data center cooling infrastructure. LIN's 60%+ EBITDA margin business with 90%+ contract pass-through pricing means these volume cycles drive 8-12% organic growth, not the assumed 3-5%. Consensus is modeling peak cycle already; we are early-cycle. Additionally, the company's pricing power in tight markets is being understated\u2014scarcity of industrial gas capacity creates durable pricing upside 2024-2025.",
+        "catalysts": [
+          "2024 capital equipment orders and project delays announced by LIN for hydrogen and semiconductor-related infrastructure\u2014beats could signal multi-year expansion cycle",
+          "Quarterly commentary raising FY2024-2025 organic growth guidance above 4% as hydrogen/semiconductor projects convert to onsite contracts",
+          "Competitor (Air Liquide/Air Products) contract losses or capacity constraints forcing repricing and market share gains for LIN",
+          "Energy policy announcements (e.g., IRA implementation specifics, EU hydrogen strategy acceleration) validating hydrogen capex timelines",
+          "Data center colocation provider capex cycles materializing; major hyperscaler cooling/cryogenic contracts announced",
+          "Margin expansion signals from cost deflation or contract renegotiations favoring LIN given its operational efficiency vs. peers"
+        ],
+        "key_risks": [
+          "Recession or capex pullback in semiconductors/energy (primary cycle drivers for LIN's elevated growth)\u2014would collapse organic growth expectations to 2-3%",
+          "Hydrogen economy deployment delays beyond 2025 due to infrastructure/policy gridlock\u2014pushes volume cycle out by 1-2 years, pressuring near-term estimates",
+          "Pricing power erosion if competitors aggressively underbid during tightness periods, or if large industrial customers demand contract renegotiations",
+          "Valuation compression if broader equity market reprices quality/defensive multiples lower\u2014LIN trades premium to utilities and could see multiple de-rating in rate-hike environment",
+          "Currency headwinds (EUR, GBP weakness) impacting international segment profitability\u2014LIN has ~40% revenue exposure outside US",
+          "Technology disruption or alternative solutions (e.g., on-site alternative hydrogen production methods) reducing demand for centralized industrial gas supply"
+        ],
+        "invalidates_if": [
+          "LIN guidance cuts citing weak industrial demand or delayed capex projects in hydrogen/semiconductors",
+          "Quarterly organic growth prints below 2% for two consecutive quarters, signaling cycle did not materialize",
+          "Major contract losses to competitors (Air Liquide/Air Products) in key hydrogen or data center segments",
+          "Management commentary suggests margin pressure from input cost inflation or wage pressure that cannot be passed through via pricing",
+          "Recession declared with unemployment rising sharply, causing widespread capex cancellations across LIN's end markets",
+          "Valuation multiple compression below 24x forward P/E absent earnings growth acceleration (rules out thesis of multiple expansion)"
+        ],
+        "confidence": 7,
+        "evidence_quality": 6
+      },
+      "PANW": {
+        "thesis": "PANW sustains 30%+ revenue growth and margin expansion through 2025-26 as AI-native security consolidation accelerates, but market is underappreciating execution risk and the competitive threat from Microsoft's integrated security stack bundling with enterprise agreements.",
+        "consensus_view": "PANW is a best-in-class cybersecurity platform with strong secular tailwinds, warranting 8-10x revenue multiples (currently ~13x forward). Market expects steady 25-28% growth and modest margin accretion as the company scales platform adoption. AI is priced as a modest uplift to existing TAM, not transformative. Stock is fairly valued given growth and quality; multiple expansion is unlikely without significant acceleration.",
+        "variant_view": "The market is bifurcated: growth believers have already re-rated the stock +67% YTD, but this masks two critical misapprehensions: (1) Platform consolidation ROI is not yet proven at scale\u2014customers are adopting modules but not achieving the cost/efficiency benefits PANW models, suggesting gross margin gains are fragile; (2) Microsoft's bundled security (Defender, Sentinel, Copilot) is materially underpenetrated in mid-market ($100M-$500M revenue), creating a near-term headwind disguised as TAM expansion. The 52.8% volatility and momentum extremes (MOM=100, 1M=+22.75%) suggest flow-driven re-rating rather than fundamental repricing.",
+        "catalysts": [
+          "Q3 2025 earnings: platform adoption rates (Next-Gen SASE, Cloud Native Security) and net revenue retention (NRR) inflection to 125%+ would validate consolidation thesis and justify current valuation; if NRR deteriorates or platform mix-shift narrows, significant downside",
+          "Microsoft Copilot for Security adoption disclosure in Enterprise earnings cycles: if customers report lower ROI vs. PANW's AI features, competitive pressure narrative crystallizes and PANW re-rates down 15-20%",
+          "PANW enterprise customer win/loss metrics in investor day or conference calls: specific wins against Fortinet/Cisco vs. losses to Microsoft would directly signal consolidation momentum",
+          "Margin guidance raise: if PANW guides to 50%+ non-GAAP operating margin by FY26, multiple can hold/expand; if maintained flat, suggests software leverage is peaking",
+          "Major M&A announcement or partnership: acquisition of niche AI-security player (Wiz, Snyk tier) or deep integration with hyperscaler could accelerate TAM and reset growth narrative"
+        ],
+        "key_risks": [
+          "Platform consolidation ROI validation gap: enterprise procurement cycles are slowing (CFO austerity focus); if PANW's upsell motion weakens or multi-year net retention plateaus at 115-120%, growth targets miss and multiple compresses 25-30%",
+          "Microsoft bundling acceleration: if Microsoft achieves >40% attach rate on Defender for Endpoint in SMB/Mid-Market by late 2025, PANW loses the volume growth driver and is forced into upmarket-only strategy with lower TAM",
+          "Macro demand destruction: if enterprise IT budgets contract due to recession, PANW's 30%+ growth assumption becomes unachievable; stock would re-rate to 6-7x revenue multiple (20-30% downside)",
+          "Competitive commoditization from open-source/hyperscaler security: if Google, AWS, or open-source alternatives (Falco, etc.) capture cloud-native security workloads faster than expected, PANW's Cloud Native Security segment (highest growth rate) underperforms",
+          "AI feature parity/commoditization: if competitors (CrowdStrike, Cloudflare, Fortinet) rapidly close AI capability gaps, PANW loses pricing power and premium valuation narrative collapses"
+        ],
+        "invalidates_if": [
+          "NRR declines below 115% or shows negative inflection in two consecutive quarters",
+          "Gross margins compress below 77% despite scale, signaling platform mix deterioration",
+          "Microsoft reports >50% penetration of integrated security bundle in Fortune 500; market share losses accelerate"
+        ]
+      },
+      "LLY": {
+        "thesis": "LLY's GLP-1 franchise faces near-term margin pressure and competitive saturation that the market is underappreciating, creating a tactical underperformance window despite long-term growth optionality in obesity/diabetes.",
+        "consensus_view": "Eli Lilly is a secular growth story with Mounjaro/Zepbound commanding 50%+ of the GLP-1 market, driving 25-30% annual revenue growth through 2026-2027 with expanding margins as manufacturing scales. The stock is a defensive compounder worthy of premium valuation (35-40x forward P/E) due to obesity market TAM expansion and first-mover advantages.",
+        "variant_view": "The market is extrapolating Mounjaro's current dominance without adequately pricing in: (1) Novo Nordisk's aggressive competitive push with Ozempic/Wegovy gaining share in both weight loss and diabetes segments, (2) manufacturing/supply constraints that may limit LLY's ability to meet demand growth, pressuring pricing power, (3) gross margin compression from mix shift toward GLP-1s (lower margin than legacy products) and competitive pricing pressure, and (4) peak penetration risk in obesity at 10-15% of addressable population rather than the 25-30% some models assume.",
+        "catalysts": [
+          "Quarterly earnings revision downgrades if Novo/Amgen gain share data shows LLY's market share declining below 45% in GLP-1 market",
+          "FDA approval of oral semaglutide (Novo) or oral tirzepatide competitor data demonstrating superior convenience/efficacy, forcing LLY pricing concessions",
+          "Manufacturing guidance cut or supply constraint admission signaling inability to meet 2025-2026 demand projections",
+          "Gross margin guidance reduction below 70% as GLP-1 mix accelerates (vs. prior 72%+ guidance)",
+          "Obesity market penetration data showing slower-than-expected adoption in mainstream population (vs. early adopter phase)",
+          "Healthcare policy shift (CMS coverage restrictions, international price controls) impacting GLP-1 reimbursement economics"
+        ],
+        "key_risks": [
+          "LLY retains/grows market share due to manufacturing excellence and clinical data edge over Novo/Amgen competitors\u2014thesis invalidated by execution",
+          "GLP-1 obesity market expands faster than modeled (20%+ of eligible population adopts vs. 15% consensus), sustaining 25%+ revenue growth longer",
+          "Legacy diabetes portfolio (insulin, other agents) shows unexpected resilience, offsetting GLP-1 mix margin pressure",
+          "Tirzepatide triple-hormone analog (in development) shows clinical superiority, re-accelerating LLY's competitive position",
+          "Margin accretion from scale and manufacturing innovation exceeds expectations, enabling 30%+ EBITDA growth despite price pressure",
+          "Strategic M&A or partnerships bolster non-GLP-1 pipeline, diversifying growth drivers and reducing GLP-1 concentration risk"
+        ],
+        "invalidates_if": [
+          "LLY reports Mounjaro market share >55% in next 2 quarters despite Novo competitive launches",
+          "Gross margins remain >71% despite GLP-1 revenue exceeding 35% of total sales",
+          "Manufacturing capacity expansions complete on schedule with zero supply constraints communicated by end of 2025",
+          "Obesity market penetration reaches 20%+ of eligible population by 2027 (suggesting TAM underestimation)",
+          "No share loss to Novo/Amgen in quarterly data or pricing holding firm despite competitive pressure"
+        ],
+        "confidence": 5,
+        "evidence_quality": 4
+      },
+      "AMGN": {
+        "thesis": "AMGN is undervalued on a relative basis due to market underestimation of its biosimilar franchise growth trajectory and underappreciation of its capital-light transition, despite facing near-term patent cliff headwinds.",
+        "consensus_view": "Amgen is a mature, slow-growth mega-cap facing structural headwinds from Enbrel/Neulasta patent expirations (2028-2029), with investors pricing in modest mid-single-digit revenue growth and margin compression. The market views it as a defensive dividend play rather than a growth story, with limited upside catalysts beyond existing product lifecycle management.",
+        "variant_view": "Amgen's biosimilar portfolio (MG1 pipeline, otezla expansion) is being materially underestimated in size and TAM penetration. The company's transition to higher-margin specialty oncology (MG1, MG2) and GLP-1 space (MariTide) will offset patent cliff impact faster than consensus models. Additionally, successful capital returns (share buybacks at reasonable multiples) combined with margins stabilizing post-cliff creates a compounding return story that justifies 12-15x forward FCF multiples.",
+        "catalysts": [
+          "MariTide Phase 3 data or regulatory milestone (potential $2-3B peak sales GLP-1 competitor with differentiated dosing)",
+          "Biosimilar revenue acceleration and margin inflection signaling earlier-than-expected patent cliff offset",
+          "Otezla acquisition integration and upsell opportunity demonstrating dermatology/rheum expansion success",
+          "M&A announcement targeting high-growth specialty areas (oncology, immunology adjacencies) at reasonable valuations",
+          "Analyst consensus EPS revisions upward as 2027-2028 guidance becomes more visible and FAD assumptions improve"
+        ],
+        "key_risks": [
+          "Enbrel/Neulasta biosimilar adoption faster than modeled, creating sharper-than-expected revenue cliff in 2028-2029",
+          "MariTide underperforms in Phase 3 or faces commercialization challenges (reimbursement, manufacturing scale)",
+          "Competitive intensification in remaining legacy franchises (PCSK9, SGLT2, GLP-1 space) compresses pricing and volume",
+          "Macro recession reduces specialty pharma pricing power and elective treatment volumes (oncology, rheum)",
+          "Failed M&A or integration missteps drain capital and distract management from organic growth"
+        ],
+        "invalidates_if": [
+          "MariTide Phase 3 fails or shows inferior efficacy/safety profile versus semaglutide/tirzepatide",
+          "Enbrel/Neulasta generic/biosimilar penetration reaches >50% in major markets by 2027 (indicating model assumptions too optimistic)",
+          "Operating margin declines below 40% by 2027 despite revenue stabilization (signals structural cost issues)",
+          "Company reduces dividend or buyback pace, signaling management loss of confidence in cash generation",
+          "Regulatory action or major safety issue impacts >2 key franchises simultaneously"
+        ],
+        "confidence": 6,
+        "evidence_quality": 5
+      },
+      "AMT": {
+        "thesis": "AMT is a best-in-class tower REIT with pricing power and secular 5G/AI data center tailwinds that warrant a premium valuation multiple despite near-term rate headwinds.",
+        "consensus_view": "AMT is a mature, defensive dividend infrastructure play trading at fair value (15-16x AFFO multiple) offering 3-4% yield with stable but decelerating growth; investors view it as a bond substitute sensitive to rising rates and vulnerable to tower consolidation.",
+        "variant_view": "Market is underweighting AMT's structural pricing power\u2014international towers and data center convergence (especially AI/edge infrastructure) create dual growth engines that can sustain 5-7% AFFO growth through the cycle. Near-term rate sensitivity masks longer-term multiple expansion potential as AI capex cycle justifies premium valuation vs. legacy telecom assets.",
+        "catalysts": [
+          "Acceleration of AI/edge data center monetization through tower-adjacent colocation and infrastructure partnerships\u2014Q2/Q3 earnings could highlight material incremental bookings",
+          "Aggressive capital deployment announcement (M&A, dividend acceleration, buybacks) signaling management confidence and unlocking hidden value in private tower/data center acquisitions",
+          "International portfolio stabilization/growth inflection as currency headwinds ease and 5G capex cycles mature in Europe/Asia Pacific with pricing resets",
+          "Competitive consolidation forcing AMT to articulate clear data center strategy, spurring valuation re-rating to 17-18x forward AFFO"
+        ],
+        "key_risks": [
+          "Macro recession sharply reduces telco capex/data center investment, compressing growth visibility and forcing dividend coverage scrutiny",
+          "Interest rate persistence above 5% extends duration drag on valuation multiple; investor rotation away from yield-heavy REITs into equities",
+          "Disruptive competition from alternative infrastructure (smaller tower platforms, private fiber, satellite internet) eroding pricing power and tenant concentration risk",
+          "Failed data center strategy or execution\u2014if AMT cannot materially scale this segment, multiple stays compressed as legacy tower growth decelerates to 2-3%",
+          "Regulatory headwinds on tower sharing or data center siting delays (environmental/local opposition, broadband funding redirection)"
+        ],
+        "invalidates_if": [
+          "Telco capex guidance significantly disappoints for 2-3 consecutive quarters; major tenant consolidation or bankruptcy",
+          "Data center initiative fails to gain traction with <$50M incremental revenue contribution by end of 2025",
+          "Dividend cut or covenant pressure emerges due to leverage deterioration",
+          "Sustained 10yr yields above 5% with no Fed pivot, crushing REIT multiples sector-wide",
+          "Competitive tower capacity surge in core markets (domestic/international) forcing meaningful price concessions"
+        ],
+        "confidence": 7,
+        "evidence_quality": 6
+      },
+      "TJX": {
+        "thesis": "TJX is substantially undervalued relative to its structural competitive advantages in off-price retail and margin expansion trajectory, with near-term catalysts from inventory optimization and international penetration driving 15%+ earnings growth that consensus has yet to fully model.",
+        "consensus_view": "TJX is a mature, stable off-price retailer trading at a modest premium to peers due to consistent execution and low volatility (beta 0.34). Market sees mid-single-digit comparable store sales growth and 3-4% earnings growth, with valuation justified primarily by defensive characteristics rather than growth potential. Recent momentum is attributed to broad retail relief rather than company-specific catalysts.",
+        "variant_view": "Consensus significantly underestimates TJX's competitive moat widening versus traditional retail and weaker off-price competitors. The company's vendor relationships, real estate efficiency, and treasure-hunt merchandising model are generating operating leverage that should drive 12-15% EPS growth over next 2-3 years. International (particularly Europe/Mexico) remains severely underpenetrated\u2014TJX has <15% of total sales from international versus 40%+ for mature global retailers. Margin expansion from supply chain optimization and mix-shift toward higher-margin banners is not yet reflected in analyst models.",
+        "catalysts": [
+          "Q1-Q2 earnings beats driven by inventory optimization improving gross margin by 50-100bps, forcing consensus estimates upward",
+          "International segment acceleration\u2014first 200+ store opening announcement in Europe could signal 5+ year runway of greenfield growth, re-rating TJX as growth story",
+          "Operating margin expansion to 9%+ (vs current ~8%) through labor efficiency and shrink reduction, triggering multiple expansion",
+          "M&A of smaller off-price banner or acquisition of regional players, demonstrating management's conviction in category consolidation",
+          "Comparable sales inflection to 4%+ as consumer trading-down intensifies and TJX gains share from department stores and specialty retail"
+        ],
+        "key_risks": [
+          "Consumer spending deterioration faster than modeled\u2014TJX's traffic-dependent model makes it vulnerable if discretionary spending collapses; off-price is first place consumers cut",
+          "Vendor fatigue from aggressive buying\u2014if key suppliers reduce closeout allocation to TJX to support their own DTC channels, markdown pressure and inventory turns worsen",
+          "International expansion execution risk\u2014Europe expansion requires different landlord relationships and real estate costs; lower real estate efficiency could pressure returns",
+          "Real estate headwinds\u2014rent inflation and reduced availability of high-quality mall/strip center locations could constrain unit growth and ROIC",
+          "Competitive intensity from Amazon and Shein in treasure-hunt categories\u2014off-price differentiation eroding as e-commerce logistics improve",
+          "Wage inflation outpacing pricing power\u2014labor costs at store level rising faster than TJX can pass through to customers"
+        ],
+        "invalidates_if": [
+          "Gross margins compress by >75bps annually for 2+ consecutive quarters due to vendor supply constraints",
+          "Comparable store sales turn negative and remain negative for 2+ quarters, indicating market share loss",
+          "International expansion disappoints with returns on invested capital <10% on new stores",
+          "Operating margin contracts below 7.5% and shows no recovery path",
+          "Key vendors announce shift away from closeout model to protect brand pricing (e.g., Nike, Coach significantly reduce supply)",
+          "Management delivers negative guidance citing consumer weakness"
+        ],
+        "confidence": 7,
+        "evidence_quality": 6
+      },
+      "AAPL": {
+        "thesis": "Apple's Services segment (recurring, high-margin revenue) and ecosystem stickiness provide defensive characteristics that will outperform in a period of AI-capex induced margin compression across Big Tech, making the stock attractive despite near-term valuation headwinds.",
+        "consensus_view": "The market views Apple as a mature hardware company facing iPhone saturation, vulnerable to AI capex spending by competitors (particularly Microsoft, Meta, Google) that will erode sector profitability. Goldman's warning about AI spending creating S&P 500 headwinds reinforces skepticism. Investors are concerned that Apple's AI strategy remains unclear relative to peers, making it a laggard in the AI narrative.",
+        "variant_view": "Apple's Services business (40%+ gross margins, recurring, ~$24B annual revenue) provides genuine downside protection that the market undervalues when pricing in broad Big Tech margin compression. Unlike peers burning capex on uncertain AI infrastructure ROI, Apple monetizes existing installed base through subscriptions, payments, and ecosystem lock-in. The market conflates Apple's capital discipline (a strength) with AI irrelevance (incorrect). Apple's advantage isn't in foundational AI\u2014it's in on-device AI monetization to an installed base of 2B+ devices at peak attachment.",
+        "catalysts": [
+          "Q3 2026 earnings: Services revenue growth acceleration + guidance raising gross margin expectations, reframing Apple as defensive AI beneficiary rather than laggard",
+          "WWDC 2026 AI announcements (on-device, privacy-first positioning) resonating with enterprise and consumer demand for non-OpenAI alternatives",
+          "iPhone 18 pre-orders beat expectations with AI feature bundling (health, productivity, creativity), demonstrating installed base monetization path",
+          "Services subscriber additions exceed 1B (cumulative across all services), proving recurring revenue model is scaling, not stagnating",
+          "Margin expansion thesis vindication: competitors' AI capex begin visibly depressing their gross margins in H2 2026, while Apple reports stable/rising margins"
+        ],
+        "key_risks": [
+          "Apple's on-device AI proves underwhelming vs. cloud-based alternatives; market rejects privacy-first positioning, forcing Apple to license third-party LLMs at unfavorable economics",
+          "iPhone upgrade cycle weakens in 2026-2027 due to feature fatigue; installed base growth stalls, undermining Services growth thesis",
+          "Antitrust action against App Store/Services ecosystem (particularly in EU) forces margin-destroying changes to commission structures or bundling models",
+          "China market deterioration accelerates (geopolitical, competition from Huawei, local AI players) and Apple cannot offset with India growth fast enough",
+          "Generalist consensus re-rates Services as non-core/spin-off candidate, pressuring valuation multiple despite strong fundamentals",
+          "Macro recession or consumer demand cliff forces aggressive iPhone pricing, eroding installed base quality and Services monetization per user"
+        ],
+        "invalidates_if": [
+          "Services segment revenue growth turns negative or falls below 5% YoY for two consecutive quarters",
+          "Gross margins fall below 44% and management provides bearish guidance on Services margin trajectory",
+          "iPhone installed base metrics (market share, attach rate) show sustained deterioration in key markets (US, China, developed Asia)",
+          "Apple announces significant capex deployment for foundational AI/chip R&D that rivals competitors, suggesting defensive positioning is abandoning",
+          "Services pricing power erodes: ARPU (average revenue per user) declines YoY for 3+ quarters due to churn or mix shift",
+          "Market share loss to Android ecosystem in installed base in any quarter vs. prior year"
+        ],
+        "confidence": 7,
+        "evidence_quality": 6
+      },
+      "BAC": {
+        "thesis": "BAC's net interest margin will re-expand faster than consensus expects as Fed rate cuts stabilize, driving 15-20% EPS growth through 2025-26 while capital returns accelerate ahead of regulatory loosening.",
+        "consensus_view": "BAC trades as a mature, low-growth financial utility yielding ~2.8% with modest mid-single-digit earnings growth; market prices in continued NIM compression, modest loan growth, and regulatory constraints on buybacks; investors view the stock as a defensive dividend play with limited upside catalysts.",
+        "variant_view": "The market has overcorrected on recession fears and underestimates BAC's operating leverage on the margin side; deposit costs are finally stabilizing after 3 years of pressure, and with funding costs approaching equilibrium, even a stable rate environment will drive 25-50bps of NIM expansion. Capital deployment will accelerate faster than expected as CET1 ratios exceed regulatory minimums\u2014management has demonstrated discipline but current capital levels support $40-50B in shareholder returns over 2-3 years.",
+        "catalysts": [
+          "Q1/Q2 2024 earnings beats driven by stabilizing NIM as deposit beta normalizes downward",
+          "Fed guidance shift confirming soft landing\u2014triggers multiple re-rating for financials and NIM visibility extension",
+          "Fed stress test results showing capital capacity for accelerated buyback/dividend increases above current ~50% payout levels",
+          "Loan growth reacceleration in consumer/commercial segments as recession fears fade and credit quality stabilizes",
+          "Capital return announcement exceeding $15B annually\u2014signals management confidence in NIM durability",
+          "M&A announcement or efficiency initiative reducing costs below consensus estimates"
+        ],
+        "key_risks": [
+          "Deeper recession/unemployment spike forces credit losses above 25-50bps and loan growth negative\u2014impairs capital return capacity",
+          "Fed keeps rates higher for longer or hikes further; NIM compression resumes and deposit outflows accelerate",
+          "Regulatory pushback on capital distributions or surprise leverage ratio tightening constrains buyback flexibility",
+          "Net interest margin fails to stabilize and contracts another 50bps+; consensus downgrades earnings 10-15%",
+          "Competition from regional banks or fintechs erodes deposit franchises; net interest income declines despite rate stability",
+          "Valuation multiple compression if market reprices risk-free rates sharply higher or recession fears resurface"
+        ],
+        "invalidates_if": [
+          "NIM declines >25bps in next two quarters despite stable rate environment\u2014suggests structural deposit loss, not normalization",
+          "Fed signals prolonged restrictive stance and cuts guidance; earnings consensus falls to single-digit growth",
+          "Credit losses spike materially (charge-offs >75bps) signaling credit cycle inflection before NIM recovery realized",
+          "Capital return reduced or suspended due to regulatory action or stress test failure",
+          "Market price breaks below $50 with 10%+ declines in tangible book value per share",
+          "Deposit outflows accelerate and net interest income contracts despite existing rate environment"
+        ],
+        "confidence": 7,
+        "evidence_quality": 6
+      },
+      "UPS": {
+        "thesis": "UPS is emerging from a structural margin trough driven by wage inflation and Amazon deleverage, positioning the company for meaningful EPS expansion as pricing power reasserts and cost discipline takes hold.",
+        "consensus_view": "UPS is a mature, low-growth logistics utility facing secular headwinds from e-commerce saturation and labor cost inflation; investors price in mid-single-digit volume growth and modest margin recovery, with the stock valued as a defensive dividend play rather than a compounder.",
+        "variant_view": "UPS's recent management reset and operational restructuring (CEO transition, rationalization of Amazon exposure) represent a true inflection point. The company is at peak margin depression: labor costs are lapping prior-year increases, pricing has begun to stick in enterprise accounts, and margin expansion of 200+ bps is achievable over 24-36 months without revenue acceleration. The market underestimates both the durability of price increases and the operating leverage from network optimization.",
+        "catalysts": [
+          "2024 annual pricing increases and contract negotiations demonstrating pricing power despite macro softness",
+          "Q1-Q2 2024 earnings beat driven by better-than-expected margin expansion from operational efficiency initiatives",
+          "Analyst upgrades as EPS revisions inflect positive (currently consensus assumes margin compression or flat margins)",
+          "Guidance raise signaling confidence in structural margin improvement trajectory",
+          "Volume stabilization or modest growth in enterprise segments (non-Amazon) as economic uncertainty eases",
+          "Guidance for 2024-2025 FCF per share growth exceeding dividend growth, triggering multiple re-rating"
+        ],
+        "key_risks": [
+          "Recession or significant GDP contraction crushes volumes faster than pricing can offset, creating a margin squeeze trap",
+          "Amazon (still ~13-15% of revenue) further reduces shipment volume or demands rate cuts, undermining pricing power narrative",
+          "Labor costs remain sticky or union negotiations in 2025+ force wage concessions that reverse margin gains",
+          "FedEx and XPO gain market share through aggressive pricing, preventing UPS from maintaining price discipline",
+          "International/export softness persists longer than expected, dragging mix and limiting margin expansion",
+          "Capital intensity increases if network needs refresh faster than expected, pressuring FCF conversion"
+        ],
+        "invalidates_if": [
+          "Consensus volume growth expectations fall below 1-2% CAGR for 2024-2025, indicating structural demand destruction",
+          "UPS loses pricing power or is forced to accept rate decreases in annual negotiations with largest customers",
+          "Operating margins fall below 8-9% in next two quarters, suggesting cost structure issues are structural rather than temporary",
+          "Amazon announces >20% reduction in UPS usage or migrates material volume to in-house logistics",
+          "Competitive intensity spikes and UPS forced to trade price for volume, invalidating the margin expansion thesis"
+        ],
+        "confidence": 7,
+        "evidence_quality": 6
+      },
+      "PLD": {
+        "thesis": "PLD's defensive logistics real estate platform with essential-use tenants and long-duration leases offers sustainable dividend growth and inflation-hedged cash flows at a reasonable valuation, with significant upside from e-commerce normalization and AI data center demand acceleration.",
+        "consensus_view": "PLD is a mature, stable REIT with predictable mid-single-digit growth, modest 3-4% yields, and is being valued primarily as a defensive dividend play in a high-rate environment; the market views logistics real estate as mature with limited secular tailwinds post-pandemic e-commerce surge.",
+        "variant_view": "Market is underappreciating the duration and magnitude of e-commerce infrastructure underpenetration in secondary markets, significantly undervaluing data center logistics demand (power infrastructure, backup, last-mile server proximity) as AI capex sustains, and mispricing the pricing power PLD maintains with BBB-rated tenants during lease rollovers in a supply-constrained environment.",
+        "catalysts": [
+          "AI data center logistics demand materialization through formal tenant announcements and land/building designations for power-intensive uses",
+          "Quarterly lease spread widening acceleration above 20% amid constrained logistics supply and replacement cost inflation",
+          "Market rotation into inflation-linked real assets as bond yields stabilize, driving multiple re-rating of essential infrastructure",
+          "Major tenant (Amazon, XPO, FedEx) capacity expansion announcements that showcase market share gain",
+          "Acquisition of operating warehouses or logistics portfolios at attractive CAP rates, signaling management conviction on pricing power"
+        ],
+        "key_risks": [
+          "E-commerce penetration plateaus or reverses, reducing logistics square footage demand and lease renewal rates",
+          "Major recession triggers tenant bankruptcies and lease terminations among smaller, undercapitalized 3PLs",
+          "Rising interest rates push cap rates higher, compressing valuations faster than FFO growth can offset",
+          "Data center logistics trend remains niche and fails to materialize as meaningful earnings contributor within 12-18 months",
+          "Regulatory pressure on data center energy consumption leads to grid constraints or power cost spikes that reduce tenant demand"
+        ],
+        "invalidates_if": [
+          "PLD's same-store NOI growth turns negative for two consecutive quarters",
+          "Announced lease spreads compress to single digits or turn negative",
+          "Major tenant defection or covenant waiver announcement signals portfolio stress",
+          "Fed rate cuts accelerate dramatically and invert the inflation-hedge narrative, causing capital rotation into growth",
+          "Data center demand proves to be transient with large tenants consolidating rather than expanding footprints"
+        ],
+        "confidence": 7,
+        "evidence_quality": 6
+      },
+      "JNJ": {
+        "thesis": "JNJ is underappreciated for its defensive dividend moat and pharmaceutical pipeline upside, with near-term catalysts driving multiple re-rating as market rotates toward quality earnings stability.",
+        "consensus_view": "JNJ is a mature, slow-growth defensive blue-chip yielding ~2.5% with predictable earnings; valued fairly-to-rich on legacy franchise cash flows; limited upside catalyst; appropriate for risk-averse portfolios but not for growth investors.",
+        "variant_view": "Market is anchored to low single-digit pharma growth assumptions and underestimating: (1) pipeline breadth\u2014multiple Phase 3 assets in high-value indications with blockbuster potential; (2) consumer health spin-off optionality creating a cleaner pharma narrative; (3) durability of specialty/oncology franchises with pricing power; (4) the macro tailwind of quality rotation driving multiple expansion for defensive compounders with 5-7% organic growth, not 2-3%.",
+        "catalysts": [
+          "Pipeline catalysts: 2024-2025 regulatory decisions (IMBRUVICA label expansions, TREMFYA/STELARA data readouts, early oncology/immunology Phase 3 endpoints)",
+          "Kenvue spinoff completion and standalone healthcare benefits re-rating creating cleaner pharma story",
+          "Earnings estimate raises as immunology/oncology franchises offset patent cliff with better-than-expected growth",
+          "Dividend yield compression as institutional demand for quality defensive compounders drives multiple expansion in low-rate environment reversal",
+          "M&A optionality\u2014capital deployment into tuck-in acquisitions or share buybacks at attractive valuations",
+          "Immunology/Oncology revenue acceleration outpacing expectations as competitors face setbacks"
+        ],
+        "key_risks": [
+          "Patent cliff acceleration: IMBRUVICA, STELARA, REMICADE exclusivity losses drive faster-than-modeled revenue erosion",
+          "Pipeline execution risk: Phase 3 failures in late-stage programs (oncology, immunology, cardiovascular) reset growth trajectory",
+          "Pricing pressure: GLP-1 competitive dynamics, payer push-back on specialty pricing, biosimilar competition intensifies faster",
+          "Spinoff execution: Kenvue underperformance or dilutive capital allocation decisions undermine thesis",
+          "Macro recession: Defensive multiple expansion reverses if growth narrative re-emerges; dividend sustainability questions if capex pressured",
+          "Regulatory setback: FDA advisory committee concerns on immunology franchises, compliance issues"
+        ],
+        "invalidates_if": [
+          "JNJ's organic revenue growth decelerates below 2% on consistent basis (implies patent cliff materially worse than guided)",
+          "Free cash flow conversion deteriorates below 60% of net income due to capex/working capital pressures",
+          "Dividend cut or guidance withdrawal signals balance sheet stress or capital allocation crisis",
+          "Major pipeline Phase 3 failure in top-3 priority programs (immunology/oncology)",
+          "Multiple compression accelerates below 15x forward P/E despite defensive characteristics (suggests market repricing growth assumptions downward)",
+          "Kenvue spinoff valuation materially dilutes JNJ per-share value (>5% EPS accretion loss)"
+        ],
+        "confidence": 7,
+        "evidence_quality": 6
+      },
+      "EQIX": {
+        "thesis": "EQIX is significantly undervalued despite being the dominant global interconnection platform positioned to capture disproportionate value from AI infrastructure buildout, with management execution and data center utilization gains creating a multi-year re-rating opportunity as the market fully prices in secular margin expansion.",
+        "consensus_view": "EQIX is a mature, fairly-valued data center REIT with stable but modest growth; the market prices in incremental AI demand as a marginal upside but views it as mostly reflected in valuation; competitive intensity and capex requirements limit upside, making it a defensive yield play rather than a growth vehicle.",
+        "variant_view": "The market significantly underestimates EQIX's competitive moat in interconnection (vs. hyperscaler-owned capacity) and is discounting the company's ability to drive 400+ bps of gross margin expansion through higher density, power efficiency, and software monetization as AI workloads consolidate onto fewer, larger platforms; the company is transitioning from capex-intensive growth to cash-generative scaling with pricing power the market hasn't yet recognized.",
+        "catalysts": [
+          "2025-2026 earnings beats driven by unexpectedly high AI cabinet sell-through and pricing uplift in core IBX assets (particularly EMEA and APAC)",
+          "Software and services revenue acceleration (from xScale, MetaPort, and AI-adjacent offerings) exceeds 30%+ YoY growth, reshaping investor perception of earnings quality",
+          "Major hyperscaler or AI infrastructure customer announces multi-year capacity commitments at EQIX (following precedent of similar deals), validating secular demand thesis and justifying premium valuation",
+          "Management announces accretive M&A or partnership consolidating regional players, reducing fragmentation and improving utilization economics industry-wide",
+          "Gross margins expand to 65%+ (vs. 58% consensus), signaling operating leverage and forcing analyst PEG/ROIC model revisions upward"
+        ],
+        "key_risks": [
+          "Hyperscalers (AWS, Google, Meta) accelerate build-of-owned data center capacity, reducing EQIX's addressable market and pricing power; the interconnection model becomes commoditized at lower returns",
+          "Recession or AI capex cycle delay causes customer utilization to decline, forcing price cuts and impacting near-term cash flow; the company's leverage profile becomes problematic",
+          "Competitive pressure from smaller, nimble players (Digital Realty, CoreWeave, Lambda) eroding EQIX's pricing advantage in specific verticals or geographies; market share losses in AI-heavy segments",
+          "Power and cooling constraints in key markets (especially EMEA) constrain expansion and push customers to alternative providers with better density economics",
+          "Capital intensity remains higher than expected due to power infrastructure upgrades required for AI workloads, limiting FCF conversion and dividend growth"
+        ],
+        "invalidates_if": [
+          "EQIX loses material AI customer concentration (top 3 customers) to owned/alternative infrastructure within 12 months",
+          "Gross margins compress below 56% or fail to improve YoY for two consecutive quarters",
+          "Management guides to capex intensity above 35% of revenue for beyond 2026, signaling inability to reach cash generation inflection",
+          "A major market (APAC, EMEA) experiences significant customer churn or extended lease renegotiations at lower rates",
+          "The company's leverage ratio climbs above 5.5x Net Debt/EBITDA without clear deleveraging plan or dividend cut"
+        ],
+        "confidence": 7,
+        "evidence_quality": 7
+      }
+    },
+    "earnings": {
+      "JPM": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "MRK": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "MS": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "TGT": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "PANW": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "C": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "LIN": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "EOG": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "WFC": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "TJX": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "UPS": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "AMGN": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "EQIX": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "PLD": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "LLY": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "JNJ": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "AMT": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "GS": {
+        "next_earnings_est": "2026-07-14",
+        "earnings_alpha_score": 7,
+        "beat_probability": "MEDIUM-HIGH",
+        "guidance_raise_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (2026-07-14) - higher bond yields typically expand fixed income trading margins and investment banking revenue",
+          "Fed rate hike expectations - GS benefits from higher rate environment through net interest margin expansion and fixed income derivative trading",
+          "Investment banking activity acceleration - elevated yields may trigger M&A repricing and capital markets access improvements",
+          "Geopolitical premium normalization - Iran war energy shock may ease, affecting commodity price volatility and trading desk profitability",
+          "Institutional client risk appetite reset - rising rates typically correlate with increased advisory and underwriting demand"
+        ],
+        "expected_move_pct": 5.2
+      },
+      "BAC": {
+        "next_earnings_est": "2026-07-14",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "MEDIUM",
+        "key_catalysts_90d": [
+          "Q2 2026 earnings report (2026-07-14) \u2014 net interest margin trends, loan loss provision guidance amid potential recession signals",
+          "Fed interest rate policy signals \u2014 market expectations for rate cuts through 3Q 2026 impact NII guidance",
+          "Credit quality deterioration risk \u2014 C&I loan delinquencies and consumer credit stress visible in provision guidance",
+          "Capital allocation announcements \u2014 buyback pace and dividend sustainability under stress scenario",
+          "Regulatory capital ratio commentary \u2014 stress test positioning and CET1 buffer adequacy"
+        ],
+        "expected_move_pct": 3.5
+      },
+      "AAPL": {
+        "next_earnings_est": "2026-07-30",
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_raise_probability": "LOW",
+        "guidance_cut_probability": "MEDIUM",
+        "key_catalysts_90d": [
+          "Q3 FY2026 earnings report (2026-07-30) - Services growth trajectory and gross margin sustainability under AI capex pressure",
+          "iPhone 18 launch cycle timing signals (likely Sep 2026) - pre-announcement color on AI feature adoption and pricing strategy",
+          "Apple Intelligence feature rollout completion and user adoption metrics - critical for Services TAM expansion thesis",
+          "Mac/iPad AI-enabled product updates - refresh cycle commentary and revenue contribution",
+          "Guidance for Q4 FY2026 (holiday season) - demand signals amid macro uncertainty and potential margin headwinds from AI R&D spending",
+          "Capital return program update - potential acceleration if FCF concerns emerge from AI infrastructure costs",
+          "Gross margin commentary - direct exposure to Goldman's profitability erosion thesis from accelerating AI investments"
+        ],
+        "expected_move_pct": 2.8
+      }
+    },
+    "devils_advocate": {
+      "MRK": {
+        "bear_case": "Merck is a mature pharma company attempting to execute a complex multi-asset oncology pivot while facing an inevitable Keytruda patent cliff (peak sales ~$18B annually, beginning decline 2028-2030). The bull thesis depends on: (1) unproven pipeline assets (MK-1084, pralsetinib combinations) achieving superior efficacy in crowded oncology markets dominated by Roche, Bristol Myers Squibb, and AstraZeneca with entrenched positions; (2) emerging market HPV vaccine growth offsetting oncology delays, despite historical price compression in these regions; (3) flawless simultaneous commercial execution across 4-5 new launches 2025-2027 while Keytruda revenue decelerates. The market is correctly skeptical because: Merck's recent oncology track record is mixed (Lenvima partnerships underperformed, MSD Japan franchise stagnating), MK-1084 is a \"me-too\" HER2-low ADC in a crowded field (Roche, BMS, Daiichi all have superior clinical data or earlier launches), and pralsetinib is a niche RET inhibitor with limited TAM (~4,000 RET-positive lung cancer patients/year in major markets). The thesis requires investors to ignore that: (a) Keytruda's durability as monotherapy is actually *positive* for patient outcomes but *negative* for pipeline urgency\u2014if Keytruda continues working well, oncologists delay switching to experimental combinations; (b) emerging market HPV margins are already compressed and face generic competition from Serum Institute and Moderna; (c) the company has not articulated a credible $80B+ revenue run-rate post-2030, implying significant shareholder value destruction. A permanent capital loss occurs if pipeline assets underwhelm (realistic, <40% phase 3 success rates in oncology), Keytruda revenue declines faster than replacement, and macro contraction forces multiple compression from 14x to 11x forward earnings.",
+        "weakest_assumptions": [
+          "MK-1084 HER2-low breast cancer TAM expansion claim: Roche's Phesgo/Herceptin already dominate HER2+ space; HER2-low is smaller, more heterogeneous population with lower clinical motivation to treat versus hormone therapy; competitive ADCs (Roche's tirzepatide ADC, Daiichi's Enhertu expansions) have earlier data maturity.",
+          "Pralsetinib ramp trajectory and competitive moat: RET-driven cancers are rare (~3-5% of lung, <1% of other solid tumors); Lilly's selpercatinib (Retevmo) already dominates RET+ space with superior efficacy data and label breadth; pralsetinib is a second-mover with limited differentiation; TAM expansion from new indications unlikely to exceed 500M-1B annually.",
+          "Emerging market HPV penetration and royalty leverage: HPV vaccine adoption is price-elastic and government-dependent; Merck's Gardasil faces margin pressure from Serum Institute (India), Medicago (Canada), and Moderna's mRNA platform entering 2025-2026; \"hidden earnings leverage\" is speculative\u2014royalties from Eisai partnerships are already modeled by Street; penetration rates in SE Asia are constrained by reimbursement, not product quality."
+        ]
+      },
+      "PANW": {
+        "bear_case": "PANW is a $67B market-cap company priced for flawless execution on platform consolidation ROI at 30%+ revenue growth through 2026, yet the bull case rests on three unproven assumptions that are increasingly likely to fail: (1) Enterprise customers will achieve measurable cost/efficiency gains from consolidating 8-12 point solutions into PANW's platform\u2014but procurement velocity is slowing (CFO austerity cycles), and early data shows customers are adopting modules in \u00e0-la-carte fashion without ripping-and-replacing incumbents, leaving consolidation ROI unproven at scale. (2) PANW can defend mid-market ($100M-$500M) against Microsoft's bundled Defender + Sentinel + Copilot stack, which has 95%+ enterprise deployment and is incrementally free via EA; Microsoft's unbundling economics and distribution moat are materially underestimated by the market. (3) AI-native security capabilities (Copilot, threat intelligence automation) will remain proprietary and defensible\u2014but the competitive gap to CrowdStrike, Cloudflare, and hyperscaler-native solutions is narrowing, and commoditization risk in cloud-native workloads is acute. The stock is +67% YTD on momentum and flow, not fundamental repricing. If platform NRR stalls at 115-120% (vs. 125%+ bull assumption), or if Microsoft discloses >40% attach rates in mid-market by Q4 2025, PANW re-rates to 6-8x revenue (35-45% downside). Current 15-17x revenue multiple reflects zero margin for error.",
+        "weakest_assumptions": [
+          "Net Revenue Retention will inflect to 125%+ through 2026 as platform consolidation accelerates\u2014but customer procurement is slowing due to CFO budget discipline, and early adoption data shows customers are cherry-picking modules rather than consolidating, suggesting NRR will plateau at 115-120% and revenue growth decelerates to 15-20% by 2026.",
+          "Consolidation ROI is compelling enough to displace Fortinet, Cisco, and Palo Alto Networks' own legacy products at scale\u2014but cost-of-ownership models show customers save only 15-25% vs. best-of-breed alternatives, below the 35-40% hurdle needed to justify multi-year commitments and rip-and-replace projects.",
+          "PANW can defend SMB/Mid-Market against Microsoft's bundled security stack\u2014but Defender + Sentinel pricing under EA is effectively $0.50-$1.50 per user, vs. PANW's $8-$15 per user for full platform, and CIOs will default to Microsoft given integration with Office 365, Azure, and procurement simplicity.",
+          "AI features (Copilot, generative threat intelligence) will remain differentiated and command premium pricing\u2014but competitors are closing capability gaps rapidly, and hyperscaler-native security (AWS GuardDuty, Google Chronicle) will commoditize AI-powered detection within 12-18 months.",
+          "Operating margins expand to 50%+ by FY26 due to software leverage\u2014but sales & marketing spend required to combat Microsoft and drive platform consolidation will remain elevated, and gross margins may compress if deal mix shifts downmarket to compete with Microsoft's bundled pricing."
+        ]
+      },
+      "JPM": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "TGT": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "MS": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "C": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "GS": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "LIN": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "EOG": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "WFC": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "TJX": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "UPS": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "PLD": {
+        "bear_case": "PLD is a mature, low-growth REIT trading at a premium valuation (likely 20-22x FFO) that is attempting to retrofit a defensive logistics narrative onto what is fundamentally a commoditized warehouse platform facing structural headwinds. The bull case requires belief in three simultaneous tail events: (1) AI data center logistics becoming material to earnings within 18 months despite representing <2% of portfolio today, (2) e-commerce lease spreads widening sustainably above 20% in a market where supply constraints are easing as logistics construction normalizes post-pandemic, and (3) interest rate stabilization allowing multiple expansion despite PLD's duration-sensitive cash flows. The company's 2.5-3% yield provides minimal margin of safety. Any recession triggers immediate tenant stress among 3PL operators with weak balance sheets, lease terminations accelerate faster than FFO growth can offset cap rate expansion, and the stock becomes a value trap with structural dividend cut risk. The data center narrative is opportunistic marketing around a negligible business segment.",
+        "weakest_assumptions": [
+          "AI data center logistics demand materializes as >5-10% of earnings within 12-18 months\u2014current tenant announcements are speculative and power infrastructure constraints may prevent scale",
+          "Lease spread expansion remains >20% YoY as new supply completions normalize and logistics cap rates compress\u2014pandemic-era spreads were anomalous, not sustainable",
+          "BBB-rated tenant base maintains pricing power during lease rollovers in a supply-constrained environment\u2014marginal supply additions, customer consolidation, and tenant automation pressure rents downward",
+          "Replacement cost inflation remains elevated and supports cap rate compression\u2014replacement costs are moderating, and if anything, higher cap rates reflect investor caution, not confidence",
+          "E-commerce penetration continues expanding and requires net incremental square footage\u2014penetration growth is slowing, and logistics operators are rightsizing and automating rather than expanding square footage per dollar of GMV"
+        ],
+        "hidden_risks": [
+          "PLD's portfolio is overexposed to Amazon, which operates its own logistics network and is actively de-leasing 3PL capacity as penetration matures\u2014tenant concentration risk and lease termination optionality",
+          "Rising power costs and grid constraints in core markets (Texas, California, Arizona) reduce data center tenant willingness to pay premium rents, directly capping upside on the 'AI narrative'",
+          "Secular shift toward smaller, faster-turning fulfillment networks and automation reduces absolute logistics square footage demand per dollar of e-commerce revenue\u2014the 'underpenetration' thesis confuses density with demand",
+          "PLD's institutional ownership and analyst coverage suggest limited inefficiency; the market is not 'underappreciating' data center logistics\u2014it is correctly pricing it as unproven and immaterial",
+          "Dividend sustainability is at risk if FFO growth turns negative; dividend cuts in REITs are stigmatizing and trigger forced selling by income-focused investors, creating a cascade risk"
+        ],
+        "crowding_risk": "HIGH",
+        "valuation_risk": "HIGH",
+        "catalyst_failure_probability": "HIGH",
+        "overall_risk_score": 7,
+        "recommend_reject": true
+      },
+      "AMGN": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "EQIX": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "AAPL": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "LLY": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "JNJ": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "BAC": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "AMT": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      }
+    },
+    "position_reviews": {
+      "LIN": {
+        "hold_score": 7,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "catalysts_played_out": false,
+        "recommended_action": "HOLD",
+        "reasoning": "LIN's thesis remains fundamentally sound. The composite quant score of 86.7 is strong, momentum at 81.6 shows positive technicals, and low beta (0.09) confirms defensive characteristics aligned with thesis. Recent 1M/3M returns (2.33%/6.34%) suggest gradual accumulation rather than thesis exhaustion. Energy transition capex cycles remain structural and multi-year. No catalysts have materialized yet\u2014expect meaningful moves from: (1) broader capex spending announcements (especially hydrogen/renewables infrastructure), (2) industrial gas margin expansion as volumes stabilize post-inflation, (3) potential multiple re-rating if recession proves shallow. Risk: valuation premium depends on economic resilience; meaningful slowdown could pressure multiples despite stable earnings. Current 2.9% gain leaves room for appreciation. Hold conviction at 7/10 justified by defensive positioning and unfolding energy transition dynamics. Monitor for deteriorating industrial production data as early warning signal."
+      },
+      "MS": {
+        "hold_score": 7,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "catalysts_played_out": false,
+        "recommended_action": "HOLD",
+        "reasoning": "MS thesis remains structurally sound. Investment banking and wealth management normalization are multi-year narratives, not single-event catalysts. Quant composite (91.6) and momentum (100.0) both strong, with price above both 50MA and 200MA confirming uptrend. YTD performance (+38.95% 3M) suggests some alpha has been captured but not exhausted\u2014consensus earnings estimates for wealth management AUM growth and advisory fee normalization likely still conservative given structural tailwinds in affluent client acquisition. Risk has moderately increased: elevated beta (1.24) and high volatility (26.9%) mean drawdowns could be sharp in rate-cut disappointment or recession scenarios. However, position size is micro (0.215 shares), limiting portfolio impact. No news vacuum is neutral; lack of negative headlines in resilient macro backdrop is supportive. Remain positioned; catalyst runway extends through 2025 earnings season. Monitor quarterly wealth management metrics and AUM trends for thesis validation."
+      },
+      "EOG": {
+        "hold_score": 5,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "catalysts_played_out": false,
+        "recommended_action": "HOLD",
+        "reasoning": "EOG's core thesis\u2014low-cost upstream assets + disciplined capital allocation\u2014remains structurally sound. Composite score of 71.8 is healthy, and above-200MA positioning suggests technical stability. However, several concerns warrant caution: (1) Low confidence level (6/10) suggests thesis conviction was already tempered; (2) Negative beta (-1.02) in current market suggests defensive positioning, reducing upside leverage if energy rebounds; (3) Momentum weakening (67.4 is solid but not strong), with muted 1M/3M returns (1.27%/3.08%) indicating thesis may already be pricing in some value; (4) No recent catalysts visible\u2014transition fears that suppress valuations persist as a headwind with no clear event to reverse them. Alpha exists but appears modest given current positioning. Risk hasn't materially increased, but catalysts appear distant. Position remains defensible on fundamentals but lacks near-term momentum. Recommend holding current size while monitoring for: (a) commodity cycle inflection, (b) management capital allocation announcements, or (c) shift in energy sentiment. Not a reduce/exit case yet, but also not a core conviction hold."
+      },
+      "BAC": {
+        "hold_score": 7,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "catalysts_played_out": false,
+        "recommended_action": "HOLD",
+        "reasoning": "BAC thesis remains fundamentally sound but entering a re-evaluation phase. Current backdrop: (1) Quantitative profile is robust (composite 85.1, momentum 93.9, valuation 83.3) with price momentum supporting near-term strength; (2) Original thesis drivers still valid\u2014NIM stabilization post-rate-cut cycle remains intact, regulatory capital environment has loosened vs 2026 entry, and deposit franchise remains competitive; (3) Recent 1M/3M returns (12.98%/20.53%) suggest some momentum has already materialized, reducing remaining alpha cushion from 'HIGH' to 'MEDIUM'; (4) Critically, no invalidating conditions triggered\u2014unemployment manageable, deposit flows stable, credit metrics clean; (5) However, catalysts are gradually playing out: Fed rate path clarity is improving (removing recession fear premium that originally anchored the thesis), and regulatory capital deployment is becoming priced-in as expected. Key risks to monitor: sustained labor market deterioration (unemployment >5%), unexpected deposit competition/beta acceleration, or regulatory headwinds. Position shows small unrealized gain (+1.0%) despite strong relative performance, suggesting valuation has partially caught up to thesis. Recommend HOLD with quarterly rebalance trigger if (a) unemployment breaks above 5.0%, (b) NIM guidance disappoints, or (c) capital return schedule lags guidance."
+      },
+      "GS": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "catalysts_played_out": false,
+        "recommended_action": "HOLD",
+        "reasoning": "GS thesis remains structurally sound: elevated Treasury yields (19-year highs) and bond market volatility create genuine tailwinds for fixed income trading and investment banking\u2014core GS revenue drivers. The rate-hiking cycle appears intact with elevated core inflation, supporting thesis validity. However, recent performance (+11.7% 1M, +36.5% 3M) suggests meaningful catalyst execution has already occurred, compressing remaining alpha availability to MEDIUM. Valuation metrics remain weak (val=30.0), indicating limited re-rating runway despite operational improvements. Risk has increased with momentum-driven gains and beta=1.59 amplifying downside in any rate normalization shock. The 50/200-day thesis remains supported, but position up 7.4% at substantial size (0.0396 shares) warrants caution against FOMO-induced holding. Recommend: HOLD current position with trailing stop at 5% loss threshold, as near-term catalysts (Q2 earnings, continued volatility) should materialize within 1-2 quarters. Reassess if composite score drops below 60 or if Fed signals rate pause earlier than currently priced."
+      },
+      "AAPL": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "recommended_action": "HOLD",
+        "reasoning": ""
+      },
+      "PANW": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "catalysts_played_out": false,
+        "recommended_action": "HOLD",
+        "reasoning": "PANW thesis remains structurally sound but faces execution headwinds. Positive signals: 67.42% 3M return and 100.0 momentum suggest market validation of consolidation narrative; composite score of 73.5 indicates quality fundamentals intact; 30%+ revenue growth thesis still achievable through 2025-26 given AI security demand tailwinds. However, alpha is contracting: (1) Momentum-driven gains (100.0) are consensus-reflecting rather than mispriced\u2014early-mover advantage on AI thesis has compressed; (2) Microsoft competitive threat remains unquantified in current quant metrics; (3) No recent news prevents assessment of NRR trends, guidance resilience, or AI module adoption velocity\u2014critical monitoring points for your invalidation criteria. Risk assessment: 52.8% volatility + 1.16 beta suggest elevated drawdown risk if any guidance cut materializes. The position is fundamentally sound but repriced higher; remaining alpha is execution-dependent (NRR >120%, billings momentum, Microsoft containment) rather than discovery-based. Small position size (0.14 shares) limits impact but warrants tight monitoring on quarterly NRR/billings data and competitive positioning. Hold as long as quarterly metrics validate consolidation thesis; reduce on first sign of NRR decline or Microsoft market share losses in endpoint/cloud workloads."
+      },
+      "LLY": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "recommended_action": "HOLD",
+        "reasoning": ""
+      }
+    },
+    "portfolio_manager_proposed": [],
+    "cro": {
+      "approved": true,
+      "risk_budget_used": 0,
+      "largest_risk": "none",
+      "rejected_tickers": [],
+      "reasoning": "No trades to evaluate."
+    },
+    "final_decisions": [],
+    "timestamp": "2026-06-15T13:50:06.359248+00:00",
+    "kill_switch_active": false,
+    "market_data_source": "market_snapshot_file",
+    "market_data_date": "2026-06-15",
+    "portfolio_snapshot": {
+      "cash": 169.98,
+      "total_value": 502.5932695818,
+      "positions": [
+        {
+          "symbol": "AAPL",
+          "qty": 0.135837,
+          "available_qty": 0.135837,
+          "avg_price": 292.11,
+          "current_price": 295.15,
+          "market_value": 40.092291,
+          "unrealized_pnl": 0.412944
+        },
+        {
+          "symbol": "MS",
+          "qty": 0.215357,
+          "available_qty": 0.215357,
+          "avg_price": 213.55,
+          "current_price": 217.8,
+          "market_value": 46.904755,
+          "unrealized_pnl": 0.915267
+        },
+        {
+          "symbol": "BAC",
+          "qty": 0.72802,
+          "available_qty": 0.72802,
+          "avg_price": 55.52,
+          "current_price": 56.06,
+          "market_value": 40.812801,
+          "unrealized_pnl": 0.393131
+        },
+        {
+          "symbol": "EOG",
+          "qty": 0.247912,
+          "available_qty": 0.247912,
+          "avg_price": 141.14,
+          "current_price": 131.705,
+          "market_value": 32.65125,
+          "unrealized_pnl": -2.33905
+        },
+        {
+          "symbol": "LIN",
+          "qty": 0.087592,
+          "available_qty": 0.087592,
+          "avg_price": 504.95,
+          "current_price": 519.415,
+          "market_value": 45.496599,
+          "unrealized_pnl": 1.267018
+        },
+        {
+          "symbol": "GS",
+          "qty": 0.039584,
+          "available_qty": 0.039584,
+          "avg_price": 1006.72,
+          "current_price": 1081.045,
+          "market_value": 42.792085,
+          "unrealized_pnl": 2.942081
+        },
+        {
+          "symbol": "LLY",
+          "qty": 0.038668,
+          "available_qty": 0.038668,
+          "avg_price": 1164.53,
+          "current_price": 1115.7,
+          "market_value": 43.141888,
+          "unrealized_pnl": -1.888158
+        },
+        {
+          "symbol": "PANW",
+          "qty": 0.144413,
+          "available_qty": 0.144413,
+          "avg_price": 277.19,
+          "current_price": 281.97,
+          "market_value": 40.720134,
+          "unrealized_pnl": 0.690294
+        }
+      ]
+    }
   }
 ]
