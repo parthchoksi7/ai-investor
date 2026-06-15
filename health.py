@@ -11,6 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HEALTH_FILE = "system_health.json"
+# Append-only run history (B16): system_health.json is overwritten each run, so
+# aborted/degraded runs leave no trace for an uptime/abort-rate base rate. Each
+# save() also appends a compact one-line record here so those rates become
+# computable over the deployment window. Append-only — never rewritten.
+HEALTH_HISTORY_FILE = "health_history.jsonl"
 
 # Status levels (ordered by severity)
 OK        = "OK"
@@ -67,7 +72,26 @@ class HealthTracker:
         tmp = HEALTH_FILE + ".tmp"
         Path(tmp).write_text(json.dumps(data, indent=2))
         Path(tmp).replace(HEALTH_FILE)  # atomic
+        _append_history(data)
         return data
+
+
+def _append_history(data: dict) -> None:
+    """Append one compact line per run to HEALTH_HISTORY_FILE (B16). Best-effort —
+    a history-logging failure must never affect the run or the authoritative
+    system_health.json write."""
+    try:
+        row = {
+            "run_id":         data.get("run_id"),
+            "date":           data.get("date"),
+            "timestamp":      data.get("timestamp"),
+            "overall_status": data.get("overall_status"),
+            "n_alerts":       len(data.get("alerts", []) or []),
+        }
+        with open(HEALTH_HISTORY_FILE, "a") as f:
+            f.write(json.dumps(row) + "\n")
+    except Exception:
+        pass
 
 
 def load_last_health() -> dict:

@@ -244,13 +244,18 @@ def run_daily_cycle():
     # purchase, the other side. Flag-and-allow: a wash sale only defers the loss,
     # so a risk/conviction exit must not be blocked to preserve tax timing. The
     # annotation rides on the SELL decision into pending_decisions.json for audit.
-    decisions, washsale_flagged = flag_wash_sale_presale(
-        decisions, market_data["prices"], transactions=_txs)
-    if washsale_flagged:
-        health.record("wash_sale_presale", DEGRADED,
-                      message=f"{len(washsale_flagged)} loss SELL(s) within 30d of "
-                              "purchase flagged (allowed; loss deferred per §1091)",
-                      flagged=washsale_flagged)
+    # OBSERVATIONAL/annotation only — must never break the trade path. A failure
+    # here leaves decisions exactly as the blocking guardrails produced them.
+    try:
+        decisions, washsale_flagged = flag_wash_sale_presale(
+            decisions, market_data["prices"], transactions=_txs)
+        if washsale_flagged:
+            health.record("wash_sale_presale", DEGRADED,
+                          message=f"{len(washsale_flagged)} loss SELL(s) within 30d of "
+                                  "purchase flagged (allowed; loss deferred per §1091)",
+                          flagged=washsale_flagged)
+    except Exception as _e:
+        print(f"   ⚠ wash-sale pre-sale flag skipped: {_e}")
 
     for r in holding_rejected + reentry_rejected + sector_rejected + netedge_rejected:
         validation_report["rejected"].append(
@@ -395,6 +400,15 @@ def run_daily_cycle():
             print(f"   🧮 Logged {_n_fc} forecast(s) to forecasts.jsonl")
     except Exception as _e:
         print(f"   ⚠ forecast logging skipped: {_e}")
+
+    # Reproducibility manifest (#A12) — resolved model snapshots + token usage +
+    # sampling params + verbatim prompts for this run. Observational; never raises.
+    try:
+        from analysis import export_reproducibility
+        export_reproducibility(run_id=run_id, date=today)
+        print("   🔁 Reproducibility manifest written (reproducibility.json)")
+    except Exception as _e:
+        print(f"   ⚠ reproducibility manifest skipped: {_e}")
 
     with open("pending_decisions.json", "w") as _f:
         _json.dump({

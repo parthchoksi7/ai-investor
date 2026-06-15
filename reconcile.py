@@ -245,8 +245,29 @@ def reconcile_crash_state(apply: bool = False, pending_path: str = PENDING,
     if apply:
         report["applied"] = _apply_safe_remediation(report, pending, pending_path)
 
+    _record_health(report)
     _write_and_print(report, pending)
     return report
+
+
+def _record_health(report: dict) -> None:
+    """Surface the reconciliation result to system_health.json so the existing
+    alert workflow (alert.yml) can open/append an issue. MANUAL_REQUIRED → FAILED
+    (pages a human); the auto-resolvable cases → DEGRADED (informational). The
+    routine must commit+push system_health.json after a crash-state preflight for
+    the alert to fire — see DEPLOYMENT.md. Best-effort; never raises."""
+    cls = report.get("classification")
+    if cls in (NO_CRASH, None):
+        return
+    try:
+        from health import append_check, FAILED, DEGRADED
+        status = FAILED if cls == MANUAL_REQUIRED else DEGRADED
+        append_check("crash_reconciliation", status,
+                     message=report.get("recommended_action", "")[:300],
+                     classification=cls, counts=report.get("counts"),
+                     run_id=report.get("run_id"))
+    except Exception:
+        pass
 
 
 def _apply_safe_remediation(report: dict, pending: dict, pending_path: str) -> bool:

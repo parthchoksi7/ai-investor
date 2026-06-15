@@ -2630,6 +2630,85 @@ class TestDeliberationStats:
         assert o["turnover"]["sell_notional"] == 220.0
 
 
+class TestHealthHistory:
+    """B16: every save() appends one compact line to the append-only history."""
+
+    def test_save_appends_history(self, tmp_path, monkeypatch):
+        import health
+        monkeypatch.setattr(health, "HEALTH_FILE", str(tmp_path / "h.json"))
+        monkeypatch.setattr(health, "HEALTH_HISTORY_FILE", str(tmp_path / "hist.jsonl"))
+        for i in range(2):
+            t = health.HealthTracker(f"r{i}", "2026-06-15")
+            t.record("step", health.OK if i == 0 else health.FAILED, "" if i == 0 else "boom")
+            t.save()
+        import json
+        lines = [json.loads(l) for l in open(str(tmp_path / "hist.jsonl"))]
+        assert len(lines) == 2
+        assert lines[0]["overall_status"] == "OK"
+        assert lines[1]["overall_status"] == "FAILED" and lines[1]["n_alerts"] == 1
+
+
+class TestReproducibilityManifest:
+    """A12: per-call resolved model + usage recording, and the export manifest."""
+
+    class _FakeUsage:
+        input_tokens = 100
+        output_tokens = 50
+        cache_read_input_tokens = 80
+        cache_creation_input_tokens = 0
+
+    class _FakeResp:
+        model = "claude-haiku-4-5-20251001"
+        usage = None
+        def __init__(self):
+            self.usage = TestReproducibilityManifest._FakeUsage()
+
+    def test_record_call_accumulates(self):
+        import analysis
+        analysis._RUN_MANIFEST["calls"].clear()
+        analysis._record_call("claude-haiku-4-5-20251001", 600, self._FakeResp())
+        analysis._record_call("claude-haiku-4-5-20251001", 800, self._FakeResp())
+        c = analysis._RUN_MANIFEST["calls"]["claude-haiku-4-5-20251001"]
+        assert c["n_calls"] == 2 and c["input_tokens"] == 200 and c["output_tokens"] == 100
+        assert c["cache_read_tokens"] == 160
+        assert "claude-haiku-4-5-20251001" in c["resolved_models"]
+        assert sorted(c["max_tokens_seen"]) == [600, 800]
+
+    def test_record_call_never_raises_on_bad_response(self):
+        import analysis
+        analysis._RUN_MANIFEST["calls"].clear()
+        analysis._record_call("m", 600, object())   # no .model / .usage attrs
+        assert analysis._RUN_MANIFEST["calls"]["m"]["n_calls"] == 1
+
+    def test_export_writes_manifest_and_prompts(self, tmp_path):
+        import analysis, json
+        analysis._RUN_MANIFEST["calls"].clear()
+        analysis._record_call("claude-sonnet-4-6", 1200, self._FakeResp())
+        path = str(tmp_path / "repro.json")
+        m = analysis.export_reproducibility(path=path, prompts_dir=str(tmp_path / "prompts"),
+                                            run_id="r1", date="2026-06-15")
+        assert m["run_id"] == "r1" and m["models"]["smart"] == "claude-sonnet-4-6"
+        assert "cro" in m["prompts"] and len(m["prompts"]["cro"]["sha256_16"]) == 16
+        assert m["calls"]["claude-sonnet-4-6"]["n_calls"] == 1
+        on_disk = json.load(open(path))
+        assert on_disk["sampling"]["temperature"].startswith("api_default")
+
+
+class TestReconcileHealthRecord:
+    """A7: a crash reconciliation writes a health check for the alert path."""
+
+    def test_manual_required_records_failed(self, tmp_path, monkeypatch):
+        import reconcile, health, json
+        monkeypatch.setattr(health, "HEALTH_FILE", str(tmp_path / "h.json"))
+        monkeypatch.setattr(health, "HEALTH_HISTORY_FILE", str(tmp_path / "hist.jsonl"))
+        reconcile._record_health({"classification": reconcile.MANUAL_REQUIRED,
+                                  "recommended_action": "human needed",
+                                  "counts": {}, "run_id": "r1"})
+        h = json.load(open(str(tmp_path / "h.json")))
+        assert h["checks"]["crash_reconciliation"]["status"] == "FAILED"
+        assert h["overall_status"] == "FAILED"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Deploy gate — RELEASE_NOTES.md must be maintained (DEPLOYMENT.md §7.0.1)
 # ─────────────────────────────────────────────────────────────────────────────
