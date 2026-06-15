@@ -149,8 +149,12 @@ GUARD 2 — Idempotency:
 GUARD 3 — Execution claim (cross-attempt partial-fill protection):
   If pending_decisions["execution_started_at"] is not null, STOP immediately.
   A prior attempt STARTED placing orders and crashed before stamping executed_at.
-  Orders may have been placed. Re-running would risk double-fills. Recover manually
-  via Scenario B in CLAUDE.md (diff actual get_equity_positions against targets).
+  Orders may have been placed. Re-running would risk double-fills. Recover via the
+  automated reconciler FIRST (DEPLOYMENT.md §9.3): `python reconcile.py` diffs live
+  broker positions against the intended orders and classifies NONE_FILLED /
+  ALL_FILLED / MANUAL_REQUIRED; `python reconcile.py --apply` then stamps (ALL_FILLED)
+  or clears the stale claim (NONE_FILLED). Only fall back to the manual position diff
+  / emergency stamp (DEPLOYMENT.md §9.4) if it returns MANUAL_REQUIRED.
 
 Read decisions from pending_decisions["decisions"] (the nested array, not the root object).
 
@@ -308,3 +312,11 @@ git push || echo "WARNING: git push failed — trades executed but artifacts not
    non-null claim dated today as SKIP/DONE. If the claim push fails after one rebase retry, the
    attempt STOPS without placing orders — the system now fails toward missed trades, never
    duplicate trades. Crash-mid-execution recovery is Scenario B (position diff), never re-run.
+
+## What changed — Jun 15 2026
+
+1. **GUARD 3 recovery pointer → automated reconciler.** Now that A7 shipped
+   `reconcile.py`, GUARD 3 points at the automated crash-state recovery (DEPLOYMENT.md
+   §9.3: `reconcile.py` / `--apply`) as the first step, with the manual position-diff /
+   emergency stamp (§9.4) reserved for the `MANUAL_REQUIRED` case. Cosmetic doc-sync —
+   GUARD 3's functional job is unchanged (STOP on a non-null `execution_started_at`).
