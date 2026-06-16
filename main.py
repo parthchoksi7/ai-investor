@@ -430,6 +430,10 @@ def run_daily_cycle():
         "total_value": portfolio["total_value"],
         "positions":   portfolio["positions"],
     }
+    # T2.1: net-edge gate rejection count — logged per run so deliberation_stats
+    # can report how often the gate drops a BUY (validates it isn't silently
+    # starving the book; a live gate with zero measured effect is its own risk).
+    pipeline_state["net_edge_rejected"] = len(netedge_rejected)
     record_run(run_id, pipeline_state)
     print(f"   📋 Agent log written (run_id={run_id})")
 

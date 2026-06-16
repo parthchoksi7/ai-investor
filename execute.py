@@ -122,6 +122,10 @@ TRADE_LOG_FIELDS = [
     "date", "strategy", "ticker", "action", "qty", "price", "total_value",
     "target_weight", "portfolio_value", "rationale", "broker_order_id", "dry_run",
     "run_id",  # reconciliation key — journal.mark_transactions_live rewrites this run's rows against broker fills
+    # A5: slippage capture — actual fill vs. same-day close (data clock starts here).
+    # fill_price: broker's average_price from the order response (blank if not yet filled).
+    # slippage_bps: (fill_price / close_price - 1) * 10000; negative = favorable.
+    "fill_price", "slippage_bps",
     # Paper-shadow (100x) columns — a hypothetical $50,000 book trading the same
     # names at the same prices. qty/value/portfolio scale by SHADOW_MULTIPLIER;
     # price and target_weight are deliberately not scaled. Backfilled for old
@@ -220,9 +224,19 @@ def log_trades(
 
             total_value = round(qty * price, 2) if qty and price else None
 
-            # Extract Robinhood order ID from execution results if available
+            # Extract Robinhood order ID and fill price from execution results.
             raw_result  = (broker_order_ids or {}).get(ticker, {})
             order_id    = raw_result.get("id", "") if isinstance(raw_result, dict) else ""
+
+            # A5: slippage capture — broker's average_price vs. same-day close.
+            fill_price_raw = raw_result.get("average_price") if isinstance(raw_result, dict) else None
+            try:
+                fill_price = float(fill_price_raw) if fill_price_raw else None
+            except (TypeError, ValueError):
+                fill_price = None
+            slippage_bps = None
+            if fill_price and price:
+                slippage_bps = round((fill_price / price - 1) * 10_000, 2)
 
             writer.writerow({
                 "date":            today,
@@ -238,6 +252,8 @@ def log_trades(
                 "broker_order_id": order_id,
                 "dry_run":         str(DRY_RUN),
                 "run_id":          run_id,
+                "fill_price":      f"{fill_price:.4f}" if fill_price is not None else "",
+                "slippage_bps":    f"{slippage_bps:.2f}" if slippage_bps is not None else "",
                 # Paper-shadow (100x): same price, qty/value/portfolio ×100.
                 "qty_100x":             _scaled(qty, 6),
                 "total_value_100x":     _scaled(total_value, 2),

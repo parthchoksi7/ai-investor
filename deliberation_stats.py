@@ -168,6 +168,12 @@ def operational_stats(log: list, transactions: list,
             no_trade_runs += 1
     kill_runs = sum(1 for r in runs if r.get("kill_switch_active"))
 
+    # T2.1: net-edge gate — count rejections per run (field present from this
+    # change onward; older runs read as 0 so cumulative rate is a lower bound).
+    net_edge_rejection_runs = [r.get("net_edge_rejected", 0) for r in runs]
+    total_net_edge_rejected = sum(net_edge_rejection_runs)
+    runs_with_net_edge_reject = sum(1 for v in net_edge_rejection_runs if v > 0)
+
     # ── Turnover + holding-period split (de-assumes §6.6 worst case) ───────────
     from performance import compute_realized_lots
     realized, uncovered = compute_realized_lots(transactions)
@@ -194,6 +200,14 @@ def operational_stats(log: list, transactions: list,
             "trades_per_run": round(total_trades / n_runs, 3) if n_runs else None,
             "trade_run_rate": _rate(trade_runs, n_runs),
             "no_trade_run_rate": _rate(no_trade_runs, n_runs),
+        },
+        "net_edge_gate": {
+            "total_buys_rejected": total_net_edge_rejected,
+            "runs_with_rejection": runs_with_net_edge_reject,
+            "rejection_run_rate": _rate(runs_with_net_edge_reject, n_runs),
+            "note": ("BUYs dropped by the net-edge floor (cost + CA ST tax). "
+                     "Older runs before this counter was added read as 0 — "
+                     "cumulative rate is a lower bound until history turns over."),
         },
         "kill_switch_active_runs": kill_runs,
         "turnover": {
@@ -268,6 +282,10 @@ def main() -> None:
     print(f"   Trades: {t['total']} ({t['buys']} buy / {t['sells']} sell), "
           f"{t['trades_per_run']}/run; no-trade-run rate {t['no_trade_run_rate']}")
     print(f"   Kill-switch-active runs:   {o['kill_switch_active_runs']}")
+    ne = o["net_edge_gate"]
+    print(f"   Net-edge BUYs rejected:    {ne['total_buys_rejected']} total, "
+          f"{ne['runs_with_rejection']}/{o['window']['n_runs']} runs "
+          f"(run rate {ne['rejection_run_rate']})")
     hp = o["holding_period"]
     print(f"   Realized round-trips: {hp['n_realized_lots']} "
           f"(ST {hp['short_term_lots']} / LT {hp['long_term_lots']}; "
