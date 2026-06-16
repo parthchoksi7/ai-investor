@@ -1,28 +1,28 @@
 {
-  "run_id": "20260612-134736",
-  "date": "2026-06-12",
-  "timestamp": "2026-06-12T13:51:41.109412+00:00",
+  "run_id": "20260616-134808",
+  "date": "2026-06-16",
+  "timestamp": "2026-06-16T13:50:38.441771+00:00",
   "overall_status": "FAILED",
   "checks": {
     "portfolio": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:47:36.590338+00:00",
-      "total_value": 501.969517237,
-      "cash": 180.82,
+      "ts": "2026-06-16T13:48:08.753741+00:00",
+      "total_value": 503.6823542493,
+      "cash": 169.98,
       "positions": 8
     },
     "kill_switch": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:47:36.593828+00:00"
+      "ts": "2026-06-16T13:48:08.758576+00:00"
     },
     "market_data": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:47:36.643250+00:00",
+      "ts": "2026-06-16T13:48:08.807716+00:00",
       "source": "market_snapshot_file",
-      "data_date": "2026-06-12",
+      "data_date": "2026-06-16",
       "tickers": 100,
       "history_min_bars": 206,
       "history_avg_bars": 209.8
@@ -30,74 +30,86 @@
     "quant_scores": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:47:36.653114+00:00",
+      "ts": "2026-06-16T13:48:08.817454+00:00",
       "real_scores": 100,
       "total": 100
+    },
+    "decision_validation": {
+      "status": "DEGRADED",
+      "message": "2 rejected, 0 clamped, 0 skipped by guardrails",
+      "ts": "2026-06-16T13:50:37.878445+00:00",
+      "passed": 2,
+      "rejected": [
+        {
+          "ticker": "AAPL",
+          "action": "SELL",
+          "reason": "min-holding: bought 2026-06-12, < 5 trading days ago (anti-churn/tax)"
+        },
+        {
+          "ticker": "LIN",
+          "action": "SELL",
+          "reason": "min-holding: bought 2026-06-10, < 5 trading days ago (anti-churn/tax)"
+        }
+      ],
+      "modified": [],
+      "skipped": []
     },
     "agent_1_regime": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:51:40.742522+00:00",
+      "ts": "2026-06-16T13:50:37.878466+00:00",
       "regime": "RISK_ON",
-      "confidence": 82
+      "confidence": 68
     },
     "agent_2_research": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:51:40.742559+00:00",
+      "ts": "2026-06-16T13:50:37.878486+00:00",
       "total": 20
     },
     "agent_3_earnings": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:51:40.742574+00:00",
+      "ts": "2026-06-16T13:50:37.878497+00:00",
       "total": 20
     },
     "agent_4_devils_advocate": {
-      "status": "DEGRADED",
-      "message": "15/20 devil's advocate responses empty",
-      "ts": "2026-06-12T13:51:40.742587+00:00",
-      "empty": 15,
+      "status": "OK",
+      "message": "",
+      "ts": "2026-06-16T13:50:37.878514+00:00",
       "total": 20
     },
     "agent_5_position_review": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:51:40.742598+00:00",
+      "ts": "2026-06-16T13:50:37.878523+00:00",
       "reviewed": 8,
-      "reduce_exit_recommended": 0
+      "reduce_exit_recommended": 3
     },
     "agent_6_portfolio_manager": {
-      "status": "OK",
-      "message": "",
-      "ts": "2026-06-12T13:51:40.742603+00:00",
-      "proposed": 4,
-      "final_decisions": 4
+      "status": "DEGRADED",
+      "message": "PM proposed 0 trades despite 3 REDUCE/EXIT from position review \u2014 likely data starvation",
+      "ts": "2026-06-16T13:50:37.878530+00:00",
+      "position_review_reduce_exit": 3,
+      "proposed": 0
     },
     "agent_7_cro": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:51:40.742606+00:00",
+      "ts": "2026-06-16T13:50:37.878543+00:00",
       "approved": true,
       "vetoed": [],
-      "risk_budget": 62
-    },
-    "execution": {
-      "status": "OK",
-      "message": "",
-      "ts": "2026-06-12T13:51:40.764230+00:00",
-      "decisions": 4,
-      "executed": 4,
-      "dry_run": true
+      "risk_budget": 0
     },
     "supabase_publish": {
       "status": "FAILED",
-      "message": "{'message': 'JSON could not be generated', 'code': 403, 'hint': 'Refer to full message for details', 'details': \"b'Host not in allowlist: vnrezryrvimmucabdetj.supabase.co. Add this host to your networ",
-      "ts": "2026-06-12T13:51:41.109221+00:00"
+      "message": "Out of range float values are not JSON compliant",
+      "ts": "2026-06-16T13:50:38.441665+00:00"
     }
   },
   "alerts": [
-    "[DEGRADED] agent_4_devils_advocate: 15/20 devil's advocate responses empty",
-    "[FAILED] supabase_publish: {'message': 'JSON could not be generated', 'code': 403, 'hint': 'Refer to full message for details', 'details': \"b'Host not in allowlist: vnrezryrvimmucabdetj.supabase.co. Add this host to your networ"
+    "[DEGRADED] decision_validation: 2 rejected, 0 clamped, 0 skipped by guardrails",
+    "[DEGRADED] agent_6_portfolio_manager: PM proposed 0 trades despite 3 REDUCE/EXIT from position review \u2014 likely data starvation",
+    "[FAILED] supabase_publish: Out of range float values are not JSON compliant"
   ]
 }
