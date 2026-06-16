@@ -4017,3 +4017,133 @@ class TestRecentlyExitedEdgeCases:
         (tmp_path / "journal.json").write_text(json.dumps(entries))
         result = journal.recently_exited(within_days=10)
         assert "AAPL" not in result  # status != "closed" → never included
+
+
+class TestPMBackstop:
+    """Tests for main.apply_pm_backstop — 3-signal auto-SELL override."""
+
+    def _portfolio(self, *tickers):
+        return {"positions": [{"symbol": t} for t in tickers]}
+
+    def _state(self, ticker, pr_action, hold_score, da_reject, da_risk=8):
+        return {
+            "position_reviews": {ticker: {
+                "recommended_action": pr_action,
+                "hold_score": hold_score,
+                "remaining_alpha": "low",
+            }},
+            "devils_advocate": {ticker: {
+                "recommend_reject": da_reject,
+                "overall_risk_score": da_risk,
+            }},
+        }
+
+    def test_all_three_signals_trigger_sell(self):
+        from main import apply_pm_backstop
+        decisions = []
+        exits = apply_pm_backstop(
+            decisions,
+            self._portfolio("LLY"),
+            self._state("LLY", "REDUCE", 4, True),
+        )
+        assert exits == ["LLY"]
+        assert len(decisions) == 1
+        d = decisions[0]
+        assert d["ticker"] == "LLY"
+        assert d["action"] == "SELL"
+        assert d["target_weight"] == 0.0
+        assert "3-signal override" in d["rationale"]
+
+    def test_exit_action_also_triggers(self):
+        from main import apply_pm_backstop
+        decisions = []
+        exits = apply_pm_backstop(
+            decisions,
+            self._portfolio("XYZ"),
+            self._state("XYZ", "EXIT", 2, True),
+        )
+        assert "XYZ" in exits
+        assert decisions[0]["action"] == "SELL"
+
+    def test_missing_one_signal_does_not_trigger(self):
+        from main import apply_pm_backstop
+        # DA does not reject
+        decisions = []
+        exits = apply_pm_backstop(
+            decisions,
+            self._portfolio("LLY"),
+            self._state("LLY", "REDUCE", 4, False),
+        )
+        assert exits == []
+        assert decisions == []
+
+    def test_hold_score_5_does_not_trigger(self):
+        from main import apply_pm_backstop
+        # hold_score == 5 is NOT < 5 → no trigger
+        decisions = []
+        exits = apply_pm_backstop(
+            decisions,
+            self._portfolio("LLY"),
+            self._state("LLY", "REDUCE", 5, True),
+        )
+        assert exits == []
+
+    def test_already_selling_skipped(self):
+        from main import apply_pm_backstop
+        existing_sell = {"ticker": "LLY", "action": "SELL", "target_weight": 0.0}
+        decisions = [existing_sell]
+        exits = apply_pm_backstop(
+            decisions,
+            self._portfolio("LLY"),
+            self._state("LLY", "EXIT", 1, True),
+        )
+        assert exits == []
+        assert len(decisions) == 1  # no duplicate added
+
+    def test_hold_action_does_not_suppress_backstop(self):
+        from main import apply_pm_backstop
+        # PM said HOLD (not SELL) → backstop should still fire
+        existing_hold = {"ticker": "LLY", "action": "HOLD"}
+        decisions = [existing_hold]
+        exits = apply_pm_backstop(
+            decisions,
+            self._portfolio("LLY"),
+            self._state("LLY", "REDUCE", 3, True),
+        )
+        assert "LLY" in exits
+        assert any(d["action"] == "SELL" for d in decisions)
+
+    def test_multiple_positions_independent(self):
+        from main import apply_pm_backstop
+        state = {
+            "position_reviews": {
+                "AAA": {"recommended_action": "REDUCE", "hold_score": 3, "remaining_alpha": "low"},
+                "BBB": {"recommended_action": "HOLD",   "hold_score": 7, "remaining_alpha": "high"},
+                "CCC": {"recommended_action": "EXIT",   "hold_score": 2, "remaining_alpha": "none"},
+            },
+            "devils_advocate": {
+                "AAA": {"recommend_reject": True,  "overall_risk_score": 9},
+                "BBB": {"recommend_reject": True,  "overall_risk_score": 8},
+                "CCC": {"recommend_reject": False, "overall_risk_score": 6},
+            },
+        }
+        decisions = []
+        exits = apply_pm_backstop(decisions, self._portfolio("AAA", "BBB", "CCC"), state)
+        # AAA: all 3 signals → exit. BBB: pr=HOLD → no exit. CCC: da_reject=False → no exit.
+        assert exits == ["AAA"]
+        assert len(decisions) == 1
+        assert decisions[0]["ticker"] == "AAA"
+
+    def test_null_hold_score_treated_as_10(self):
+        from main import apply_pm_backstop
+        # hold_score=None → `(None or 10)` = 10 → NOT < 5 → no trigger
+        decisions = []
+        exits = apply_pm_backstop(
+            decisions,
+            self._portfolio("LLY"),
+            {
+                "position_reviews": {"LLY": {"recommended_action": "REDUCE", "hold_score": None}},
+                "devils_advocate": {"LLY": {"recommend_reject": True}},
+            },
+        )
+        assert exits == []

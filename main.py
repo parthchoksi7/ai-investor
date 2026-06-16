@@ -30,6 +30,47 @@ from publish      import publish_to_supabase
 from health       import HealthTracker, OK, DEGRADED, FAILED, ABORTED
 
 
+def apply_pm_backstop(decisions: list, portfolio: dict, pipeline_state: dict) -> list[str]:
+    """Force-sell deteriorating positions when 3 independent signals agree.
+
+    Returns list of tickers that were auto-exited.
+    Mutates *decisions* in-place by appending SELL entries.
+    """
+    position_reviews = pipeline_state.get("position_reviews", {})
+    devil_map = pipeline_state.get("devils_advocate", {})
+    auto_exits = []
+    for holding in portfolio.get("positions", []):
+        t = holding["symbol"]
+        pr = position_reviews.get(t, {})
+        da = devil_map.get(t, {})
+        already_selling = any(
+            d.get("ticker") == t and d.get("action") == "SELL"
+            for d in decisions
+        )
+        if (not already_selling
+                and pr.get("recommended_action") in ("REDUCE", "EXIT")
+                and (pr.get("hold_score") or 10) < 5
+                and da.get("recommend_reject", False)):
+            auto_exits.append(t)
+            decisions.append({
+                "ticker": t,
+                "action": "SELL",
+                "target_weight": 0.0,
+                "source_of_capital": "exit_deteriorating_position",
+                "expected_return": 0.0,
+                "rationale": (
+                    f"Auto-exit: position_review={pr.get('recommended_action')} "
+                    f"hold={pr.get('hold_score')}/10 alpha={pr.get('remaining_alpha')}, "
+                    f"DA risk={da.get('overall_risk_score')}/10 reject=True — "
+                    f"3-signal override of PM HOLD"
+                ),
+            })
+    if auto_exits:
+        print(f"   ⚡ PM override — auto-SELL {auto_exits} "
+              f"(position_review + DA 3-signal agreement, PM chose HOLD)")
+    return auto_exits
+
+
 def run_daily_cycle():
     print("\n" + "=" * 60)
     print("🤖  AI INVESTOR V3 — DAILY CYCLE STARTING")
@@ -198,6 +239,9 @@ def run_daily_cycle():
         portfolio, market_data, quant_scores, trade_history, prior_journal,
         ticker_history=ticker_history, recently_exited=exited_map,
     )
+
+    # ── PM backstop: auto-exit when 3 signals agree ──────────────────────────
+    apply_pm_backstop(decisions, portfolio, pipeline_state)
 
     # Pre-compute fractional qty
     for _d in decisions:

@@ -191,6 +191,13 @@ Prioritize:
 3. Portfolio diversification
 4. Opportunity cost
 
+SELL decisions are independent of BUY decisions.
+When a holding shows recommended_action=REDUCE or EXIT in the position review
+AND Devil's Advocate has recommend_reject=True for that same holding, you MUST
+propose a SELL (target_weight=0.0) even if you have no new BUYs to make.
+Freeing capital from a deteriorating position is a valid primary action.
+Do not let lack of attractive BUY candidates prevent you from exiting a bad position.
+
 Default action is HOLD.
 Trade only when portfolio expected value increases."""
 
@@ -514,7 +521,7 @@ Output JSON:
         MODEL_SMART, _REGIME_SYSTEM, user_msg,
         default={"regime": "NEUTRAL", "confidence": 50, "growth_value": "NEUTRAL",
                  "favored_factors": [], "avoid_factors": [], "key_observations": []},
-        max_tokens=700,
+        max_tokens=770,
         retries=2,
     )
 
@@ -557,7 +564,7 @@ Output JSON (fill in every field):
         MODEL_FAST, _cached_system(_RESEARCH_SYSTEM), user_msg,
         default={"thesis": "", "catalysts": [], "confidence": 5,
                  "key_risks": [], "invalidates_if": [], "variant_view": ""},
-        max_tokens=1000,
+        max_tokens=1100,
     )
 
 
@@ -623,7 +630,7 @@ Output JSON (fill in every field):
         MODEL_FAST, _cached_system(_EARNINGS_SYSTEM), user_msg,
         default={"earnings_alpha_score": 5, "beat_probability": "MEDIUM",
                  "guidance_cut_probability": "LOW", "key_catalysts_90d": []},
-        max_tokens=600,
+        max_tokens=660,
     )
 
     # Fabrication guard: the verified calendar date wins over the model's guess.
@@ -691,7 +698,7 @@ Output JSON (fill in every field). Keep "bear_case" to 2-3 tight sentences \
         # The hostile prompt elicits a verbose bear_case (~1.1k tokens end-to-end);
         # 800 truncated it mid-JSON → empty defaults. Headroom + the conciseness cap
         # above keep the full object inside the budget.
-        max_tokens=1500,
+        max_tokens=1650,
     )
 
 
@@ -751,7 +758,7 @@ Output JSON:
         MODEL_FAST, _cached_system(_POSITION_REVIEW_SYSTEM), user_msg,
         default={"hold_score": 6, "remaining_alpha": "MEDIUM",
                  "thesis_intact": True, "recommended_action": "HOLD", "reasoning": ""},
-        max_tokens=400,
+        max_tokens=440,
     )
 
 
@@ -862,7 +869,7 @@ improve portfolio expected value."""
     return _safe_call(
         MODEL_SMART, _PM_SYSTEM, user_msg,
         default=[],
-        max_tokens=1200,
+        max_tokens=1320,
         retries=2,
     )
 
@@ -962,7 +969,7 @@ Set approved=false only for severe concentration / correlation risks that could 
                  "rejected_tickers": [],
                  "reasoning": "CRO call failed — trades blocked until CRO can run.",
                  "api_failed": True},
-        max_tokens=400,
+        max_tokens=440,
         retries=2,
     )
 

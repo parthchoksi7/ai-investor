@@ -607,14 +607,14 @@ If any system prompt was modified in `analysis.py`:
 ```bash
 python3 - <<'EOF'
 from analysis import MODEL_FAST, MODEL_SMART, MAX_CANDIDATES
-# Current max_tokens per agent (as of Jun 11 2026):
-#   Agent 1 (Regime, Sonnet):      700
-#   Agent 2 (Research, Haiku):    1000
-#   Agent 3 (Earnings, Haiku):     600
-#   Agent 4 (Devil's Adv, Haiku): 1500  (raised from 800 Jun 15 2026 — 800 truncated the bear_case)
-#   Agent 5 (Position, Haiku):     600
-#   Agent 6 (PM, Sonnet):         2000
-#   Agent 7 (CRO, Sonnet):        1200
+# Current max_tokens per agent (as of Jun 15 2026, all raised +10%):
+#   Agent 1 (Regime, Sonnet):       770  (was 700)
+#   Agent 2 (Research, Haiku):     1100  (was 1000)
+#   Agent 3 (Earnings, Haiku):      660  (was 600)
+#   Agent 4 (Devil's Adv, Haiku):  1650  (was 1500, 800 → 1500 Jun 15 fixed bear_case truncation)
+#   Agent 5 (Position, Haiku):      440  (was 400)
+#   Agent 6 (PM, Sonnet):          1320  (was 1200)
+#   Agent 7 (CRO, Sonnet):          440  (was 400)
 # Haiku: ~600–1000 tokens out, ~1200 tokens in (richer news context since Jun 11)
 # Sonnet: ~700–2000 tokens out, ~3000–10000 tokens in
 # Ensure MAX_CANDIDATES hasn't been raised without understanding cost implications
