@@ -328,11 +328,6 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     except Exception as e:
         print(f"   ⚠ realized_beta skipped: {str(e)[:120]}")
 
-    # Guard against NaN/Inf from any metric computation — these crash the Supabase
-    # JSON serializer with "Out of range float values are not JSON compliant".
-    snapshot_row = {k: (None if isinstance(v, float) and not math.isfinite(v) else v)
-                    for k, v in snapshot_row.items()}
-
     # Defensive against deploy ordering: if the A4 migration
     # (migrations/2026-06-14_add_exposure_beta.sql) has not been run yet, the new
     # columns don't exist and the upsert would error. Retry once without the

@@ -2,6 +2,8 @@ name: Pipeline Health Alert
 
 on:
   push:
+    branches:
+      - main
     paths:
       - 'system_health.json'
 
