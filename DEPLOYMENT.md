@@ -1146,6 +1146,13 @@ Write explicit test cases covering all of these scenarios before committing:
 3. Publish test: run `publish.py` in isolation and verify the new column is populated correctly
 4. Missing column test: verify `publish.py` does not crash if Supabase does not yet have the column (graceful failure, not a blocker for the trading cycle)
 
+**Serialization / float-safety change (publish, quant outputs)**
+1. NaN/Inf path: verify any non-finite float (NaN, +Inf, -Inf) is converted to `None` (or dropped) before serialize — Supabase/PostgREST reject non-compliant floats (`Out of range float values are not JSON compliant`)
+2. Degenerate-input path: verify the upstream calc that *could* produce NaN (e.g. a zero/NaN price → volatility) returns an "unavailable" sentinel, not NaN
+3. Strict-JSON assertion: `json.dumps(payload, allow_nan=False)` must not raise for any sanitized payload
+4. Recursion: verify the scrub reaches nested dicts/lists, not just top-level keys
+   (Covered by `TestSanitizeNaN` + the NaN-guard cases in `TestRiskMetrics`. This category was added after the Jun 16 NaN→Supabase publish break.)
+
 **Change to `pending_decisions.json` envelope**
 1. New field: verify `mark_pending_executed()` still works when the new field is present
 2. New field: verify cloud routine still reads `decisions` correctly

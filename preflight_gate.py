@@ -65,19 +65,29 @@ def _check_api_health() -> tuple[bool, str]:
     except ImportError:
         return True, "anthropic package not installed — skipping canary check"
 
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    # In the cloud routine the key is auto-injected; locally it comes from .env.
-    # If neither is available skip the check rather than blocking on a missing key.
-    if not api_key:
-        try:
-            token_file = os.getenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE")
-            if not token_file:
-                return True, "No API key available — skipping canary check"
-        except Exception:
-            return True, "No API key available — skipping canary check"
+    # Build the client the SAME way analysis.py:_get_client() does, so the canary
+    # authenticates identically to the real agents:
+    #   • ANTHROPIC_API_KEY when present (local / .env), else
+    #   • the OAuth token file the cloud injects, via auth_token= — this is how
+    #     every scheduled-routine agent call authenticates. A bare Anthropic() does
+    #     NOT pick this token up, so the old canary failed auth in the cloud, fell
+    #     through to the non-529 "proceed" branch, and silently disabled 529
+    #     overload protection on the exact (live) path it was built to guard.
+    # If neither credential is available, skip the check rather than block on it.
+    api_key    = os.getenv("ANTHROPIC_API_KEY")
+    token_file = os.getenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", "")
+    try:
+        if api_key:
+            client = anthropic.Anthropic(api_key=api_key)
+        elif token_file and os.path.isfile(token_file):
+            with open(token_file) as _tf:
+                client = anthropic.Anthropic(auth_token=_tf.read().strip())
+        else:
+            return True, "No API key or OAuth token available — skipping canary check"
+    except Exception as e:
+        return True, f"Could not build Anthropic client (proceeding): {str(e)[:120]}"
 
     try:
-        client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
         # Use 50 tokens (not 1) to simulate real agent load — under heavy API load,
         # short requests succeed while 600-token requests silently return empty.
         resp = client.messages.create(

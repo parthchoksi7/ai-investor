@@ -410,6 +410,37 @@ class TestRiskMetrics:
         r = compute_risk_metrics(_make_history(closes), [])
         assert 0 <= r["volatility_score"] <= 100
 
+    def test_nan_close_yields_unavailable_not_nan(self):
+        # A NaN close (TXN/TJX/CAT snapshot gap, Jun 16) must NOT propagate into a
+        # NaN volatility — that NaN broke the Supabase publish. Treat as unavailable.
+        import math
+        from quant_engine import compute_risk_metrics
+        closes = [100.0 + i for i in range(40)]
+        closes[10] = float("nan")
+        r = compute_risk_metrics(_make_history(closes), [])
+        assert r["volatility"] is None
+        assert r["volatility_available"] is False
+
+    def test_zero_close_yields_unavailable_not_nan(self):
+        from quant_engine import compute_risk_metrics
+        closes = [100.0 + i for i in range(40)]
+        closes[10] = 0.0  # would be a div-by-zero / degenerate return
+        r = compute_risk_metrics(_make_history(closes), [])
+        assert r["volatility"] is None
+        assert r["volatility_available"] is False
+
+    def test_nan_vol_excluded_from_composite(self):
+        # End-to-end: a ticker with a NaN close must produce a finite composite
+        # (volatility dropped from the honest weighting), never a NaN composite.
+        import math
+        from quant_engine import score_all_tickers
+        bad = [{"close": 100.0 + i} for i in range(40)]
+        bad[10]["close"] = float("nan")
+        scores = score_all_tickers({"history": {"BAD": bad}, "fundamentals": {}})
+        comp = scores["BAD"]["composite_score"]
+        assert math.isfinite(comp)
+        assert "volatility" not in scores["BAD"]["factors_used"]
+
 
 # ── quant_engine.score_all_tickers ───────────────────────────────────────────
 
@@ -1280,6 +1311,63 @@ class TestPreflightGate:
         assert self._run(tmp_path) == 20  # SKIP/DONE wins
 
 
+class TestCanaryAuth:
+    """preflight_gate._check_api_health must authenticate the SAME way the real
+    agents do (analysis.py:_get_client) — via the OAuth token file (auth_token=)
+    in the cloud, NOT a bare Anthropic(). The old bare-client path failed auth in
+    the cloud, fell through to the non-529 'proceed' branch, and silently disabled
+    529 overload protection on the live path (Jun 16 fix #3)."""
+
+    def _fake_anthropic(self, captured):
+        import types
+        mod = types.ModuleType("anthropic")
+        _resp = types.SimpleNamespace(content=[types.SimpleNamespace(text='{"status":"ok"}')])
+
+        class _Client:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+                self.messages = types.SimpleNamespace(create=lambda **kw: _resp)
+
+        mod.Anthropic = _Client
+        return mod
+
+    def test_uses_oauth_token_file_when_no_api_key(self, tmp_path, monkeypatch):
+        import sys
+        captured = {}
+        monkeypatch.setitem(sys.modules, "anthropic", self._fake_anthropic(captured))
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        tok = tmp_path / "token"
+        tok.write_text("oauth-xyz")
+        monkeypatch.setenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", str(tok))
+        import preflight_gate
+        healthy, _ = preflight_gate._check_api_health()
+        assert healthy is True
+        assert captured.get("auth_token") == "oauth-xyz"  # the fix: token-file auth
+        assert "api_key" not in captured
+
+    def test_uses_api_key_when_present(self, monkeypatch):
+        import sys
+        captured = {}
+        monkeypatch.setitem(sys.modules, "anthropic", self._fake_anthropic(captured))
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        import preflight_gate
+        healthy, _ = preflight_gate._check_api_health()
+        assert healthy is True
+        assert captured.get("api_key") == "sk-test"
+
+    def test_skips_cleanly_when_no_credentials(self, monkeypatch):
+        import sys
+        captured = {}
+        monkeypatch.setitem(sys.modules, "anthropic", self._fake_anthropic(captured))
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", raising=False)
+        import preflight_gate
+        healthy, msg = preflight_gate._check_api_health()
+        assert healthy is True
+        assert "skipping" in msg.lower()
+        assert captured == {}  # no client was ever built
+
+
 # ── publish.py — SPY data source + is_close inheritance ──────────────────────
 
 class TestPublishSpyDataSource:
@@ -1361,6 +1449,45 @@ class TestPublishSpyDataSource:
         })
         result = self._read_spy(tmp_path)
         assert result is None
+
+
+class TestSanitizeNaN:
+    """publish._sanitize — the serialization-boundary scrub that keeps a NaN/Inf
+    from breaking the Supabase publish (Jun 16: vol=nan reached the upsert →
+    'Out of range float values are not JSON compliant')."""
+
+    def test_nan_and_inf_become_none(self):
+        from publish import _sanitize
+        assert _sanitize(float("nan")) is None
+        assert _sanitize(float("inf")) is None
+        assert _sanitize(float("-inf")) is None
+
+    def test_finite_floats_untouched(self):
+        from publish import _sanitize
+        assert _sanitize(3.14) == 3.14
+        assert _sanitize(0.0) == 0.0
+        assert _sanitize(-2.5) == -2.5
+
+    def test_recurses_into_dicts_and_lists(self):
+        from publish import _sanitize
+        dirty = {"ann_vol": float("nan"),
+                 "legs": [1.0, float("inf"), {"beta": float("-inf"), "ok": 5}]}
+        assert _sanitize(dirty) == {"ann_vol": None,
+                                    "legs": [1.0, None, {"beta": None, "ok": 5}]}
+
+    def test_sanitized_payload_is_strict_json_serializable(self):
+        import json
+        from publish import _sanitize
+        row = {"ticker": "TXN", "ann_vol": float("nan"), "composite": 83.6}
+        # allow_nan=False is what Supabase/PostgREST effectively enforces.
+        json.dumps(_sanitize(row), allow_nan=False)
+
+    def test_non_float_types_pass_through(self):
+        from publish import _sanitize
+        assert _sanitize("TXN") == "TXN"
+        assert _sanitize(None) is None
+        assert _sanitize(42) == 42
+        assert _sanitize(True) is True
 
 
 class TestIsCloseInheritance:

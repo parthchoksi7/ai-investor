@@ -148,10 +148,24 @@ def compute_risk_metrics(history: list[dict], spy_history: list[dict]) -> dict:
                 "volatility_score": 50, "volatility_available": False}
 
     closes = [float(d["close"]) for d in history]
+    # A non-finite or non-positive close (a NaN/None/0 that slipped into the
+    # snapshot — e.g. a Polygon gap for TXN/TJX/CAT) propagates through the return
+    # series into a NaN annualized volatility. That NaN then poisons JSON
+    # serialization downstream (Supabase rejects it: "Out of range float values
+    # are not JSON compliant"). Treat a degenerate price series as "volatility
+    # unavailable" so it is dropped from the honest composite rather than blended
+    # in or emitted as NaN.
+    if any((not math.isfinite(c)) or c <= 0 for c in closes):
+        return {"volatility": None, "beta": None,
+                "volatility_score": 50, "volatility_available": False}
+
     daily_ret = [(closes[i] - closes[i - 1]) / closes[i - 1] for i in range(1, len(closes))]
     recent = daily_ret[-63:]  # 3-month window
 
     vol = _stdev(recent) * math.sqrt(252) * 100  # annualized %
+    if not math.isfinite(vol):  # belt-and-suspenders: never let a NaN vol escape
+        return {"volatility": None, "beta": None,
+                "volatility_score": 50, "volatility_available": False}
 
     beta = None
     if spy_history and len(spy_history) >= 22:

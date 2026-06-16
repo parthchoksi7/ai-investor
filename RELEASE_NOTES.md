@@ -15,6 +15,55 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ---
 
+## [2026-06-16] — NaN→Supabase publish fix · canary auth · routine observability hardening  ·  main
+
+Triggered by the Jun 16 run: the Supabase publish broke with *"Out of range float
+values are not JSON compliant"* — a NaN volatility (TXN/TJX/CAT showed `vol=nan%`)
+reached the serializer, so the website stopped updating. Two layers of fix plus
+unrelated reliability hardening surfaced during review.
+
+### Fixed — NaN volatility no longer breaks the publish (website was stale)
+
+- **Source** (`quant_engine.compute_risk_metrics`): a non-finite or ≤0 close in the
+  snapshot propagated through the return series into a NaN annualized volatility.
+  Now a degenerate price series returns `volatility_available: False` (dropped from
+  the honest composite), and a NaN vol can never escape.
+- **Boundary** (`publish.py`): new `_sanitize()` scrubs NaN/Inf → `None` recursively
+  at all four serialization points (snapshot-file write + the snapshot/positions/
+  trades/quant upserts); the file write uses `allow_nan=False` to fail loud if
+  anything ever slips past. Defense-in-depth even after the source fix.
+
+### Fixed — preflight canary couldn't authenticate in the cloud (529 protection was a no-op)
+
+- `preflight_gate._check_api_health()` built a bare `anthropic.Anthropic()` when no
+  `ANTHROPIC_API_KEY` was set, but the cloud authenticates via the OAuth token file
+  (`auth_token=`), as `analysis.py:_get_client()` does. The canary therefore failed
+  auth in the cloud, fell through to "proceed", and never actually caught a 529
+  overload. Now it authenticates identically to the real agents.
+
+### Changed — daily routine: failures are now observable, crashes can't cascade
+
+`ROUTINE_DAILY_CYCLE.md` (live routine must be re-synced):
+- **Always push `system_health.json` after `main.py`**, before validating — an
+  ABORTED/FAILED day now fires `alert.yml` instead of stopping silently before the
+  STEP 5 commit.
+- **Capture `main.py`'s exit code + crash guard**: a non-zero exit stops the routine
+  (no STEP 4) so orders are never sized/placed against a partial plan.
+- **STEP 3 validation guards a missing/unreadable `pending_decisions.json`.**
+- **STEP 5 push gets a rebase retry + escalation** (was `git push || echo WARNING`):
+  on persistent failure it records an `artifact_push` FAILED health check and pushes
+  it so you get paged — orders can be live, the push must not be lost silently.
+
+### Tests
+
+- `+19` regression tests: `TestSanitizeNaN` (5), `TestCanaryAuth` (3), NaN-guard
+  cases in `TestRiskMetrics` (3), plus existing coverage. **Full suite green (401).**
+- Dry-run (`DRY_RUN=true python main.py`) **skipped** per DEPLOYMENT §7.1 — deployed
+  on a trading day; running it would overwrite `pending_decisions.json` and risk a
+  double-fill. Validated via the test suite + targeted integration checks.
+
+---
+
 ## [2026-06-15 afternoon] — Devil's Advocate: Sonnet model + prompt recalibration + 2.5× token budget  ·  main
 
 Diagnosed zero `recommend_reject` events across 132 evaluations. Root cause was three stacked failures: (1) the Jun 15 morning fix addressed the 800-token truncation that caused 132/140 defaults; (2) the JSON template showed `"recommend_reject": false` as an example value, anchoring the model; (3) `recommend_reject` was the last schema field, so any remaining truncation silently dropped it.

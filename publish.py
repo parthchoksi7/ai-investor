@@ -12,6 +12,7 @@ Silently skips if either is missing (local dev without Supabase configured).
 """
 
 import json
+import math
 import os
 import urllib.request
 import urllib.error
@@ -29,6 +30,25 @@ TRANSACTIONS_FILE = "transactions.json"
 PEAK_FILE = "portfolio_peak.json"
 AGENT_LOG_FILE = "agent_log.json"
 SNAPSHOT_FILE = "portfolio_snapshot.json"
+
+
+def _sanitize(obj):
+    """Recursively replace NaN/Inf floats with None so every payload is valid JSON.
+
+    Strict JSON parsers — including Supabase/PostgREST — reject NaN and Infinity
+    ("Out of range float values are not JSON compliant"), and Python's json module
+    emits them as bare NaN/Infinity tokens that also break any consumer re-reading
+    the committed portfolio_snapshot.json. A NaN can reach here from a degenerate
+    quant calc (e.g. a zero/NaN close producing NaN volatility), so scrub at the
+    serialization boundary unconditionally — this is the last line of defense even
+    after the upstream quant_engine guard."""
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize(v) for v in obj]
+    return obj
 
 
 def _load(path: str, default):
@@ -146,7 +166,7 @@ def _publish_quant_scores(client, quant_scores: dict, today: str) -> None:
         for rank, (ticker, scores) in enumerate(sorted_tickers)
     ]
     if rows:
-        client.table("quant_scores").upsert(rows, on_conflict="date,ticker").execute()
+        client.table("quant_scores").upsert(_sanitize(rows), on_conflict="date,ticker").execute()
         print(f"   📊 {len(rows)} quant score(s) synced.")
 
 
@@ -199,15 +219,16 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
         try:
             with open(SNAPSHOT_FILE, "w") as _sf:
                 json.dump(
-                    {
+                    _sanitize({
                         "is_close":     is_close,
                         "portfolio":    portfolio,
                         "quant_scores": quant_scores,
                         "regime":       regime,
                         "written_at":   datetime.now(timezone.utc).isoformat(),
-                    },
+                    }),
                     _sf,
                     indent=2,
+                    allow_nan=False,  # fail loudly if a NaN ever slips past _sanitize
                 )
         except Exception as _e:
             print(f"   ⚠️  Could not write {SNAPSHOT_FILE}: {_e}")
@@ -302,10 +323,15 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     try:
         from performance import build_report
         beta = build_report().get("realized_beta")
-        if beta is not None:
+        if beta is not None and math.isfinite(beta):
             snapshot_row["realized_beta"] = beta
     except Exception as e:
         print(f"   ⚠ realized_beta skipped: {str(e)[:120]}")
+
+    # Guard against NaN/Inf from any metric computation — these crash the Supabase
+    # JSON serializer with "Out of range float values are not JSON compliant".
+    snapshot_row = {k: (None if isinstance(v, float) and not math.isfinite(v) else v)
+                    for k, v in snapshot_row.items()}
 
     # Defensive against deploy ordering: if the A4 migration
     # (migrations/2026-06-14_add_exposure_beta.sql) has not been run yet, the new
@@ -313,6 +339,7 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     # optional A4 keys so a missing migration degrades the dashboard rather than
     # breaking the publish entirely.
     _A4_KEYS = ("net_exposure", "realized_beta")
+    snapshot_row = _sanitize(snapshot_row)
     try:
         client.table("portfolio_snapshots").upsert(snapshot_row).execute()
     except Exception as e:
@@ -355,7 +382,7 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
         })
 
     if pos_rows:
-        client.table("positions").upsert(pos_rows, on_conflict="ticker").execute()
+        client.table("positions").upsert(_sanitize(pos_rows), on_conflict="ticker").execute()
         current_tickers = [r["ticker"] for r in pos_rows]
         try:
             client.table("positions").delete().not_.in_("ticker", current_tickers).execute()
@@ -388,7 +415,7 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
             if tx.get("transaction_id")
         ]
         if trade_rows:
-            client.table("trades").upsert(trade_rows).execute()
+            client.table("trades").upsert(_sanitize(trade_rows)).execute()
             print(f"   📋 {len(trade_rows)} trade(s) synced.")
 
     # ── Quant scores ───────────────────────────────────────────────────────────

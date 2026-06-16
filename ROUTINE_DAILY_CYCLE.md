@@ -108,19 +108,47 @@ pip install -r requirements.txt -q
 STEP 3 — Run the full pipeline
 ═══════════════════════════════════════════════
 
-python main.py
+Run the pipeline and CAPTURE its exit code — do NOT discard it:
+python main.py; MAIN_EXIT=$?
 
 This runs the 7-agent pipeline (Regime → Research → Earnings → Devil's Advocate →
 Position Review → Portfolio Manager → Chief Risk Officer), pre-computes fractional qty
 for each decision, writes pending_decisions.json, logs to trades.csv / decision_journal.json /
 agent_log.json / transactions.json, and publishes a snapshot to Supabase.
 
-After main.py completes, validate the output:
+ALWAYS PUSH HEALTH FIRST — before validating anything, regardless of how main.py exited.
+system_health.json is the ONLY trigger for alert.yml. main.py writes it on its abort paths
+(stale data, zero-value portfolio) AND on success; if you stop the routine WITHOUT pushing it,
+an ABORTED/FAILED day fires NO alert and fails silently. (A mid-pipeline crash may leave the
+file stale because main.py never reached its own health-write — push whatever exists so the
+last-known state + any partial agent_log reach the monitor.)
+git config user.email 'ai-investor-bot@users.noreply.github.com'
+git config user.name 'AI Investor Bot'
+git add system_health.json agent_log.json
+git diff --staged --quiet || (git commit -m 'chore: health' && (git push || (git pull --rebase && git push)))
+
+CRASH GUARD — if main.py did not exit cleanly, STOP the routine here. Do NOT run STEP 4:
+if [ "$MAIN_EXIT" -ne 0 ]; then
+  echo "main.py exited $MAIN_EXIT — pipeline crashed mid-run. Health pushed (alert will fire). Not executing."
+  # STOP NOW. pending_decisions.json may be absent or partial; proceeding would size or place
+  # orders against an incomplete plan. Do not continue to STEP 4 under any circumstances.
+  exit 0
+fi
+
+Only when MAIN_EXIT == 0, validate the output (guard against a missing/partial file —
+on a first-ever run or a crash before the plan is written, the file may not exist):
 python - <<'PY'
-import json, sys
+import json, os, sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
-p = json.load(open('pending_decisions.json'))
+if not os.path.exists('pending_decisions.json'):
+    print("ERROR: pending_decisions.json was never written — main.py produced no plan.")
+    sys.exit(1)
+try:
+    p = json.load(open('pending_decisions.json'))
+except (OSError, json.JSONDecodeError) as e:
+    print(f"ERROR: pending_decisions.json is unreadable ({e}) — treating as no plan.")
+    sys.exit(1)
 today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
 if p.get('date') != today:
     print(f"ERROR: pending_decisions.json is dated {p.get('date')!r}, expected {today!r}")
@@ -129,7 +157,8 @@ if p.get('date') != today:
 print(f"Pipeline OK: {len(p['decisions'])} decision(s) for {today}")
 PY
 
-If this check fails, STOP. Do not attempt order execution.
+If this check fails, STOP. Do not attempt order execution. (Health was already pushed above,
+so the abort is visible to alert.yml.)
 
 ═══════════════════════════════════════════════
 STEP 4 — Execute trades via Robinhood MCP
@@ -267,7 +296,26 @@ git config user.email 'ai-investor-bot@users.noreply.github.com'
 git config user.name 'AI Investor Bot'
 git add portfolio_snapshot.json system_health.json mcp_portfolio.json trades.csv decision_journal.json fundamentals_cache.json portfolio_peak.json pending_decisions.json agent_log.json transactions.json fills.json
 git diff --staged --quiet || git commit -m 'chore: daily cycle'
-git push || echo "WARNING: git push failed — trades executed but artifacts not committed to remote"
+
+# Push WITH a rebase retry. Orders are already LIVE — this push carries the executed_at stamp,
+# the reconciled logs, fills.json, and the post-trade snapshot that triggers publish.yml. A
+# silent failure here means the website never updates AND today's durable fill record never
+# reaches the remote while real orders exist. (STEP 4's claim push retries; STEP 5 must too.)
+if git push || (git pull --rebase && git push); then
+  echo "Artifacts pushed — executed_at + fills + snapshot are durable; publish.yml will update Supabase."
+else
+  # Still failing after the rebase retry — do NOT end silently. Force the failure into the
+  # monitor so alert.yml pages you, then make a best-effort push of that alert.
+  echo "CRITICAL: STEP 5 push failed after rebase retry. Trades are LIVE but not recorded remotely."
+  python - <<'PY'
+from health import append_check, FAILED
+append_check("artifact_push", FAILED,
+             message="STEP 5 push failed after rebase retry — trades LIVE but executed_at/fills/snapshot did not reach remote. Manual `git push` required; verify Supabase and run reconcile.py.")
+PY
+  git add system_health.json && git commit -m 'chore: artifact push failure' \
+    && (git push || (git pull --rebase && git push)) \
+    || echo "Could not reach remote at all — MANUAL intervention required NOW (push by hand, verify fills via get_equity_orders)."
+fi
 ```
 
 ---
@@ -320,3 +368,36 @@ git push || echo "WARNING: git push failed — trades executed but artifacts not
    §9.3: `reconcile.py` / `--apply`) as the first step, with the manual position-diff /
    emergency stamp (§9.4) reserved for the `MANUAL_REQUIRED` case. Cosmetic doc-sync —
    GUARD 3's functional job is unchanged (STOP on a non-null `execution_started_at`).
+
+## What changed — Jun 16 2026 (observability + crash-handling hardening)
+
+Closes the gaps where a failure was invisible or could cascade into bad execution.
+All four are prompt-only (no code change). Verified against `main.py`'s actual control
+flow (`run_daily_cycle()` has no top-level try/except, and its abort paths `return`
+rather than `sys.exit`, so the routine — not main.py — owns making failure observable).
+
+1. **STEP 3 — always push `system_health.json` before validating.** `alert.yml` fires
+   ONLY on a `system_health.json` push. Previously the routine reached the STEP 5 push
+   only on the happy path, so an ABORTED/FAILED day stopped before STEP 5 and the health
+   record never left the box — a silent no-trade day with no alert. Health is now pushed
+   immediately after `main.py`, on every path.
+2. **STEP 3 — capture `main.py`'s exit code + CRASH GUARD.** `python main.py; MAIN_EXIT=$?`;
+   on a non-zero exit the routine pushes health and STOPS — it does NOT proceed to STEP 4.
+   Prevents sizing/placing orders against a partial or missing `pending_decisions.json`
+   after an unhandled mid-pipeline exception.
+3. **STEP 3 — validation heredoc guards a missing/unreadable file** (first-ever run, or a
+   crash before the plan is written) instead of throwing `FileNotFoundError`.
+4. **STEP 5 — push with a rebase retry + escalation.** Was `git push || echo WARNING`
+   (orders live, push silently lost → no Supabase update, no durable fill record). Now
+   retries via `git pull --rebase`, and on a persistent failure writes an `artifact_push`
+   FAILED health check and best-effort pushes that so `alert.yml` pages.
+
+> **Known follow-ups (code changes, tracked separately — NOT fixed by this prompt edit):**
+> (a) `preflight_gate._check_api_health()` calls bare `anthropic.Anthropic()` when
+> `ANTHROPIC_API_KEY` is unset, but the cloud authenticates via
+> `CLAUDE_SESSION_INGRESS_TOKEN_FILE` (`auth_token=`), as `analysis.py:_get_client()` does
+> — so the 529 canary cannot authenticate in the cloud and silently returns "healthy",
+> disabling the overload protection on the live path. (b) STEP 4 records an order as filled
+> on broker ACCEPTANCE without polling `get_equity_orders` to confirm the fill or capture
+> the real fill price — an accepted-then-rejected market order (halt, unsettled cash on the
+> cash account) is logged as a fill at the decision-time quote.

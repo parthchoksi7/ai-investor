@@ -309,6 +309,26 @@ This prevents the silent all-50 quant score failure mode where agents run but pr
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
 
+## Changelog — Jun 16 2026 (NaN publish fix + canary auth + routine observability)
+
+Triggered by the Jun 16 run, which surfaced a genuine (non-403) Supabase publish
+break and two latent reliability gaps. P2-class (data layer); no P0 execution-path
+code changed. **The daily routine prompt changed — re-sync the live routine** (see
+the live-routine note below). Newest first.
+
+| Change | Why it mattered |
+|--------|-----------------|
+| `fix(quant)` **`compute_risk_metrics` rejects degenerate price series** — a non-finite or ≤0 close now returns `volatility_available: False` (dropped from the honest composite) instead of producing a NaN annualized vol; belt-and-suspenders `math.isfinite(vol)` guard. | A NaN close in the snapshot (TXN/TJX/CAT showed `vol=nan%`) propagated into `ann_vol=NaN`, which broke the Supabase publish (`Out of range float values are not JSON compliant`) — the website went stale and **every** subsequent publish (incl. the GH Actions path) would keep failing until the NaN was stopped at the source. |
+| `fix(publish)` **`_sanitize()` NaN/Inf → None scrub** at all four serialization boundaries (snapshot-file write + snapshot/positions/trades/quant upserts); snapshot write uses `allow_nan=False` to fail loud. | Last-line-of-defense so *any* future NaN/Inf (from any upstream calc) degrades a field to `null` rather than breaking the whole publish. |
+| `fix(gate)` **canary authenticates via the OAuth token file** (`auth_token=`) like `analysis.py:_get_client()`, not a bare `anthropic.Anthropic()`. | In the cloud (no `ANTHROPIC_API_KEY`, OAuth token injected) the old canary failed auth, fell through to the non-529 "proceed" branch, and **silently disabled 529-overload protection on the exact live path it was built to guard**. |
+| `docs(routine)` **`ROUTINE_DAILY_CYCLE.md` STEP 3/STEP 5 observability hardening** — always push `system_health.json` after `main.py` (fires `alert.yml` on aborted/failed days); capture `main.py` exit code + crash-guard (no STEP 4 on non-zero exit); guard a missing/unreadable `pending_decisions.json`; STEP 5 push gets a rebase retry + `artifact_push` FAILED escalation. | `alert.yml` fires only on a `system_health.json` push, but the routine reached the STEP 5 push only on the happy path — an aborted/failed day stopped earlier and **fired no alert** (silent no-trade day). `run_daily_cycle()` has no top-level try/except, so a mid-pipeline crash also left the routine with no exit-code handling. STEP 5's `git push || echo WARNING` could lose the executed_at stamp/fills/snapshot silently while orders were live. |
+
+> **QA:** full `pytest` green (**401**, +19: `TestSanitizeNaN`, `TestCanaryAuth`, NaN-guard cases in `TestRiskMetrics`). Workflow YAML parses. Expert `/code-review` run pre-commit per the §7.0 gate. **Dry-run skipped** (DEPLOYMENT §7.1 — deployed on a trading day; a real `main.py` dry-run would overwrite `pending_decisions.json` and risk a double-fill) — validated via the suite + targeted integration checks.
+>
+> **Live routine sync required:** the daily routine (`YOUR_ROUTINE_ID_DAILY`) STEP 3/STEP 5 changed — paste the updated `ROUTINE_DAILY_CYCLE.md` block into the routines UI (substituting the real account number + secrets). Until synced, the live routine keeps the old STEP 3/5; the code fixes (quant/publish/gate) take effect immediately on the next `git pull`. EOD routine unchanged.
+>
+> **Known follow-up (not in this batch):** STEP 4 still records an order as filled on broker *acceptance* without polling `get_equity_orders` to confirm the fill / capture the real fill price — its own PR (#5).
+
 ## Changelog — Jun 14 2026 (P1 backtest harness + cost_model spine + QA hardening)
 
 FINAL_PLAN P1 — the validation foundation. All **offline tooling** (not in the live
