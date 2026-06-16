@@ -15,6 +15,34 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ---
 
+## [2026-06-15 afternoon] — Devil's Advocate: Sonnet model + prompt recalibration + 2.5× token budget  ·  main
+
+Diagnosed zero `recommend_reject` events across 132 evaluations. Root cause was three stacked failures: (1) the Jun 15 morning fix addressed the 800-token truncation that caused 132/140 defaults; (2) the JSON template showed `"recommend_reject": false` as an example value, anchoring the model; (3) `recommend_reject` was the last schema field, so any remaining truncation silently dropped it.
+
+### Fixed — `recommend_reject` anchoring bias
+
+- **Old:** template showed `"recommend_reject": false` — Haiku/Sonnet copy example values.
+- **New:** field uses a decision rule: `<true if overall_risk_score >= 7 AND a fatal flaw exists, else false>`. No literal boolean in the template.
+
+### Fixed — `recommend_reject` dropped on truncation
+
+- `overall_risk_score` and `recommend_reject` are now the **first two fields** in the JSON schema so they are captured even if the response is long. Previously they were last.
+
+### Added — Rejection calibration instruction
+
+- Explicit ~20–30% expected rejection rate in the prompt with three concrete criteria: (a) central assumption empirically false, (b) permanent capital loss risk >40%, (c) valuation already prices in the bull case.
+
+### Changed — Devil's Advocate model: Haiku → Sonnet
+
+- Agent 4 now uses `MODEL_SMART` (Sonnet) for genuine adversarial depth.
+- Live test: NVDA → `risk=8, reject=True`; JNJ → `risk=6, reject=False`. Full 8-field schema returned, no truncation.
+
+### Changed — Devil's Advocate max_tokens: 1650 → 4125 (2.5×)
+
+- Sonnet produces more tokens than Haiku at the same prompt depth; budget raised proportionally to avoid truncation risk on the new model.
+
+---
+
 ## [2026-06-15 evening] — PM SELL-only fix + 3-signal backstop + +10% token budget  ·  main
 
 Portfolio Manager (Agent 6) returned 0 trades when the only correct action was a SELL on a deteriorating position (LLY). Fixed with two complementary changes.
