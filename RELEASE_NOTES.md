@@ -15,6 +15,35 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ---
 
+## [2026-06-15 evening] — PM SELL-only fix + 3-signal backstop + +10% token budget  ·  main
+
+Portfolio Manager (Agent 6) returned 0 trades when the only correct action was a SELL on a deteriorating position (LLY). Fixed with two complementary changes.
+
+### Fixed — PM skipped SELL-only decisions
+
+- **Root cause:** `_PM_SYSTEM` prompt was framed purely around BUY capital allocation. When no BUY candidates existed, the PM saw no action to take and returned `[]`, ignoring REDUCE/EXIT signals from position review.
+- **PM prompt fix:** Added explicit instruction: *"SELL decisions are independent of BUY decisions. When a holding shows recommended_action=REDUCE or EXIT … you MUST propose a SELL … even if you have no new BUYs to make."*
+
+### Added — Deterministic 3-signal backstop in `main.py`
+
+- New `apply_pm_backstop()` helper auto-appends a SELL for any holding where **all three** signals agree: position_review REDUCE/EXIT, hold_score < 5, AND DA recommend_reject=True.
+- Backstop fires AFTER the PM runs and BEFORE qty pre-computation, so the SELL goes through the full guardrail + CRO pipeline.
+- Existing PM SELL decisions are never duplicated (idempotent check).
+- 8 regression tests added (`TestPMBackstop`), covering: all-3-trigger, EXIT action, missing one signal, hold_score=5 boundary, already-selling dedup, HOLD-doesn't-suppress, multi-ticker independence, null hold_score treated as 10.
+
+### Changed — All agent max_tokens raised +10%
+
+Defensive increase to reduce truncation risk across all agents:
+- Agent 1 (Regime): 700 → 770
+- Agent 2 (Research): 1000 → 1100
+- Agent 3 (Earnings): 600 → 660
+- Agent 4 (DA): 1500 → 1650 (note: 800→1500 was the Jun 15 morning fix)
+- Agent 5 (Position Review): 400 → 440
+- Agent 6 (PM): 1200 → 1320
+- Agent 7 (CRO): 400 → 440
+
+---
+
 ## [2026-06-15] — Devil's Advocate empties fixed (truncation, not throughput)  ·  ~PT  ·  main
 
 Daily-cycle reports were flagging **DEGRADED — most Devil's Advocate (Agent 4) responses came back empty even after retries** (e.g. 15–17 of 20 candidates). Root-caused and fixed.
