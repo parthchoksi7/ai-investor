@@ -21,3 +21,18 @@ prompts/
 health_history.jsonl
 # FMP provider cache (#1) — persisted in CI via actions/cache, transient locally.
 provider_cache.json
+
+# Portfolio & trade data — contains real positions, cost bases, order IDs.
+# The routine commits these via explicit git add; they are intentionally NOT
+# tracked here so a public repo does not expose financial data.
+mcp_portfolio.json
+mcp_market_data.json
+portfolio_snapshot.json
+portfolio_peak.json
+pending_decisions.json
+trades.csv
+transactions.json
+decision_journal.json
+agent_log.json
+system_health.json
+fundamentals_cache.json
