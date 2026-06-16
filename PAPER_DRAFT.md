@@ -127,10 +127,19 @@ do not address autonomous execution.
 **LLM-based trading agents.** FinAgent [6] describes a multimodal LLM agent
 for financial trading, evaluating on simulation. FinGPT [5] explores
 open-source LLM adaptation for financial tasks including portfolio management.
-These works typically do not address live execution infrastructure, operational
-safety, or idempotency. Our work differs in deploying on a live account with
-real capital, though this deployment distinction is operational rather than
-methodological, and live deployment alone does not validate the architecture.
+TradingAgents [15] proposes a specialized multi-agent LLM framework —
+analyst, researcher, and risk-management roles deliberating before execution —
+structurally similar to our pipeline but evaluated on historical simulation
+without live execution or deterministic safety constraints. FinMem [16]
+introduces a layered memory architecture that persists market context across
+sessions; our system does not implement cross-session agent memory, a
+limitation noted in §6. FinRobot [17] provides an open-source agent platform
+for financial applications emphasizing adaptability across tasks, but does not
+address idempotency or crash-recovery guarantees. These works collectively do
+not address live execution infrastructure, operational safety, or idempotency.
+Our work differs in deploying on a live account with real capital, though this
+deployment distinction is operational rather than methodological, and live
+deployment alone does not validate the architecture.
 
 **Multi-agent systems in finance.** Reinforcement learning multi-agent systems
 for market simulation are well-studied [4]. Our system instantiates an
@@ -141,23 +150,28 @@ simulation-evaluated approaches without ablation evidence.
 debate between AI agents as a scalable oversight mechanism, arguing that
 adversarial framing surfaces weaknesses that a single agent might suppress.
 Constitutional AI [8] introduced critic roles that evaluate model outputs
-against stated principles. Our Devil's Advocate and CRO agents are motivated
-by these frameworks, but the mechanism (prompt framing of an LLM agent) is
-categorically different from the training-time or game-theoretic mechanisms in
-those works. Whether adversarial prompt framing produces materially better
-output than a single agent prompted to "consider risks" is an empirical question
-we have not answered.
+against stated principles. Du et al. [18] demonstrate that multi-agent debate
+improves factual accuracy and reasoning quality on held-out question-answering
+benchmarks. Liang et al. [19] show that adversarial debate encourages
+divergent thinking and reduces sycophancy in LLM outputs. Our Devil's Advocate
+and CRO agents are motivated by these frameworks, but the mechanism (prompt
+framing of an LLM agent) is categorically different from the training-time or
+game-theoretic mechanisms in [7] and [8], and the financial-decision analogue
+of the accuracy improvements shown in [18] and [19] remains unmeasured. Whether
+adversarial prompt framing produces materially better trade decisions than a
+single agent prompted to "consider risks" is an empirical question we have not
+answered.
 
 **Algorithmic trading systems.** Aldridge [9] covers operational concerns —
 idempotency, order sequencing, circuit breakers — largely absent from ML
 trading literature. We treat these as first-class requirements.
 
 **Positioning.** The system described here is closest to FinAgent [6] and
-related LLM-agent trading works, with three distinguishing operational
-properties: live execution on a real account, deterministic safety layers that
-are architecturally separate from the LLM pipeline, and explicit treatment of
-idempotency. We acknowledge that these operational properties are engineering
-contributions rather than methodological novelty.
+TradingAgents [15] among LLM-agent trading works, with three distinguishing
+operational properties: live execution on a real account, deterministic safety
+layers that are architecturally separate from the LLM pipeline, and explicit
+treatment of idempotency. We acknowledge that these operational properties are
+engineering contributions rather than methodological novelty.
 
 ---
 
@@ -1133,6 +1147,21 @@ losers: Implications for stock market efficiency. *Journal of Finance*, 48(1),
 
 [14] Frazzini, A., & Pedersen, L. H. (2014). Betting against beta. *Journal of
 Financial Economics*, 111(1), 1–25.
+
+[15] Liu, Y., et al. (2024). TradingAgents: Multi-agents LLM financial trading
+framework. *arXiv:2412.20138*.
+
+[16] Yu, Y., et al. (2024). FinMem: A performance-enhanced LLM trading agent
+with layered memory and character design. *arXiv:2311.13743*.
+
+[17] Yang, B., et al. (2024). FinRobot: An open-source AI agent platform for
+financial applications using large language models. *arXiv:2405.14767*.
+
+[18] Du, Y., et al. (2023). Improving factuality and reasoning in language
+models through multiagent debate. *arXiv:2305.14325*.
+
+[19] Liang, T., et al. (2023). Encouraging divergent thinking in large language
+models through multi-agent debate. *arXiv:2305.19118*.
 
 ---
 
