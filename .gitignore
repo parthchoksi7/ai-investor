@@ -22,17 +22,13 @@ health_history.jsonl
 # FMP provider cache (#1) — persisted in CI via actions/cache, transient locally.
 provider_cache.json
 
-# Portfolio & trade data — contains real positions, cost bases, order IDs.
-# The routine commits these via explicit git add; they are intentionally NOT
-# tracked here so a public repo does not expose financial data.
-mcp_portfolio.json
-mcp_market_data.json
-portfolio_snapshot.json
-portfolio_peak.json
-pending_decisions.json
-trades.csv
-transactions.json
-decision_journal.json
-agent_log.json
-system_health.json
-fundamentals_cache.json
+# NOTE: the routine's data + audit files (portfolio_snapshot.json, trades.csv,
+# transactions.json, decision_journal.json, agent_log.json, system_health.json,
+# mcp_portfolio.json, mcp_market_data.json, pending_decisions.json,
+# fundamentals_cache.json, portfolio_peak.json) are intentionally TRACKED. The
+# cloud routine commits them via explicit `git add`, and publish.yml triggers on
+# a portfolio_snapshot.json push. Do NOT gitignore them — an ignored file makes
+# the routine's `git add` a silent no-op (stages nothing), breaking the daily
+# commit/claim/publish path. Portfolio data for the $500 demo account is public
+# by design; the sensitive values (account number, API keys, routine IDs, MCP
+# connector UUID) are redacted in code/docs instead.

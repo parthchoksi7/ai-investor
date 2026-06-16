@@ -1,0 +1,40 @@
+{
+  "run_id": "20260612-134736",
+  "date": "2026-06-12",
+  "generated_at": "2026-06-12T13:47:36.590236+00:00",
+  "executed_at": "2026-06-12T13:52:22.572732+00:00",
+  "decisions": [
+    {
+      "ticker": "BAC",
+      "action": "BUY",
+      "target_weight": 0.08,
+      "source_of_capital": "cash",
+      "rationale": "BAC's 92.4 momentum score (highest among financials candidates), conf=7/10, reject=False, and Q2 earnings catalyst on July 16 align perfectly with RISK_ON/MOMENTUM regime while diversifying the existing financial sector exposure away from pure investment banking toward consumer/commercial banking with NIM stabilization thesis.",
+      "qty": 0.72802
+    },
+    {
+      "ticker": "EQIX",
+      "action": "SELL",
+      "target_weight": 0.0,
+      "source_of_capital": "EQIX",
+      "rationale": "EQIX carries the lowest composite quant score (66.0) and lowest momentum (64.8) among current holdings with a bear case flagging hyperscaler vertical integration risk and value-trap characteristics; capital is better deployed into higher-momentum RISK_ON names given the current regime.",
+      "qty": 0.037203
+    },
+    {
+      "ticker": "JPM",
+      "action": "SELL",
+      "target_weight": 0.0,
+      "source_of_capital": "JPM",
+      "rationale": "JPM (quant 69.1, hold=6/10) is the weakest financial holding with lowest momentum among the bank positions; selling frees capital while BAC (92.4 momentum) offers superior near-term alpha in the same sector with a more favorable earnings catalyst profile.",
+      "qty": 0.095754
+    },
+    {
+      "ticker": "AAPL",
+      "action": "BUY",
+      "target_weight": 0.08,
+      "source_of_capital": "cash",
+      "rationale": "AAPL (quant 68.4, conf=6/10) adds LARGE_CAP_TECH exposure explicitly favored by the RISK_ON regime, with Q3 earnings on July 28 as near-term catalyst and Services-driven margin expansion providing quality anchor to balance the portfolio's high-beta financial and energy positions.",
+      "qty": 0.135837
+    }
+  ]
+}
