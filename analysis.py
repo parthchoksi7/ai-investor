@@ -5,7 +5,7 @@ Pipeline order:
   1. Market Regime Strategist  (portfolio-level, Sonnet)
   2. Research Analyst           (per-ticker,       Haiku)
   3. Earnings & Catalyst Analyst(per-ticker,       Haiku)
-  4. Devil's Advocate           (per-ticker,       Haiku)
+  4. Devil's Advocate           (per-ticker,       Sonnet)
   5. Position Review Analyst    (per-holding,      Haiku)
   6. Portfolio Manager          (portfolio-level,  Sonnet)
   7. Chief Risk Officer         (portfolio-level,  Sonnet)
@@ -678,27 +678,35 @@ EARNINGS ASSESSMENT:
 Use your training knowledge of {ticker} to construct a rigorous bear case. \
 All fields must be non-empty — do not return blank strings or empty arrays.
 
-Output JSON (fill in every field). Keep "bear_case" to 2-3 tight sentences \
-(the single strongest argument, not an essay) and each list item to one short phrase:
+REJECTION CALIBRATION: recommend_reject=true is expected on roughly 20-30% of \
+evaluations — not every idea is fatally flawed, but not every idea is sound. \
+Set recommend_reject=true when overall_risk_score >= 7 AND at least one of: \
+(a) the central bull assumption is empirically false or unverifiable, \
+(b) downside scenarios include permanent capital loss (>40% drawdown), \
+(c) the valuation already prices in the bull case leaving no margin of safety. \
+Do NOT default to false — force an honest verdict.
+
+Output JSON. overall_risk_score and recommend_reject come FIRST so they are \
+captured even if the response is long. Keep "bear_case" to 2-3 tight sentences \
+and each list item to one short phrase:
 {{
-  "bear_case": "the strongest argument against owning this stock, in 2-3 sentences",
+  "overall_risk_score": <integer 1-10; 7+ means high risk>,
+  "recommend_reject": <true if overall_risk_score >= 7 AND a fatal flaw exists, else false>,
+  "bear_case": "the single strongest argument against owning this stock in 2-3 sentences",
   "weakest_assumptions": ["assumption 1", "assumption 2"],
   "hidden_risks": ["risk 1"],
-  "crowding_risk": "MEDIUM",
-  "valuation_risk": "MEDIUM",
-  "catalyst_failure_probability": "MEDIUM",
-  "overall_risk_score": 5,
-  "recommend_reject": false
+  "crowding_risk": "LOW | MEDIUM | HIGH",
+  "valuation_risk": "LOW | MEDIUM | HIGH",
+  "catalyst_failure_probability": "LOW | MEDIUM | HIGH"
 }}"""
 
     return _safe_call(
-        MODEL_FAST, _cached_system(_DEVILS_SYSTEM), user_msg,
+        MODEL_SMART, _cached_system(_DEVILS_SYSTEM), user_msg,
         default={"bear_case": "", "overall_risk_score": 5,
                  "recommend_reject": False, "hidden_risks": []},
-        # The hostile prompt elicits a verbose bear_case (~1.1k tokens end-to-end);
-        # 800 truncated it mid-JSON → empty defaults. Headroom + the conciseness cap
-        # above keep the full object inside the budget.
-        max_tokens=1650,
+        # Sonnet for genuine adversarial depth; overall_risk_score + recommend_reject
+        # are first so any truncation still captures the verdict.
+        max_tokens=4125,
     )
 
 
