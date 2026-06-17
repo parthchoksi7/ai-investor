@@ -808,16 +808,26 @@ def run_portfolio_manager(
     cash  = portfolio["cash"]
     cash_pct = (cash / total * 100) if total else 0
 
-    # Format current holdings
+    # Format current holdings. Surface the Devil's Advocate verdict alongside the
+    # Position Review so the PM sees the TENSION explicitly: a holding the position
+    # reviewer says HOLD but the DA would reject as a fresh BUY (reject=True / high
+    # risk) is a trim/exit candidate, not a silent hold. Without this the two signals
+    # lived in separate prompt sections and the PM could leave a DA-rejected holding
+    # untouched (observed 2026-06-17: PANW/AAPL/LLY DA-rejected, all held, 33.5% idle
+    # cash, 0 trades). devil_map only covers analyzed candidates — show '?' otherwise.
     holdings_lines = []
     for p in portfolio["positions"]:
         t = p["symbol"]
         weight = (p["market_value"] / total * 100) if total else 0
         review = position_reviews.get(t, {})
+        da = devil_map.get(t, {})
+        da_reject = da.get("recommend_reject", "?")
+        da_risk = da.get("overall_risk_score", "?")
         holdings_lines.append(
             f"  {t}: {p['qty']} sh @ ${p['avg_price']:.2f} = ${p['market_value']:,.0f} ({weight:.1f}%) "
             f"| hold={review.get('hold_score','?')}/10 alpha={review.get('remaining_alpha','?')} "
-            f"action={review.get('recommended_action','?')}"
+            f"action={review.get('recommended_action','?')} "
+            f"| devil_reject={da_reject} devil_risk={da_risk}/10"
         )
 
     # Format quant scores table (top 25 by composite, exclude ETFs)
@@ -863,7 +873,9 @@ MARKET REGIME: {json.dumps(regime)}
 
 CURRENT PORTFOLIO:
   Cash: ${cash:,.2f} ({cash_pct:.1f}%)  Total: ${total:,.2f}
-  Holdings:
+  Holdings (devil_reject=True means the bear analyst would NOT buy this name fresh
+  at current levels — when that conflicts with a HOLD review, treat it as a trim/exit
+  candidate and redeploy, do not silently hold):
 {chr(10).join(holdings_lines) or '  (none — all cash)'}
 
 QUANT SCORES (top candidates):

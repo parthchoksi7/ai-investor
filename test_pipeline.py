@@ -2216,6 +2216,20 @@ class TestMemoryInjectedIntoAgents:
         assert "RECENTLY EXITED" in captured["user_msg"]
         assert "AAPL" in captured["user_msg"]
 
+    def test_pm_holdings_line_surfaces_devil_reject(self, monkeypatch):
+        # A held ticker the DA rejects should show devil_reject=True next to the
+        # position-review HOLD, so the PM sees the tension (2026-06-17 gap).
+        analysis, captured = self._capture(monkeypatch)
+        portfolio = {"total_value": 500.0, "cash": 50.0, "positions": [
+            {"symbol": "PANW", "qty": 0.14, "avg_price": 277.0, "market_value": 40.0}]}
+        analysis.run_portfolio_manager(
+            {}, {}, {}, {"PANW": {"recommend_reject": True, "overall_risk_score": 8}},
+            {"PANW": {"hold_score": 7, "recommended_action": "HOLD", "remaining_alpha": "MEDIUM"}},
+            {}, portfolio, [], date="2026-06-17")
+        msg = captured["user_msg"]
+        assert "devil_reject=True" in msg
+        assert "devil_risk=8/10" in msg
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 4 — CRO gets REAL correlation data: quant_engine.compute_return_correlations

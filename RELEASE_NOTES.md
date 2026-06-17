@@ -13,6 +13,15 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — Devil's Advocate verdict surfaced on current holdings in the PM prompt (review branch)
+
+- **`analysis.py` (`run_portfolio_manager`):** each holdings line now shows
+  `devil_reject` / `devil_risk` next to the position-review HOLD, with a prompt hint
+  to treat a DA-rejected HOLD as a trim/exit candidate. Addresses the 2026-06-17 gap
+  (PANW/AAPL/LLY DA-rejected, all held, 33.5% idle cash, 0 trades). **Behavioral
+  nudge → may increase turnover; held on a review branch pending sign-off** (the
+  5-day min-hold / 30-day wash-sale / net-edge / CRO guards still backstop churn).
+
 ---
 
 ## [2026-06-17] — post-run gap audit: regime publish · alerting · PM auditability  ·  ~16:08 PT  ·  main
