@@ -86,7 +86,12 @@ The routine depends on a fresh `market_snapshot.json` from the `market_data.yml`
 Protocol on **every** attempt:
 
 ```bash
-git pull --rebase            # get the latest market_snapshot.json / pending_decisions.json
+# OPERATE ON main first — the worktree may start on a claude/* branch. A bare
+# git push targets the CURRENT branch, so if you don't switch to main the gate
+# reads a stale pending_decisions.json (→ retry re-runs the pipeline = double-fill)
+# and system_health.json never reaches main (→ alert.yml fires nothing).
+git fetch origin main
+git checkout -B main origin/main   # canonical pending_decisions.json + pushes land on main
 python preflight_gate.py     # decide whether to run
 case $? in
   0)  : run main.py + execute (continue with the normal protocol below) ;;
@@ -327,9 +332,11 @@ checks, not order/qty/idempotency). Newest first.
 
 > **QA:** full `pytest` green (**415**, +14: `TestSupabaseHealthClassification`, `TestSafeCallMeta`, `TestPmParseFailureSurfaced`, `TestCashDisciplineStatus`, `TestPublishRegimePriority`). Workflow YAML parses; DEPLOYMENT §3.1–3.7 regression scripts pass. Expert `/code-review high` run pre-commit per §7.0.2 — no correctness findings (changes are observability/arg-passing, not execution-path, so `high` not `ultra`). **Dry-run (§3.8 / §7.1) intentionally SKIPPED** — Jun 17 is a trading day and today's cycle already executed; a real `main.py` dry-run would overwrite `pending_decisions.json` and risk a double-fill (DEPLOYMENT §7.1 trading-day warning). `pending_decisions.json` was NOT staged.
 >
-> ### ⚠️ Standing P0 (operational, NOT fixed in this batch): the daily routine commits to a worktree branch, not `main`
+> ### ✅ P0 (operational) FIXED in the routine docs — the routine now operates on `main`
 >
-> `gh run list` shows the daily routine landing on auto-generated Claude worktree branches (`claude/festive-hopper-p3rmxg` on 6/16, `claude/hopeful-brown-udsl1g` on 6/17), not `main`. Consequences: (1) `alert.yml` is `main`-scoped → **no health alert fires** for those runs (an ABORTED/FAILED day is silent); (2) the executed state (`executed_at`, journal, trades) never reaches `main`; (3) `publish.yml` (no branch filter) DOES fire on the branch, which is how the stale-regime publish still reached the live site. The routine uses a bare `git push` (pushes to the current branch's upstream). **Fix (dedicated PR):** change the routine's pushes to target `main` (`git push origin HEAD:main` with a `git fetch origin main && git rebase origin/main` retry). Deferred because it touches the STEP 4 execution-claim push (double-fill window) and needs a weekend `DRY_RUN` validation + live-routine sync before it can ship.
+> `gh run list` showed the daily routine landing on auto-generated Claude worktree branches (`claude/festive-hopper-p3rmxg` on 6/16, `claude/hopeful-brown-udsl1g` on 6/17), not `main`. **Confirmed live double-execution vector:** on 6/17 the 9:45 run executed on a branch (its `executed_at` never reached `main`), so the 12:45 retry pulled `main`, saw "not executed today," and **re-ran the entire pipeline** (`run 20260617-164755`). Both were 0-trade so harmless, but with real trades that is a DOUBLE-FILL — the `pending_decisions.json` idempotency envelope is defeated when it doesn't live on `main`. Also: `alert.yml` (main-scoped) fired nothing for the branch runs, and the stale-regime publish still reached the live site via `publish.yml` (no branch filter).
+>
+> **Fix (this batch):** `ROUTINE_DAILY_CYCLE.md` STEP 0 and `ROUTINE_EOD_CLOSE.md` STEP 0 now begin with `git fetch origin main && git checkout -B main origin/main`, so the routine operates ON `main` — the gate reads the canonical `pending_decisions.json` and every existing bare `git push` lands on `main`. Minimal change (only the checkout is added); all STEP 4/5 claim/push semantics are preserved verbatim. **⚠️ Requires live-routine sync** (both routines) via the routines UI before it takes effect — the code/doc change alone does not alter the live prompts.
 
 ## Changelog — Jun 16 2026 (NaN publish fix + canary auth + routine observability)
 

@@ -41,6 +41,13 @@ so committing that file with `is_close: true` is what makes the Action write `cl
 ```
 Run the EOD Close Snapshot — record the official 4 PM closing portfolio value to Supabase. No trades, no analysis.
 
+STEP 0 — Operate on main
+The worktree may start on an arbitrary branch (e.g. claude/…). A bare git push targets the
+CURRENT branch, so without switching to main the closing snapshot never reaches main's canonical
+state and you may run a stale publish.py. Force the working tree onto the latest main first:
+git fetch origin main
+git checkout -B main origin/main
+
 STEP 1 — Get portfolio via Robinhood MCP
 Call:
 - get_accounts() — confirm account YOUR_ACCOUNT_NUMBER is present

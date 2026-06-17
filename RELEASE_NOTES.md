@@ -59,14 +59,17 @@ DEPLOYMENT.md §7.0). Newest first.
 - **`alert.yml`:** added `workflow_dispatch` so the checkout/permissions fix
   (`contents: read`) can be verified without waiting for a `main` push.
 
-### Known / not yet fixed
+### Fixed — routine now operates on `main` (closes a confirmed double-execution vector)
 
-- **P0 (operational, not in this PR):** the daily routine has been committing to
-  Claude worktree branches (`claude/*`), not `main`. `alert.yml` is `main`-scoped, so
-  **no health alert fires for those runs**, and the executed state never reaches
-  `main`. Fix requires changing the routine's push to target `main` (rebase-onto-main)
-  — deferred to a dedicated PR with weekend dry-run validation because it touches the
-  STEP 4 execution-claim push (double-fill window).
+- **`ROUTINE_DAILY_CYCLE.md` + `ROUTINE_EOD_CLOSE.md` STEP 0:** both now begin with
+  `git fetch origin main && git checkout -B main origin/main`. The routine had been
+  running on Claude worktree branches (`claude/*`), so a bare `git push` landed on the
+  branch — the gate read a stale `pending_decisions.json` and the 6/17 12:45 retry
+  **re-ran the whole pipeline** (`run 20260617-164755`; 0-trade so harmless, but a
+  double-fill with real trades). Operating on `main` makes the gate read the canonical
+  envelope and every existing push land on `main`. Minimal change — all STEP 4/5
+  claim/push semantics preserved. **⚠️ Requires manual live-routine sync** (both
+  routines) before it takes effect.
 
 ---
 

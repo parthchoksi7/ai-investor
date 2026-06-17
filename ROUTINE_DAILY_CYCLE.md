@@ -27,8 +27,20 @@ GitHub Actions scheduled-cron delays. This gate decides whether THIS attempt sho
 Running the pipeline against stale data is pointless — main.py would just abort at preflight and
 waste agent tokens. The gate is idempotent across the 4 attempts.
 
-Pull the latest code AND the committed data files (market_snapshot.json, pending_decisions.json):
-git pull --ff-only
+OPERATE ON `main` — this is mandatory and must be the FIRST thing you do.
+This routine runs in a fresh worktree that may start on an arbitrary branch
+(e.g. `claude/…`). A bare `git push` pushes to the CURRENT branch, so if you do
+not switch to `main` first:
+  • the gate reads a STALE `pending_decisions.json` (main's, not this branch's) —
+    on a retry it sees "not executed today" and RE-RUNS the whole pipeline,
+    which with real trades is a DOUBLE-FILL (the idempotency envelope is defeated);
+  • `system_health.json` / `portfolio_snapshot.json` never reach `main`, so
+    `alert.yml` (main-scoped) fires NO alert and the canonical state diverges.
+Force the working tree onto the latest `main` so the gate reads the canonical
+envelope and every later `git push` lands on `main`:
+
+git fetch origin main
+git checkout -B main origin/main      # reset local main to origin/main and switch to it
 
 Run the gate and capture its exit code:
 python preflight_gate.py
