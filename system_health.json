@@ -1,103 +1,99 @@
 {
-  "run_id": "20260612-134736",
-  "date": "2026-06-12",
-  "timestamp": "2026-06-12T13:51:41.109412+00:00",
+  "run_id": "20260617-154739",
+  "date": "2026-06-17",
+  "timestamp": "2026-06-17T15:50:17.605413+00:00",
   "overall_status": "FAILED",
   "checks": {
     "portfolio": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:47:36.590338+00:00",
-      "total_value": 501.969517237,
-      "cash": 180.82,
+      "ts": "2026-06-17T15:47:39.177056+00:00",
+      "total_value": 507.5223949125,
+      "cash": 169.98,
       "positions": 8
     },
     "kill_switch": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:47:36.593828+00:00"
+      "ts": "2026-06-17T15:47:39.180294+00:00"
     },
     "market_data": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:47:36.643250+00:00",
+      "ts": "2026-06-17T15:47:39.227746+00:00",
       "source": "market_snapshot_file",
-      "data_date": "2026-06-12",
+      "data_date": "2026-06-17",
       "tickers": 100,
       "history_min_bars": 206,
-      "history_avg_bars": 209.8
+      "history_avg_bars": 209.6
     },
     "quant_scores": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:47:36.653114+00:00",
+      "ts": "2026-06-17T15:47:39.238944+00:00",
       "real_scores": 100,
       "total": 100
+    },
+    "decision_validation": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-06-17T15:50:17.024273+00:00",
+      "passed": 0
     },
     "agent_1_regime": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:51:40.742522+00:00",
+      "ts": "2026-06-17T15:50:17.024291+00:00",
       "regime": "RISK_ON",
-      "confidence": 82
+      "confidence": 72
     },
     "agent_2_research": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:51:40.742559+00:00",
+      "ts": "2026-06-17T15:50:17.024314+00:00",
       "total": 20
     },
     "agent_3_earnings": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:51:40.742574+00:00",
+      "ts": "2026-06-17T15:50:17.024326+00:00",
       "total": 20
     },
     "agent_4_devils_advocate": {
-      "status": "DEGRADED",
-      "message": "15/20 devil's advocate responses empty",
-      "ts": "2026-06-12T13:51:40.742587+00:00",
-      "empty": 15,
+      "status": "OK",
+      "message": "",
+      "ts": "2026-06-17T15:50:17.024343+00:00",
       "total": 20
     },
     "agent_5_position_review": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:51:40.742598+00:00",
+      "ts": "2026-06-17T15:50:17.024351+00:00",
       "reviewed": 8,
-      "reduce_exit_recommended": 0
+      "reduce_exit_recommended": 2
     },
     "agent_6_portfolio_manager": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-12T13:51:40.742603+00:00",
-      "proposed": 4,
-      "final_decisions": 4
+      "ts": "2026-06-17T15:50:17.024356+00:00",
+      "proposed": 6,
+      "final_decisions": 0
     },
     "agent_7_cro": {
-      "status": "OK",
-      "message": "",
-      "ts": "2026-06-12T13:51:40.742606+00:00",
-      "approved": true,
-      "vetoed": [],
-      "risk_budget": 62
-    },
-    "execution": {
-      "status": "OK",
-      "message": "",
-      "ts": "2026-06-12T13:51:40.764230+00:00",
-      "decisions": 4,
-      "executed": 4,
-      "dry_run": true
+      "status": "DEGRADED",
+      "message": "CRO API error \u2014 trades BLOCKED (safety default)",
+      "ts": "2026-06-17T15:50:17.024360+00:00",
+      "approved": false,
+      "vetoed": []
     },
     "supabase_publish": {
       "status": "FAILED",
       "message": "{'message': 'JSON could not be generated', 'code': 403, 'hint': 'Refer to full message for details', 'details': \"b'Host not in allowlist: vnrezryrvimmucabdetj.supabase.co. Add this host to your networ",
-      "ts": "2026-06-12T13:51:41.109221+00:00"
+      "ts": "2026-06-17T15:50:17.605311+00:00"
     }
   },
   "alerts": [
-    "[DEGRADED] agent_4_devils_advocate: 15/20 devil's advocate responses empty",
+    "[DEGRADED] agent_7_cro: CRO API error \u2014 trades BLOCKED (safety default)",
     "[FAILED] supabase_publish: {'message': 'JSON could not be generated', 'code': 403, 'hint': 'Refer to full message for details', 'details': \"b'Host not in allowlist: vnrezryrvimmucabdetj.supabase.co. Add this host to your networ"
   ]
 }
