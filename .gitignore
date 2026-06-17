@@ -22,6 +22,17 @@ health_history.jsonl
 # FMP provider cache (#1) — persisted in CI via actions/cache, transient locally.
 provider_cache.json
 
+# Paper drafts and reviewer notes — pre-publication, not part of the codebase.
+PAPER_DRAFT.md
+PAPER_ARXIV.md
+PAPER_C.md
+PAPER_C.tex
+*.tex
+RESEARCH_THESIS.md
+REVIEWER_FEEDBACK_BACKLOG.md
+REVIEWER_FEEDBACK_PLAN.md
+eval/
+
 # NOTE: the routine's data + audit files (portfolio_snapshot.json, trades.csv,
 # transactions.json, decision_journal.json, agent_log.json, system_health.json,
 # mcp_portfolio.json, mcp_market_data.json, pending_decisions.json,
