@@ -20,6 +20,10 @@ from zoneinfo import ZoneInfo
 
 _ET = ZoneInfo("America/New_York")
 
+# Cash above this % triggers a DEGRADED `cash_discipline` health signal (review,
+# not auto-trade). Set above the 0–10% PM target with a buffer for normal drift.
+CASH_DISCIPLINE_PCT = 15.0
+
 from market_data  import get_market_snapshot
 from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
@@ -28,6 +32,37 @@ from journal      import check_kill_switches, record_trade, record_run, record_t
 from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, flag_wash_sale_presale
 from publish      import publish_to_supabase
 from health       import HealthTracker, OK, DEGRADED, FAILED, ABORTED
+
+
+def cash_discipline_status(cash_pct: float, net_buy: float,
+                           threshold: float = CASH_DISCIPLINE_PCT) -> str:
+    """DEGRADED when cash exceeds the review ceiling AND the run is deploying none
+    of it (no BUYs); OK otherwise. Pure function so the threshold logic is unit
+    testable independent of the pipeline. Observability only — never gates a trade."""
+    return DEGRADED if (cash_pct > threshold and net_buy <= 0) else OK
+
+
+def _record_supabase_health(health, exc: Exception) -> None:
+    """Record the supabase_publish health check, distinguishing the EXPECTED cloud
+    egress block from a real publish failure.
+
+    In Anthropic's cloud the Supabase host is not on the egress allowlist, so the
+    in-process publish ALWAYS raises a 403 ("Host not in allowlist"). That is not a
+    failure — the routine commits portfolio_snapshot.json and GitHub Actions
+    (publish.yml) performs the real publish with Supabase access. Recording it as
+    FAILED forced overall_status=FAILED on every clean cloud run, which (a) made the
+    health signal pure noise and (b) prevented alert.yml from ever auto-closing a
+    recovered health-alert issue (status never returned to OK). The downstream
+    health_check.yml job verifies the Supabase row actually landed, so marking this
+    OK here does not reduce coverage. A genuine publish error (bad key, schema
+    drift) does NOT contain the allowlist marker and is still recorded FAILED."""
+    msg = str(exc)
+    if "not in allowlist" in msg or "egress" in msg.lower():
+        health.record("supabase_publish", OK,
+                      message="Supabase blocked by cloud egress allowlist — "
+                              "publish deferred to GitHub Actions (expected).")
+    else:
+        health.record("supabase_publish", FAILED, message=msg[:200])
 
 
 def apply_pm_backstop(decisions: list, portfolio: dict, pipeline_state: dict) -> list[str]:
@@ -394,10 +429,18 @@ def run_daily_cycle():
                       reviewed=len(position_reviews), reduce_exit_recommended=reduces)
 
     # Agent 6: Portfolio Manager
-    pm_proposed = pipeline_state.get("portfolio_manager_proposed", [])
-    reduces     = sum(1 for v in position_reviews.values()
+    pm_proposed  = pipeline_state.get("portfolio_manager_proposed", [])
+    pm_parsed_ok = pipeline_state.get("portfolio_manager_parsed_ok", True)
+    reduces      = sum(1 for v in position_reviews.values()
                       if v.get("recommended_action") in ("REDUCE", "EXIT"))
-    if reduces > 0 and len(pm_proposed) == 0 and not decisions:
+    if not pm_proposed and not pm_parsed_ok:
+        # A parse failure that silently collapsed to [] — NOT a deliberate no-trade.
+        # Without this branch a mangled PM response is indistinguishable from "hold".
+        health.record("agent_6_portfolio_manager", DEGRADED,
+                      message="PM returned no decisions due to an unparseable response "
+                              "(not a deliberate no-trade) — output failed to parse",
+                      proposed=0, parsed_ok=False)
+    elif reduces > 0 and len(pm_proposed) == 0 and not decisions:
         health.record("agent_6_portfolio_manager", DEGRADED,
                       message=f"PM proposed 0 trades despite {reduces} REDUCE/EXIT from position review — likely data starvation",
                       position_review_reduce_exit=reduces, proposed=0)
@@ -468,17 +511,39 @@ def run_daily_cycle():
             "decisions":            decisions,
         }, _f, indent=2)
 
+    # ── Cash discipline signal (observability only — never forces a trade) ──────
+    # The 0–10% cash target is enforced ONLY in the PM prompt, and the LLM can
+    # ignore it (observed: 33.5% cash left idle in a RISK_ON regime with 0 trades).
+    # We deliberately do NOT auto-deploy — forcing buys to hit a cash ceiling would
+    # churn a CA top-bracket taxable account (~54% short-term tax) against the very
+    # turnover/wash-sale guards built to cut churn. Instead surface over-target
+    # idle cash as DEGRADED for human review. Fires only when cash is high AND the
+    # run is not already deploying it (no BUYs), so a deploying run isn't flagged.
+    _cash_pct = (portfolio["cash"] / portfolio["total_value"] * 100) if portfolio["total_value"] else 0.0
+    _net_buy = sum(
+        d.get("qty", 0) * market_data["prices"].get(d["ticker"], {}).get("close", 0)
+        for d in decisions if d.get("action", "").upper() == "BUY"
+    )
+    _cash_status = cash_discipline_status(_cash_pct, _net_buy)
+    if _cash_status == DEGRADED:
+        health.record("cash_discipline", DEGRADED,
+                      message=f"Cash {_cash_pct:.1f}% exceeds {CASH_DISCIPLINE_PCT:.0f}% review "
+                              f"ceiling and no BUYs this run — capital idle (review PM deployment).",
+                      cash_pct=round(_cash_pct, 1))
+    else:
+        health.record("cash_discipline", OK, cash_pct=round(_cash_pct, 1))
+
     if not decisions:
         print("\n   No trades today.")
 
         # ── Step 8: Publish ───────────────────────────────────────────────────
         print("\n🌐  Step 8: Publishing to Supabase...")
+        _regime_str = pipeline_state.get("regime", {}).get("regime", "")
         try:
-            publish_to_supabase(portfolio, quant_scores=quant_scores)
+            publish_to_supabase(portfolio, quant_scores=quant_scores, regime=_regime_str)
             health.record("supabase_publish", OK)
         except Exception as e:
-            health.record("supabase_publish", FAILED,
-                          message=str(e)[:200])
+            _record_supabase_health(health, e)
             print(f"   ⚠ Supabase publish skipped: {e}")
 
         _write_health(health)
@@ -667,10 +732,10 @@ def run_daily_cycle():
     # ── Step 8: Publish to Supabase ───────────────────────────────────────────
     print("\n🌐  Step 8: Publishing to Supabase...")
     try:
-        publish_to_supabase(portfolio, quant_scores=quant_scores)
+        publish_to_supabase(portfolio, quant_scores=quant_scores, regime=regime_str)
         health.record("supabase_publish", OK)
     except Exception as e:
-        health.record("supabase_publish", FAILED, message=str(e)[:200])
+        _record_supabase_health(health, e)
         print(f"   ⚠ Supabase publish skipped: {e}")
 
     # ── Step 9: Write system_health.json ─────────────────────────────────────

@@ -4274,3 +4274,165 @@ class TestPMBackstop:
             },
         )
         assert exits == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Post-run gap fixes (2026-06-17): regime plumbing, Supabase-403 classification,
+# PM parse-failure detection. See the "Post-run gaps" changelog.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSupabaseHealthClassification:
+    """_record_supabase_health: the EXPECTED cloud egress 403 must NOT mark the run
+    FAILED (that forced overall_status=FAILED every clean run + blocked alert
+    auto-close); a REAL publish error still must."""
+
+    def _tracker(self):
+        from health import HealthTracker
+        return HealthTracker(run_id="t", date="2026-06-17")
+
+    def test_allowlist_403_recorded_ok(self):
+        from main import _record_supabase_health
+        from health import OK
+        h = self._tracker()
+        err = Exception("{'message': 'JSON could not be generated', 'code': 403, "
+                        "'details': \"Host not in allowlist: xyz.supabase.co\"}")
+        _record_supabase_health(h, err)
+        assert h.checks["supabase_publish"]["status"] == OK
+
+    def test_egress_wording_recorded_ok(self):
+        from main import _record_supabase_health
+        from health import OK
+        h = self._tracker()
+        _record_supabase_health(h, Exception("blocked by network egress settings"))
+        assert h.checks["supabase_publish"]["status"] == OK
+
+    def test_real_error_recorded_failed(self):
+        from main import _record_supabase_health
+        from health import FAILED
+        h = self._tracker()
+        _record_supabase_health(h, Exception("401 Invalid API key"))
+        assert h.checks["supabase_publish"]["status"] == FAILED
+
+
+class TestSafeCallMeta:
+    """_safe_call(return_meta=True) must distinguish a GENUINE default value (PM
+    legitimately returns []) from a PARSE FAILURE that collapsed to the default."""
+
+    def test_genuine_empty_array_parsed_ok_true(self, monkeypatch):
+        import analysis
+        monkeypatch.setattr(analysis, "_call", lambda *a, **k: ("[]", "max_tokens"))
+        result, meta = analysis._safe_call("m", "s", "u", default=[], retries=0, return_meta=True)
+        assert result == []
+        assert meta["parsed_ok"] is True
+
+    def test_unparseable_response_parsed_ok_false(self, monkeypatch):
+        import analysis
+        monkeypatch.setattr(analysis, "_call", lambda *a, **k: ("this is not json at all", "end_turn"))
+        result, meta = analysis._safe_call("m", "s", "u", default=[], retries=0, return_meta=True)
+        assert result == []
+        assert meta["parsed_ok"] is False
+
+    def test_valid_payload_round_trips(self, monkeypatch):
+        import analysis
+        monkeypatch.setattr(analysis, "_call",
+                            lambda *a, **k: ('[{"ticker": "AAPL", "action": "BUY"}]', "end_turn"))
+        result, meta = analysis._safe_call("m", "s", "u", default=[], retries=0, return_meta=True)
+        assert result == [{"ticker": "AAPL", "action": "BUY"}]
+        assert meta["parsed_ok"] is True
+
+
+class TestPmParseFailureSurfaced:
+    """run_portfolio_manager returns (decisions, meta); the pipeline records the
+    parse-ok flag so a mangled PM response can't masquerade as a deliberate hold."""
+
+    def test_pm_returns_tuple_with_meta(self, monkeypatch):
+        import analysis
+        monkeypatch.setattr(analysis, "_call", lambda *a, **k: ("not json", "end_turn"))
+        portfolio = {"total_value": 500.0, "cash": 500.0, "positions": []}
+        decisions, meta = analysis.run_portfolio_manager(
+            {}, {}, {}, {}, {}, {}, portfolio, [], date="2026-06-17")
+        assert decisions == []
+        assert meta["parsed_ok"] is False
+
+
+class TestCashDisciplineStatus:
+    """cash_discipline_status: DEGRADED only when cash is over the ceiling AND the
+    run deploys none of it. Observability signal — never forces a trade."""
+
+    def test_high_cash_no_buys_degraded(self):
+        from main import cash_discipline_status, CASH_DISCIPLINE_PCT
+        from health import DEGRADED
+        assert cash_discipline_status(33.5, 0.0) == DEGRADED
+        assert CASH_DISCIPLINE_PCT == 15.0
+
+    def test_high_cash_with_buys_ok(self):
+        # A run actively deploying cash (net_buy > 0) is NOT flagged.
+        from main import cash_discipline_status
+        from health import OK
+        assert cash_discipline_status(33.5, 120.0) == OK
+
+    def test_low_cash_ok(self):
+        from main import cash_discipline_status
+        from health import OK
+        assert cash_discipline_status(8.0, 0.0) == OK
+
+    def test_exactly_at_threshold_ok(self):
+        # Strictly greater-than: 15.0 is not over the 15.0 ceiling.
+        from main import cash_discipline_status
+        from health import OK
+        assert cash_discipline_status(15.0, 0.0) == OK
+
+
+class TestPublishRegimePriority:
+    """publish_to_supabase must publish the LIVE regime, not a stale one inherited
+    from the previous day's portfolio_snapshot.json (the bug that showed a RISK_ON
+    run as NEUTRAL on the dashboard)."""
+
+    def _setup(self, tmp_path, monkeypatch, snapshot_regime, log_regime, log_date):
+        monkeypatch.chdir(tmp_path)
+        # Stale snapshot from a prior day.
+        (tmp_path / "portfolio_snapshot.json").write_text(json.dumps({
+            "is_close": False, "regime": snapshot_regime,
+            "portfolio": {"cash": 100, "total_value": 500, "positions": []},
+        }))
+        # agent_log with a regime entry dated log_date.
+        (tmp_path / "agent_log.json").write_text(json.dumps([
+            {"run_id": "r", "date": log_date, "regime": {"regime": log_regime}}
+        ]))
+        # Ensure Supabase is treated as unconfigured so publish returns after the
+        # snapshot write (no network).
+        monkeypatch.delenv("SUPABASE_URL", raising=False)
+        monkeypatch.delenv("SUPABASE_SERVICE_KEY", raising=False)
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+
+    def _written_regime(self, tmp_path):
+        return json.loads((tmp_path / "portfolio_snapshot.json").read_text())["regime"]
+
+    def test_explicit_arg_wins_over_stale_file(self, tmp_path, monkeypatch):
+        import importlib, publish
+        importlib.reload(publish)
+        self._setup(tmp_path, monkeypatch, snapshot_regime="NEUTRAL",
+                    log_regime="NEUTRAL", log_date="2000-01-01")
+        publish.publish_to_supabase(
+            {"cash": 100, "total_value": 500, "positions": []}, regime="RISK_ON")
+        assert self._written_regime(tmp_path) == "RISK_ON"
+
+    def test_todays_agent_log_used_when_no_arg(self, tmp_path, monkeypatch):
+        import importlib, publish
+        importlib.reload(publish)
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+        self._setup(tmp_path, monkeypatch, snapshot_regime="NEUTRAL",
+                    log_regime="RISK_OFF", log_date=today)
+        publish.publish_to_supabase({"cash": 100, "total_value": 500, "positions": []})
+        assert self._written_regime(tmp_path) == "RISK_OFF"
+
+    def test_stale_agent_log_falls_through_to_file(self, tmp_path, monkeypatch):
+        import importlib, publish
+        importlib.reload(publish)
+        self._setup(tmp_path, monkeypatch, snapshot_regime="NEUTRAL",
+                    log_regime="RISK_ON", log_date="2000-01-01")
+        publish.publish_to_supabase({"cash": 100, "total_value": 500, "positions": []})
+        # agent_log is stale (old date) → ignored → fall back to file regime.
+        assert self._written_regime(tmp_path) == "NEUTRAL"

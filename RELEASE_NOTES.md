@@ -15,6 +15,61 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ---
 
+## [2026-06-17] — post-run gap audit: regime publish · alerting · PM auditability  ·  ~16:08 PT  ·  main
+
+### Fixed — live dashboard published a STALE regime (P0 data)
+
+- **`publish.py` + `main.py`:** the published regime was read from the *previous*
+  day's `portfolio_snapshot.json` first; because any non-empty string is truthy,
+  the `agent_log.json` fallback never ran, so a **RISK_ON run was shown as NEUTRAL**
+  on the public dashboard. `publish_to_supabase()` now takes an explicit `regime=`
+  arg (passed by `main.py` from the live pipeline) and resolves
+  **arg → today's agent_log → snapshot file (last resort)**, with a date guard so a
+  prior-day agent_log is treated as stale too.
+
+### Fixed — Supabase egress 403 no longer marks every clean cloud run FAILED (P1)
+
+- **`main.py`:** the expected cloud egress block (`Host not in allowlist`) is now
+  recorded **OK** ("publish deferred to GitHub Actions"), not FAILED. Previously
+  every clean cloud run reported `overall_status=FAILED`, making the health signal
+  pure noise and **blocking `alert.yml` from ever auto-closing** a recovered issue
+  (status never returned to OK). A genuine publish error (bad key, schema) is still
+  FAILED. Downstream `health_check.yml` still verifies the row actually landed.
+
+### Fixed — a mangled PM response could masquerade as a deliberate no-trade (P1)
+
+- **`analysis.py` + `main.py`:** `_safe_call(return_meta=True)` now reports whether
+  the model output actually parsed, so the Portfolio Manager returning `[]` because
+  it **failed to parse** is distinguished from a genuine no-trade. The agent_6 health
+  check records DEGRADED on a parse-failure `[]`, and the raw PM response is logged
+  to `agent_log.json` (`portfolio_manager_raw`) for auditability.
+
+### Added — cash-discipline observability signal (P1, alert-only)
+
+- **`main.py`:** a `cash_discipline` health check records DEGRADED when cash exceeds
+  `CASH_DISCIPLINE_PCT` (15%) **and** the run places no BUYs — surfacing idle capital
+  for review (observed: 33.5% cash in a RISK_ON regime, 0 trades). It **does not**
+  force trades; auto-deploying would churn a CA top-bracket taxable account against
+  the turnover/wash-sale guards.
+
+### Changed — `fills.json` is now tracked; `alert.yml` is manually dispatchable
+
+- **`.gitignore`:** `fills.json` un-ignored so the broker-fill audit trail reaches
+  the remote (a crash after STEP 4 can now be reconciled from it).
+- **`alert.yml`:** added `workflow_dispatch` so the checkout/permissions fix
+  (`contents: read`) can be verified without waiting for a `main` push.
+
+### Known / not yet fixed
+
+- **P0 (operational, not in this PR):** the daily routine has been committing to
+  Claude worktree branches (`claude/*`), not `main`. `alert.yml` is `main`-scoped, so
+  **no health alert fires for those runs**, and the executed state never reaches
+  `main`. Fix requires changing the routine's push to target `main` (rebase-onto-main)
+  — deferred to a dedicated PR with weekend dry-run validation because it touches the
+  STEP 4 execution-claim push (double-fill window).
+
+---
+
 ## [2026-06-16] — NaN→Supabase publish fix · canary auth · routine observability hardening  ·  main
 
 Triggered by the Jun 16 run: the Supabase publish broke with *"Out of range float

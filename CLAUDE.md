@@ -309,6 +309,28 @@ This prevents the silent all-50 quant score failure mode where agents run but pr
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
 
+## Changelog — Jun 17 2026 (post-run gap audit: regime publish + alerting + PM auditability)
+
+A critical multi-persona review of the Jun 17 run (which itself completed cleanly,
+0 trades, RISK_ON). The run output looked healthy but the audit found the pipeline
+was publishing wrong data and firing no alerts. P0 data + P1 observability; **no P0
+execution-path code changed** (the touched `main.py` lines are arg-passing + health
+checks, not order/qty/idempotency). Newest first.
+
+| Change | Why it mattered |
+|--------|-----------------|
+| `fix(publish)` **live regime is now published** — `publish_to_supabase(regime=…)`; resolution is **explicit arg → today's `agent_log` → snapshot file (last resort)**, with an ET date guard so a prior-day agent_log is treated as stale too. `main.py` passes the live pipeline regime at both call-sites. | The published regime was read from the *previous* day's `portfolio_snapshot.json` first; any non-empty string is truthy, so the agent_log fallback never ran. The Jun 17 RISK_ON run was published to the live dashboard as **NEUTRAL** (the prior EOD value). Live data corruption, not just an internal log. |
+| `fix(health)` **expected Supabase egress 403 → OK, not FAILED** — new `_record_supabase_health()` records the `Host not in allowlist`/egress block as OK ("deferred to GitHub Actions"); a genuine publish error (bad key/schema) is still FAILED. | `overall_status=FAILED` on **every** clean cloud run made the health signal pure noise AND blocked `alert.yml` from ever auto-closing a recovered issue (status never returned to OK). `health_check.yml` still verifies the row actually landed downstream. |
+| `feat(analysis)` **PM parse-failure is distinguished from a deliberate no-trade** — `_safe_call(return_meta=True)` exposes `parsed_ok`; `agent_6` health → DEGRADED on a parse-failure `[]`; raw PM response logged to `agent_log.json` (`portfolio_manager_raw`). | `_safe_call` returned `[]` both when the PM legitimately held and when its JSON failed to parse — a mangled response masqueraded as "no trades" with no signal and no logged reasoning (unauditable no-trade day). Fails safe (no bad trades) but was a silent alpha/availability hole. |
+| `feat(main)` **`cash_discipline` health signal** — DEGRADED when cash > `CASH_DISCIPLINE_PCT` (15%) AND the run places no BUYs (pure `cash_discipline_status()` helper). Observability only; never forces a trade. | The 0–10% cash target is enforced ONLY in the PM prompt and the LLM ignored it (Jun 17: 33.5% cash idle in RISK_ON, 0 trades). Auto-deploying would churn a CA top-bracket taxable account against the turnover/wash-sale guards, so we surface for human review instead of forcing buys. |
+| `fix(gitignore)` **`fills.json` un-ignored**; `alert.yml` gains `workflow_dispatch`. | STEP 4 `git add fills.json` was silently ignored, so the broker-fill audit trail never reached the remote (a crash after STEP 4 couldn't be reconciled from it). `workflow_dispatch` lets the unverified `contents: read` alert fix be tested without a `main` push. |
+
+> **QA:** full `pytest` green (**415**, +14: `TestSupabaseHealthClassification`, `TestSafeCallMeta`, `TestPmParseFailureSurfaced`, `TestCashDisciplineStatus`, `TestPublishRegimePriority`). Workflow YAML parses; DEPLOYMENT §3.1–3.7 regression scripts pass. Expert `/code-review high` run pre-commit per §7.0.2 — no correctness findings (changes are observability/arg-passing, not execution-path, so `high` not `ultra`). **Dry-run (§3.8 / §7.1) intentionally SKIPPED** — Jun 17 is a trading day and today's cycle already executed; a real `main.py` dry-run would overwrite `pending_decisions.json` and risk a double-fill (DEPLOYMENT §7.1 trading-day warning). `pending_decisions.json` was NOT staged.
+>
+> ### ⚠️ Standing P0 (operational, NOT fixed in this batch): the daily routine commits to a worktree branch, not `main`
+>
+> `gh run list` shows the daily routine landing on auto-generated Claude worktree branches (`claude/festive-hopper-p3rmxg` on 6/16, `claude/hopeful-brown-udsl1g` on 6/17), not `main`. Consequences: (1) `alert.yml` is `main`-scoped → **no health alert fires** for those runs (an ABORTED/FAILED day is silent); (2) the executed state (`executed_at`, journal, trades) never reaches `main`; (3) `publish.yml` (no branch filter) DOES fire on the branch, which is how the stale-regime publish still reached the live site. The routine uses a bare `git push` (pushes to the current branch's upstream). **Fix (dedicated PR):** change the routine's pushes to target `main` (`git push origin HEAD:main` with a `git fetch origin main && git rebase origin/main` retry). Deferred because it touches the STEP 4 execution-claim push (double-fill window) and needs a weekend `DRY_RUN` validation + live-routine sync before it can ship.
+
 ## Changelog — Jun 16 2026 (NaN publish fix + canary auth + routine observability)
 
 Triggered by the Jun 16 run, which surfaced a genuine (non-403) Supabase publish

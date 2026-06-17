@@ -5,7 +5,11 @@ venv/
 .DS_Store
 # NOTE: market_snapshot.json is intentionally NOT ignored — market_data.yml
 # commits it (git add market_snapshot.json) as the cloud routine's data source.
-fills.json
+# NOTE: fills.json is intentionally NOT ignored either — STEP 4 of the routine
+# writes it as the durable broker-fill accumulator and `git add`s it. If it were
+# ignored, the authoritative record of which orders the broker ACCEPTED would
+# never reach the remote, so a crash after STEP 4 could not be reconciled from
+# fills.json (only by re-querying get_equity_orders). Keep it tracked.
 performance_report.json
 # Forecast ledger (#2) — local observational data, regenerated each run.
 forecasts.jsonl

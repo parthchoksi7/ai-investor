@@ -170,7 +170,8 @@ def _publish_quant_scores(client, quant_scores: dict, today: str) -> None:
         print(f"   📊 {len(rows)} quant score(s) synced.")
 
 
-def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None = None, is_close: bool = False) -> None:
+def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None = None,
+                        is_close: bool = False, regime: str | None = None) -> None:
     # ── Load portfolio_snapshot.json (written by cloud routine, read by GH Actions) ─
     file_snapshot = _load(SNAPSHOT_FILE, {})
 
@@ -201,15 +202,27 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     cash        = float(portfolio.get("cash", STARTING_CAPITAL))
     positions   = portfolio.get("positions", [])
 
-    # ── Regime: snapshot → agent_log.json ─────────────────────────────────────
-    regime = file_snapshot.get("regime", "")
+    # ── Regime: explicit arg → today's agent_log.json → snapshot file ─────────
+    # Priority matters. main.py passes the LIVE pipeline regime as `regime=`. The
+    # standalone GH Actions / EOD path has no arg, so it reads the latest
+    # agent_log entry (committed by the routine THIS run). The snapshot file is the
+    # last resort ONLY — it can hold a PRIOR day's regime (e.g. the EOD snapshot's
+    # "NEUTRAL"), and because any non-empty string is truthy, trusting it first
+    # silently published a stale regime to the live dashboard (RISK_ON run shown as
+    # NEUTRAL). Always prefer a fresher source.
     if not regime:
         logs = _load(AGENT_LOG_FILE, [])
         if logs:
             last_log = logs[-1]
             regime_data = last_log.get("regime", {})
-            if isinstance(regime_data, dict):
+            # Only trust agent_log if its run is from today (ET) — otherwise it is
+            # just as stale as the snapshot file and we fall through.
+            log_date = str(last_log.get("date", ""))[:10]
+            today_et = datetime.now(_ET).strftime("%Y-%m-%d")
+            if isinstance(regime_data, dict) and log_date == today_et:
                 regime = regime_data.get("regime", "")
+    if not regime:
+        regime = file_snapshot.get("regime", "")
 
     # ── Write portfolio_snapshot.json for GH Actions trigger ─────────────────
     # Supabase is blocked in Anthropic's cloud, so the cloud routine writes this

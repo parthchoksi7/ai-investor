@@ -6,6 +6,10 @@ on:
       - main
     paths:
       - 'system_health.json'
+  # Manual trigger so the checkout/permissions fix (contents: read) can be
+  # verified end-to-end without waiting for a main push, and so an operator can
+  # re-run the alert against the committed system_health.json on demand.
+  workflow_dispatch:
 
 jobs:
   alert:

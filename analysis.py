@@ -337,11 +337,26 @@ def _parse_json(text: str, default):
     return result
 
 
-def _safe_call(model, system, user_msg, default, max_tokens=600, retries=2):
+_PARSE_FAILED = object()  # sentinel: _parse_json returned its default (no real parse)
+
+
+def _safe_call(model, system, user_msg, default, max_tokens=600, retries=2, return_meta=False):
+    """Call an agent and parse its JSON. When return_meta=True, also return a meta
+    dict {raw, stop_reason, parsed_ok} so the caller can distinguish a model that
+    GENUINELY produced the default value (e.g. the PM legitimately returning [] —
+    no trades) from one whose output FAILED to parse and silently collapsed to the
+    default. Both look identical in the return value alone, which made a mangled PM
+    response indistinguishable from a deliberate no-trade day (a silent alpha hole)."""
+    last_raw, last_stop, last_parsed_ok = "", None, False
     for attempt in range(retries + 1):
         try:
             raw, stop_reason = _call(model, system, user_msg, max_tokens=max_tokens)
-            result = _parse_json(raw, default)
+            # Parse against a unique sentinel so we can tell a real parse of the
+            # default value apart from a parse failure that fell back to it.
+            parsed = _parse_json(raw, _PARSE_FAILED)
+            parsed_ok = parsed is not _PARSE_FAILED
+            result = parsed if parsed_ok else default
+            last_raw, last_stop, last_parsed_ok = raw, stop_reason, parsed_ok
             # If result is identical to the default, the response was likely empty/truncated
             # under API load — treat as retryable rather than silently accepting blank fields.
             # Exception: a max_tokens truncation is deterministic — retrying the same prompt
@@ -349,6 +364,8 @@ def _safe_call(model, system, user_msg, default, max_tokens=600, retries=2):
             # parse instead of burning identical calls.
             if result == default and stop_reason != "max_tokens" and attempt < retries:
                 raise ValueError(f"Response parsed to default (raw_len={len(raw)}) — retrying")
+            if return_meta:
+                return result, {"raw": raw[:4000], "stop_reason": stop_reason, "parsed_ok": parsed_ok}
             return result
         except Exception as e:
             if attempt < retries:
@@ -359,6 +376,9 @@ def _safe_call(model, system, user_msg, default, max_tokens=600, retries=2):
                 time.sleep(delay)
             else:
                 print(f"   ⚠ Agent call failed: {e}")
+                if return_meta:
+                    return default, {"raw": last_raw[:4000], "stop_reason": last_stop,
+                                     "parsed_ok": last_parsed_ok}
                 return default
 
 
@@ -783,7 +803,7 @@ def run_portfolio_manager(
     trade_history: list | None,
     date: str = "",
     recently_exited: dict | None = None,
-) -> list[dict]:
+) -> tuple[list[dict], dict]:
     total = portfolio["total_value"]
     cash  = portfolio["cash"]
     cash_pct = (cash / total * 100) if total else 0
@@ -879,6 +899,7 @@ improve portfolio expected value."""
         default=[],
         max_tokens=1320,
         retries=2,
+        return_meta=True,
     )
 
 
@@ -1068,12 +1089,18 @@ def get_trade_decisions(
 
     # ── 6. Portfolio Manager ──────────────────────────────────────────────────
     print("   [6/7] Portfolio Manager...")
-    decisions = run_portfolio_manager(
+    decisions, pm_meta = run_portfolio_manager(
         regime, research_map, earnings_map, devil_map,
         position_reviews, quant_scores, portfolio, trade_history,
         date=market_data_date,
         recently_exited=recently_exited,
     )
+    # Surface whether an empty decision list is a GENUINE no-trade or a parse
+    # failure (see _safe_call return_meta). Logged into agent_log + used by the
+    # agent_6 health check so a mangled PM response can't masquerade as "hold".
+    if not decisions and not pm_meta.get("parsed_ok"):
+        print(f"   ⚠ PM returned no decisions due to a PARSE FAILURE "
+              f"(stop_reason={pm_meta.get('stop_reason')}) — not a deliberate no-trade.")
 
     if decisions:
         for d in decisions:
@@ -1119,6 +1146,8 @@ def get_trade_decisions(
         "devils_advocate": devil_map,
         "position_reviews": position_reviews,
         "portfolio_manager_proposed": decisions_proposed,
+        "portfolio_manager_raw": pm_meta.get("raw", ""),
+        "portfolio_manager_parsed_ok": pm_meta.get("parsed_ok", True),
         "cro": risk,
         "final_decisions": decisions,
     }
