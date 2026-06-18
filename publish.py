@@ -423,7 +423,18 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
             if tx.get("transaction_id")
         ]
         if trade_rows:
-            client.table("trades").upsert(_sanitize(trade_rows)).execute()
+            try:
+                client.table("trades").upsert(_sanitize(trade_rows)).execute()
+            except Exception as e:
+                if "PGRST204" in str(e) and "broker_order_id" in str(e):
+                    # PostgREST schema cache hasn't refreshed yet after the column was added;
+                    # retry without broker_order_id — column exists in DB and will populate
+                    # automatically once the cache catches up on a future run.
+                    stripped = [{k: v for k, v in row.items() if k != "broker_order_id"} for row in trade_rows]
+                    client.table("trades").upsert(_sanitize(stripped)).execute()
+                    print(f"   ⚠️  broker_order_id skipped (schema cache lag) — will populate on next run.")
+                else:
+                    raise
             print(f"   📋 {len(trade_rows)} trade(s) synced.")
 
     # ── Quant scores ───────────────────────────────────────────────────────────
