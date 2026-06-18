@@ -312,6 +312,7 @@ def _enrich_with_provider(all_tickers: list, fundamentals: dict, today=None) -> 
         except Exception:
             cache = {}
 
+    full_refresh = os.getenv("FULL_REFRESH", "").lower() in ("1", "true")
     refreshed = 0
     for t in all_tickers:
         entry = cache.get(t)
@@ -325,9 +326,9 @@ def _enrich_with_provider(all_tickers: list, fundamentals: dict, today=None) -> 
         # days; one that came back empty (non-US, ADR, or FMP premium-only) waits
         # 30 days before re-checking so the daily budget isn't burned on misses.
         has_data = bool(entry and (entry.get("fundamentals") or entry.get("next_earnings")))
-        ttl = 2 if (entry is None or has_data) else 30
+        ttl = 2 if (entry is None or has_data) else 7
         due = entry is None or age is None or age >= ttl
-        if _provider_group(t) == today_group and due:
+        if (full_refresh or _provider_group(t) == today_group) and due:
             entry = {"fundamentals":  provider.fundamentals(t),
                      "next_earnings": provider.next_earnings_date(t),
                      "fetched":       today.isoformat()}

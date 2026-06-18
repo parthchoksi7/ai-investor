@@ -9,6 +9,12 @@ on:
     - cron: '0 12 * * 1-5'   # 8:00 AM EDT — primary
     - cron: '30 12 * * 1-5'  # 8:30 AM EDT — fallback
   workflow_dispatch:
+    inputs:
+      full_refresh:
+        description: 'Refresh all 100 tickers (bypass 50/50 alternate-day split)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   fetch:
@@ -34,9 +40,9 @@ jobs:
           path: |
             fundamentals_cache.json
             provider_cache.json
-          key: fundamentals-${{ runner.os }}-${{ github.run_number }}
+          key: fundamentals-v2-${{ runner.os }}-${{ github.run_number }}
           restore-keys: |
-            fundamentals-${{ runner.os }}-
+            fundamentals-v2-${{ runner.os }}-
 
       - name: Fetch market snapshot
         env:
@@ -44,6 +50,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          FULL_REFRESH: ${{ inputs.full_refresh || 'false' }}
         run: python fetch_snapshot.py
 
       - name: Commit market_snapshot.json to repo

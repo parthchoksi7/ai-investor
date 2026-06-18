@@ -1130,15 +1130,19 @@ def get_trade_decisions(
 
     decisions_proposed = list(decisions)  # PM's output before CRO filtering
 
-    if not risk.get("approved", False):
+    rejected = set(risk.get("rejected_tickers", []))
+    if not risk.get("approved", False) and not rejected:
+        # Full veto — no specific ticker guidance; reject everything
         print(f"   🚨 CRO REJECTED all trades: {risk.get('reasoning')}")
         decisions = []
-
-    rejected = set(risk.get("rejected_tickers", []))
-    if rejected:
-        before = len(decisions)
-        decisions = [d for d in decisions if d.get("ticker") not in rejected]
-        print(f"   ⚠ CRO removed {before - len(decisions)} ticker(s): {rejected}")
+    else:
+        if not risk.get("approved", False):
+            # Partial veto — named tickers removed; approved trades survive
+            print(f"   ⚠ CRO partial veto — removing {rejected}, keeping remaining trades")
+        if rejected:
+            before = len(decisions)
+            decisions = [d for d in decisions if d.get("ticker") not in rejected]
+            print(f"   ⚠ CRO removed {before - len(decisions)} ticker(s): {rejected}")
 
     pipeline_state = {
         "date": market_data_date,

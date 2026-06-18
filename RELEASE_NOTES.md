@@ -13,6 +13,23 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — CRO partial veto wiped all trades; fundamentals backoff 30→7 days; full-refresh mode (P0/P1)
+
+- **`analysis.py` (P0):** CRO partial veto bug — when CRO returned `approved=false` +
+  `rejected_tickers=["JPM"]`, the code cleared `decisions=[]` first and then filtered the now-empty
+  list. Result: all trades erased and the log falsely reported "CRO removed 0 ticker(s)". Fix:
+  only clear all decisions when `rejected_tickers` is empty (true full veto); otherwise remove only
+  the named tickers and keep the rest. On 2026-06-18 this silently dropped SELL PANW.
+- **`market_data.py` (P1):** empty-entry cache TTL reduced from 30 days to 7. The 62 tickers
+  with no FMP coverage had been in a 30-day backoff since before `FMP_API_KEY` was added; with the
+  new TTL they retry SEC EDGAR within a week instead of a month.
+- **`market_data.py` + `market_data.yml` (P1):** `FULL_REFRESH=true` env var bypasses the
+  alternate-day 50/50 group split and processes all 100 tickers in a single workflow run.
+  `workflow_dispatch` now exposes a `full_refresh` boolean input so GH Actions can be triggered
+  once to seed all 100 tickers simultaneously instead of waiting 2 days.
+- **`market_data.yml`:** cache key bumped `fundamentals-` → `fundamentals-v2-` to bust the old
+  GH Actions cache carrying the 30-day-backoff empty entries.
+
 ### Fixed — Portfolio Manager truncation: 2× agent token budgets + tightened PM schema (P0)
 
 - **`analysis.py`:** doubled `max_tokens` for all 7 agents (Regime 770→1540, Research

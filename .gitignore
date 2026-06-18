@@ -23,7 +23,8 @@ reconciliation_report.json
 reproducibility.json
 prompts/
 health_history.jsonl
-# FMP provider cache (#1) — persisted in CI via actions/cache, transient locally.
+# FMP/SEC provider cache — populated in CI via actions/cache. Transient locally
+# (SEC EDGAR blocks residential IPs; use workflow_dispatch full_refresh=true to seed).
 provider_cache.json
 
 # Paper drafts and reviewer notes — pre-publication, not part of the codebase.
