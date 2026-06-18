@@ -323,5 +323,27 @@
     "cro_risk_budget": 62,
     "broker_order_id": null,
     "dry_run": false
+  },
+  {
+    "transaction_id": "dec25599-a86e-478a-997f-40cfa101c584",
+    "run_id": "20260618-154750",
+    "date": "2026-06-18",
+    "timestamp": "2026-06-18T15:50:09.294963+00:00",
+    "ticker": "LLY",
+    "action": "SELL",
+    "qty": 0.038668,
+    "price": 1095.525,
+    "total_value": 42.36,
+    "target_weight": 0.0,
+    "portfolio_value_before": 504.8842074925,
+    "source_of_capital": "exit_deteriorating_position",
+    "regime": "RISK_ON",
+    "regime_confidence": 78,
+    "rationale": "Auto-exit: position_review=REDUCE hold=4/10 alpha=LOW, DA risk=8/10 reject=True \u2014 3-signal override of PM HOLD",
+    "research_confidence": 5,
+    "earnings_alpha_score": null,
+    "cro_risk_budget": 78,
+    "broker_order_id": null,
+    "dry_run": true
   }
 ]

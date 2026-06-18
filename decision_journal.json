@@ -24,10 +24,20 @@
       "FDA issues material safety label change or restricts use in key patient populations",
       "Company withdraws forward revenue guidance or reduces obesity TAM estimates by >20%"
     ],
-    "status": "open",
-    "actual_return": null,
-    "thesis_correct": null,
-    "run_id": "20260611-185140"
+    "status": "closed",
+    "actual_return": -0.0593,
+    "thesis_correct": false,
+    "run_id": "20260611-185140",
+    "exits": [
+      {
+        "date": "2026-06-18",
+        "run_id": "20260618-154750",
+        "exit_price": 1095.525,
+        "avg_price": 1164.53,
+        "realized_return": -0.0593,
+        "full_exit": true
+      }
+    ]
   },
   {
     "trade_id": "9d62b13f-4716-45c5-94a9-1a55f4d9b911",
@@ -210,5 +220,35 @@
     "actual_return": null,
     "thesis_correct": null,
     "run_id": "20260612-134736"
+  },
+  {
+    "trade_id": "a56f7664-63e8-4bb8-9563-831d6115a6ec",
+    "run_id": "20260618-154750",
+    "date": "2026-06-18",
+    "ticker": "LLY",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "LLY's obesity/diabetes franchise faces a growth inflection point as GLP-1 penetration stabilizes in developed markets, but the market has already priced in perpetual 30%+ growth, leaving minimal upside and material downside if Mounjaro/Zepbound adoption curves decelerate or competitive intensity accelerates.",
+    "anti_thesis": "LLY trades at 80x+ forward earnings with the market implicitly pricing in 30%+ revenue growth for 5+ consecutive years\u2014a duration of hypergrowth almost no large-cap pharmaceutical has ever sustained. Any deceleration in GLP-1 adoption, meaningful pricing concessions to PBMs/payers, or competitive share loss to Novo/Amgen will trigger simultaneous EPS cuts and multiple compression, creating a compounding drawdown that could easily exceed 40-50% from current levels. The stock has no margin of safety: the bull case is already the base case.",
+    "catalysts": [
+      "2025 AACE/ADA guidance: obesity market penetration data and payer coverage trends will signal if saturation is accelerating",
+      "Mounjaro/Zepbound pricing pressure evidence: if competitors gain share or payers demand rebates, management must guide down 2025-2026 revenue growth",
+      "Phase 3 tirzepatide cardiovascular outcome data: underwhelming results vs. semaglutide benchmarks could eliminate label expansion optionality",
+      "Quarterly earnings misses vs. GLP-1 revenue guidance: any sequential deceleration in obesity franchise growth signals saturation sooner than expected",
+      "Manufacturing/supply chain disruptions: capacity constraints could force price concessions or market share loss",
+      "Competitive win announcements: Novo gaining meaningful obesity market share or Amgen MariTide launch success would force LLY guidance cuts"
+    ],
+    "confidence": 5,
+    "expected_return": 0.0,
+    "invalidates_if": [
+      "Tirzepatide quarterly revenue growth sustained at 40%+ YoY through 2026 with improving margins, signaling market share gains vs. competitors",
+      "Management raises FY2026 revenue CAGR guidance above 25% and confirms obesity penetration can scale to 15%+ of addressable population",
+      "Mounjaro/Zepbound pricing holds flat or increases YoY despite competitive launches; payer data shows continued access expansion",
+      "Cardiovascular outcome data (SUMMIT or future trials) shows tirzepatide superiority to semaglutide, unlocking label expansion and higher utilization",
+      "Gross margin on obesity franchise expands to 70%+ due to manufacturing scale and payer mix, supporting 30%+ FCF growth"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
   }
 ]
