@@ -13,6 +13,21 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — Sector weights injected into PM context; rebalancing instruction (P1)
+
+- **`analysis.py` (Change 1):** `run_portfolio_manager()` now computes current sector weights
+  from holdings before calling the LLM, using `sector_of()` from `guardrails.py`. The PM
+  receives a `SECTOR ALLOCATION` block showing every occupied sector with its current %, a
+  ⛔ OVER CAP flag for sectors ≥ 25%, and a ⚠ NEAR CAP flag for sectors ≥ 20%. With
+  Financials at 26.6% (MS + GS + BAC), the PM now sees the cap is broken before it proposes
+  anything — it was previously proposing JPM 14 consecutive runs in a row, always vetoed by
+  the CRO, leaving 33.7% cash idle in RISK_ON.
+- **`analysis.py` (Change 2):** Rebalancing instruction added to CONSTRAINTS: when a sector
+  is AT/NEAR CAP and the PM has higher conviction in a new name, it may propose REDUCE of the
+  weakest holding (lowest `hold_score`) in that sector and BUY the new name in the same
+  decision list. Turns the sector cap from a dead end into a rebalancing signal.
+- Tests: 430 passing; sector logic is a pure data transformation over existing fields.
+
 ### Fixed — CRO partial veto wiped all trades; fundamentals backoff 30→7 days; full-refresh mode (P0/P1)
 
 - **`analysis.py` (P0):** CRO partial veto bug — when CRO returned `approved=false` +

@@ -812,8 +812,10 @@ def run_portfolio_manager(
     cash  = portfolio["cash"]
     cash_pct = (cash / total * 100) if total else 0
 
-    # Format current holdings
+    # Format current holdings + compute sector weights
+    from guardrails import sector_of
     holdings_lines = []
+    sector_weights: dict[str, float] = {}
     for p in portfolio["positions"]:
         t = p["symbol"]
         weight = (p["market_value"] / total * 100) if total else 0
@@ -823,6 +825,20 @@ def run_portfolio_manager(
             f"| hold={review.get('hold_score','?')}/10 alpha={review.get('remaining_alpha','?')} "
             f"action={review.get('recommended_action','?')}"
         )
+        sec = sector_of(t)
+        sector_weights[sec] = sector_weights.get(sec, 0.0) + weight
+
+    # Build sector constraint block — AT CAP sectors block BUYs; show rebalancing option
+    _CAP = 25.0
+    sector_lines = []
+    for sec, pct in sorted(sector_weights.items(), key=lambda x: -x[1]):
+        if pct >= _CAP:
+            sector_lines.append(f"  {sec}: {pct:.1f}%  ⛔ OVER CAP — no new BUYs allowed")
+        elif pct >= _CAP - 5:
+            sector_lines.append(f"  {sec}: {pct:.1f}%  ⚠ NEAR CAP — limited room for BUYs")
+        else:
+            sector_lines.append(f"  {sec}: {pct:.1f}%")
+    sector_block = "\n".join(sector_lines) if sector_lines else "  (no holdings)"
 
     # Format quant scores table (top 25 by composite, exclude ETFs)
     sorted_q = sorted(
@@ -878,6 +894,12 @@ RESEARCH & DEVIL'S ADVOCATE:
 
 RECENT TRADES:
 {chr(10).join(history_lines) or '  (none)'}
+
+SECTOR ALLOCATION (25% hard cap per sector — enforced by risk controls):
+{sector_block}
+  Rebalancing: if a sector is AT/NEAR CAP and you have higher conviction in a new
+  name, propose REDUCE of the weakest holding in that sector (lowest hold_score)
+  to free allocation — then BUY the new name in the same output list.
 
 CONSTRAINTS:
   Holdings target: 8–15 | Max position: 10% | Max sector: 25% | Cash: 0–10%
