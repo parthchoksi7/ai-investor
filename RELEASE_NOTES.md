@@ -13,6 +13,18 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — Portfolio Manager truncation: 2× agent token budgets + tightened PM schema (P0)
+
+- **`analysis.py`:** doubled `max_tokens` for all 7 agents (Regime 770→1540, Research
+  1100→2200, Earnings 660→1320, Devil's Advocate 4125→8250, Position Review 440→880,
+  **Portfolio Manager 1320→2640**, CRO 440→880). The PM was hitting `stop_reason=max_tokens`
+  mid-JSON and returning `[]` — a parse failure masquerading as a deliberate no-trade —
+  silently dropping live REDUCE/BUY signals (e.g. the PANW REDUCE on 2026-06-18).
+- **PM output schema tightened:** the response must start with `[`, contain no prose or
+  markdown, and cap each `rationale` at 10 words — front-loading compactness so a verbose
+  response can no longer truncate the entire trade list.
+- Tests: full suite green (430), no new behavior to cover (token/prompt tuning only).
+
 ### Added — CascadeProvider: FMP + SEC EDGAR for near-100% quality signal coverage (P2)
 
 - **`data_providers.py`:** new `CascadeProvider` class wraps `FMPProvider` + `SECProvider`.

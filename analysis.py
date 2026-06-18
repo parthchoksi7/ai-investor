@@ -545,7 +545,7 @@ Output JSON:
         MODEL_SMART, _REGIME_SYSTEM, user_msg,
         default={"regime": "NEUTRAL", "confidence": 50, "growth_value": "NEUTRAL",
                  "favored_factors": [], "avoid_factors": [], "key_observations": []},
-        max_tokens=770,
+        max_tokens=1540,
         retries=2,
     )
 
@@ -588,7 +588,7 @@ Output JSON (fill in every field):
         MODEL_FAST, _cached_system(_RESEARCH_SYSTEM), user_msg,
         default={"thesis": "", "catalysts": [], "confidence": 5,
                  "key_risks": [], "invalidates_if": [], "variant_view": ""},
-        max_tokens=1100,
+        max_tokens=2200,
     )
 
 
@@ -654,7 +654,7 @@ Output JSON (fill in every field):
         MODEL_FAST, _cached_system(_EARNINGS_SYSTEM), user_msg,
         default={"earnings_alpha_score": 5, "beat_probability": "MEDIUM",
                  "guidance_cut_probability": "LOW", "key_catalysts_90d": []},
-        max_tokens=660,
+        max_tokens=1320,
     )
 
     # Fabrication guard: the verified calendar date wins over the model's guess.
@@ -730,7 +730,7 @@ and each list item to one short phrase:
                  "recommend_reject": False, "hidden_risks": []},
         # Sonnet for genuine adversarial depth; overall_risk_score + recommend_reject
         # are first so any truncation still captures the verdict.
-        max_tokens=4125,
+        max_tokens=8250,
     )
 
 
@@ -790,7 +790,7 @@ Output JSON:
         MODEL_FAST, _cached_system(_POSITION_REVIEW_SYSTEM), user_msg,
         default={"hold_score": 6, "remaining_alpha": "MEDIUM",
                  "thesis_intact": True, "recommended_action": "HOLD", "reasoning": ""},
-        max_tokens=440,
+        max_tokens=880,
     )
 
 
@@ -883,25 +883,29 @@ CONSTRAINTS:
   Holdings target: 8–15 | Max position: 10% | Max sector: 25% | Cash: 0–10%
   Hard-blocked (NEVER propose): TSLA
 
-OUTPUT: Return ONLY a JSON array. Each element:
+OUTPUT FORMAT — CRITICAL FOR PARSING:
+Return ONLY a JSON array — no prose, no reasoning, no markdown, nothing before or
+after it. Your response MUST start with [ and end with ]. Omit HOLD decisions.
+Return [] if no trade improves portfolio expected value.
+
+Keep every field compact — a long response gets truncated and discarded, so a
+verbose rationale loses the whole trade list. Each element:
 {{
-  "ticker": "...",
-  "action": "BUY | SELL",
-  "target_weight": 0.00–0.10,
-  "source_of_capital": "ticker being reduced, or 'cash'",
+  "ticker": "TICKER",
+  "action": "BUY" or "SELL",
+  "target_weight": 0.00,
+  "source_of_capital": "cash" or "TICKER_being_reduced",
   "expected_return": 0.05,
-  "rationale": "one sentence"
+  "rationale": "max 10 words"
 }}
-"expected_return" = your estimate of the trade's GROSS return over the 1–3 month
-horizon, as a decimal fraction (e.g. 0.05 = +5%). Be honest and conservative — a
-downstream gate rejects BUYs whose expected return, after ~54% CA short-term tax
-and trading cost, is not worth it. Omit HOLD decisions. Return [] if no trades
-improve portfolio expected value."""
+expected_return = honest, conservative GROSS return estimate over the 1–3 month
+horizon as a decimal (0.05 = +5%); a downstream gate rejects BUYs not worth it
+after ~54% CA short-term tax + trading cost."""
 
     return _safe_call(
         MODEL_SMART, _PM_SYSTEM, user_msg,
         default=[],
-        max_tokens=1320,
+        max_tokens=2640,
         retries=2,
         return_meta=True,
     )
@@ -1002,7 +1006,7 @@ Set approved=false only for severe concentration / correlation risks that could 
                  "rejected_tickers": [],
                  "reasoning": "CRO call failed — trades blocked until CRO can run.",
                  "api_failed": True},
-        max_tokens=440,
+        max_tokens=880,
         retries=2,
     )
 
