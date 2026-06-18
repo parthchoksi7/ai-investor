@@ -1,7 +1,7 @@
 {
   "run_id": "20260618-154750",
   "date": "2026-06-18",
-  "timestamp": "2026-06-18T15:50:09.994067+00:00",
+  "timestamp": "2026-06-18T15:51:03.226379+00:00",
   "overall_status": "DEGRADED",
   "checks": {
     "portfolio": {
@@ -129,6 +129,14 @@
       "status": "OK",
       "message": "Supabase blocked by cloud egress allowlist \u2014 publish deferred to GitHub Actions (expected).",
       "ts": "2026-06-18T15:50:09.993923+00:00"
+    },
+    "reconciliation": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-06-18T15:51:03.226349+00:00",
+      "filled": [
+        "LLY"
+      ]
     }
   },
   "alerts": [
