@@ -362,7 +362,11 @@ def _safe_call(model, system, user_msg, default, max_tokens=600, retries=2, retu
             # Exception: a max_tokens truncation is deterministic — retrying the same prompt
             # at the same cap reproduces the same over-long output, so accept the best-effort
             # parse instead of burning identical calls.
-            if result == default and stop_reason != "max_tokens" and attempt < retries:
+            # Skip retry when return_meta=True and the parse succeeded: the model
+            # genuinely returned the default value (e.g. PM proposed 0 trades) —
+            # retrying would burn 2 identical calls for no reason.
+            if (result == default and stop_reason != "max_tokens" and attempt < retries
+                    and not (return_meta and parsed_ok)):
                 raise ValueError(f"Response parsed to default (raw_len={len(raw)}) — retrying")
             if return_meta:
                 return result, {"raw": raw[:4000], "stop_reason": stop_reason, "parsed_ok": parsed_ok}

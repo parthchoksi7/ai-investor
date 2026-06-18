@@ -400,6 +400,28 @@ def get_ticker_history(ticker: str, n: int = 3) -> list[dict]:
     return rows[-n:]
 
 
+def consecutive_cash_above(threshold: float) -> int:
+    """Consecutive recent pipeline runs (reverse-chronological) where cash_pct > threshold.
+
+    Reads agent_log.json which record_run() appends to each cycle. The current
+    run's portfolio_snapshot is written to agent_log BEFORE this is called from
+    main.py, so the count includes today and the streak is accurate in real-time.
+
+    Returns 0 if agent_log is empty or cash is currently at/below the threshold.
+    """
+    count = 0
+    for entry in reversed(_load_list(AGENT_LOG_FILE)):
+        ps = entry.get("portfolio_snapshot", {})
+        total = ps.get("total_value") or 0
+        if not total:
+            break
+        if ps.get("cash", 0) / total * 100 > threshold:
+            count += 1
+        else:
+            break
+    return count
+
+
 def recently_exited(within_days: int = 10) -> dict:
     """ticker -> most recent CLOSED entry whose last exit was within `within_days`.
 

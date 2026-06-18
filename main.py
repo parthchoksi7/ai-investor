@@ -28,7 +28,7 @@ from market_data  import get_market_snapshot
 from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, StalePortfolioError, DRY_RUN
-from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions, close_position, get_ticker_history, recently_exited, _load_list, TRANSACTIONS_FILE
+from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions, close_position, get_ticker_history, recently_exited, consecutive_cash_above, _load_list, TRANSACTIONS_FILE
 from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, flag_wash_sale_presale
 from publish      import publish_to_supabase
 from health       import HealthTracker, OK, DEGRADED, FAILED, ABORTED
@@ -526,10 +526,13 @@ def run_daily_cycle():
     )
     _cash_status = cash_discipline_status(_cash_pct, _net_buy)
     if _cash_status == DEGRADED:
+        _streak = consecutive_cash_above(CASH_DISCIPLINE_PCT)
         health.record("cash_discipline", DEGRADED,
                       message=f"Cash {_cash_pct:.1f}% exceeds {CASH_DISCIPLINE_PCT:.0f}% review "
-                              f"ceiling and no BUYs this run — capital idle (review PM deployment).",
-                      cash_pct=round(_cash_pct, 1))
+                              f"ceiling and no BUYs this run — {_streak} consecutive run(s) above "
+                              f"threshold (review PM deployment).",
+                      cash_pct=round(_cash_pct, 1),
+                      consecutive_runs_above_threshold=_streak)
     else:
         health.record("cash_discipline", OK, cash_pct=round(_cash_pct, 1))
 

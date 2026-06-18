@@ -249,11 +249,50 @@ class SECProvider:
         return None
 
 
+_QUALITY_FIELDS = {"gross_margin", "operating_margin", "debt_to_equity"}
+
+
+class CascadeProvider:
+    """FMP for all 6 factors when covered; SEC EDGAR fallback for 3 quality factors on FMP misses.
+
+    FMP free tier covers ~35% of the universe (mega-caps). For the remaining ~65%,
+    SEC EDGAR provides gross_margin / operating_margin / debt_to_equity for free.
+    The cascade gets quality signal for ~100% of US equities and the full 6-factor
+    coverage for the ~35% FMP covers, vs. the 37/100 coverage before this class.
+
+    Why merge order {sec, fmp}: FMP data wins on any overlap (it's more current —
+    TTM vs. annual EDGAR filings), and SEC fills only the quality fields that FMP
+    didn't supply.
+    """
+
+    def __init__(self, primary: "FMPProvider", fallback: "SECProvider"):
+        self._primary  = primary
+        self._fallback = fallback
+
+    def fundamentals(self, ticker: str) -> dict | None:
+        result = self._primary.fundamentals(ticker)
+        if result and any(k in result for k in _QUALITY_FIELDS):
+            return result  # FMP covered this ticker; quality fields are present
+        # FMP miss (402 / premium-only on free tier): supplement with SEC EDGAR.
+        # Merge as {sec, fmp} so FMP valuation fields (if any) still win on overlap.
+        sec = self._fallback.fundamentals(ticker)
+        if sec is None and not result:
+            return None
+        return {**(sec or {}), **(result or {})}
+
+    def next_earnings_date(self, ticker: str) -> str | None:
+        return self._primary.next_earnings_date(ticker)
+
+    def estimates(self, ticker: str) -> dict | None:
+        return self._primary.estimates(ticker)
+
+
 def get_provider() -> MarketDataProvider:
     """Provider selection:
-      - FMP_API_KEY set → FMPProvider: all 6 quant factors + earnings calendar.
-      - No key         → SECProvider: 3 quality factors free from EDGAR (full US coverage).
+      - FMP_API_KEY set → CascadeProvider: FMP for all 6 factors + earnings calendar,
+                          with SEC EDGAR fallback for 3 quality factors on FMP free-tier misses.
+      - No key          → SECProvider: 3 quality factors from EDGAR (free, full US coverage).
     """
     if os.getenv("FMP_API_KEY"):
-        return FMPProvider()
+        return CascadeProvider(FMPProvider(), SECProvider())
     return SECProvider()

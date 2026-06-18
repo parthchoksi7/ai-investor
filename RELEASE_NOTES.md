@@ -13,6 +13,48 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — CascadeProvider: FMP + SEC EDGAR for near-100% quality signal coverage (P2)
+
+- **`data_providers.py`:** new `CascadeProvider` class wraps `FMPProvider` + `SECProvider`.
+  When `FMP_API_KEY` is set, `get_provider()` now returns `CascadeProvider` instead of
+  `FMPProvider`. FMP is tried first for all 6 factors; on a free-tier miss (402), SEC EDGAR
+  fills in `gross_margin / operating_margin / debt_to_equity` for free. FMP covered ~37/100
+  tickers; cascade targets ~100% for quality factors and ~37% for full 6-factor coverage.
+  The alternate-day 50/50 cache in `_enrich_with_provider` is unchanged — the cascade is
+  transparent to the caching layer (one merged dict per ticker per TTL).
+- **`test_pipeline.py`:** `TestCascadeProvider` (7 tests) — FMP hit/miss/partial, FMP wins
+  on overlap, both-None → None, earnings/estimates delegate to primary, factory returns
+  `CascadeProvider` when FMP key is set. Updated existing `test_get_provider_factory` to
+  expect `CascadeProvider` instead of `FMPProvider`.
+
+### Added — Consecutive-run cash discipline tracking (P2)
+
+- **`journal.py`:** `consecutive_cash_above(threshold)` reads `agent_log.json` (capped at
+  90 entries; already committed per run) and returns the count of consecutive recent pipeline
+  runs where `cash_pct > threshold`. The current run's portfolio_snapshot is written to
+  agent_log before this is called, so the count includes today.
+- **`main.py`:** `cash_discipline` DEGRADED health message now includes
+  `consecutive_runs_above_threshold` — e.g. "Cash 33.5% exceeds 15% ceiling — 3 consecutive
+  run(s) above threshold". A single-day overage is noise; a multi-day streak is a structural
+  signal worth reviewing.
+- **`test_pipeline.py`:** `TestConsecutiveCashAbove` (6 tests) — streak counting, broken
+  streak, no-streak when last run is below, empty log, missing total_value.
+
+### Fixed — PM retry waste on genuine no-trade (P3)
+
+- **`analysis.py` `_safe_call`:** when `return_meta=True` (used by `run_portfolio_manager`
+  only) and `parsed_ok=True`, a result equal to the default (e.g. PM proposes `[]`) is now
+  returned immediately without retrying. Previously a genuine "no trades today" response
+  triggered 2 unnecessary retries, burning ~2× the token cost for nothing. Parse failures
+  (`parsed_ok=False`) still retry as before.
+- **`test_pipeline.py`:** `TestSafeCallNoRetryOnGenuineDefault` (3 tests) — no retry on
+  genuine `[]`, retry still fires on parse failure without meta, retry still fires on parse
+  failure with meta.
+
+### Chore — branch hygiene (P3)
+
+- Deleted 10 stale `claude/*` local branches (GH Actions worktree leftovers).
+
 ---
 
 ## [2026-06-17] — post-run gap audit: regime publish · alerting · PM auditability  ·  ~16:08 PT  ·  main

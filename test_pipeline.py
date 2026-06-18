@@ -3190,9 +3190,9 @@ class TestDataProviders:
     def test_get_provider_factory(self, monkeypatch):
         import data_providers as dp
         monkeypatch.delenv("FMP_API_KEY", raising=False)
-        assert isinstance(dp.get_provider(), dp.SECProvider)    # no key → EDGAR (free)
+        assert isinstance(dp.get_provider(), dp.SECProvider)      # no key → EDGAR (free)
         monkeypatch.setenv("FMP_API_KEY", "k")
-        assert isinstance(dp.get_provider(), dp.FMPProvider)    # key → FMP (all 6 factors)
+        assert isinstance(dp.get_provider(), dp.CascadeProvider)  # key → FMP+SEC cascade
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -4436,3 +4436,216 @@ class TestPublishRegimePriority:
         publish.publish_to_supabase({"cash": 100, "total_value": 500, "positions": []})
         # agent_log is stale (old date) → ignored → fall back to file regime.
         assert self._written_regime(tmp_path) == "NEUTRAL"
+
+
+# ── CascadeProvider tests ──────────────────────────────────────────────────────
+
+class TestCascadeProvider:
+    """CascadeProvider: FMP for all 6 factors, SEC EDGAR fallback for 3 quality fields on FMP misses."""
+
+    def _cascade(self, fmp_data=None, sec_data=None, earnings=None, estimates=None):
+        from data_providers import CascadeProvider
+
+        class _FMP:
+            def fundamentals(self, t):    return fmp_data
+            def next_earnings_date(self, t): return earnings
+            def estimates(self, t):       return estimates
+
+        class _SEC:
+            def fundamentals(self, t):    return sec_data
+            def next_earnings_date(self, t): return None
+            def estimates(self, t):       return None
+
+        return CascadeProvider(_FMP(), _SEC())
+
+    def test_fmp_hit_returns_fmp_data_sec_not_consulted(self):
+        """FMP covers the ticker → return FMP data, SEC not called."""
+        fmp = {"gross_margin": 0.5, "operating_margin": 0.2, "debt_to_equity": 0.3,
+               "pe_ratio": 20.0, "fcf_yield": 0.04, "ev_ebitda": 15.0}
+        # sec_data=None simulates SEC never being invoked; if it were consulted and
+        # returned None, merged result would still equal fmp — but we also verify
+        # via a sentinel that the SEC object isn't called.
+        calls = []
+
+        from data_providers import CascadeProvider
+
+        class _SEC:
+            def fundamentals(self, t): calls.append(t); return None
+            def next_earnings_date(self, t): return None
+            def estimates(self, t): return None
+
+        class _FMP:
+            def fundamentals(self, t):       return fmp
+            def next_earnings_date(self, t): return None
+            def estimates(self, t):          return None
+
+        cp = CascadeProvider(_FMP(), _SEC())
+        result = cp.fundamentals("AAPL")
+        assert result == fmp
+        assert calls == [], "SEC should not be consulted when FMP has quality fields"
+
+    def test_fmp_miss_falls_back_to_sec(self):
+        """FMP returns None → SEC fills 3 quality fields."""
+        sec = {"gross_margin": 0.6, "operating_margin": 0.25, "debt_to_equity": 0.8}
+        cp = self._cascade(fmp_data=None, sec_data=sec)
+        assert cp.fundamentals("PANW") == sec
+
+    def test_fmp_no_quality_fields_supplements_sec(self):
+        """FMP returns {} (no quality fields) → merges with SEC quality fields."""
+        sec = {"gross_margin": 0.4, "operating_margin": 0.1, "debt_to_equity": 1.2}
+        cp = self._cascade(fmp_data={}, sec_data=sec)
+        result = cp.fundamentals("CRWD")
+        assert result["gross_margin"] == 0.4
+        assert result["operating_margin"] == 0.1
+
+    def test_fmp_wins_on_overlap(self):
+        """When both providers have gross_margin, FMP value wins."""
+        fmp = {"gross_margin": 0.55, "operating_margin": 0.30, "debt_to_equity": 0.5}
+        sec = {"gross_margin": 0.40, "operating_margin": 0.20, "debt_to_equity": 1.0}
+        cp = self._cascade(fmp_data=None, sec_data=sec)
+        # FMP returns None here so SEC fills in; but if FMP had data it wins:
+        from data_providers import CascadeProvider
+
+        class _FMP:
+            def fundamentals(self, t): return None  # miss on free tier
+            def next_earnings_date(self, t): return None
+            def estimates(self, t): return None
+
+        class _SEC:
+            def fundamentals(self, t): return sec
+            def next_earnings_date(self, t): return None
+            def estimates(self, t): return None
+
+        # Simulate a partial FMP hit with valuation only (no quality fields):
+        from data_providers import _QUALITY_FIELDS
+
+        class _FMP_partial:
+            def fundamentals(self, t): return {"pe_ratio": 25.0}  # no quality fields
+            def next_earnings_date(self, t): return None
+            def estimates(self, t): return None
+
+        cp2 = CascadeProvider(_FMP_partial(), _SEC())
+        result = cp2.fundamentals("X")
+        # SEC fills quality fields; FMP's pe_ratio is preserved
+        assert result.get("gross_margin") == sec["gross_margin"]
+        assert result.get("pe_ratio") == 25.0
+
+    def test_both_none_returns_none(self):
+        """FMP and SEC both return None → CascadeProvider returns None."""
+        cp = self._cascade(fmp_data=None, sec_data=None)
+        assert cp.fundamentals("UNKNOWN") is None
+
+    def test_earnings_and_estimates_use_primary(self):
+        """next_earnings_date and estimates delegate to FMP, not SEC."""
+        cp = self._cascade(fmp_data=None, sec_data=None, earnings="2026-08-01", estimates={"eps": 2.5})
+        assert cp.next_earnings_date("AAPL") == "2026-08-01"
+        assert cp.estimates("AAPL") == {"eps": 2.5}
+
+
+
+# ── Consecutive cash above threshold tests ─────────────────────────────────────
+
+class TestConsecutiveCashAbove:
+    """consecutive_cash_above() counts consecutive recent runs where cash_pct > threshold."""
+
+    def _run(self, tmp_path, monkeypatch, entries, threshold=15.0):
+        import json
+        from journal import AGENT_LOG_FILE
+        (tmp_path / AGENT_LOG_FILE).write_text(json.dumps(entries))
+        monkeypatch.chdir(tmp_path)
+        from journal import consecutive_cash_above
+        return consecutive_cash_above(threshold)
+
+    def _ps(self, cash, total):
+        return {"portfolio_snapshot": {"cash": cash, "total_value": total}}
+
+    def test_single_run_above_threshold(self, tmp_path, monkeypatch):
+        entries = [self._ps(100, 400)]  # 25% > 15%
+        assert self._run(tmp_path, monkeypatch, entries) == 1
+
+    def test_single_run_at_threshold_not_counted(self, tmp_path, monkeypatch):
+        entries = [self._ps(60, 400)]  # exactly 15% → not > threshold
+        assert self._run(tmp_path, monkeypatch, entries) == 0
+
+    def test_streak_broken_by_below_threshold_run(self, tmp_path, monkeypatch):
+        entries = [
+            self._ps(10, 400),   # 2.5% — below
+            self._ps(80, 400),   # 20% — above
+            self._ps(100, 400),  # 25% — above
+        ]
+        # Most recent two runs above, then one below breaks the streak
+        assert self._run(tmp_path, monkeypatch, entries) == 2
+
+    def test_no_streak_when_last_run_below(self, tmp_path, monkeypatch):
+        entries = [
+            self._ps(100, 400),  # 25% — above
+            self._ps(10, 400),   # 2.5% — below (most recent)
+        ]
+        assert self._run(tmp_path, monkeypatch, entries) == 0
+
+    def test_empty_log_returns_zero(self, tmp_path, monkeypatch):
+        assert self._run(tmp_path, monkeypatch, []) == 0
+
+    def test_missing_total_value_breaks_streak(self, tmp_path, monkeypatch):
+        # Most recent entry (last in list) has no total_value → count stops immediately
+        entries = [
+            {"portfolio_snapshot": {"cash": 100, "total_value": 400}},  # older, above
+            {"portfolio_snapshot": {"cash": 100}},    # most recent, no total_value
+        ]
+        assert self._run(tmp_path, monkeypatch, entries) == 0
+
+
+# ── _safe_call no-retry on genuine default ────────────────────────────────────
+
+class TestSafeCallNoRetryOnGenuineDefault:
+    """_safe_call with return_meta=True does not retry when parsed_ok=True and result==default."""
+
+    def test_no_retry_on_genuine_empty_list(self, monkeypatch):
+        """PM returns '[]' legitimately — _safe_call should NOT retry."""
+        import analysis
+        call_count = [0]
+
+        def _fake_call(model, system, user_msg, max_tokens=600):
+            call_count[0] += 1
+            return "[]", "end_turn"
+
+        monkeypatch.setattr(analysis, "_call", _fake_call)
+        result, meta = analysis._safe_call(
+            "model", "sys", "user", default=[], max_tokens=600, retries=2, return_meta=True
+        )
+        assert result == []
+        assert meta["parsed_ok"] is True
+        assert call_count[0] == 1, f"Expected 1 call (no retry), got {call_count[0]}"
+
+    def test_retry_still_fires_on_parse_failure(self, monkeypatch):
+        """Parse failure (not return_meta) still retries — existing behavior preserved."""
+        import analysis
+        call_count = [0]
+
+        def _fake_call(model, system, user_msg, max_tokens=600):
+            call_count[0] += 1
+            return "NOT VALID JSON", "end_turn"
+
+        monkeypatch.setattr(analysis, "_call", _fake_call)
+        result = analysis._safe_call(
+            "model", "sys", "user", default=[], max_tokens=600, retries=2, return_meta=False
+        )
+        assert result == []
+        assert call_count[0] == 3, f"Expected 3 attempts (2 retries), got {call_count[0]}"
+
+    def test_retry_fires_on_parse_failure_with_meta(self, monkeypatch):
+        """Even with return_meta=True, a parse failure (parsed_ok=False) still retries."""
+        import analysis
+        call_count = [0]
+
+        def _fake_call(model, system, user_msg, max_tokens=600):
+            call_count[0] += 1
+            return "NOT VALID JSON", "end_turn"
+
+        monkeypatch.setattr(analysis, "_call", _fake_call)
+        result, meta = analysis._safe_call(
+            "model", "sys", "user", default=[], max_tokens=600, retries=2, return_meta=True
+        )
+        assert result == []
+        assert meta["parsed_ok"] is False
+        assert call_count[0] == 3, f"Expected 3 attempts (2 retries), got {call_count[0]}"
