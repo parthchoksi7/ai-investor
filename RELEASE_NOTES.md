@@ -13,6 +13,27 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — Preflight gate now skips closed-market days (weekends + NYSE holidays) (P0)
+
+- **`preflight_gate.py` (P0, live incident):** the gate had no market-calendar awareness. On
+  Juneteenth (2026-06-19) the `market_data.yml` job still committed a snapshot stamped with
+  *today's* date, so the gate saw "fresh data, not yet executed" and PROCEEDed. The pipeline
+  ran and placed 4 GFD orders that the broker accepted but could never fill on a closed
+  market — they sat `queued` and would have expired at the (nonexistent) close. New **check 0**
+  (`_market_closed_today()`) runs before idempotency/freshness: a weekend or any date in the
+  hardcoded `NYSE_HOLIDAYS` calendar (2026–2027) returns **SKIP/RETRY (exit 10)**. Early-close
+  half-days still trade and are intentionally not blocked.
+- **Manual remediation (2026-06-19):** the 4 queued orders (SELL LIN/GS/PANW, BUY VRTX) were
+  cancelled via MCP (all `state=cancelled`, zero fills) and the phantom fills reverted across
+  every log — `transactions.json` (dry_run=True, broker_order_id removed), `trades.csv`
+  (dry_run=True, order_id cleared), `decision_journal.json` (4 speculative entries → rejected;
+  the prematurely-closed PANW BUY thesis reopened), and `fills.json` cleared.
+- **`PREFLIGHT_DATE_OVERRIDE` env var:** overrides the gate's effective date for both the
+  freshness comparison and the weekday/holiday calendar — makes the date-dependent gate tests
+  deterministic and doubles as a manual override.
+- Tests: **441 passing** (+5: `TestPreflightGateMarketClosed` — holiday, Sat, Sun, holiday-beats-
+  idempotency, open-day control; existing gate tests pinned to a fixed open trading day).
+
 ### Added — Sector weights injected into PM context; rebalancing instruction (P1)
 
 - **`analysis.py` (Change 1):** `run_portfolio_manager()` now computes current sector weights

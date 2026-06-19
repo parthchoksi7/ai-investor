@@ -17,10 +17,11 @@ pipeline executes at most once per day, only when data is fresh.
 
 Exit codes (the routine MUST branch on these):
   0  → PROCEED:  fresh data, API healthy, not yet executed today. Run ``main.py``.
-  10 → SKIP/RETRY: data not fresh OR Anthropic API overloaded (529). Do NOT run
-       the pipeline. Stop this attempt; the next scheduled attempt (+60 min)
-       will re-check. If all attempts see stale data or a degraded API, the day
-       is simply skipped.
+  10 → SKIP/RETRY: market closed today (weekend / NYSE holiday) OR data not fresh
+       OR Anthropic API overloaded (529). Do NOT run the pipeline. Stop this
+       attempt; the next scheduled attempt (+60 min) will re-check. If all
+       attempts see a closed market / stale data / degraded API, the day is
+       simply skipped.
   20 → SKIP/DONE: today's pipeline already executed (idempotency). Do NOT run
        again — re-running would risk double-execution.
 
@@ -38,14 +39,48 @@ from zoneinfo import ZoneInfo
 
 # Market-day date in US/Eastern (the cloud runner is UTC; in the early-morning
 # window ET and UTC share a calendar date, but compute ET explicitly to be safe).
+# PREFLIGHT_DATE_OVERRIDE ("YYYY-MM-DD") forces the effective date for both the
+# freshness comparison and the weekend/holiday calendar — used by tests (so the
+# suite is deterministic regardless of the wall-clock day) and available as a
+# manual override. It drives the weekday too, so it must be a real calendar date.
 ET = ZoneInfo("America/New_York")
-TODAY = datetime.now(ET).strftime("%Y-%m-%d")
+_OVERRIDE = os.getenv("PREFLIGHT_DATE_OVERRIDE")
+_NOW_ET = (datetime.strptime(_OVERRIDE, "%Y-%m-%d").replace(tzinfo=ET)
+           if _OVERRIDE else datetime.now(ET))
+TODAY = _NOW_ET.strftime("%Y-%m-%d")
 
 # Minimum history bars required for any quant calculation — mirrors the
 # pre-flight abort threshold in main.py / fetch_snapshot.py.
 MIN_BARS = 22
 
 PROCEED, SKIP_RETRY, SKIP_DONE = 0, 10, 20
+
+# NYSE full-day market closures (weekends are handled separately). On a closed
+# market the broker still ACCEPTS GFD orders but they sit `queued` and never fill,
+# expiring at the (nonexistent) close — so the routine must not run. This was a
+# live incident on Juneteenth 2026-06-19: the snapshot was dated "today", the gate
+# proceeded, and 4 orders were placed that could never fill. Dates are observed
+# closure dates (an observed holiday on a weekend shifts to the adjacent weekday).
+NYSE_HOLIDAYS = {
+    # 2026
+    "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25",
+    "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
+    # 2027
+    "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31",
+    "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",
+}
+
+
+def _market_closed_today() -> tuple[bool, str]:
+    """Return (closed, reason) for TODAY in US/Eastern. Covers weekends and the
+    NYSE_HOLIDAYS calendar. Does NOT cover early-close (half) days — those still
+    trade, so the routine should run on them."""
+    dt = _NOW_ET
+    if dt.weekday() >= 5:  # 5=Sat, 6=Sun
+        return True, f"weekend ({dt.strftime('%A')})"
+    if TODAY in NYSE_HOLIDAYS:
+        return True, "NYSE holiday"
+    return False, ""
 
 
 def _read_json(path):
@@ -108,6 +143,18 @@ def _check_api_health() -> tuple[bool, str]:
 
 
 def main() -> int:
+    # 0. Market calendar — is the market even open today? A closed market (weekend
+    #    or NYSE holiday) accepts GFD orders that can never fill, so skip outright.
+    #    market_data.yml can still stamp a "today"-dated snapshot on a holiday, so
+    #    the freshness check below does NOT catch this — gate on the calendar first.
+    closed, reason = _market_closed_today()
+    if closed:
+        print(
+            f"SKIP/RETRY: market is closed today ({TODAY} — {reason}). "
+            "Orders placed now would sit queued and never fill. Not running."
+        )
+        return SKIP_RETRY
+
     # 1. Idempotency — has today's pipeline already executed?
     pending = _read_json("pending_decisions.json")
     if pending and pending.get("date") == TODAY and pending.get("executed_at"):

@@ -1258,13 +1258,21 @@ class TestPreflightGate:
 
     GATE = os.path.join(os.path.dirname(__file__), "preflight_gate.py")
 
-    def _today_et(self):
-        return self.datetime.now(self.ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+    # A fixed open trading day (Wed 2026-06-17 — not a weekend or NYSE holiday).
+    # Pinning the gate's effective date via PREFLIGHT_DATE_OVERRIDE makes every
+    # date-dependent gate test deterministic regardless of the wall-clock day
+    # (the market-closed check would otherwise SKIP these on weekends/holidays).
+    OPEN_DAY = "2026-06-17"
 
-    def _run(self, tmp_path):
+    def _today_et(self):
+        return self.OPEN_DAY
+
+    def _run(self, tmp_path, date_override=None):
+        env = dict(self.os.environ)
+        env["PREFLIGHT_DATE_OVERRIDE"] = date_override or self.OPEN_DAY
         return self.subprocess.run(
             [self.sys.executable, self.GATE],
-            cwd=str(tmp_path), capture_output=True, text=True,
+            cwd=str(tmp_path), capture_output=True, text=True, env=env,
         ).returncode
 
     def _write(self, tmp_path, name, obj):
@@ -1309,6 +1317,50 @@ class TestPreflightGate:
         self._write(tmp_path, "pending_decisions.json",
                     {"date": today, "run_id": "x", "executed_at": "2026-01-01T00:00:00Z"})
         assert self._run(tmp_path) == 20  # SKIP/DONE wins
+
+
+class TestPreflightGateMarketClosed(TestPreflightGate):
+    """The market-calendar gate (check 0): a closed market accepts GFD orders that
+    never fill, so the routine must SKIP/RETRY. Regression for the Juneteenth
+    2026-06-19 incident — a 'today'-dated snapshot proceeded and placed 4 orders
+    that could never fill. The calendar check must win even over fresh data and
+    even over an already-executed claim (no trading happens on a closed day)."""
+
+    HOLIDAY = "2026-06-19"   # Juneteenth (Friday) — NYSE closed
+    SATURDAY = "2026-06-20"  # weekend
+    SUNDAY = "2026-06-21"
+
+    def _fresh_snapshot(self, tmp_path, date):
+        self._write(tmp_path, "market_snapshot.json",
+                    {"date": date, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 200}})
+
+    def test_skip_retry_on_nyse_holiday(self, tmp_path):
+        self._fresh_snapshot(tmp_path, self.HOLIDAY)
+        self._write(tmp_path, "pending_decisions.json", {"date": self.HOLIDAY, "executed_at": None})
+        assert self._run(tmp_path, date_override=self.HOLIDAY) == 10  # SKIP/RETRY
+
+    def test_skip_retry_on_saturday(self, tmp_path):
+        self._fresh_snapshot(tmp_path, self.SATURDAY)
+        assert self._run(tmp_path, date_override=self.SATURDAY) == 10
+
+    def test_skip_retry_on_sunday(self, tmp_path):
+        self._fresh_snapshot(tmp_path, self.SUNDAY)
+        assert self._run(tmp_path, date_override=self.SUNDAY) == 10
+
+    def test_holiday_check_precedes_idempotency(self, tmp_path):
+        """Even an already-executed claim yields SKIP/RETRY on a holiday — the
+        market simply isn't open, so the calendar check is evaluated first."""
+        self._fresh_snapshot(tmp_path, self.HOLIDAY)
+        self._write(tmp_path, "pending_decisions.json",
+                    {"date": self.HOLIDAY, "run_id": "x", "executed_at": "2026-06-19T13:51:00Z"})
+        assert self._run(tmp_path, date_override=self.HOLIDAY) == 10
+
+    def test_open_trading_day_still_proceeds(self, tmp_path):
+        """Control: a normal weekday with fresh data still PROCEEDs (the calendar
+        check does not over-block)."""
+        self._fresh_snapshot(tmp_path, self.OPEN_DAY)
+        self._write(tmp_path, "pending_decisions.json", {"date": self.OPEN_DAY, "executed_at": None})
+        assert self._run(tmp_path) == 0  # PROCEED
 
 
 class TestCanaryAuth:
