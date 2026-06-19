@@ -1,31 +1,58 @@
 {
-  "run_id": "20260618-154750",
-  "date": "2026-06-18",
-  "generated_at": "2026-06-18T15:47:50.752874+00:00",
-  "execution_started_at": "2026-06-18T15:50:37.361894+00:00",
-  "executed_at": "2026-06-18T15:51:03.073738+00:00",
+  "run_id": "20260619-134735",
+  "date": "2026-06-19",
+  "generated_at": "2026-06-19T13:47:35.818770+00:00",
+  "execution_started_at": "2026-06-19T13:50:35.404285+00:00",
+  "executed_at": null,
   "decisions": [
     {
-      "ticker": "LLY",
+      "ticker": "LIN",
       "action": "SELL",
       "target_weight": 0.0,
-      "source_of_capital": "exit_deteriorating_position",
-      "expected_return": 0.0,
-      "rationale": "Auto-exit: position_review=REDUCE hold=4/10 alpha=LOW, DA risk=8/10 reject=True \u2014 3-signal override of PM HOLD",
-      "qty": 0.038668,
+      "source_of_capital": "LIN",
+      "expected_return": 0.01,
+      "rationale": "REDUCE action, DA reject=True, low alpha, near-zero beta",
+      "qty": 0.087592,
       "wash_sale_presale": {
         "window_days": 30,
-        "sell_price": 1095.5250244140625,
+        "sell_price": 512.1500244140625,
         "lots": [
           {
-            "qty": 0.038668,
-            "cost_basis": 1164.96,
-            "acquired": "2026-06-11",
-            "held_days": 7
+            "qty": 0.018076,
+            "cost_basis": 515.59,
+            "acquired": "2026-06-10",
+            "held_days": 9
           }
         ],
         "note": "loss exit within 30d of purchase \u2014 IRS \u00a71091 wash sale: the loss is DEFERRED onto the replacement basis, not lost. ALLOWED (capital-risk exit outranks tax timing); flagged for accounting/audit."
       }
+    },
+    {
+      "ticker": "GS",
+      "action": "SELL",
+      "target_weight": 0.0,
+      "source_of_capital": "GS",
+      "expected_return": 0.01,
+      "rationale": "DA reject=True, Financials sector over 25% hard cap",
+      "qty": 0.039584
+    },
+    {
+      "ticker": "PANW",
+      "action": "SELL",
+      "target_weight": 0.0,
+      "source_of_capital": "PANW",
+      "expected_return": 0.01,
+      "rationale": "DA reject=True, 75-85x earnings, overvalued vs risk",
+      "qty": 0.144413
+    },
+    {
+      "ticker": "VRTX",
+      "action": "BUY",
+      "target_weight": 0.09,
+      "source_of_capital": "PANW",
+      "expected_return": 0.05,
+      "rationale": "DA reject=False, pipeline optionality, diversifies away financials",
+      "qty": 0.100389
     }
   ]
 }

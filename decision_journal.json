@@ -65,10 +65,20 @@
       "Market share losses to Microsoft Defender or Crowdstrike in endpoint/cloud-native workloads",
       "Macro recession triggers substantial deferrals/cancellations across large enterprise accounts"
     ],
-    "status": "open",
-    "actual_return": null,
-    "thesis_correct": null,
-    "run_id": "20260611-185140"
+    "status": "closed",
+    "actual_return": 0.0382,
+    "thesis_correct": true,
+    "run_id": "20260611-185140",
+    "exits": [
+      {
+        "date": "2026-06-19",
+        "run_id": "20260619-134735",
+        "exit_price": 287.78,
+        "avg_price": 277.19,
+        "realized_return": 0.0382,
+        "full_exit": true
+      }
+    ]
   },
   {
     "trade_id": "e31acd34-7b04-4ea5-94a2-90a4895f6601",
@@ -246,6 +256,125 @@
       "Mounjaro/Zepbound pricing holds flat or increases YoY despite competitive launches; payer data shows continued access expansion",
       "Cardiovascular outcome data (SUMMIT or future trials) shows tirzepatide superiority to semaglutide, unlocking label expansion and higher utilization",
       "Gross margin on obesity franchise expands to 70%+ due to manufacturing scale and payer mix, supporting 30%+ FCF growth"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "9f4df86a-5dff-4990-8691-4e653449e050",
+    "run_id": "20260619-134735",
+    "date": "2026-06-19",
+    "ticker": "LIN",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "LIN's industrial gas duopoly delivers recession-resilient cash flows with structural growth from energy transition capex cycles, yet the market has priced in perfection leaving limited upside without a major M&A catalyst or margin expansion surprise.",
+    "anti_thesis": "LIN trades at ~30x forward earnings with a near-zero beta, meaning the market has already priced in durability and defensive quality \u2014 any growth narrative requiring hydrogen or energy transition to materialize on a 3-5 year horizon offers minimal margin of safety. The hydrogen economy remains pre-commercial at scale, green H2 economics are deeply negative without sustained subsidies, and LIN's on-site contract volumes are directly exposed to any industrial production downturn that consensus has not adequately stress-tested at current multiples. With 0.04 beta reflecting extreme defensive crowding, the asymmetry is poor: downside from multiple compression or volume disappointment is far larger than any realistic upside from incremental contract wins.",
+    "catalysts": [
+      "H2 2024-2025 guidance raise on hydrogen infrastructure investments and energy transition capex from automotive/semiconductor sectors",
+      "Margin expansion beat driven by favorable gas mix (higher-margin specialty gases) and pricing leverage in specialty applications",
+      "Major contract announcement with clean hydrogen or advanced manufacturing customer signaling multi-year capex cycles",
+      "Dividend/buyback acceleration signaling management confidence in cash flow durability beyond current consensus",
+      "Sector consolidation or premium acquisition offer at 28-30x multiples forcing multiple expansion reassessment"
+    ],
+    "confidence": 6,
+    "expected_return": 0.01,
+    "invalidates_if": [
+      "Organic growth declines below 2% for two consecutive quarters without margin offset",
+      "Free cash flow conversion falls below 60% of EBITDA due to unexpected capex inflation or working capital swings",
+      "Market share losses to private equity-backed regional competitors in key geographies (Europe, Asia-Pacific) materialize",
+      "Hydrogen economy narrative stalls\u2014e.g., major automotive OEM delays fuel cell deployment by 2+ years",
+      "Management guidance misses by >5% for three consecutive quarters, signaling forecasting credibility issues"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "11cd7991-9e41-4af0-9896-68bb7981e97f",
+    "run_id": "20260619-134735",
+    "date": "2026-06-19",
+    "ticker": "GS",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "GS is positioned for multiple earnings expansion cycles driven by investment banking recovery, fixed income trading normalization, and improved capital allocation that the market has priced too conservatively given momentum inflection and quality improvements.",
+    "anti_thesis": "At ~$1,097/share, GS already trades at a meaningful premium to tangible book value, pricing in a sustained IB recovery and margin normalization that has historically proven cyclical rather than structural\u2014M&A volumes remain hostage to rate uncertainty and CEO risk-aversion, meaning the 'inflection' narrative can evaporate in a single quarter. Fixed income trading revenues are mean-reverting by nature, and the desk consolidation trend plus electronification are structurally compressing bid-ask spreads and dealer margins over time. A mild recession or sustained higher-for-longer rate environment would simultaneously crush deal pipelines, force reserve rebuilds, and compress the multiple on a high-beta, capital-markets-dependent earnings stream\u2014a combination capable of producing a 35-50% peak-to-trough drawdown.",
+    "catalysts": [
+      "Q4 earnings beat on investment banking fees (M&A and equity capital markets unexpectedly strong)",
+      "Annual strategic update with concrete cost reduction targets achieved (management credibility reset)",
+      "Credit cycle inflection that allows for reserve releases and NIM expansion",
+      "Capital return announcement (buyback acceleration) signaling management confidence and supporting equity buybacks",
+      "Regulatory changes favorable to large capital markets businesses (Dodd-Frank modifications)"
+    ],
+    "confidence": 7,
+    "expected_return": 0.01,
+    "invalidates_if": [
+      "Goldman reports declining investment banking pipeline or weak forward guidance",
+      "Economic recession emerges causing credit deterioration and CET1 constraints on capital return",
+      "Fixed income trading revenues collapse below $6B annually (showing structural decline)",
+      "Management turnover or credibility loss on cost reduction initiatives",
+      "Competitive loss of marquee clients to competitors (JPM, MS) in advisory or prime services"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "aecfd494-67cc-44c2-a946-40221861af68",
+    "run_id": "20260619-134735",
+    "date": "2026-06-19",
+    "ticker": "PANW",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "PANW's consolidated platform architecture and AI-native security capabilities position it to capture disproportionate share of enterprise security budgets as customers consolidate vendors, driving margin expansion and multiple re-rating despite already-elevated valuations.",
+    "anti_thesis": "PANW trades at 75-85x earnings with the platform consolidation thesis already fully priced in, yet the core assumption\u2014that enterprises will structurally reduce vendors to 2-3 and PANW wins that consolidation\u2014remains unproven at scale and directly contradicted by PANW's own 'platformization' discounting strategy, which reveals customers must be incentivized heavily (often via free modules) to consolidate, destroying the margin expansion narrative. The AI attach rate thesis is circular: if AI security features commoditize within 12 months (as MSFT, CRWD, and SentinelOne are already demonstrating), attach rates become table stakes rather than pricing power. A deceleration from 25% to 18% revenue growth on these elevated multiples implies a 30-45% drawdown with no fundamental disaster required.",
+    "catalysts": [
+      "Q1-Q3 2025 guidance beats driven by larger-than-expected platform bundle adoption rates and 50%+ AI-service module attach rates",
+      "Customer concentration data showing average products per customer trending from 4-5 toward 6-7 as cross-sell deepens, signaling 4-5 year runway of 25%+ organic growth",
+      "Major enterprise breach or regulatory event that accelerates platform consolidation thesis\u2014triggers rapid migration of secondary tools into PANW",
+      "Earnings call commentary on gross margin expansion inflecting higher (35-40 bps annually) as product mix shifts toward higher-margin AI and platform services",
+      "Competitor stumble (e.g., CRWD execution issues, ORCL security platform delays) that validates PANW's integrated approach superiority"
+    ],
+    "confidence": 6,
+    "expected_return": 0.01,
+    "invalidates_if": [
+      "Annual guidance growth rates fall below 15% or indicate material customer churn above 2%",
+      "Platform bundle adoption rates plateau below 40% of new deals or decline sequentially",
+      "Net retention rate drops below 120% for two consecutive quarters",
+      "Major customer loss to competitor (e.g., $50M+ ACV Tier 1 account) or announced migration from PANW platform",
+      "Gross margins compress 100+ bps YoY despite product mix optimization, signaling pricing power loss",
+      "CRO or Chief Product Officer departure without clear succession, suggesting execution risk in platform roadmap"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "cca27dbb-1f3e-4dc0-95cd-d84a02d4ddbe",
+    "run_id": "20260619-134735",
+    "date": "2026-06-19",
+    "ticker": "VRTX",
+    "action": "BUY",
+    "target_weight": 0.09,
+    "thesis": "VRTX is undervalued on a sum-of-parts basis as CF-modulator franchise maturation is priced in but overlooked are: (1) CASGEVY/exagamglogene autotemcel ramp potential in severe genetic diseases beyond CF, (2) VX-548 non-opioid pain franchise optionality, and (3) royalty/pipeline optionality from Intrinsic/Array acquisitions that market has discounted amid GLP-1 distraction.",
+    "anti_thesis": "VRTX trades at ~25x earnings with CF revenues already near saturation in high-penetration markets, meaning the stock requires multiple pipeline successes simultaneously to justify current valuation \u2014 a historically unreliable bet in biotech. CASGEVY's gene-editing commercial ramp has been deeply disappointing relative to launch expectations, with only a handful of patients treated due to grueling conditioning regimens, manufacturing bottlenecks, and reimbursement friction, undermining the 'massive TAM expansion' narrative. VX-548 faces an extremely high bar in chronic pain where mechanism-of-action differentiation from existing generics is questioned by payers, and any phase 3 failure collapses the primary growth narrative propping up the non-CF sum-of-parts valuation.",
+    "catalysts": [
+      "CASGEVY label expansion data for SMA, beta-thalassemia, or sickle cell disease expansion beyond initial indications (2025-2026)",
+      "VX-548 phase 3 readout and potential NDA filing in acute/chronic pain (likely mid-2025)",
+      "CF patient share gains in emerging markets and pediatric adoption acceleration data",
+      "First meaningful revenue contribution from Intrinsic Therapeutics pipeline (protein design hits entering clinic)",
+      "Analyst earnings revisions upward on sustained CF cash flow plus optionality recognition",
+      "Activist involvement or strategic M&A speculation if valuation remains compressed vs intrinsic value"
+    ],
+    "confidence": 6,
+    "expected_return": 0.05,
+    "invalidates_if": [
+      "CASGEVY fails to show clinically meaningful efficacy in \u22651 non-CF genetic disease by end of 2025",
+      "VX-548 is rejected by FDA or requires unacceptable safety restrictions",
+      "CF modulator market share collapses >20% within 12 months due to competitive entry or pricing pressure",
+      "Intrinsic pipeline has zero meaningful clinical readouts or partnerships within 24 months",
+      "Company announces dividend cut or material capital allocation shift away from R&D",
+      "Strategic acquisition by larger pharma at valuation <$65 per share (14-15% of current)"
     ],
     "status": "open",
     "actual_return": null,
