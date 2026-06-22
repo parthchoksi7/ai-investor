@@ -65,10 +65,20 @@
       "Market share losses to Microsoft Defender or Crowdstrike in endpoint/cloud-native workloads",
       "Macro recession triggers substantial deferrals/cancellations across large enterprise accounts"
     ],
-    "status": "open",
-    "actual_return": null,
-    "thesis_correct": null,
-    "run_id": "20260611-185140"
+    "status": "closed",
+    "actual_return": 0.0382,
+    "thesis_correct": true,
+    "run_id": "20260611-185140",
+    "exits": [
+      {
+        "date": "2026-06-22",
+        "run_id": "20260622-134756",
+        "exit_price": 287.78,
+        "avg_price": 277.19,
+        "realized_return": 0.0382,
+        "full_exit": true
+      }
+    ]
   },
   {
     "trade_id": "e31acd34-7b04-4ea5-94a2-90a4895f6601",
@@ -126,9 +136,19 @@
       "M&A activity by peers signals market share loss in core retail or commercial franchises"
     ],
     "status": "open",
-    "actual_return": null,
-    "thesis_correct": null,
-    "run_id": "20260612-134736"
+    "actual_return": 0.0122,
+    "thesis_correct": true,
+    "run_id": "20260612-134736",
+    "exits": [
+      {
+        "date": "2026-06-22",
+        "run_id": "20260622-134756",
+        "exit_price": 56.2,
+        "avg_price": 55.52,
+        "realized_return": 0.0122,
+        "full_exit": false
+      }
+    ]
   },
   {
     "trade_id": "edc569d3-8e12-4a73-8315-4047ba572ea6",
@@ -216,10 +236,20 @@
       "Gross margins trend downward 50+ bps annually despite Services mix improvement",
       "Antitrust enforcement restricts Apple's ability to bundle or cross-sell services, materially reducing TAM"
     ],
-    "status": "open",
-    "actual_return": null,
-    "thesis_correct": null,
-    "run_id": "20260612-134736"
+    "status": "closed",
+    "actual_return": 0.0202,
+    "thesis_correct": true,
+    "run_id": "20260612-134736",
+    "exits": [
+      {
+        "date": "2026-06-22",
+        "run_id": "20260622-134756",
+        "exit_price": 298.01,
+        "avg_price": 292.11,
+        "realized_return": 0.0202,
+        "full_exit": true
+      }
+    ]
   },
   {
     "trade_id": "a56f7664-63e8-4bb8-9563-831d6115a6ec",
@@ -367,6 +397,212 @@
       "Strategic acquisition by larger pharma at valuation <$65 per share (14-15% of current)"
     ],
     "status": "rejected",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "44976684-d8fe-416a-b77a-40de46d2f067",
+    "run_id": "20260622-134756",
+    "date": "2026-06-22",
+    "ticker": "GS",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "Goldman Sachs is transitioning toward sustained higher profitability through disciplined capital deployment and operating leverage in a normalized rate environment, but the market is underweighting the magnitude of compensation leverage and underestimating ongoing M&A advisory momentum.",
+    "anti_thesis": "GS trades at a price implying significant recovery in M&A fee pools and trading revenues that may not materialize if deal activity disappoints in a tariff-driven, higher-for-longer rate environment with elevated macro uncertainty. The 0.8x TBV 'discount' narrative ignores that GS's core ROE has chronically underperformed its cost of equity for years, and the post-2023 restructuring simply shed consumer banking losses rather than structurally improving the investment bank's economics. With beta of 1.48 and vol at 31.8%, a macro disappointment or regulatory shock does not produce a modest correction\u2014it produces a 35-50% drawdown given the operating leverage working in reverse.",
+    "catalysts": [
+      "Q2/Q3 2026 earnings beats driven by higher-than-expected investment banking revenues in a strong M&A environment and improved trading margins as market volatility stabilizes",
+      "Capital return acceleration announcement\u2014buyback expansion or special dividend signaling confidence in normalized profitability (management has been signaling flexibility)",
+      "NIM stabilization data point showing deposit franchise stability and funding cost improvements flowing through to net revenue",
+      "Activist investor pressure or shareholder demand for ROE targets, forcing management to articulate path to 10%+ ROE more clearly",
+      "Relative outperformance vs. JPM/BAC as GS's lower exposure to commercial real estate stress becomes apparent in peer earnings"
+    ],
+    "confidence": 6,
+    "expected_return": 0.0,
+    "invalidates_if": [
+      "Q2 2026 or later earnings disappoint on investment banking revenues despite favorable M&A backdrop (signals structural market share loss)",
+      "GS announces NIM guidance below 1.4% ex-DVA or displays persistent deposit pressure despite rate environment stability",
+      "Capital ratios tighten unexpectedly or regulatory action constrains buyback/dividend flexibility below current run-rate assumptions",
+      "Major trading loss or risk management incident occurs, resetting regulatory/reputational clock and delaying capital return timeline",
+      "M&A deal volumes decline materially YoY in 2026 H2 despite no recession, suggesting cyclical peak rather than normalized recovery"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "97a65020-e0e3-4721-83e3-fb78bc2e5265",
+    "run_id": "20260622-134756",
+    "date": "2026-06-22",
+    "ticker": "PANW",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "PANW will re-rate higher as AI-native security consolidation accelerates, revealing a 25-30% valuation gap versus peers and driving margin expansion through platform leverage that the market has underestimated.",
+    "anti_thesis": "PANW's stock has already run +70% in three months, pricing in a platform consolidation thesis that remains unproven at scale \u2014 the 40-45x multiple leaves zero margin of safety if even one catalyst slips. Microsoft and CrowdStrike are closing AI feature gaps rapidly, meaning PANW's supposed architectural moat could compress to a marketing narrative within 12-18 months. If platform NRR and multi-module penetration metrics disappoint even marginally, a 30-40% multiple de-rate is entirely plausible from current levels.",
+    "catalysts": [
+      "Q3 FY2027 earnings showing acceleration in consolidated platform wallet-share metrics (customers using 4+ modules) trending to 60%+ penetration, signaling genuine platform shift vs. point-product sales",
+      "Announcement of major enterprise consolidation wins (Fortune 100 switching from multi-vendor to PANW-centric architecture) with multi-year ARR impact",
+      "Operating margin guidance raised above 35% for FY2028 as AI-driven automation reduces headcount intensity and improves sales efficiency",
+      "PANW winning material share in AI-native threat response use cases where Cortex demonstrates superiority in mean-time-to-remediate vs. point solutions",
+      "Customer gross retention rate exceeding 130% for consolidated customers (vs. 100-110% for point-product cohorts) proving platform leverage hypothesis"
+    ],
+    "confidence": 6,
+    "expected_return": 0.0,
+    "invalidates_if": [
+      "Next two quarters show consolidated platform penetration declining or flattening, signaling customers are not consolidating workloads as expected",
+      "Guidance cut or slowdown below 25% growth YoY, implying platform consolidation is not driving incremental revenue",
+      "Operating margins decline or flatten despite scale, indicating AI-driven efficiency gains are not materializing",
+      "Peer (CrowdStrike, Microsoft) reports superior AI-native threat detection or faster time-to-detect metrics, demonstrating technical superiority",
+      "Customer NPS or retention metrics deteriorate, suggesting product execution risk or competitive displacement"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "f7de09d8-ff6a-4c53-88be-6aaba969a283",
+    "run_id": "20260622-134756",
+    "date": "2026-06-22",
+    "ticker": "AAPL",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "Apple's Services segment and installed base durability remain underappreciated by the market, which is overweighting near-term iPhone saturation concerns and underweighting the structural shift toward recurring, higher-margin revenue streams that should support valuation multiples expansion.",
+    "anti_thesis": "At ~$298 and ~31x forward earnings, AAPL already prices in the Services re-rating thesis \u2014 the market is not 'underweighting' Services, it has been the dominant narrative for three years and is fully embedded in the multiple. Meanwhile, the App Store regulatory unwind (Epic, EU DMA, DOJ) poses a structural ceiling on the 70%+ Services gross margin assumption, and iPhone units have been essentially flat for four years, meaning installed base growth is decelerating precisely when the bull case needs it to accelerate. Any Services growth normalization or margin compression from regulatory action would simultaneously destroy the earnings case and the multiple, producing a double-hit drawdown with no hardware growth to cushion it.",
+    "catalysts": [
+      "Apple Intelligence rollout and monetization evidence (premium tier adoption rates in 2025-2026)",
+      "Services segment achieving 25%+ of total revenue with visibility to 30%+, forcing multiple re-rating toward SaaS comparables",
+      "Installed base growing past 2.5B devices with visible operating leverage in Services margins expanding to 75%+",
+      "Successful new services launches (health, financial, advertising) demonstrating portfolio diversification beyond App Store commissions",
+      "Margin expansion in Services outpacing revenue growth, signaling pricing power and reducing investor concerns about competitive pressure",
+      "Investor recognition of Apple as a quasi-recurring revenue business, driving multiple expansion from hardware-company to tech-services valuation framework"
+    ],
+    "confidence": 6,
+    "expected_return": 0.0,
+    "invalidates_if": [
+      "Services growth decelerates below 8% YoY despite installed base growth, indicating saturation or competitive loss",
+      "Gross margins in Services contract below 65%, signaling either pricing pressure or increased content/hosting costs",
+      "Installed base stalls or contracts for two consecutive quarters, breaking the foundation of Services compounding thesis",
+      "Apple Intelligence monetization fails to materialize; premium tier adoption remains below 5% of installed base after 12 months",
+      "Regulatory action forces commission structures below 15-20%, materially impacting Services profitability",
+      "Major customer churn from Services ecosystem as competitors launch compelling alternatives"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "30ac526f-7fa0-48c9-87de-a6d85aeaedb2",
+    "run_id": "20260622-134756",
+    "date": "2026-06-22",
+    "ticker": "EOG",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "EOG is a high-quality, low-decline-rate producer trading at a discount to peers despite superior capital discipline and free cash flow generation, with significant upside if energy markets normalize or the company increases shareholder distributions.",
+    "anti_thesis": "EOG's 'discount to peers' valuation narrative collapses if WTI settles structurally below $70/bbl, where the FCF yield that underpins the entire thesis evaporates and buyback/dividend acceleration becomes untenable. The negative beta of -1.1 is anomalous and likely a data artifact or measurement error, meaning true downside correlation to energy prices is far worse than the risk model suggests. With Permian peers closing the operational gap and Guyana/offshore supply adding low-cost barrels through 2026-2027, EOG's premium multiple on 'superior' drilling efficiency may compress precisely when macro headwinds hit hardest.",
+    "catalysts": [
+      "Oil price recovery to $75-85/bbl triggering material FCF beats and accelerated capital return announcements",
+      "Strategic M&A or bolt-on acquisition demonstrating conviction in long-cycle assets and reserves replacement",
+      "Quarterly results showing outperformance of guidance with margin expansion from operational excellence",
+      "Analyst estimate revisions higher on 2024-2025 energy price assumptions as supply tightness emerges",
+      "Dividend increase or accelerated share buyback announcement signaling management confidence in normalized energy prices"
+    ],
+    "confidence": 6,
+    "expected_return": 0.0,
+    "invalidates_if": [
+      "WTI sustained below $50/bbl for 12+ months with no signs of supply-demand rebalancing",
+      "EOG's reserve replacement falls below 100% for two consecutive years",
+      "Management reduces guidance materially or suspends shareholder distributions",
+      "Regulatory/ESG restrictions significantly impair permit issuance or drilling program execution",
+      "A major competitor emerges with meaningfully superior decline metrics or unit economics"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "6a1012ca-c15c-4faf-a1ff-ffa764a111e6",
+    "run_id": "20260622-134756",
+    "date": "2026-06-22",
+    "ticker": "BAC",
+    "action": "SELL",
+    "target_weight": 0.05,
+    "thesis": "BAC re-rates higher as Fed cuts create a floor on NIM compression while management executes disciplined capital return, but consensus underweights the earnings resilience embedded in the balance sheet and misses the operating leverage inflection point.",
+    "anti_thesis": "BAC's $2T+ balance sheet carries massive duration risk embedded from its 2020-2022 bond buying binge, and unrealized AOCI losses (~$100B peak) mean book value is structurally impaired even as rates normalize \u2014 the 'NIM floor' thesis ignores that deposit repricing lag works in reverse on the way down, compressing spreads faster than consensus models. Meanwhile, the operating leverage story is undermined by persistent expense creep (technology spend, regulatory compliance costs, litigation reserves) that has consistently offset revenue growth over multiple cycles. If a recession materializes before Fed cuts are complete, the combination of rising provision expense, buyback suspension, and multiple compression could produce a 30-40% drawdown from current levels.",
+    "catalysts": [
+      "Fed cuts begin; market realizes NIM stabilizes above 2.2% rather than falls to 2.0% (revisions up 3-5%)",
+      "2Q25 earnings surprise: net interest income beats on deposit repricing and CIB fixed income recovery, shift in consensus from compression to stabilization narrative",
+      "Capital return acceleration announcement or Q2 buyback execution faster than guide, forcing revaluation of free cash generation assumptions",
+      "Credit metrics remain pristine through rate cuts; reduces recession tail-risk premium applied to BAC valuation multiple",
+      "Wealth management AUM inflection or CIB trading revenue surprise (BAC outperforms in rate-cut environment vs. rising-rate environment)",
+      "Analyst revisions trigger technical break-out above $58-60 resistance after 3+ months of accumulation"
+    ],
+    "confidence": 6,
+    "expected_return": 0.04,
+    "invalidates_if": [
+      "Fed remains on hold for 12+ months or signals re-hiking; NIM thesis collapses",
+      "Credit card delinquencies or loan losses accelerate beyond forward guidance; earnings revised down materially",
+      "Deposit beta spikes in first rate-cut cycle, forcing BAC to cut dividend or buybacks; capital return narrative breaks",
+      "Regulatory action freezes capital deployment or imposes significant new compliance costs; ROIC falls below cost of capital",
+      "Consensus NIM forecasts prove correct (compression to 2.0%); thesis validated operationally but repricing never occurs due to macro overhang"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "296413e3-7f64-49f6-b604-a5e47497adb4",
+    "run_id": "20260622-134756",
+    "date": "2026-06-22",
+    "ticker": "VRTX",
+    "action": "BUY",
+    "target_weight": 0.09,
+    "thesis": "VRTX is materially undervalued as markets have priced in CF-modulator franchise maturation while underestimating the commercial scale of next-generation modulator combinations, CFTR potentiator pipeline potential, and non-CF rare disease expansion (VX-147 for kidney disease, VX-440 combinations).",
+    "anti_thesis": "VRTX at $451 already prices in a highly optimistic scenario for a franchise built almost entirely on one disease (CF) affecting ~90,000 patients globally, leaving almost no margin of safety if VX-440 fails to demonstrate clinically meaningful superiority over Trikafta \u2014 a high bar given Trikafta's already transformative efficacy profile. The non-CF pipeline (VX-147 for ADPKD) has serially disappointed: VX-147 was originally positioned for APOL1-mediated kidney disease, not ADPKD, and the TAM narrative keeps shifting, suggesting commercial conviction is weaker than marketed. If CF modulator penetration plateaus and next-gen data underwhelms, the stock has 30-40% downside with no pipeline option value to cushion it.",
+    "catalysts": [
+      "VX-440 combination Phase 3 data readouts (likely H1 2025) showing superior FEV1 improvements vs. existing triple therapy, triggering market-share capture thesis",
+      "VX-147 Phase 2b kidney disease data demonstrating efficacy in autosomal dominant polycystic kidney disease (ADPKD), validating non-CF expansion thesis and opening $5B+ TAM",
+      "FY2025 CF modulator revenue guidance raise driven by triple therapy adoption acceleration in emerging markets + developed market mix-shift to higher-priced combinations",
+      "Analyst revisions broadening pipeline value contribution; Street currently assigns <$20/share to VX-440 + VX-147 despite peak sales potential >$500M each",
+      "Strategic partnerships or licensing of CFTR platform to expand geographic reach (China/ex-US markets under-monetized vs. NA/EU)"
+    ],
+    "confidence": 6,
+    "expected_return": 0.07,
+    "invalidates_if": [
+      "VX-440 or next-gen modulator development halted; no Phase 3 initiation by end of 2025",
+      "VX-147 Phase 2b primary endpoint missed or safety signals emerge; rare disease indication narrower than ADPKD (e.g., limited to subset of mutations)",
+      "FY2025 CF revenue guidance lowered >5% YoY; Trikafta prescription trends weaken sequentially in Q1-Q2 2025",
+      "Competitive threat materializes (e.g., ViiV or Roche launches superior CFTR modulator); Vertex's market share in CF erodes",
+      "Analyst consensus average PT falls below $380 (10%+ downside); Street begins pricing 2-3% revenue CAGRs for CF franchise without pipeline uplift"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "6b3bba9d-9c26-4352-aa30-308ce0dba25c",
+    "run_id": "20260622-134756",
+    "date": "2026-06-22",
+    "ticker": "AXP",
+    "action": "BUY",
+    "target_weight": 0.08,
+    "thesis": "AXP is positioned for sustained earnings growth driven by high-margin spending growth from affluent cardholders and operating leverage, with the market underappreciating the structural shift toward premium cards and underwriting discipline.",
+    "anti_thesis": "At ~$338, AXP trades at roughly 19-20x forward earnings, a premium that already embeds the 8-10% revenue CAGR and margin expansion narrative\u2014leaving zero margin of safety if credit normalization accelerates faster than modeled or if the affluent consumer proves more rate-sensitive than assumed. The thesis rests on a structurally privileged customer base that is simultaneously being aggressively targeted by Chase Sapphire, Capital One Venture X, and Citi Prestige with comparable rewards economics, meaning AXP's 'moat' is really just a brand premium that competitors are systematically buying down. If charge-offs revert to even mid-cycle norms while NII tailwinds fade on rate cuts, earnings power is materially overstated and the stock de-rates sharply.",
+    "catalysts": [
+      "Q2/Q3 2024 earnings beat on NII expansion and fee growth exceeding guidance, forcing consensus revenue CAGR estimates higher",
+      "Announcement of meaningful share buyback acceleration enabled by FCF generation, signaling management confidence in mid-cycle normalization",
+      "Sustained credit metrics proving resilience through economic slowdown (charge-offs and delinquencies declining YoY despite rate hikes), reshaping recession recession probabilities in equity pricing",
+      "Disclosure of corporate spend acceleration (T&E recovery + digital transformation budgets) driving higher-margin commercial segment growth above guidance",
+      "Activist investor engagement or strategic messaging on capital allocation intensifying focus on ROIC expansion and multiple re-rating"
+    ],
+    "confidence": 7,
+    "expected_return": 0.07,
+    "invalidates_if": [
+      "Quarterly revenue growth decelerates below 5% for two consecutive quarters with no catalyst in sight",
+      "Charge-off or delinquency rates exceed pre-pandemic highs despite favorable macro conditions, signaling underwriting deterioration",
+      "Net interest income growth turns negative year-over-year due to deposit outflows or funding cost pressures",
+      "Market share losses in key segments (affluent consumer or corporate) documented in earnings call or third-party data",
+      "Management guidance withdrawn or materially reduced, suggesting loss of visibility into spending trends or credit quality"
+    ],
+    "status": "open",
     "actual_return": null,
     "thesis_correct": null
   }
