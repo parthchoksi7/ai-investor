@@ -1,72 +1,8 @@
 {
-  "run_id": "20260622-134756",
-  "date": "2026-06-22",
-  "generated_at": "2026-06-22T13:47:56.977976+00:00",
-  "execution_started_at": "2026-06-22T13:51:04.625705+00:00",
-  "executed_at": "2026-06-22T13:52:26.359583+00:00",
-  "decisions": [
-    {
-      "ticker": "GS",
-      "action": "SELL",
-      "target_weight": 0.0,
-      "source_of_capital": "GS",
-      "expected_return": 0.0,
-      "rationale": "DA reject=True, high vol/beta, restructuring overstated",
-      "qty": 0.039584
-    },
-    {
-      "ticker": "PANW",
-      "action": "SELL",
-      "target_weight": 0.0,
-      "source_of_capital": "PANW",
-      "expected_return": 0.0,
-      "rationale": "DA reject=True, +70% run, zero margin of safety",
-      "qty": 0.144413
-    },
-    {
-      "ticker": "AAPL",
-      "action": "SELL",
-      "target_weight": 0.0,
-      "source_of_capital": "AAPL",
-      "expected_return": 0.0,
-      "rationale": "DA reject=True, Services thesis fully priced at 31x",
-      "qty": 0.135837
-    },
-    {
-      "ticker": "EOG",
-      "action": "SELL",
-      "target_weight": 0.0,
-      "source_of_capital": "EOG",
-      "expected_return": 0.0,
-      "rationale": "Avoid energy; RISK_ON favors tech/growth not oil",
-      "qty": 0.247912
-    },
-    {
-      "ticker": "BAC",
-      "action": "SELL",
-      "target_weight": 0.05,
-      "source_of_capital": "BAC",
-      "expected_return": 0.04,
-      "rationale": "Financials 26.4% over cap; trim weakest to comply",
-      "qty": 0.276983
-    },
-    {
-      "ticker": "VRTX",
-      "action": "BUY",
-      "target_weight": 0.09,
-      "source_of_capital": "PANW",
-      "expected_return": 0.07,
-      "rationale": "conf=6, reject=False, pipeline catalysts 2025-2026",
-      "qty": 0.101027
-    },
-    {
-      "ticker": "AXP",
-      "action": "BUY",
-      "target_weight": 0.08,
-      "source_of_capital": "AAPL",
-      "expected_return": 0.07,
-      "rationale": "conf=7, reject=False, affluent spend moat, quant 86",
-      "qty": 0.119992
-    }
-  ]
+  "run_id": "20260623-134729",
+  "date": "2026-06-23",
+  "generated_at": "2026-06-23T13:47:29.565127+00:00",
+  "execution_started_at": null,
+  "executed_at": "2026-06-23T13:51:27.478523+00:00",
+  "decisions": []
 }
