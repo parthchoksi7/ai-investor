@@ -1,28 +1,28 @@
 {
-  "run_id": "20260624-134814",
-  "date": "2026-06-24",
-  "timestamp": "2026-06-24T13:50:41.452351+00:00",
-  "overall_status": "DEGRADED",
+  "run_id": "20260625-134801",
+  "date": "2026-06-25",
+  "timestamp": "2026-06-25T13:50:25.299352+00:00",
+  "overall_status": "FAILED",
   "checks": {
     "portfolio": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-24T13:48:14.592588+00:00",
-      "total_value": 507.92396677,
+      "ts": "2026-06-25T13:48:01.890831+00:00",
+      "total_value": 509.65797513,
       "cash": 300.14,
       "positions": 5
     },
     "kill_switch": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-24T13:48:14.597154+00:00"
+      "ts": "2026-06-25T13:48:01.906467+00:00"
     },
     "market_data": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-24T13:48:14.653312+00:00",
+      "ts": "2026-06-25T13:48:01.953028+00:00",
       "source": "market_snapshot_file",
-      "data_date": "2026-06-24",
+      "data_date": "2026-06-25",
       "tickers": 100,
       "history_min_bars": 205,
       "history_avg_bars": 209.5
@@ -30,25 +30,30 @@
     "quant_scores": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-24T13:48:14.666942+00:00",
+      "ts": "2026-06-25T13:48:01.963848+00:00",
       "real_scores": 100,
       "total": 100
     },
     "decision_validation": {
       "status": "DEGRADED",
-      "message": "2 rejected, 0 clamped, 0 skipped by guardrails",
-      "ts": "2026-06-24T13:50:41.379370+00:00",
-      "passed": 2,
+      "message": "3 rejected, 0 clamped, 0 skipped by guardrails",
+      "ts": "2026-06-25T13:50:24.234274+00:00",
+      "passed": 4,
       "rejected": [
+        {
+          "ticker": "AXP",
+          "action": "SELL",
+          "reason": "min-holding: bought 2026-06-22, < 5 trading days ago (anti-churn/tax)"
+        },
         {
           "ticker": "TJX",
           "action": "BUY",
-          "reason": "wash-sale/anti-churn: sold 2026-06-10, 14d ago (< 30d re-entry block)"
+          "reason": "wash-sale/anti-churn: sold 2026-06-10, 15d ago (< 30d re-entry block)"
         },
         {
-          "ticker": "JNJ",
+          "ticker": "V",
           "action": "BUY",
-          "reason": "wash-sale/anti-churn: sold 2026-06-10, 14d ago (< 30d re-entry block)"
+          "reason": "Financials sector would be 32% > 25% cap"
         }
       ],
       "modified": [],
@@ -57,67 +62,77 @@
     "agent_1_regime": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-24T13:50:41.379390+00:00",
-      "regime": "NEUTRAL",
-      "confidence": 55
+      "ts": "2026-06-25T13:50:24.234288+00:00",
+      "regime": "RISK_ON",
+      "confidence": 72
     },
     "agent_2_research": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-24T13:50:41.379410+00:00",
+      "ts": "2026-06-25T13:50:24.234303+00:00",
       "total": 20
     },
     "agent_3_earnings": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-24T13:50:41.379421+00:00",
+      "ts": "2026-06-25T13:50:24.234312+00:00",
       "total": 20
     },
     "agent_4_devils_advocate": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-24T13:50:41.379445+00:00",
+      "ts": "2026-06-25T13:50:24.234329+00:00",
       "total": 20
     },
     "agent_5_position_review": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-24T13:50:41.379453+00:00",
+      "ts": "2026-06-25T13:50:24.234335+00:00",
       "reviewed": 5,
       "reduce_exit_recommended": 0
     },
     "agent_6_portfolio_manager": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-24T13:50:41.379458+00:00",
-      "proposed": 3,
-      "final_decisions": 0
+      "ts": "2026-06-25T13:50:24.234340+00:00",
+      "proposed": 6,
+      "final_decisions": 1
     },
     "agent_7_cro": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-24T13:50:41.379462+00:00",
+      "ts": "2026-06-25T13:50:24.234343+00:00",
       "approved": false,
       "vetoed": [
+        "C",
         "JPM"
       ],
-      "risk_budget": 72
+      "risk_budget": 78
     },
     "cash_discipline": {
       "status": "DEGRADED",
-      "message": "Cash 59.1% exceeds 15% review ceiling and no BUYs this run \u2014 19 consecutive run(s) above threshold (review PM deployment).",
-      "ts": "2026-06-24T13:50:41.447743+00:00",
-      "cash_pct": 59.1,
-      "consecutive_runs_above_threshold": 19
+      "message": "Cash 58.9% exceeds 15% review ceiling and no BUYs this run \u2014 20 consecutive run(s) above threshold (review PM deployment).",
+      "ts": "2026-06-25T13:50:24.317137+00:00",
+      "cash_pct": 58.9,
+      "consecutive_runs_above_threshold": 20
     },
-    "supabase_publish": {
+    "execution": {
       "status": "OK",
       "message": "",
-      "ts": "2026-06-24T13:50:41.452336+00:00"
+      "ts": "2026-06-25T13:50:24.317204+00:00",
+      "decisions": 1,
+      "executed": 1,
+      "dry_run": true
+    },
+    "supabase_publish": {
+      "status": "FAILED",
+      "message": "403 Forbidden",
+      "ts": "2026-06-25T13:50:25.299228+00:00"
     }
   },
   "alerts": [
-    "[DEGRADED] decision_validation: 2 rejected, 0 clamped, 0 skipped by guardrails",
-    "[DEGRADED] cash_discipline: Cash 59.1% exceeds 15% review ceiling and no BUYs this run \u2014 19 consecutive run(s) above threshold (review PM deployment)."
+    "[DEGRADED] decision_validation: 3 rejected, 0 clamped, 0 skipped by guardrails",
+    "[DEGRADED] cash_discipline: Cash 58.9% exceeds 15% review ceiling and no BUYs this run \u2014 20 consecutive run(s) above threshold (review PM deployment).",
+    "[FAILED] supabase_publish: 403 Forbidden"
   ]
 }
