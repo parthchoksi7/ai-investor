@@ -1,7 +1,7 @@
 {
   "run_id": "20260625-134801",
   "date": "2026-06-25",
-  "timestamp": "2026-06-25T13:50:25.299352+00:00",
+  "timestamp": "2026-06-25T13:51:22.417063+00:00",
   "overall_status": "FAILED",
   "checks": {
     "portfolio": {
@@ -128,6 +128,14 @@
       "status": "FAILED",
       "message": "403 Forbidden",
       "ts": "2026-06-25T13:50:25.299228+00:00"
+    },
+    "reconciliation": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-06-25T13:51:22.417040+00:00",
+      "filled": [
+        "LIN"
+      ]
     }
   },
   "alerts": [
