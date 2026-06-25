@@ -1,54 +1,47 @@
 {
-  "is_close": false,
+  "is_close": true,
   "portfolio": {
-    "as_of": "2026-06-25T09:46:55-04:00",
-    "cash": 300.14,
-    "total_value": 509.65797513,
+    "as_of": "2026-06-25T16:00:00-04:00",
+    "cash": 345.65,
+    "total_value": 509.12482549,
+    "available_qty": {
+      "MS": 0.215357,
+      "BAC": 0.451037,
+      "VRTX": 0.101027,
+      "AXP": 0.119992
+    },
     "positions": [
       {
         "symbol": "MS",
         "qty": 0.215357,
-        "available_qty": 0.215357,
         "avg_price": 213.55,
-        "current_price": 223.58,
-        "market_value": 48.149518,
-        "unrealized_pnl": 2.160031
+        "current_price": 221.14,
+        "market_value": 47.624047,
+        "unrealized_pnl": 1.63456
       },
       {
         "symbol": "BAC",
         "qty": 0.451037,
-        "available_qty": 0.451037,
         "avg_price": 55.52,
-        "current_price": 58.24,
-        "market_value": 26.268395,
-        "unrealized_pnl": 1.226821
-      },
-      {
-        "symbol": "LIN",
-        "qty": 0.087592,
-        "available_qty": 0.087592,
-        "avg_price": 504.95,
-        "current_price": 520.6,
-        "market_value": 45.600395,
-        "unrealized_pnl": 1.370815
+        "current_price": 58.2,
+        "market_value": 26.250353,
+        "unrealized_pnl": 1.208779
       },
       {
         "symbol": "VRTX",
         "qty": 0.101027,
-        "available_qty": 0.101027,
         "avg_price": 464.73,
-        "current_price": 476.81,
-        "market_value": 48.170684,
-        "unrealized_pnl": 1.220406
+        "current_price": 479.99,
+        "market_value": 48.49195,
+        "unrealized_pnl": 1.541672
       },
       {
         "symbol": "AXP",
         "qty": 0.119992,
-        "available_qty": 0.119992,
         "avg_price": 339.61,
-        "current_price": 345.47,
-        "market_value": 41.453636,
-        "unrealized_pnl": 0.703153
+        "current_price": 342.51,
+        "market_value": 41.09846,
+        "unrealized_pnl": 0.347977
       }
     ]
   },
@@ -2516,5 +2509,5 @@
     }
   },
   "regime": "RISK_ON",
-  "written_at": "2026-06-25T13:50:24.323413+00:00"
+  "written_at": "2026-06-25T20:05:26.856069+00:00"
 }
