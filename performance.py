@@ -234,7 +234,7 @@ def _twr(dates: list[str], pv: list[float], cash_flows: dict | None = None) -> f
     is the methodologically-correct fix for the documented 'a deposit inflates total_value
     → a false new peak / wrong return' distortion. `cash_flows` maps an ISO date to the NET
     external flow that day (deposit > 0, withdrawal < 0), applied at period start."""
-    if len(pv) < 2:
+    if len(pv) < 2 or len(dates) != len(pv):
         return None
     cf = cash_flows or {}
     factor = 1.0
@@ -252,12 +252,13 @@ def _information_ratio(pv: list[float], bench: list[float]) -> float | None:
     risk-adjusted active-management read."""
     if len(pv) < 3 or len(bench) != len(pv):
         return None
-    pr = [pv[i] / pv[i - 1] - 1 for i in range(1, len(pv)) if pv[i - 1]]
-    br = [bench[i] / bench[i - 1] - 1 for i in range(1, len(bench)) if bench[i - 1]]
-    n = min(len(pr), len(br))
-    if n < 2:
+    # Pair the two series by index in ONE pass — independent `if pv[i-1]` / `if bench[i-1]`
+    # filters can drop a period from only one list and silently MISALIGN the active-return
+    # pairing. Include a period only when BOTH bases are non-zero.
+    active = [(pv[i] / pv[i - 1] - 1) - (bench[i] / bench[i - 1] - 1)
+              for i in range(1, len(pv)) if pv[i - 1] and bench[i - 1]]
+    if len(active) < 2:
         return None
-    active = [pr[i] - br[i] for i in range(n)]
     te = _pstdev(active)
     return round((_mean(active) / te) * (TRADING_DAYS ** 0.5), 2) if te > 0 else None
 

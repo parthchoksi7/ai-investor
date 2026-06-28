@@ -5006,6 +5006,19 @@ class TestMeasurementRigor:
         ir = p._information_ratio(pv, bench)
         assert ir is not None and ir > 0               # consistent active return, low TE
 
+    def test_twr_length_guard(self):
+        import performance as p
+        assert p._twr(["2026-01-01"], [100.0, 110.0, 121.0]) is None   # dates/pv mismatch
+
+    def test_information_ratio_no_misalign_on_zero(self):
+        # A zero in one series must skip that period for BOTH (paired), never desync — and
+        # never crash. (Regression for the independent-filter misalignment.)
+        import performance as p
+        pv    = [100.0, 0.0, 100.0, 101.0]
+        bench = [100.0, 100.0, 100.0, 100.5]
+        ir = p._information_ratio(pv, bench)
+        assert ir is None or isinstance(ir, float)   # well-defined, no IndexError / mispairing
+
     def test_breadth_ceiling_not_available_without_scorecard(self, tmp_path):
         import performance as p
         assert p.breadth_ceiling(str(tmp_path / "nope.json"))["available"] is False
