@@ -13,6 +13,92 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — Phase 1: forecast feed un-broken + backfilled (the measurement evidence clock)
+
+- **Root cause (silent since 2026-06-18):** `forecasts.jsonl` / `forecasts_scored.jsonl` /
+  `agent_scorecards.json` were **gitignored and never committed**, and absent from the routine's
+  `git add` list — so every cloud run wrote ~60–90 forecasts into an ephemeral container that were
+  then lost. **Not a `calibration.py` bug** (values are numeric, structure is correct) — the same
+  silent-`git add`-no-op class as the Jun-17 `fills.json` fix. Diagnosed per the plan's "fix the feed
+  FIRST" gate (wiring scoring against a dead feed would green-light an empty scorecard).
+- **Fix:** un-ignored the three ledger files (`.gitignore` now documents *why* they must be tracked);
+  added them to the routine's claim + daily-cycle `git add` lines (`ROUTINE_DAILY_CYCLE.md`) and the
+  `CLAUDE.md` commit list.
+- **Backfill:** reconstructed the entire ledger from `agent_log.json` (committed; carries full
+  `pipeline_state` for all 21 runs) → **1,494 forecasts across 12 trading days** (06-08 → 06-26),
+  recovered vs the 144 stranded locally. `signal_close` recovered from `market_snapshot.json` history
+  (reference-only field). 2026-06-19 correctly yields 0 (Juneteenth — market closed, no signal).
+- **⚠️ Live-routine sync required:** the live daily routine prompt must be re-synced from
+  `ROUTINE_DAILY_CYCLE.md` (routines UI) or the cloud `git add` still omits the ledger.
+- **QA:** **456 green** (+3 `TestForecastFeedPersistence`: not-gitignored regression guard, in-commit-list
+  guard, ledger integrity / no-dup-keys).
+
+### Added — Phase 1: multi-horizon forecast ladder {21,63,126,189,252}d (§7.3.2)
+
+- **`log_forecasts` now logs each forecast at every horizon** in `calibration.HORIZONS`
+  `(21,63,126,189,252)` — a medium/long-term signal should look weak at 21d and strengthen
+  at 63–252d (189/252 ≈ 9/12mo = the owner's primary holding horizon). 21d stays the
+  pre-registered PRIMARY metric; the rest are BH-adjusted secondary.
+- **`score_matured` idempotency key now includes `horizon_days` (P1-9)** — one forecast
+  matures at several horizons; the old `(run_id,agent,field,ticker)` key would have scored
+  only the first and skipped the rest. **`agent_scorecard` groups by `(agent,field,horizon)`**
+  → an IC curve per agent across horizons (card keys are now `agent.field@<h>d`).
+- **Re-backfilled** the ledger at all horizons → **7,470 forecasts** (1,494 × 5), no dup keys.
+- **QA:** **457 green** (+1 `test_score_matured_multi_horizon_independent` guarding P1-9; 3
+  existing calibration tests updated for the new counts/keys). End-to-end smoke test on real
+  data: 0 matured (correct — earliest forecast 06-08 + 21d > the 06-26 snapshot), scorecard
+  primary key `quant.composite_score@21d`.
+
+### Added — Phase 1: scoring wired into the run (the evidence clock now self-advances)
+
+- **`main.py` now calls `score_matured` + `agent_scorecard` every run** (observational,
+  try/except-wrapped, never raises into the pipeline). The harness was fully built but
+  *switched off* — these were called only from tests, so the clock never advanced. Now each
+  run joins matured forecasts to realized next-open forward returns (no look-ahead) and
+  rewrites `agent_scorecards.json`.
+- **File-existence guarantee:** `score_matured` only appends when something matured, so the
+  wiring touches `forecasts_scored.jsonl` to ensure it exists — the routine's `git add` of it
+  can never fail on a missing file (the silent-break class that froze the feed). Both outputs
+  exist before the routine's commit step.
+- **QA:** **458 green** (+1 `test_scoring_wired_into_run` regression guard against reverting to
+  test-only callers). Smoke test: 0 matured (correct), both output files created.
+
+### Added — Phase 1 §7.5: counterfactual rejected-name tracking (the highest-leverage measurement)
+
+- **The system rejects far more than it buys, and never tracked any of it.** New `log_decisions`
+  records, per candidate per horizon, three binary decision flags — **`da_reject`** (Devil's
+  Advocate `recommend_reject`, M4), **`cro_veto`** (CRO `rejected_tickers`, M7), **`pm_selected`**
+  (final BUYs, M6) — scored forward by the *same* `score_matured` machinery (no new scorer).
+- **`counterfactual_report`** → `counterfactual.json`: per (signal, horizon), the mean forward
+  return of FLAGGED vs KEPT names, the gap, and a `verdict` (`ADDS_VALUE` / `NO_VALUE` /
+  `NOT_SIGNIFICANT`). Answers *"do the names the CRO/DA killed actually underperform the ones we
+  held?"* — direct evidence of whether M4/M7 reduce risk. Block-sampled effective N; honest
+  `NOT_SIGNIFICANT` until both sides clear the threshold (months at this cadence, by design).
+- Wired into `main.py` (logging + scoring, observational, never raises); backfilled from
+  `agent_log.json` → **5,970 decision flags** (DA rejected 84/398, CRO vetoed 6/398, PM bought
+  25/398 at 21d). New ledgers added to `.gitignore`-tracked + the routine commit lists.
+- **QA:** **461 green** (+3 `TestCounterfactual`). Smoke test end-to-end: 0 matured (clock ticking).
+
+### Added — Phase 1 §7.6: measurement rigor (TWR · risk-adjusted · breadth ceiling · reconciliation)
+
+- **Time-weighted return** (`_twr`) — chains sub-period returns and removes external cash-flow
+  (deposit/withdrawal) distortion; equals the simple cumulative return until a flow is logged.
+  This is the methodologically-correct fix for the documented "a deposit inflates total_value →
+  false new peak / wrong return" bug.
+- **Risk-adjusted, not just return** — added **Sortino** (downside deviation) to `_metrics` and a
+  portfolio-level **information ratio** vs SPY total-return. Beating the benchmark's *return* at
+  materially higher vol is not a win.
+- **Breadth ceiling** (`breadth_ceiling`) — Grinold's Fundamental Law `IR ≈ IC × √breadth` from the
+  pre-registered primary metric's block-IC + effective N. Surfaces the structural cap: the honest
+  verdict may be "positive IC but breadth too low to beat SPY after tax."
+- **Honesty metadata in `build_report`** — a `tax_reconciliation` status (`UNRECONCILED`: the
+  after-tax figure is an estimate; the broker 1099 is authoritative) and a `verdict_scope` note (the
+  three clocks — 12-mo window vs 9–12mo horizon vs 1–2yr LLM-IC power — so a near-term verdict isn't
+  over-claimed).
+- **QA:** **467 green** (+6 `TestMeasurementRigor`: TWR no-flow identity + deposit-neutralization,
+  Sortino, information ratio, breadth-ceiling availability + Fundamental-Law math). `build_report`
+  smoke: all new fields present.
+
 ### Added — Phase 0: single-source the deterministic limits into `policy.yaml` (redesign pod)
 
 - **`policy.yaml` + `policy.py` (new):** every operative deterministic limit is now defined in

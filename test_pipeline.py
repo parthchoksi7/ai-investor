@@ -3532,12 +3532,15 @@ class TestCalibrationLedger:
         path = str(tmp_path / "f.jsonl")
         n = calibration.log_forecasts("r1", "2026-06-14", self._pstate(), ["AAPL", "MSFT"],
                                       {"AAPL": {"close": 200}, "MSFT": {"close": 100}}, path=path)
-        assert n == 6                     # AAPL: 5 agents, MSFT: quant only
+        H = len(calibration.HORIZONS)
+        assert n == 6 * H                 # (AAPL: 5 agents, MSFT: quant only) × each horizon
         rows = [json.loads(l) for l in open(path)]
-        aq = next(r for r in rows if r["ticker"] == "AAPL" and r["agent"] == "quant")
+        assert {r["horizon_days"] for r in rows} == set(calibration.HORIZONS)
+        aq = next(r for r in rows if r["ticker"] == "AAPL" and r["agent"] == "quant"
+                  and r["horizon_days"] == 21)
         # A1: signal_close is reference-only (the close the signal was computed on),
         # NOT the return base — score_matured derives the executable next-open entry.
-        assert aq["value"] == 80 and aq["signal_close"] == 200 and aq["horizon_days"] == 21
+        assert aq["value"] == 80 and aq["signal_close"] == 200
 
     def test_log_forecasts_skips_missing_price(self, tmp_path):
         import calibration
@@ -3564,6 +3567,24 @@ class TestCalibrationLedger:
         r = json.loads(open(scored).readline())
         assert r["entry_price"] == 100.0 and r["future_price"] == 110.0
         assert r["realized_return"] == 0.1 and r["basis"] == "next_open"
+        assert calibration.score_matured(snap, ledger_path=ledger, scored_path=scored) == 0  # idempotent
+
+    def test_score_matured_multi_horizon_independent(self, tmp_path):
+        # P1-9: the same (run_id,agent,field,ticker) at TWO horizons must BOTH score —
+        # the idempotency key includes horizon_days, else the 2nd horizon is wrongly
+        # skipped as "already scored". And re-running stays idempotent per horizon.
+        import calibration, json
+        ledger, scored = str(tmp_path / "f.jsonl"), str(tmp_path / "s.jsonl")
+        with open(ledger, "w") as f:
+            for h in (5, 10):
+                f.write(json.dumps({"run_id": "r1", "date": "2026-01-02", "agent": "quant",
+                                    "field": "composite_score", "ticker": "AAPL", "value": 80,
+                                    "signal_close": 98.0, "horizon_days": h, "schema": 2}) + "\n")
+        snap = {"history": {"AAPL": [
+            {"date": "2026-01-05", "open": 100.0, "close": 101.0},   # entry (next open)
+            {"date": "2026-01-20", "open": 119.0, "close": 120.0},   # >= entry+5d AND entry+10d
+        ]}}
+        assert calibration.score_matured(snap, ledger_path=ledger, scored_path=scored) == 2  # both horizons
         assert calibration.score_matured(snap, ledger_path=ledger, scored_path=scored) == 0  # idempotent
 
     def test_score_matured_skips_immature(self, tmp_path):
@@ -3599,7 +3620,7 @@ class TestCalibrationLedger:
                 f.write(json.dumps({"run_id": f"r{i}", "agent": "quant", "field": "composite_score",
                                     "ticker": "AAPL", "value": float(i), "realized_return": i / 100}) + "\n")
         out = calibration.agent_scorecard(scored_path=scored, out_path=card, shrink_k=50)
-        k = "quant.composite_score"
+        k = "quant.composite_score@21d"   # grouped by horizon; rows w/o horizon_days default to 21
         assert out[k]["n"] == 5 and out[k]["ic"] == 1.0
         assert out[k]["ic_shrunk"] == round(5 / 55, 3)        # shrunk far below the raw IC
         assert out[k]["ic_shrunk"] < out[k]["ic"]
@@ -3618,7 +3639,7 @@ class TestFeatureInteractions:
                   "research": {"AAPL": {"confidence": 7}}}
         n = calibration.log_forecasts("r1", "2026-06-14", pstate, ["AAPL"],
                                       {"AAPL": {"close": 200}}, path=str(tmp_path / "f.jsonl"))
-        assert n == 2          # quant + research logged; None earnings dropped, no crash
+        assert n == 2 * len(calibration.HORIZONS)   # quant + research × horizons; None earnings dropped
 
     def test_net_edge_coerces_string_expected_return(self):
         # the PM emits expected_return; a stringified "0.0001" must still be evaluated
@@ -4835,3 +4856,180 @@ class TestPolicyParity:
         result = policy._load(str(good))
         assert result["min_holding_trading_days"] == 30
         assert result["max_target_weight"] == 0.08
+
+
+# ── Phase 1: forecast-feed persistence (the Jun-18 silent-break regression) ──────
+
+class TestForecastFeedPersistence:
+    """The forecast ledger was gitignored + never committed, so the cloud routine's
+    `git add` was a silent no-op and every run's forecasts were lost (frozen Jun 18).
+    These guard the fix so the evidence clock can never silently stop again."""
+
+    LEDGER_FILES = ["forecasts.jsonl", "forecasts_scored.jsonl", "agent_scorecards.json"]
+
+    def test_ledger_files_not_gitignored(self):
+        """The exact regression: none of the ledger files may be gitignored, or the
+        routine's `git add` silently stages nothing."""
+        import subprocess, os
+        repo = os.path.dirname(os.path.abspath(__file__))
+        for f in self.LEDGER_FILES:
+            rc = subprocess.run(["git", "check-ignore", f], cwd=repo,
+                                 capture_output=True).returncode
+            assert rc != 0, f"{f} is gitignored — routine `git add` would be a silent no-op"
+
+    def test_ledger_in_routine_commit_list(self):
+        """forecasts.jsonl must be in the routine's daily-cycle `git add` (else not pushed)."""
+        import os
+        repo = os.path.dirname(os.path.abspath(__file__))
+        routine = open(os.path.join(repo, "ROUTINE_DAILY_CYCLE.md")).read()
+        assert "forecasts.jsonl" in routine
+        daily = [l for l in routine.splitlines()
+                 if l.startswith("git add") and "trades.csv" in l and "fills.json" in l]
+        assert daily and "forecasts.jsonl" in daily[0], \
+            "forecasts.jsonl not in the daily-cycle git add line"
+
+    def test_forecast_ledger_integrity(self):
+        """If the committed ledger exists, it must be valid schema-2 with no dup keys."""
+        import json, os
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "forecasts.jsonl")
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            pytest.skip("forecasts.jsonl not present in this checkout")
+        rows = [json.loads(l) for l in open(path) if l.strip()]
+        keys = [(r["run_id"], r["agent"], r["field"], r["ticker"], r["horizon_days"]) for r in rows]
+        assert len(keys) == len(set(keys)), "duplicate (run_id,agent,field,ticker,horizon) rows"
+        assert all(r.get("schema") == 2 for r in rows), "non-v2 rows present"
+        assert len({r["date"] for r in rows}) >= 1
+
+    def test_scoring_wired_into_run(self):
+        """score_matured + agent_scorecard must be CALLED in main.py. The harness was
+        built but switched off (called only from tests), so the evidence clock never
+        advanced — guard against regressing to that state."""
+        import os
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")).read()
+        assert "score_matured(" in src, "score_matured not wired into main.py"
+        assert "agent_scorecard(" in src, "agent_scorecard not wired into main.py"
+
+
+# ── Phase 1 §7.5: counterfactual rejected-name tracking ─────────────────────────
+
+class TestCounterfactual:
+    """Does each model's reject/veto/select decision predict the right forward-return
+    direction? Logs binary flags scored by the SAME machinery as forecasts."""
+
+    def _pstate(self):
+        return {
+            "candidates": ["AAA", "BBB", "CCC"],
+            "devils_advocate": {"AAA": {"recommend_reject": True},
+                                "BBB": {"recommend_reject": False},
+                                "CCC": {"recommend_reject": False}},
+            "cro": {"rejected_tickers": ["BBB"]},
+            "final_decisions": [{"ticker": "CCC", "action": "BUY"}],
+        }
+
+    def test_log_decisions_flags(self, tmp_path):
+        import calibration, json
+        path = str(tmp_path / "d.jsonl")
+        prices = {"AAA": {"close": 10}, "BBB": {"close": 20}, "CCC": {"close": 30}}
+        n = calibration.log_decisions("r1", "2026-06-14", self._pstate(), prices, path=path)
+        H = len(calibration.HORIZONS)
+        assert n == 3 * 3 * H            # 3 candidates × 3 signals × horizons
+        rows = [json.loads(l) for l in open(path)]
+        def flag(ag, t):
+            return next(r for r in rows if r["agent"] == ag and r["ticker"] == t
+                        and r["horizon_days"] == 21)["value"]
+        assert flag("da_reject", "AAA") == 1.0 and flag("da_reject", "BBB") == 0.0
+        assert flag("cro_veto", "BBB") == 1.0 and flag("cro_veto", "AAA") == 0.0
+        assert flag("pm_selected", "CCC") == 1.0 and flag("pm_selected", "AAA") == 0.0
+
+    def test_counterfactual_adds_value(self, tmp_path):
+        # da_reject: flagged (rejected) names underperform → gap>0 → ADDS_VALUE once n clears.
+        import calibration, json, datetime
+        scored, out = str(tmp_path / "ds.jsonl"), str(tmp_path / "cf.json")
+        with open(scored, "w") as f:
+            for i in range(12):                          # spaced dates so block-sample keeps all
+                d = (datetime.date(2026, 1, 1) + datetime.timedelta(days=40 * i)).isoformat()
+                f.write(json.dumps({"run_id": f"r{i}", "agent": "da_reject", "field": "flag",
+                    "ticker": f"F{i}", "value": 1.0, "realized_return": -0.05,
+                    "horizon_days": 21, "date": d}) + "\n")
+                f.write(json.dumps({"run_id": f"r{i}", "agent": "da_reject", "field": "flag",
+                    "ticker": f"K{i}", "value": 0.0, "realized_return": 0.05,
+                    "horizon_days": 21, "date": d}) + "\n")
+        rep = calibration.counterfactual_report(scored_path=scored, out_path=out, min_n=10)
+        k = "da_reject@21d"
+        assert rep[k]["mean_return_flagged"] == -0.05 and rep[k]["mean_return_kept"] == 0.05
+        assert rep[k]["gap_kept_minus_flagged"] == 0.1
+        assert rep[k]["adds_value"] is True and rep[k]["verdict"] == "ADDS_VALUE"
+
+    def test_counterfactual_not_significant_small_n(self, tmp_path):
+        import calibration, json
+        scored, out = str(tmp_path / "ds.jsonl"), str(tmp_path / "cf.json")
+        with open(scored, "w") as f:
+            f.write(json.dumps({"run_id": "r1", "agent": "cro_veto", "field": "flag",
+                "ticker": "F", "value": 1.0, "realized_return": -0.1,
+                "horizon_days": 21, "date": "2026-01-01"}) + "\n")
+            f.write(json.dumps({"run_id": "r1", "agent": "cro_veto", "field": "flag",
+                "ticker": "K", "value": 0.0, "realized_return": 0.1,
+                "horizon_days": 21, "date": "2026-01-01"}) + "\n")
+        rep = calibration.counterfactual_report(scored_path=scored, out_path=out, min_n=10)
+        assert rep["cro_veto@21d"]["verdict"] == "NOT_SIGNIFICANT"
+
+
+# ── Phase 1 §7.6: measurement rigor (TWR, risk-adjusted, breadth ceiling) ────────
+
+class TestMeasurementRigor:
+    def test_twr_no_flows_equals_cumulative(self):
+        import performance as p
+        dates = ["2026-01-01", "2026-01-02", "2026-01-03"]
+        pv = [100.0, 110.0, 121.0]
+        assert p._twr(dates, pv) == round(121.0 / 100.0 - 1, 4)   # == simple cumulative
+
+    def test_twr_neutralizes_deposit(self):
+        # +10% invest, then a $100 deposit, then +10% invest. Naive return = 131%, but the
+        # deposit-neutral TWR is only 21% (two 10% periods) — the documented peak bug fixed.
+        import performance as p
+        dates = ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"]
+        pv = [100.0, 110.0, 210.0, 231.0]
+        naive = round(231.0 / 100.0 - 1, 4)
+        twr = p._twr(dates, pv, cash_flows={"2026-01-03": 100.0})
+        assert naive == 1.31
+        assert twr == 0.21 and twr != naive
+
+    def test_sortino_in_metrics(self):
+        import performance as p
+        m = p._metrics([100.0, 101.0, 99.0, 102.0, 101.0, 103.0])
+        assert "sortino" in m   # computed (downside deviation vs 0 target)
+
+    def test_information_ratio_positive_when_outperforming(self):
+        import performance as p
+        pv    = [100.0, 101.0, 102.0, 103.0, 104.0]   # steady +1%/day
+        bench = [100.0, 100.5, 101.0, 101.5, 102.0]   # steady +0.5%/day
+        ir = p._information_ratio(pv, bench)
+        assert ir is not None and ir > 0               # consistent active return, low TE
+
+    def test_twr_length_guard(self):
+        import performance as p
+        assert p._twr(["2026-01-01"], [100.0, 110.0, 121.0]) is None   # dates/pv mismatch
+
+    def test_information_ratio_no_misalign_on_zero(self):
+        # A zero in one series must skip that period for BOTH (paired), never desync — and
+        # never crash. (Regression for the independent-filter misalignment.)
+        import performance as p
+        pv    = [100.0, 0.0, 100.0, 101.0]
+        bench = [100.0, 100.0, 100.0, 100.5]
+        ir = p._information_ratio(pv, bench)
+        assert ir is None or isinstance(ir, float)   # well-defined, no IndexError / mispairing
+
+    def test_breadth_ceiling_not_available_without_scorecard(self, tmp_path):
+        import performance as p
+        assert p.breadth_ceiling(str(tmp_path / "nope.json"))["available"] is False
+
+    def test_breadth_ceiling_computes_fundamental_law(self, tmp_path):
+        import performance as p, json
+        card = tmp_path / "card.json"
+        card.write_text(json.dumps({
+            "quant.composite_score@21d": {"ic_block": 0.1, "n_effective": 100},
+            "_meta": {"primary_metric": "quant.composite_score@21d"},
+        }))
+        out = p.breadth_ceiling(str(card))
+        assert out["available"] is True
+        assert out["implied_ir_ceiling"] == round(0.1 * (100 ** 0.5), 3)   # IC×√breadth = 1.0

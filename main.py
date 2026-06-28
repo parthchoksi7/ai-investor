@@ -485,13 +485,44 @@ def run_daily_cycle():
     # calibration. OBSERVATIONAL: logging only, never affects a decision, and
     # never raises into the pipeline.
     try:
-        from calibration import log_forecasts
+        from calibration import log_forecasts, log_decisions
         _n_fc = log_forecasts(run_id, today, pipeline_state,
                               pipeline_state.get("candidates", []), market_data["prices"])
-        if _n_fc:
-            print(f"   🧮 Logged {_n_fc} forecast(s) to forecasts.jsonl")
+        # §7.5 counterfactual: log the reject/veto/select flags for forward scoring.
+        _n_dec = log_decisions(run_id, today, pipeline_state, market_data["prices"])
+        if _n_fc or _n_dec:
+            print(f"   🧮 Logged {_n_fc} forecast(s) + {_n_dec} decision flag(s)")
     except Exception as _e:
         print(f"   ⚠ forecast logging skipped: {_e}")
+
+    # Score matured forecasts + refresh the IC scorecard (#2, §7.3.1). OBSERVATIONAL:
+    # joins forecasts whose horizon has elapsed to realized next-open forward returns
+    # (no look-ahead, idempotent) and rewrites agent_scorecards.json. Never affects a
+    # decision and never raises into the pipeline. This is the wiring that was MISSING —
+    # the harness was built but score_matured/agent_scorecard were called only from
+    # tests, so the evidence clock never advanced. score_matured only appends when
+    # something matured, so we touch SCORED to guarantee it exists: the routine's
+    # `git add forecasts_scored.jsonl` must never fail on a missing file (the same
+    # silent-break class that froze the feed).
+    try:
+        import os as _os
+        from calibration import (score_matured, agent_scorecard, counterfactual_report,
+                                  SCORED, DECISIONS, DECISIONS_SCORED)
+        # Guarantee the scored ledgers exist FIRST, before any call that could raise — so a
+        # later exception can never leave the routine's `git add` failing on a missing file
+        # (score_matured/counterfactual only append/write when reached).
+        for _f in (SCORED, DECISIONS_SCORED):
+            if not _os.path.isfile(_f):
+                open(_f, "a").close()
+        _n_scored = score_matured(market_data)
+        agent_scorecard()                       # always (re)writes agent_scorecards.json
+        # §7.5 counterfactual: score the reject/veto/select flags + refresh the report.
+        score_matured(market_data, ledger_path=DECISIONS, scored_path=DECISIONS_SCORED)
+        counterfactual_report()                 # always (re)writes counterfactual.json
+        print(f"   📈 Scored {_n_scored} matured forecast(s) → agent_scorecards.json"
+              if _n_scored else "   📈 No forecasts matured yet (evidence clock ticking)")
+    except Exception as _e:
+        print(f"   ⚠ forecast scoring skipped: {_e}")
 
     # Reproducibility manifest (#A12) — resolved model snapshots + token usage +
     # sampling params + verbatim prompts for this run. Observational; never raises.
