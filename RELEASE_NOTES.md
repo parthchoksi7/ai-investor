@@ -13,6 +13,34 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — Phase 0: single-source the deterministic limits into `policy.yaml` (redesign pod)
+
+- **`policy.yaml` + `policy.py` (new):** every operative deterministic limit is now defined in
+  exactly one place — `policy.yaml`, the machine mirror of `IPS.md` Appendix A — and read by
+  `guardrails.py` and `execute.py` via a tolerant loader. This removes the drift-bug class where
+  a limit lived in code, a prompt, and a doc independently (e.g. "the sector limit lived only in
+  the PM prompt"). First step of the strategy-redesign pod (`IMPLEMENTATION_PLAN.md` Phase 0).
+- **Zero behavior change (parity):** `policy.yaml` carries the historical constants verbatim
+  (`MAX_TARGET_WEIGHT 0.10`, `MAX_SECTOR_WEIGHT 0.25`, `MIN_HOLDING_TRADING_DAYS 5`,
+  `WASH_SALE_REENTRY_DAYS 30`, `GFV_WINDOW 2`, `MAX_BUY_NOTIONAL_PCT 0.12`,
+  `MIN_ORDER_NOTIONAL 5.00`, `MIN_NET_EDGE 0.0`, `BLOCKED_TICKERS {TSLA}`). The IPS *target*
+  values (min-hold 30, −25% stop, universe 400) are tracked migrations for later phases, noted in
+  `policy.yaml`'s header — NOT applied here.
+- **Capital-integrity posture:** the loader falls back to built-in defaults (== the historical
+  constants) if `policy.yaml` or PyYAML is unreadable, so it can never change behavior silently or
+  break the live trade path. `PyYAML` added to `requirements.txt`.
+- **Per-value validation (code-review hardening):** every guardrail value is range/type-checked on
+  load — an out-of-range or wrong-type value (e.g. a percent/fraction units typo `max_target_weight:
+  10` instead of `0.10`) is **rejected with a loud warning and the safe default kept**, so a typo in
+  the capital-limit source of truth can never silently disable a cap.
+- **Change-control provenance:** `pending_decisions.json` now carries `policy_version`
+  (`1.0-phase0-parity`) so every decision records which policy regime produced it (§18.4).
+- **QA:** full suite **453 green** (+12 `TestPolicyParity`: defaults==historical, yaml==historical,
+  guardrails/execute sourced-from-policy, missing-file & malformed-yaml fallback, partial overlay,
+  version helper, units-typo/wrong-type/bad-list rejection, valid-override acceptance). `main.py`
+  compiles; all workflows parse. Expert `/code-review high` run pre-commit (2 findings, both fixed:
+  loader validation + dead-code removal). No live-path behavior changed.
+
 ### Fixed — Preflight gate now skips closed-market days (weekends + NYSE holidays) (P0)
 
 - **`preflight_gate.py` (P0, live incident):** the gate had no market-calendar awareness. On

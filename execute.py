@@ -28,8 +28,11 @@ AGENTIC_ACCOUNT = os.getenv("ROBINHOOD_ACCOUNT_NUMBER")
 # target_weight are NOT scaled (price is per-share; weight is a ratio).
 SHADOW_MULTIPLIER = 100
 
-# Hard-blocked tickers — never bought or sold under any circumstances
-BLOCKED_TICKERS = {"TSLA"}
+# Hard-blocked tickers — never bought or sold under any circumstances.
+# Single-sourced from policy.yaml (IPS §5 exclusions) via policy.py; falls back to
+# the historical {"TSLA"} if policy.yaml is unreadable (zero-behavior-change refactor).
+from policy import VALUES as _POLICY
+BLOCKED_TICKERS = set(_POLICY.get("blocked_tickers", ["TSLA"]))
 
 _logged_in = False
 

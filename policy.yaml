@@ -1,0 +1,33 @@
+# policy.yaml — operative single source of truth for the deterministic guards.
+#
+# Machine mirror of IPS.md Appendix A, in CODE-NATIVE units (fractions / ints /
+# USD). Loaded by policy.py; consumed by guardrails.py + execute.py. This is the
+# ONLY place a deterministic limit is defined — code reads it here, not hard-coded.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# IMPORTANT — policy.yaml is the CURRENTLY-DEPLOYED policy; IPS.md Appendix A is
+# the TARGET mandate. Where they differ, the delta is a tracked migration applied
+# in a later rollout phase via §18.4 change-control (each bumps policy_version).
+# The Phase 0 values below are the historical guardrails.py / execute.py constants
+# verbatim — ZERO behavior change. Parity is asserted by TestPolicyParity.
+#
+# PENDING IPS MIGRATIONS (do NOT apply in Phase 0 — tracked in IMPLEMENTATION_PLAN.md):
+#   min_holding_trading_days : 5  → 30    (IPS §7.2; apply Phase 6, exit logic)
+#   single_name_stop_pct     : —  → 0.25  (IPS §7.6/§9; ADD in Phase 5, risk_watch)
+#   universe size            : 100 → 400  (IPS §5; apply Phase 2, gated on coverage)
+# ─────────────────────────────────────────────────────────────────────────────
+
+policy_version: "1.0-phase0-parity"
+
+guardrails:
+  max_target_weight:        0.10   # IPS max_position_pct (10%) — clamp + qty recompute
+  max_buy_notional_pct:     0.12   # single-BUY qty-sanity ceiling vs total_value
+  min_order_notional:       5.00   # USD floor — kills sub-$5 broker rejects / churn
+  gfv_window_trading_days:  2      # good-faith-violation guard (cash account)
+  max_sector_weight:        0.25   # IPS max_sector_pct (25%)
+  min_holding_trading_days: 5      # CURRENT (IPS target 30 — Phase 6 migration)
+  wash_sale_reentry_days:   30     # IPS §7.3 — no re-BUY of a name sold < 30 calendar days
+  min_net_edge:             0.0    # USD — a BUY's expected edge must clear cost + CA ST tax
+
+universe:
+  blocked_tickers: ["TSLA"]        # IPS §5 exclusions — never bought or sold
