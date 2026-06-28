@@ -508,14 +508,17 @@ def run_daily_cycle():
         import os as _os
         from calibration import (score_matured, agent_scorecard, counterfactual_report,
                                   SCORED, DECISIONS, DECISIONS_SCORED)
+        # Guarantee the scored ledgers exist FIRST, before any call that could raise — so a
+        # later exception can never leave the routine's `git add` failing on a missing file
+        # (score_matured/counterfactual only append/write when reached).
+        for _f in (SCORED, DECISIONS_SCORED):
+            if not _os.path.isfile(_f):
+                open(_f, "a").close()
         _n_scored = score_matured(market_data)
         agent_scorecard()                       # always (re)writes agent_scorecards.json
         # §7.5 counterfactual: score the reject/veto/select flags + refresh the report.
         score_matured(market_data, ledger_path=DECISIONS, scored_path=DECISIONS_SCORED)
         counterfactual_report()                 # always (re)writes counterfactual.json
-        for _f in (SCORED, DECISIONS_SCORED):   # ensure they exist for the routine git add
-            if not _os.path.isfile(_f):
-                open(_f, "a").close()
         print(f"   📈 Scored {_n_scored} matured forecast(s) → agent_scorecards.json"
               if _n_scored else "   📈 No forecasts matured yet (evidence clock ticking)")
     except Exception as _e:
