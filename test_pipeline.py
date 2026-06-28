@@ -3532,12 +3532,15 @@ class TestCalibrationLedger:
         path = str(tmp_path / "f.jsonl")
         n = calibration.log_forecasts("r1", "2026-06-14", self._pstate(), ["AAPL", "MSFT"],
                                       {"AAPL": {"close": 200}, "MSFT": {"close": 100}}, path=path)
-        assert n == 6                     # AAPL: 5 agents, MSFT: quant only
+        H = len(calibration.HORIZONS)
+        assert n == 6 * H                 # (AAPL: 5 agents, MSFT: quant only) × each horizon
         rows = [json.loads(l) for l in open(path)]
-        aq = next(r for r in rows if r["ticker"] == "AAPL" and r["agent"] == "quant")
+        assert {r["horizon_days"] for r in rows} == set(calibration.HORIZONS)
+        aq = next(r for r in rows if r["ticker"] == "AAPL" and r["agent"] == "quant"
+                  and r["horizon_days"] == 21)
         # A1: signal_close is reference-only (the close the signal was computed on),
         # NOT the return base — score_matured derives the executable next-open entry.
-        assert aq["value"] == 80 and aq["signal_close"] == 200 and aq["horizon_days"] == 21
+        assert aq["value"] == 80 and aq["signal_close"] == 200
 
     def test_log_forecasts_skips_missing_price(self, tmp_path):
         import calibration
@@ -3564,6 +3567,24 @@ class TestCalibrationLedger:
         r = json.loads(open(scored).readline())
         assert r["entry_price"] == 100.0 and r["future_price"] == 110.0
         assert r["realized_return"] == 0.1 and r["basis"] == "next_open"
+        assert calibration.score_matured(snap, ledger_path=ledger, scored_path=scored) == 0  # idempotent
+
+    def test_score_matured_multi_horizon_independent(self, tmp_path):
+        # P1-9: the same (run_id,agent,field,ticker) at TWO horizons must BOTH score —
+        # the idempotency key includes horizon_days, else the 2nd horizon is wrongly
+        # skipped as "already scored". And re-running stays idempotent per horizon.
+        import calibration, json
+        ledger, scored = str(tmp_path / "f.jsonl"), str(tmp_path / "s.jsonl")
+        with open(ledger, "w") as f:
+            for h in (5, 10):
+                f.write(json.dumps({"run_id": "r1", "date": "2026-01-02", "agent": "quant",
+                                    "field": "composite_score", "ticker": "AAPL", "value": 80,
+                                    "signal_close": 98.0, "horizon_days": h, "schema": 2}) + "\n")
+        snap = {"history": {"AAPL": [
+            {"date": "2026-01-05", "open": 100.0, "close": 101.0},   # entry (next open)
+            {"date": "2026-01-20", "open": 119.0, "close": 120.0},   # >= entry+5d AND entry+10d
+        ]}}
+        assert calibration.score_matured(snap, ledger_path=ledger, scored_path=scored) == 2  # both horizons
         assert calibration.score_matured(snap, ledger_path=ledger, scored_path=scored) == 0  # idempotent
 
     def test_score_matured_skips_immature(self, tmp_path):
@@ -3599,7 +3620,7 @@ class TestCalibrationLedger:
                 f.write(json.dumps({"run_id": f"r{i}", "agent": "quant", "field": "composite_score",
                                     "ticker": "AAPL", "value": float(i), "realized_return": i / 100}) + "\n")
         out = calibration.agent_scorecard(scored_path=scored, out_path=card, shrink_k=50)
-        k = "quant.composite_score"
+        k = "quant.composite_score@21d"   # grouped by horizon; rows w/o horizon_days default to 21
         assert out[k]["n"] == 5 and out[k]["ic"] == 1.0
         assert out[k]["ic_shrunk"] == round(5 / 55, 3)        # shrunk far below the raw IC
         assert out[k]["ic_shrunk"] < out[k]["ic"]
@@ -3618,7 +3639,7 @@ class TestFeatureInteractions:
                   "research": {"AAPL": {"confidence": 7}}}
         n = calibration.log_forecasts("r1", "2026-06-14", pstate, ["AAPL"],
                                       {"AAPL": {"close": 200}}, path=str(tmp_path / "f.jsonl"))
-        assert n == 2          # quant + research logged; None earnings dropped, no crash
+        assert n == 2 * len(calibration.HORIZONS)   # quant + research × horizons; None earnings dropped
 
     def test_net_edge_coerces_string_expected_return(self):
         # the PM emits expected_return; a stringified "0.0001" must still be evaluated

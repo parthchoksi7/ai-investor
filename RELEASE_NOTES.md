@@ -31,8 +31,24 @@ DEPLOYMENT.md §7.0). Newest first.
 - **⚠️ Live-routine sync required:** the live daily routine prompt must be re-synced from
   `ROUTINE_DAILY_CYCLE.md` (routines UI) or the cloud `git add` still omits the ledger.
 - **QA:** **456 green** (+3 `TestForecastFeedPersistence`: not-gitignored regression guard, in-commit-list
-  guard, ledger integrity / no-dup-keys). Remaining Phase 1 (multi-horizon, `score_matured` /
-  `agent_scorecard` run-wiring, §7.5/§7.6 attribution) are subsequent increments.
+  guard, ledger integrity / no-dup-keys).
+
+### Added — Phase 1: multi-horizon forecast ladder {21,63,126,189,252}d (§7.3.2)
+
+- **`log_forecasts` now logs each forecast at every horizon** in `calibration.HORIZONS`
+  `(21,63,126,189,252)` — a medium/long-term signal should look weak at 21d and strengthen
+  at 63–252d (189/252 ≈ 9/12mo = the owner's primary holding horizon). 21d stays the
+  pre-registered PRIMARY metric; the rest are BH-adjusted secondary.
+- **`score_matured` idempotency key now includes `horizon_days` (P1-9)** — one forecast
+  matures at several horizons; the old `(run_id,agent,field,ticker)` key would have scored
+  only the first and skipped the rest. **`agent_scorecard` groups by `(agent,field,horizon)`**
+  → an IC curve per agent across horizons (card keys are now `agent.field@<h>d`).
+- **Re-backfilled** the ledger at all horizons → **7,470 forecasts** (1,494 × 5), no dup keys.
+- **QA:** **457 green** (+1 `test_score_matured_multi_horizon_independent` guarding P1-9; 3
+  existing calibration tests updated for the new counts/keys). End-to-end smoke test on real
+  data: 0 matured (correct — earliest forecast 06-08 + 21d > the 06-26 snapshot), scorecard
+  primary key `quant.composite_score@21d`. Remaining Phase 1: `score_matured`/`agent_scorecard`
+  run-wiring, §7.5 (counterfactual + Brinson), §7.6 (TWR/1099/risk-adjusted).
 
 ### Added — Phase 0: single-source the deterministic limits into `policy.yaml` (redesign pod)
 

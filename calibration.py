@@ -54,6 +54,15 @@ SCORECARD = "agent_scorecards.json"
 
 DEFAULT_HORIZON = 21   # ~1 trading month
 
+# Multi-horizon ladder (§7.3.2 of the redesign plan). A medium/long-term signal should
+# look weak at 21d and STRENGTHEN at 63/126/189/252d — judging it only at 21d would
+# wrongly condemn the strategy we want. Each forecast is logged at EVERY horizon; the
+# scorecard reports an IC curve per (agent, field) across them. 189/252 ≈ 9/12 months
+# = the owner's primary holding horizon (IPS §4). 21d remains the pre-registered PRIMARY
+# metric (longest, most stable sample); the longer horizons are BH-adjusted secondary
+# and take 1-2 years to mature (do not sequence anything behind them — plan §7.4).
+HORIZONS = (21, 63, 126, 189, 252)
+
 SCHEMA_VERSION  = 2    # 2 = executable-entry semantics (A1); rows < 2 are legacy
 
 # A3 — the single pre-registered primary metric + horizon. Commit this BEFORE
@@ -101,15 +110,16 @@ def _iter_jsonl(path: str):
 
 def log_forecasts(run_id: str, date_str: str, pipeline_state: dict,
                   candidates: list, prices: dict,
-                  horizon_days: int = DEFAULT_HORIZON, path: str = LEDGER) -> int:
-    """Append this run's per-(agent, ticker) numeric forecasts. Returns the count.
+                  horizons: tuple = HORIZONS, path: str = LEDGER) -> int:
+    """Append this run's per-(agent, ticker, HORIZON) numeric forecasts. Returns count.
 
-    Logging only — never raises into the caller's critical path (wrap the call).
+    Each forecast is logged at EVERY horizon in `horizons` (§7.3.2), so the scorecard
+    can build an IC curve per agent across horizons. Logging only — never raises into
+    the caller's critical path (wrap the call).
 
-    `signal_close` is stamped for REFERENCE ONLY (the close the signal was
-    computed on). It is NOT the return base: score_matured() derives the
-    executable entry (next-session open) at scoring time so there is no one-bar
-    look-ahead (A1).
+    `signal_close` is stamped for REFERENCE ONLY (the close the signal was computed on).
+    It is NOT the return base: score_matured() derives the executable entry (next-session
+    open) at scoring time so there is no one-bar look-ahead (A1).
     """
     rows = []
     for ticker in candidates:
@@ -119,12 +129,13 @@ def log_forecasts(run_id: str, date_str: str, pipeline_state: dict,
         for agent, (key, field, _sign) in _FORECASTS.items():
             v = (pipeline_state.get(key, {}).get(ticker) or {}).get(field)
             if isinstance(v, (int, float)):
-                rows.append({
-                    "run_id": run_id, "date": date_str, "agent": agent, "field": field,
-                    "ticker": ticker, "value": float(v),
-                    "signal_close": float(signal_close), "horizon_days": horizon_days,
-                    "schema": SCHEMA_VERSION,
-                })
+                for h in horizons:
+                    rows.append({
+                        "run_id": run_id, "date": date_str, "agent": agent, "field": field,
+                        "ticker": ticker, "value": float(v),
+                        "signal_close": float(signal_close), "horizon_days": int(h),
+                        "schema": SCHEMA_VERSION,
+                    })
     if rows:
         _append_jsonl(path, rows)
     return len(rows)
@@ -177,12 +188,16 @@ def score_matured(snapshot: dict, ledger_path: str = LEDGER,
     so re-running never double-counts. Returns the number newly scored.
     """
     series = _history_to_series(snapshot.get("history", {}))
-    scored_keys = {(r.get("run_id"), r.get("agent"), r.get("field"), r.get("ticker"))
+    # Idempotency key INCLUDES horizon_days (P1-9): one forecast now matures at several
+    # horizons, so (run_id, agent, field, ticker) alone would score only the first.
+    scored_keys = {(r.get("run_id"), r.get("agent"), r.get("field"), r.get("ticker"),
+                    r.get("horizon_days"))
                    for r in _iter_jsonl(scored_path)}
 
     out = []
     for fc in _iter_jsonl(ledger_path):
-        key = (fc.get("run_id"), fc.get("agent"), fc.get("field"), fc.get("ticker"))
+        key = (fc.get("run_id"), fc.get("agent"), fc.get("field"), fc.get("ticker"),
+               fc.get("horizon_days"))
         if key in scored_keys:
             continue
         s = series.get(fc.get("ticker"))
@@ -308,16 +323,18 @@ def agent_scorecard(scored_path: str = SCORED, out_path: str = SCORECARD,
     Nothing consumes this to size trades yet — it is a scoreboard, gated behind
     sample size (future work).
     """
+    # Group by (agent, field, HORIZON) so each horizon gets its own IC — the IC curve
+    # across horizons is the whole point of multi-horizon (§7.3.2). Pooling horizons
+    # would average incomparable return windows.
     groups: dict = {}
     for r in _iter_jsonl(scored_path):
-        groups.setdefault((r.get("agent"), r.get("field")), []).append(r)
+        h = int(r["horizon_days"]) if isinstance(r.get("horizon_days"), (int, float)) else DEFAULT_HORIZON
+        groups.setdefault((r.get("agent"), r.get("field"), h), []).append(r)
 
     orient = {agent: sign for agent, (_k, _f, sign) in _FORECASTS.items()}
     card: dict = {}
-    for (agent, field), rows in groups.items():
+    for (agent, field, horizon), rows in groups.items():
         sgn = orient.get(agent, +1)
-        horizon = next((int(r["horizon_days"]) for r in rows
-                        if isinstance(r.get("horizon_days"), (int, float))), DEFAULT_HORIZON)
 
         ic, hit, n = _ic_hit(rows, sgn)                       # raw (overlapping)
         if n == 0:
@@ -326,7 +343,7 @@ def agent_scorecard(scored_path: str = SCORED, out_path: str = SCORECARD,
         ic_b, hit_b, n_b = _ic_hit(block, sgn)
         n_eff = max(1, round(n / horizon)) if horizon else n  # quick scalar effective N
 
-        card[f"{agent}.{field}"] = {
+        card[f"{agent}.{field}@{horizon}d"] = {
             "n": n,
             "n_effective":  n_b,           # non-overlapping block count (use THIS)
             "n_eff_approx": n_eff,         # n/horizon sanity scalar
@@ -339,7 +356,7 @@ def agent_scorecard(scored_path: str = SCORED, out_path: str = SCORECARD,
             "p_value":      _ic_pvalue(ic_b, n_b),            # block IC, effective N
             "orientation":  sgn,
             "horizon_days": horizon,
-            "is_primary":   (agent, field) == PRIMARY_METRIC,
+            "is_primary":   (agent, field) == PRIMARY_METRIC and horizon == PRIMARY_HORIZON,
         }
 
     # A3: Benjamini-Hochberg across all metrics that produced a p-value.
@@ -360,7 +377,7 @@ def agent_scorecard(scored_path: str = SCORED, out_path: str = SCORECARD,
             card[k]["p_value_bh"] = round(q, 4)
             card[k]["significant_bh"] = q < BH_ALPHA
 
-    primary_key = f"{PRIMARY_METRIC[0]}.{PRIMARY_METRIC[1]}"
+    primary_key = f"{PRIMARY_METRIC[0]}.{PRIMARY_METRIC[1]}@{PRIMARY_HORIZON}d"
     card["_meta"] = {
         "primary_metric":  primary_key,
         "primary_horizon": PRIMARY_HORIZON,
