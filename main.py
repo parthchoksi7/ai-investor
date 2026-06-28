@@ -493,6 +493,27 @@ def run_daily_cycle():
     except Exception as _e:
         print(f"   ⚠ forecast logging skipped: {_e}")
 
+    # Score matured forecasts + refresh the IC scorecard (#2, §7.3.1). OBSERVATIONAL:
+    # joins forecasts whose horizon has elapsed to realized next-open forward returns
+    # (no look-ahead, idempotent) and rewrites agent_scorecards.json. Never affects a
+    # decision and never raises into the pipeline. This is the wiring that was MISSING —
+    # the harness was built but score_matured/agent_scorecard were called only from
+    # tests, so the evidence clock never advanced. score_matured only appends when
+    # something matured, so we touch SCORED to guarantee it exists: the routine's
+    # `git add forecasts_scored.jsonl` must never fail on a missing file (the same
+    # silent-break class that froze the feed).
+    try:
+        import os as _os
+        from calibration import score_matured, agent_scorecard, SCORED
+        _n_scored = score_matured(market_data)
+        agent_scorecard()                       # always (re)writes agent_scorecards.json
+        if not _os.path.isfile(SCORED):
+            open(SCORED, "a").close()
+        print(f"   📈 Scored {_n_scored} matured forecast(s) → agent_scorecards.json"
+              if _n_scored else "   📈 No forecasts matured yet (evidence clock ticking)")
+    except Exception as _e:
+        print(f"   ⚠ forecast scoring skipped: {_e}")
+
     # Reproducibility manifest (#A12) — resolved model snapshots + token usage +
     # sampling params + verbatim prompts for this run. Observational; never raises.
     try:

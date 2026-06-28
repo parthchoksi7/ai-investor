@@ -47,8 +47,24 @@ DEPLOYMENT.md §7.0). Newest first.
 - **QA:** **457 green** (+1 `test_score_matured_multi_horizon_independent` guarding P1-9; 3
   existing calibration tests updated for the new counts/keys). End-to-end smoke test on real
   data: 0 matured (correct — earliest forecast 06-08 + 21d > the 06-26 snapshot), scorecard
-  primary key `quant.composite_score@21d`. Remaining Phase 1: `score_matured`/`agent_scorecard`
-  run-wiring, §7.5 (counterfactual + Brinson), §7.6 (TWR/1099/risk-adjusted).
+  primary key `quant.composite_score@21d`.
+
+### Added — Phase 1: scoring wired into the run (the evidence clock now self-advances)
+
+- **`main.py` now calls `score_matured` + `agent_scorecard` every run** (observational,
+  try/except-wrapped, never raises into the pipeline). The harness was fully built but
+  *switched off* — these were called only from tests, so the clock never advanced. Now each
+  run joins matured forecasts to realized next-open forward returns (no look-ahead) and
+  rewrites `agent_scorecards.json`.
+- **File-existence guarantee:** `score_matured` only appends when something matured, so the
+  wiring touches `forecasts_scored.jsonl` to ensure it exists — the routine's `git add` of it
+  can never fail on a missing file (the silent-break class that froze the feed). Both outputs
+  exist before the routine's commit step.
+- **QA:** **458 green** (+1 `test_scoring_wired_into_run` regression guard against reverting to
+  test-only callers). Smoke test: 0 matured (correct), both output files created.
+  **Remaining Phase 1:** §7.5 (counterfactual rejected-name tracking + Brinson attribution +
+  model-register KPIs), §7.6 (TWR / broker-1099 reconciliation / risk-adjusted metrics /
+  breadth ceiling).
 
 ### Added — Phase 0: single-source the deterministic limits into `policy.yaml` (redesign pod)
 

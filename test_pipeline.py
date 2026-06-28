@@ -4899,3 +4899,12 @@ class TestForecastFeedPersistence:
         assert len(keys) == len(set(keys)), "duplicate (run_id,agent,field,ticker,horizon) rows"
         assert all(r.get("schema") == 2 for r in rows), "non-v2 rows present"
         assert len({r["date"] for r in rows}) >= 1
+
+    def test_scoring_wired_into_run(self):
+        """score_matured + agent_scorecard must be CALLED in main.py. The harness was
+        built but switched off (called only from tests), so the evidence clock never
+        advanced — guard against regressing to that state."""
+        import os
+        src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")).read()
+        assert "score_matured(" in src, "score_matured not wired into main.py"
+        assert "agent_scorecard(" in src, "agent_scorecard not wired into main.py"
