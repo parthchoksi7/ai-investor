@@ -4701,3 +4701,137 @@ class TestSafeCallNoRetryOnGenuineDefault:
         assert result == []
         assert meta["parsed_ok"] is False
         assert call_count[0] == 3, f"Expected 3 attempts (2 retries), got {call_count[0]}"
+
+
+# ── Phase 0: policy.yaml single-source parity (zero behavior change) ─────────────
+
+class TestPolicyParity:
+    """policy.yaml is the new single source of truth for the deterministic limits.
+
+    These tests are the PARITY GUARANTEE for Phase 0: they assert that the values
+    served from policy.yaml — and the guardrails/execute constants now sourced from
+    it — are byte-identical to the historical hard-coded constants. If any of these
+    fail, Phase 0 changed behavior, which it must not.
+    """
+
+    # The historical constants, restated here independently as the parity oracle.
+    HISTORICAL = {
+        "max_target_weight":        0.10,
+        "max_buy_notional_pct":     0.12,
+        "min_order_notional":       5.00,
+        "gfv_window_trading_days":  2,
+        "max_sector_weight":        0.25,
+        "min_holding_trading_days": 5,
+        "wash_sale_reentry_days":   30,
+        "min_net_edge":             0.0,
+        "blocked_tickers":          ["TSLA"],
+    }
+
+    def test_defaults_match_historical_constants(self):
+        """policy._DEFAULTS (the fallback) equals the historical constants — so even
+        if policy.yaml is unreadable, behavior is identical to pre-Phase-0."""
+        import policy
+        for k, v in self.HISTORICAL.items():
+            assert policy._DEFAULTS[k] == v, f"_DEFAULTS[{k}] drifted from historical"
+
+    def test_policy_yaml_matches_historical(self):
+        """The shipped policy.yaml carries the parity values (not the IPS targets)."""
+        import policy
+        loaded = policy._load()  # reads the real policy.yaml next to the module
+        for k, v in self.HISTORICAL.items():
+            assert loaded[k] == v, f"policy.yaml {k}={loaded[k]!r} != historical {v!r}"
+        assert loaded["policy_version"] == "1.0-phase0-parity"
+
+    def test_guardrails_constants_sourced_from_policy(self):
+        """guardrails.* constants equal the policy values AND the historical ones."""
+        import guardrails, policy
+        assert guardrails.MAX_TARGET_WEIGHT        == policy.VALUES["max_target_weight"]        == 0.10
+        assert guardrails.MAX_BUY_NOTIONAL_PCT     == policy.VALUES["max_buy_notional_pct"]     == 0.12
+        assert guardrails.MIN_ORDER_NOTIONAL       == policy.VALUES["min_order_notional"]       == 5.00
+        assert guardrails.GFV_WINDOW_TRADING_DAYS  == policy.VALUES["gfv_window_trading_days"]  == 2
+        assert guardrails.MAX_SECTOR_WEIGHT        == policy.VALUES["max_sector_weight"]        == 0.25
+        assert guardrails.MIN_HOLDING_TRADING_DAYS == policy.VALUES["min_holding_trading_days"] == 5
+        assert guardrails.WASH_SALE_REENTRY_DAYS   == policy.VALUES["wash_sale_reentry_days"]   == 30
+        assert guardrails.MIN_NET_EDGE             == policy.VALUES["min_net_edge"]             == 0.0
+
+    def test_blocked_tickers_sourced_from_policy(self):
+        import execute, policy
+        assert execute.BLOCKED_TICKERS == {"TSLA"}
+        assert set(policy.VALUES["blocked_tickers"]) == {"TSLA"}
+
+    def test_loader_falls_back_when_file_missing(self):
+        """A missing policy.yaml must yield exactly _DEFAULTS — never crash."""
+        import policy
+        result = policy._load("/nonexistent/policy.yaml")
+        assert result == policy._DEFAULTS
+
+    def test_loader_falls_back_on_malformed_yaml(self, tmp_path):
+        """A malformed policy.yaml must degrade to _DEFAULTS, not raise."""
+        import policy
+        bad = tmp_path / "policy.yaml"
+        bad.write_text("guardrails: [this is: not valid: yaml: {{{")
+        result = policy._load(str(bad))
+        assert result == policy._DEFAULTS
+
+    def test_partial_policy_overlays_on_defaults(self, tmp_path):
+        """A policy.yaml that sets only some keys keeps defaults for the rest."""
+        import policy
+        partial = tmp_path / "policy.yaml"
+        partial.write_text(
+            "policy_version: test-partial\n"
+            "guardrails:\n"
+            "  max_sector_weight: 0.20\n"
+        )
+        result = policy._load(str(partial))
+        assert result["max_sector_weight"] == 0.20            # overlaid
+        assert result["max_target_weight"] == 0.10            # default kept
+        assert result["policy_version"] == "test-partial"
+        assert result["blocked_tickers"] == ["TSLA"]          # default kept
+
+    def test_policy_version_helper(self):
+        import policy
+        assert policy.policy_version() == policy.VALUES["policy_version"]
+        assert policy.policy_version() == "1.0-phase0-parity"
+
+    def test_validation_rejects_units_typo_keeps_cap(self, tmp_path):
+        """A percent/fraction units typo (10 instead of 0.10) must NOT disable the cap —
+        the loader rejects the out-of-range value and keeps the safe default."""
+        import policy
+        bad = tmp_path / "policy.yaml"
+        bad.write_text(
+            "guardrails:\n"
+            "  max_target_weight: 10\n"      # typo: meant 0.10; 10 = 1000%
+            "  max_sector_weight: 0.25\n"    # valid — should overlay
+        )
+        result = policy._load(str(bad))
+        assert result["max_target_weight"] == 0.10   # rejected typo → safe default kept
+        assert result["max_sector_weight"] == 0.25   # valid value overlaid
+
+    def test_validation_rejects_wrong_type(self, tmp_path):
+        """A string where a number is expected keeps the default (no runtime TypeError later)."""
+        import policy
+        bad = tmp_path / "policy.yaml"
+        bad.write_text("guardrails:\n  min_holding_trading_days: '30 days'\n")
+        result = policy._load(str(bad))
+        assert result["min_holding_trading_days"] == 5   # default kept
+
+    def test_validation_rejects_bad_blocked_tickers(self, tmp_path):
+        """blocked_tickers must be a list[str]; anything else keeps the default."""
+        import policy
+        bad = tmp_path / "policy.yaml"
+        bad.write_text("universe:\n  blocked_tickers: TSLA\n")  # str, not list
+        result = policy._load(str(bad))
+        assert result["blocked_tickers"] == ["TSLA"]
+
+    def test_validation_accepts_valid_override(self, tmp_path):
+        """A valid in-range override IS applied (validation isn't over-strict)."""
+        import policy
+        good = tmp_path / "policy.yaml"
+        good.write_text(
+            "guardrails:\n"
+            "  min_holding_trading_days: 30\n"   # the IPS-target migration value
+            "  max_target_weight: 0.08\n"
+        )
+        result = policy._load(str(good))
+        assert result["min_holding_trading_days"] == 30
+        assert result["max_target_weight"] == 0.08

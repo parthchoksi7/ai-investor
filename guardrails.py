@@ -42,24 +42,30 @@ from zoneinfo import ZoneInfo
 
 from execute import BLOCKED_TICKERS, _compute_qty
 from journal import _load_list, TRANSACTIONS_FILE
+from policy import VALUES as _POLICY
 
 _ET = ZoneInfo("America/New_York")
 
-VALID_ACTIONS            = {"BUY", "SELL", "HOLD"}
-MAX_TARGET_WEIGHT        = 0.10
-MAX_BUY_NOTIONAL_PCT     = 0.12
-MIN_ORDER_NOTIONAL       = 5.00
-GFV_WINDOW_TRADING_DAYS  = 2
-MAX_SECTOR_WEIGHT        = 0.25   # hard cap on projected post-trade sector weight
+# Operative limits are now SINGLE-SOURCED from policy.yaml (mirror of IPS.md
+# Appendix A) via policy.py. The names below are unchanged so every caller and
+# test still imports `from guardrails import MAX_SECTOR_WEIGHT` etc. The loader
+# falls back to the historical constants if policy.yaml is unreadable, so this is
+# a zero-behavior-change refactor (asserted by TestPolicyParity).
+VALID_ACTIONS            = {"BUY", "SELL", "HOLD"}   # not a tunable limit
+MAX_TARGET_WEIGHT        = _POLICY["max_target_weight"]
+MAX_BUY_NOTIONAL_PCT     = _POLICY["max_buy_notional_pct"]
+MIN_ORDER_NOTIONAL       = _POLICY["min_order_notional"]
+GFV_WINDOW_TRADING_DAYS  = _POLICY["gfv_window_trading_days"]
+MAX_SECTOR_WEIGHT        = _POLICY["max_sector_weight"]   # hard cap on projected post-trade sector weight
 
 # Turnover / tax discipline (this is a CALIFORNIA TOP-BRACKET TAXABLE account).
 # Every sale realizes a SHORT-TERM gain taxed at ~54% (37% fed + 3.8% NIIT +
 # 13.3% CA), so the dominant after-tax lever is simply trading LESS. These two
 # controls are deliberately stronger than the GFV guard above: they exist to cut
 # the documented weekly momentum-rotation churn, not to manage settlement.
-MIN_HOLDING_TRADING_DAYS = 5    # don't SELL a name bought < 5 trading days ago (risk exits exempt)
-WASH_SALE_REENTRY_DAYS   = 30   # don't BUY a name SOLD within 30 calendar days (wash-sale + anti-churn)
-MIN_NET_EDGE             = 0.0  # $ floor: a BUY's expected edge must clear cost + CA ST tax (#6; tunable)
+MIN_HOLDING_TRADING_DAYS = _POLICY["min_holding_trading_days"]  # don't SELL a name bought < N trading days ago (risk exits exempt)
+WASH_SALE_REENTRY_DAYS   = _POLICY["wash_sale_reentry_days"]    # don't BUY a name SOLD within N calendar days (wash-sale + anti-churn)
+MIN_NET_EDGE             = _POLICY["min_net_edge"]              # $ floor: a BUY's expected edge must clear cost + CA ST tax (#6; tunable)
 
 
 # Static ticker → sector map for the current universe. The data layer carries
