@@ -118,7 +118,7 @@ Portfolio data is injected via `mcp_portfolio.json` (written by the routine from
 ```
 git config user.name "AI Investor Bot"
 git config user.email "ai-investor-bot@users.noreply.github.com"
-git add portfolio_snapshot.json system_health.json pending_decisions.json agent_log.json trades.csv decision_journal.json transactions.json
+git add portfolio_snapshot.json system_health.json pending_decisions.json agent_log.json trades.csv decision_journal.json transactions.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json
 git commit -m "chore: daily cycle"
 git push
 ```

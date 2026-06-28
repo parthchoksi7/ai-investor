@@ -213,7 +213,7 @@ mark_execution_started(p['run_id'])
 PY
 git config user.email 'ai-investor-bot@users.noreply.github.com'
 git config user.name 'AI Investor Bot'
-git add pending_decisions.json system_health.json trades.csv decision_journal.json agent_log.json transactions.json mcp_portfolio.json portfolio_snapshot.json fundamentals_cache.json portfolio_peak.json
+git add pending_decisions.json system_health.json trades.csv decision_journal.json agent_log.json transactions.json mcp_portfolio.json portfolio_snapshot.json fundamentals_cache.json portfolio_peak.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json
 git commit -m 'chore: execution claim'
 git push || (git pull --rebase && git push)
 
@@ -306,7 +306,7 @@ STEP 5 — Commit artifacts
 
 git config user.email 'ai-investor-bot@users.noreply.github.com'
 git config user.name 'AI Investor Bot'
-git add portfolio_snapshot.json system_health.json mcp_portfolio.json trades.csv decision_journal.json fundamentals_cache.json portfolio_peak.json pending_decisions.json agent_log.json transactions.json fills.json
+git add portfolio_snapshot.json system_health.json mcp_portfolio.json trades.csv decision_journal.json fundamentals_cache.json portfolio_peak.json pending_decisions.json agent_log.json transactions.json fills.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json
 git diff --staged --quiet || git commit -m 'chore: daily cycle'
 
 # Push WITH a rebase retry. Orders are already LIVE — this push carries the executed_at stamp,

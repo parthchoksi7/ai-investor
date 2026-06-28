@@ -11,10 +11,12 @@ venv/
 # never reach the remote, so a crash after STEP 4 could not be reconciled from
 # fills.json (only by re-querying get_equity_orders). Keep it tracked.
 performance_report.json
-# Forecast ledger (#2) — local observational data, regenerated each run.
-forecasts.jsonl
-forecasts_scored.jsonl
-agent_scorecards.json
+# NOTE: the forecast ledger — forecasts.jsonl, forecasts_scored.jsonl,
+# agent_scorecards.json — is intentionally TRACKED (not ignored). It is the
+# measurement harness's append-only evidence clock and MUST accumulate across runs.
+# It was previously ignored, so the routine's `git add` was a silent no-op and every
+# cloud run's forecasts were lost (the feed froze at 2026-06-18). The routine now
+# commits these files (ROUTINE_DAILY_CYCLE.md STEP 5) — same lesson as fills.json.
 # Analysis / recovery artifacts — regenerated from logs on demand.
 deliberation_stats.json
 reconciliation_report.json

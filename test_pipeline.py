@@ -4835,3 +4835,46 @@ class TestPolicyParity:
         result = policy._load(str(good))
         assert result["min_holding_trading_days"] == 30
         assert result["max_target_weight"] == 0.08
+
+
+# ── Phase 1: forecast-feed persistence (the Jun-18 silent-break regression) ──────
+
+class TestForecastFeedPersistence:
+    """The forecast ledger was gitignored + never committed, so the cloud routine's
+    `git add` was a silent no-op and every run's forecasts were lost (frozen Jun 18).
+    These guard the fix so the evidence clock can never silently stop again."""
+
+    LEDGER_FILES = ["forecasts.jsonl", "forecasts_scored.jsonl", "agent_scorecards.json"]
+
+    def test_ledger_files_not_gitignored(self):
+        """The exact regression: none of the ledger files may be gitignored, or the
+        routine's `git add` silently stages nothing."""
+        import subprocess, os
+        repo = os.path.dirname(os.path.abspath(__file__))
+        for f in self.LEDGER_FILES:
+            rc = subprocess.run(["git", "check-ignore", f], cwd=repo,
+                                 capture_output=True).returncode
+            assert rc != 0, f"{f} is gitignored — routine `git add` would be a silent no-op"
+
+    def test_ledger_in_routine_commit_list(self):
+        """forecasts.jsonl must be in the routine's daily-cycle `git add` (else not pushed)."""
+        import os
+        repo = os.path.dirname(os.path.abspath(__file__))
+        routine = open(os.path.join(repo, "ROUTINE_DAILY_CYCLE.md")).read()
+        assert "forecasts.jsonl" in routine
+        daily = [l for l in routine.splitlines()
+                 if l.startswith("git add") and "trades.csv" in l and "fills.json" in l]
+        assert daily and "forecasts.jsonl" in daily[0], \
+            "forecasts.jsonl not in the daily-cycle git add line"
+
+    def test_forecast_ledger_integrity(self):
+        """If the committed ledger exists, it must be valid schema-2 with no dup keys."""
+        import json, os
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "forecasts.jsonl")
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            pytest.skip("forecasts.jsonl not present in this checkout")
+        rows = [json.loads(l) for l in open(path) if l.strip()]
+        keys = [(r["run_id"], r["agent"], r["field"], r["ticker"], r["horizon_days"]) for r in rows]
+        assert len(keys) == len(set(keys)), "duplicate (run_id,agent,field,ticker,horizon) rows"
+        assert all(r.get("schema") == 2 for r in rows), "non-v2 rows present"
+        assert len({r["date"] for r in rows}) >= 1

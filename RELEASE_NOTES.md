@@ -13,6 +13,27 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — Phase 1: forecast feed un-broken + backfilled (the measurement evidence clock)
+
+- **Root cause (silent since 2026-06-18):** `forecasts.jsonl` / `forecasts_scored.jsonl` /
+  `agent_scorecards.json` were **gitignored and never committed**, and absent from the routine's
+  `git add` list — so every cloud run wrote ~60–90 forecasts into an ephemeral container that were
+  then lost. **Not a `calibration.py` bug** (values are numeric, structure is correct) — the same
+  silent-`git add`-no-op class as the Jun-17 `fills.json` fix. Diagnosed per the plan's "fix the feed
+  FIRST" gate (wiring scoring against a dead feed would green-light an empty scorecard).
+- **Fix:** un-ignored the three ledger files (`.gitignore` now documents *why* they must be tracked);
+  added them to the routine's claim + daily-cycle `git add` lines (`ROUTINE_DAILY_CYCLE.md`) and the
+  `CLAUDE.md` commit list.
+- **Backfill:** reconstructed the entire ledger from `agent_log.json` (committed; carries full
+  `pipeline_state` for all 21 runs) → **1,494 forecasts across 12 trading days** (06-08 → 06-26),
+  recovered vs the 144 stranded locally. `signal_close` recovered from `market_snapshot.json` history
+  (reference-only field). 2026-06-19 correctly yields 0 (Juneteenth — market closed, no signal).
+- **⚠️ Live-routine sync required:** the live daily routine prompt must be re-synced from
+  `ROUTINE_DAILY_CYCLE.md` (routines UI) or the cloud `git add` still omits the ledger.
+- **QA:** **456 green** (+3 `TestForecastFeedPersistence`: not-gitignored regression guard, in-commit-list
+  guard, ledger integrity / no-dup-keys). Remaining Phase 1 (multi-horizon, `score_matured` /
+  `agent_scorecard` run-wiring, §7.5/§7.6 attribution) are subsequent increments.
+
 ### Added — Phase 0: single-source the deterministic limits into `policy.yaml` (redesign pod)
 
 - **`policy.yaml` + `policy.py` (new):** every operative deterministic limit is now defined in
