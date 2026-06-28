@@ -212,11 +212,81 @@ def _metrics(curve: list[float]) -> dict:
     mean, sd = _mean(rets), _pstdev(rets)
     ann_vol = sd * (TRADING_DAYS ** 0.5)
     sharpe  = (mean / sd) * (TRADING_DAYS ** 0.5) if sd > 0 else None
+    # Sortino (§7.6): downside deviation vs a 0 target — penalizes only losses, the
+    # honest risk-adjusted read for an asymmetric book. Return alone is insufficient.
+    dd = (sum(min(r, 0.0) ** 2 for r in rets) / len(rets)) ** 0.5 if rets else 0.0
+    sortino = (mean / dd) * (TRADING_DAYS ** 0.5) if dd > 0 else None
     return {
         "cumulative_return": round(curve[-1] / curve[0] - 1, 4),
         "max_drawdown":      round(mdd, 4),
         "annualized_vol":    round(ann_vol, 4),
         "sharpe":            round(sharpe, 2) if sharpe is not None else None,
+        "sortino":           round(sortino, 2) if sortino is not None else None,
+    }
+
+
+# ── §7.6 measurement rigor: TWR, information ratio, breadth ceiling ───────────
+
+def _twr(dates: list[str], pv: list[float], cash_flows: dict | None = None) -> float | None:
+    """Time-weighted return — chains sub-period returns, removing the effect of EXTERNAL
+    cash flows (deposits/withdrawals) on the day they occur. With no recorded flows this
+    EQUALS the simple cumulative return; it diverges only once deposits are logged. This
+    is the methodologically-correct fix for the documented 'a deposit inflates total_value
+    → a false new peak / wrong return' distortion. `cash_flows` maps an ISO date to the NET
+    external flow that day (deposit > 0, withdrawal < 0), applied at period start."""
+    if len(pv) < 2:
+        return None
+    cf = cash_flows or {}
+    factor = 1.0
+    for i in range(1, len(pv)):
+        base = pv[i - 1] + cf.get(dates[i], 0.0)     # capital base after the flow
+        if base <= 0:
+            continue
+        factor *= pv[i] / base
+    return round(factor - 1, 4)
+
+
+def _information_ratio(pv: list[float], bench: list[float]) -> float | None:
+    """Annualized active-return / tracking-error vs the benchmark curve (§7.6). Beating
+    the benchmark's RETURN while running materially higher vol is not a win — this is the
+    risk-adjusted active-management read."""
+    if len(pv) < 3 or len(bench) != len(pv):
+        return None
+    pr = [pv[i] / pv[i - 1] - 1 for i in range(1, len(pv)) if pv[i - 1]]
+    br = [bench[i] / bench[i - 1] - 1 for i in range(1, len(bench)) if bench[i - 1]]
+    n = min(len(pr), len(br))
+    if n < 2:
+        return None
+    active = [pr[i] - br[i] for i in range(n)]
+    te = _pstdev(active)
+    return round((_mean(active) / te) * (TRADING_DAYS ** 0.5), 2) if te > 0 else None
+
+
+def breadth_ceiling(scorecard_path: str = "agent_scorecards.json") -> dict:
+    """Grinold's Fundamental Law of Active Management: IR ≈ IC × √breadth (§7.6). At
+    ~weekly cadence breadth is tiny, so the achievable risk-adjusted outperformance is
+    STRUCTURALLY CAPPED even with genuine skill — the honest December conclusion may be
+    'the LLM has positive IC but breadth is too low to beat SPY after tax.' Reads the
+    pre-registered primary metric's block-IC + effective N from the scorecard."""
+    import json
+    import os as _os
+    if not _os.path.isfile(scorecard_path):
+        return {"available": False, "note": "no scorecard yet (clock ticking)"}
+    try:
+        card = json.load(open(scorecard_path))
+    except (ValueError, OSError):
+        return {"available": False, "note": "scorecard unreadable"}
+    pk = card.get("_meta", {}).get("primary_metric")
+    m = card.get(pk, {}) if pk else {}
+    ic, n_eff = m.get("ic_block"), m.get("n_effective")
+    if ic is None or not n_eff:
+        return {"available": False, "primary_metric": pk,
+                "note": "primary metric not matured yet (NOT_SIGNIFICANT)"}
+    return {
+        "available": True, "primary_metric": pk, "ic_block": ic, "effective_breadth": n_eff,
+        "implied_ir_ceiling": round(ic * (n_eff ** 0.5), 3),
+        "note": ("Fundamental Law IR ≈ IC×√breadth — low breadth caps achievable "
+                 "risk-adjusted outperformance even with genuine skill (§7.4/§7.6)."),
     }
 
 
@@ -240,6 +310,10 @@ def build_report(agent_log_path: str = AGENT_LOG,
     net_exposure = _avg_net_exposure(agent_log_path)
     beta = _beta(pv, sv_tr)
 
+    # §7.6: time-weighted return (deposit-neutral) + risk-adjusted active read vs SPY-TR.
+    twr = _twr(dates, pv)
+    info_ratio = _information_ratio(pv, sv_tr)
+
     alpha_tr = alpha_pr = None
     if pv and sv:
         alpha_pr = round(port_m["cumulative_return"] - spy_m["cumulative_return"], 4)
@@ -250,6 +324,20 @@ def build_report(agent_log_path: str = AGENT_LOG,
         "inception":    dates[0] if dates else None,
         "as_of":        dates[-1] if dates else None,
         "trading_days": len(dates),
+        "time_weighted_return":  twr,                 # §7.6 — deposit-neutral; == cumulative until a flow is logged
+        "information_ratio":     info_ratio,          # §7.6 — risk-adjusted active return vs SPY-TR
+        "breadth_ceiling":       breadth_ceiling(),   # §7.6 — Grinold IR ≈ IC×√breadth
+        "tax_reconciliation":    {                    # §7.6 — internal estimate; broker is authoritative
+            "status": "UNRECONCILED",
+            "note": ("After-tax realized gain (cost_model/tax_lots) is an ESTIMATE. The "
+                     "broker's realized P&L / 1099 is authoritative — reconcile quarterly "
+                     "and at year-end before the headline after-tax figure is trusted."),
+        },
+        "verdict_scope": (         # §7.6 three-clocks: what the current window can/can't conclude
+            "Three clocks run at different speeds: the 12-month evaluation window, the "
+            "9-12mo holding horizon, and the 1-2yr (or never) validation power for per-name "
+            "LLM IC. The first 252-day forecasts mature ~month 12, so any near-term verdict "
+            "rests on the quant/shadow arm and shorter horizons, NOT validated LLM IC."),
         "caveats": [
             f"SPY is reported on a TOTAL-return basis (price + ~{SPY_DIVIDEND_YIELD:.2%}/yr "
             "dividend gross-up), matching the portfolio's dividend-inclusive total-value "

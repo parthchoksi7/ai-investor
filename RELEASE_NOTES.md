@@ -79,6 +79,26 @@ DEPLOYMENT.md §7.0). Newest first.
   25/398 at 21d). New ledgers added to `.gitignore`-tracked + the routine commit lists.
 - **QA:** **461 green** (+3 `TestCounterfactual`). Smoke test end-to-end: 0 matured (clock ticking).
 
+### Added — Phase 1 §7.6: measurement rigor (TWR · risk-adjusted · breadth ceiling · reconciliation)
+
+- **Time-weighted return** (`_twr`) — chains sub-period returns and removes external cash-flow
+  (deposit/withdrawal) distortion; equals the simple cumulative return until a flow is logged.
+  This is the methodologically-correct fix for the documented "a deposit inflates total_value →
+  false new peak / wrong return" bug.
+- **Risk-adjusted, not just return** — added **Sortino** (downside deviation) to `_metrics` and a
+  portfolio-level **information ratio** vs SPY total-return. Beating the benchmark's *return* at
+  materially higher vol is not a win.
+- **Breadth ceiling** (`breadth_ceiling`) — Grinold's Fundamental Law `IR ≈ IC × √breadth` from the
+  pre-registered primary metric's block-IC + effective N. Surfaces the structural cap: the honest
+  verdict may be "positive IC but breadth too low to beat SPY after tax."
+- **Honesty metadata in `build_report`** — a `tax_reconciliation` status (`UNRECONCILED`: the
+  after-tax figure is an estimate; the broker 1099 is authoritative) and a `verdict_scope` note (the
+  three clocks — 12-mo window vs 9–12mo horizon vs 1–2yr LLM-IC power — so a near-term verdict isn't
+  over-claimed).
+- **QA:** **467 green** (+6 `TestMeasurementRigor`: TWR no-flow identity + deposit-neutralization,
+  Sortino, information ratio, breadth-ceiling availability + Fundamental-Law math). `build_report`
+  smoke: all new fields present.
+
 ### Added — Phase 0: single-source the deterministic limits into `policy.yaml` (redesign pod)
 
 - **`policy.yaml` + `policy.py` (new):** every operative deterministic limit is now defined in

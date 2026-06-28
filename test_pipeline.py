@@ -4972,3 +4972,51 @@ class TestCounterfactual:
                 "horizon_days": 21, "date": "2026-01-01"}) + "\n")
         rep = calibration.counterfactual_report(scored_path=scored, out_path=out, min_n=10)
         assert rep["cro_veto@21d"]["verdict"] == "NOT_SIGNIFICANT"
+
+
+# ── Phase 1 §7.6: measurement rigor (TWR, risk-adjusted, breadth ceiling) ────────
+
+class TestMeasurementRigor:
+    def test_twr_no_flows_equals_cumulative(self):
+        import performance as p
+        dates = ["2026-01-01", "2026-01-02", "2026-01-03"]
+        pv = [100.0, 110.0, 121.0]
+        assert p._twr(dates, pv) == round(121.0 / 100.0 - 1, 4)   # == simple cumulative
+
+    def test_twr_neutralizes_deposit(self):
+        # +10% invest, then a $100 deposit, then +10% invest. Naive return = 131%, but the
+        # deposit-neutral TWR is only 21% (two 10% periods) — the documented peak bug fixed.
+        import performance as p
+        dates = ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"]
+        pv = [100.0, 110.0, 210.0, 231.0]
+        naive = round(231.0 / 100.0 - 1, 4)
+        twr = p._twr(dates, pv, cash_flows={"2026-01-03": 100.0})
+        assert naive == 1.31
+        assert twr == 0.21 and twr != naive
+
+    def test_sortino_in_metrics(self):
+        import performance as p
+        m = p._metrics([100.0, 101.0, 99.0, 102.0, 101.0, 103.0])
+        assert "sortino" in m   # computed (downside deviation vs 0 target)
+
+    def test_information_ratio_positive_when_outperforming(self):
+        import performance as p
+        pv    = [100.0, 101.0, 102.0, 103.0, 104.0]   # steady +1%/day
+        bench = [100.0, 100.5, 101.0, 101.5, 102.0]   # steady +0.5%/day
+        ir = p._information_ratio(pv, bench)
+        assert ir is not None and ir > 0               # consistent active return, low TE
+
+    def test_breadth_ceiling_not_available_without_scorecard(self, tmp_path):
+        import performance as p
+        assert p.breadth_ceiling(str(tmp_path / "nope.json"))["available"] is False
+
+    def test_breadth_ceiling_computes_fundamental_law(self, tmp_path):
+        import performance as p, json
+        card = tmp_path / "card.json"
+        card.write_text(json.dumps({
+            "quant.composite_score@21d": {"ic_block": 0.1, "n_effective": 100},
+            "_meta": {"primary_metric": "quant.composite_score@21d"},
+        }))
+        out = p.breadth_ceiling(str(card))
+        assert out["available"] is True
+        assert out["implied_ir_ceiling"] == round(0.1 * (100 ** 0.5), 3)   # IC×√breadth = 1.0
