@@ -52,6 +52,12 @@ LEDGER    = "forecasts.jsonl"
 SCORED    = "forecasts_scored.jsonl"
 SCORECARD = "agent_scorecards.json"
 
+# §7.5 counterfactual decision ledger — binary flags (reject / veto / select) whose
+# forward return tests whether the rejecting/vetoing models actually reduce risk.
+DECISIONS        = "decisions_ledger.jsonl"
+DECISIONS_SCORED = "decisions_scored.jsonl"
+COUNTERFACTUAL   = "counterfactual.json"
+
 DEFAULT_HORIZON = 21   # ~1 trading month
 
 # Multi-horizon ladder (§7.3.2 of the redesign plan). A medium/long-term signal should
@@ -85,6 +91,17 @@ _FORECASTS = {
     "earnings":        ("earnings",          "earnings_alpha_score", +1),
     "devils_advocate": ("devils_advocate",   "overall_risk_score", -1),
     "position_review": ("position_reviews",  "hold_score",        +1),
+}
+
+# §7.5 counterfactual signals — the DIRECTION of forward return that means the model
+# ADDED value. The whole system rejects far more than it buys; a fund that never tracks
+# what it passed on loses the information to judge its own process. "underperform" = the
+# flagged (rejected/vetoed) names SHOULD return less than the kept set; "outperform" =
+# the flagged (selected) names should return more. Feeds MODEL_REGISTER M4 (DA) / M7 (CRO).
+_CF_SIGNALS = {
+    "da_reject":   "underperform",   # Devil's Advocate (M4): devils_advocate[t].recommend_reject
+    "cro_veto":    "underperform",   # Chief Risk Officer (M7): cro.rejected_tickers
+    "pm_selected": "outperform",     # Portfolio Manager (M6): final BUYs — does selection add value?
 }
 
 
@@ -136,6 +153,43 @@ def log_forecasts(run_id: str, date_str: str, pipeline_state: dict,
                         "signal_close": float(signal_close), "horizon_days": int(h),
                         "schema": SCHEMA_VERSION,
                     })
+    if rows:
+        _append_jsonl(path, rows)
+    return len(rows)
+
+
+def log_decisions(run_id: str, date_str: str, pipeline_state: dict,
+                  prices: dict, horizons: tuple = HORIZONS, path: str = DECISIONS) -> int:
+    """§7.5 — log per-candidate binary decision flags (DA reject / CRO veto / PM select)
+    at every horizon, so score_matured can later test whether the rejected/vetoed names
+    actually underperform the kept set (the counterfactual that proves M4/M7 add value).
+
+    Reuses the forecast-row schema, so score_matured scores it unchanged. Logging only;
+    never raises into the caller's critical path (wrap the call).
+    """
+    da       = pipeline_state.get("devils_advocate", {}) or {}
+    vetoed   = set((pipeline_state.get("cro", {}) or {}).get("rejected_tickers", []) or [])
+    selected = {d.get("ticker") for d in (pipeline_state.get("final_decisions", []) or [])
+                if str(d.get("action", "")).upper() == "BUY"}
+    candidates = pipeline_state.get("candidates", []) or []
+
+    rows = []
+    for t in candidates:
+        signal_close = (prices.get(t) or {}).get("close")
+        if not signal_close:
+            continue
+        flags = {
+            "da_reject":   1.0 if (da.get(t) or {}).get("recommend_reject") else 0.0,
+            "cro_veto":    1.0 if t in vetoed else 0.0,
+            "pm_selected": 1.0 if t in selected else 0.0,
+        }
+        for agent, val in flags.items():
+            for h in horizons:
+                rows.append({
+                    "run_id": run_id, "date": date_str, "agent": agent, "field": "flag",
+                    "ticker": t, "value": float(val), "signal_close": float(signal_close),
+                    "horizon_days": int(h), "schema": SCHEMA_VERSION,
+                })
     if rows:
         _append_jsonl(path, rows)
     return len(rows)
@@ -392,3 +446,53 @@ def agent_scorecard(scored_path: str = SCORED, out_path: str = SCORECARD,
     with open(out_path, "w") as f:
         json.dump(card, f, indent=2)
     return card
+
+
+def counterfactual_report(scored_path: str = DECISIONS_SCORED,
+                          out_path: str = COUNTERFACTUAL, min_n: int = 10) -> dict:
+    """§7.5 — per (signal, horizon): mean forward return of FLAGGED (value=1) vs KEPT
+    (value=0) names, the gap, and whether the model added value in its expected direction.
+
+    For da_reject / cro_veto the model adds value when flagged names UNDERPERFORM
+    (gap = mean_kept − mean_flagged > 0); for pm_selected when selected names OUTPERFORM
+    (gap < 0). Uses the block-sampled effective sample (A2) so overlapping windows don't
+    inflate the count, and reports NOT_SIGNIFICANT until each side clears `min_n` — at
+    ~weekly cadence this stays NOT_SIGNIFICANT for months (plan §7.4), by design.
+    """
+    groups: dict = {}
+    for r in _iter_jsonl(scored_path):
+        h = int(r["horizon_days"]) if isinstance(r.get("horizon_days"), (int, float)) else DEFAULT_HORIZON
+        groups.setdefault((r.get("agent"), h), []).append(r)
+
+    report: dict = {}
+    for (agent, horizon), rows in groups.items():
+        block = _block_sample(rows, horizon)
+        flagged = [r["realized_return"] for r in block
+                   if r.get("value") == 1.0 and isinstance(r.get("realized_return"), (int, float))]
+        kept = [r["realized_return"] for r in block
+                if r.get("value") == 0.0 and isinstance(r.get("realized_return"), (int, float))]
+        if not flagged or not kept:
+            continue
+        mf, mk = sum(flagged) / len(flagged), sum(kept) / len(kept)
+        gap = round(mk - mf, 5)                      # kept minus flagged
+        direction = _CF_SIGNALS.get(agent, "underperform")
+        adds_value = (gap > 0) if direction == "underperform" else (gap < 0)
+        significant = len(flagged) >= min_n and len(kept) >= min_n
+        report[f"{agent}@{horizon}d"] = {
+            "n_flagged": len(flagged), "n_kept": len(kept),
+            "mean_return_flagged": round(mf, 5), "mean_return_kept": round(mk, 5),
+            "gap_kept_minus_flagged": gap, "expected_direction": direction,
+            "adds_value": bool(adds_value), "significant": bool(significant),
+            "verdict": ("NOT_SIGNIFICANT" if not significant
+                        else ("ADDS_VALUE" if adds_value else "NO_VALUE")),
+        }
+    report["_meta"] = {
+        "note": ("Counterfactual: does each model's reject/veto/select decision predict "
+                 "the right forward-return direction? gap = mean_kept − mean_flagged. "
+                 "Block-sampled effective N; NOT_SIGNIFICANT until both sides >= "
+                 f"{min_n} (months at this cadence — §7.4)."),
+        "signals": _CF_SIGNALS,
+    }
+    with open(out_path, "w") as f:
+        json.dump(report, f, indent=2)
+    return report

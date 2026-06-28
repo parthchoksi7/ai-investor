@@ -4908,3 +4908,67 @@ class TestForecastFeedPersistence:
         src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")).read()
         assert "score_matured(" in src, "score_matured not wired into main.py"
         assert "agent_scorecard(" in src, "agent_scorecard not wired into main.py"
+
+
+# ── Phase 1 §7.5: counterfactual rejected-name tracking ─────────────────────────
+
+class TestCounterfactual:
+    """Does each model's reject/veto/select decision predict the right forward-return
+    direction? Logs binary flags scored by the SAME machinery as forecasts."""
+
+    def _pstate(self):
+        return {
+            "candidates": ["AAA", "BBB", "CCC"],
+            "devils_advocate": {"AAA": {"recommend_reject": True},
+                                "BBB": {"recommend_reject": False},
+                                "CCC": {"recommend_reject": False}},
+            "cro": {"rejected_tickers": ["BBB"]},
+            "final_decisions": [{"ticker": "CCC", "action": "BUY"}],
+        }
+
+    def test_log_decisions_flags(self, tmp_path):
+        import calibration, json
+        path = str(tmp_path / "d.jsonl")
+        prices = {"AAA": {"close": 10}, "BBB": {"close": 20}, "CCC": {"close": 30}}
+        n = calibration.log_decisions("r1", "2026-06-14", self._pstate(), prices, path=path)
+        H = len(calibration.HORIZONS)
+        assert n == 3 * 3 * H            # 3 candidates × 3 signals × horizons
+        rows = [json.loads(l) for l in open(path)]
+        def flag(ag, t):
+            return next(r for r in rows if r["agent"] == ag and r["ticker"] == t
+                        and r["horizon_days"] == 21)["value"]
+        assert flag("da_reject", "AAA") == 1.0 and flag("da_reject", "BBB") == 0.0
+        assert flag("cro_veto", "BBB") == 1.0 and flag("cro_veto", "AAA") == 0.0
+        assert flag("pm_selected", "CCC") == 1.0 and flag("pm_selected", "AAA") == 0.0
+
+    def test_counterfactual_adds_value(self, tmp_path):
+        # da_reject: flagged (rejected) names underperform → gap>0 → ADDS_VALUE once n clears.
+        import calibration, json, datetime
+        scored, out = str(tmp_path / "ds.jsonl"), str(tmp_path / "cf.json")
+        with open(scored, "w") as f:
+            for i in range(12):                          # spaced dates so block-sample keeps all
+                d = (datetime.date(2026, 1, 1) + datetime.timedelta(days=40 * i)).isoformat()
+                f.write(json.dumps({"run_id": f"r{i}", "agent": "da_reject", "field": "flag",
+                    "ticker": f"F{i}", "value": 1.0, "realized_return": -0.05,
+                    "horizon_days": 21, "date": d}) + "\n")
+                f.write(json.dumps({"run_id": f"r{i}", "agent": "da_reject", "field": "flag",
+                    "ticker": f"K{i}", "value": 0.0, "realized_return": 0.05,
+                    "horizon_days": 21, "date": d}) + "\n")
+        rep = calibration.counterfactual_report(scored_path=scored, out_path=out, min_n=10)
+        k = "da_reject@21d"
+        assert rep[k]["mean_return_flagged"] == -0.05 and rep[k]["mean_return_kept"] == 0.05
+        assert rep[k]["gap_kept_minus_flagged"] == 0.1
+        assert rep[k]["adds_value"] is True and rep[k]["verdict"] == "ADDS_VALUE"
+
+    def test_counterfactual_not_significant_small_n(self, tmp_path):
+        import calibration, json
+        scored, out = str(tmp_path / "ds.jsonl"), str(tmp_path / "cf.json")
+        with open(scored, "w") as f:
+            f.write(json.dumps({"run_id": "r1", "agent": "cro_veto", "field": "flag",
+                "ticker": "F", "value": 1.0, "realized_return": -0.1,
+                "horizon_days": 21, "date": "2026-01-01"}) + "\n")
+            f.write(json.dumps({"run_id": "r1", "agent": "cro_veto", "field": "flag",
+                "ticker": "K", "value": 0.0, "realized_return": 0.1,
+                "horizon_days": 21, "date": "2026-01-01"}) + "\n")
+        rep = calibration.counterfactual_report(scored_path=scored, out_path=out, min_n=10)
+        assert rep["cro_veto@21d"]["verdict"] == "NOT_SIGNIFICANT"

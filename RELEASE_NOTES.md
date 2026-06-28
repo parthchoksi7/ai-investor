@@ -62,9 +62,22 @@ DEPLOYMENT.md §7.0). Newest first.
   exist before the routine's commit step.
 - **QA:** **458 green** (+1 `test_scoring_wired_into_run` regression guard against reverting to
   test-only callers). Smoke test: 0 matured (correct), both output files created.
-  **Remaining Phase 1:** §7.5 (counterfactual rejected-name tracking + Brinson attribution +
-  model-register KPIs), §7.6 (TWR / broker-1099 reconciliation / risk-adjusted metrics /
-  breadth ceiling).
+
+### Added — Phase 1 §7.5: counterfactual rejected-name tracking (the highest-leverage measurement)
+
+- **The system rejects far more than it buys, and never tracked any of it.** New `log_decisions`
+  records, per candidate per horizon, three binary decision flags — **`da_reject`** (Devil's
+  Advocate `recommend_reject`, M4), **`cro_veto`** (CRO `rejected_tickers`, M7), **`pm_selected`**
+  (final BUYs, M6) — scored forward by the *same* `score_matured` machinery (no new scorer).
+- **`counterfactual_report`** → `counterfactual.json`: per (signal, horizon), the mean forward
+  return of FLAGGED vs KEPT names, the gap, and a `verdict` (`ADDS_VALUE` / `NO_VALUE` /
+  `NOT_SIGNIFICANT`). Answers *"do the names the CRO/DA killed actually underperform the ones we
+  held?"* — direct evidence of whether M4/M7 reduce risk. Block-sampled effective N; honest
+  `NOT_SIGNIFICANT` until both sides clear the threshold (months at this cadence, by design).
+- Wired into `main.py` (logging + scoring, observational, never raises); backfilled from
+  `agent_log.json` → **5,970 decision flags** (DA rejected 84/398, CRO vetoed 6/398, PM bought
+  25/398 at 21d). New ledgers added to `.gitignore`-tracked + the routine commit lists.
+- **QA:** **461 green** (+3 `TestCounterfactual`). Smoke test end-to-end: 0 matured (clock ticking).
 
 ### Added — Phase 0: single-source the deterministic limits into `policy.yaml` (redesign pod)
 

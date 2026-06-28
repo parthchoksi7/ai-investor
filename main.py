@@ -485,11 +485,13 @@ def run_daily_cycle():
     # calibration. OBSERVATIONAL: logging only, never affects a decision, and
     # never raises into the pipeline.
     try:
-        from calibration import log_forecasts
+        from calibration import log_forecasts, log_decisions
         _n_fc = log_forecasts(run_id, today, pipeline_state,
                               pipeline_state.get("candidates", []), market_data["prices"])
-        if _n_fc:
-            print(f"   🧮 Logged {_n_fc} forecast(s) to forecasts.jsonl")
+        # §7.5 counterfactual: log the reject/veto/select flags for forward scoring.
+        _n_dec = log_decisions(run_id, today, pipeline_state, market_data["prices"])
+        if _n_fc or _n_dec:
+            print(f"   🧮 Logged {_n_fc} forecast(s) + {_n_dec} decision flag(s)")
     except Exception as _e:
         print(f"   ⚠ forecast logging skipped: {_e}")
 
@@ -504,11 +506,16 @@ def run_daily_cycle():
     # silent-break class that froze the feed).
     try:
         import os as _os
-        from calibration import score_matured, agent_scorecard, SCORED
+        from calibration import (score_matured, agent_scorecard, counterfactual_report,
+                                  SCORED, DECISIONS, DECISIONS_SCORED)
         _n_scored = score_matured(market_data)
         agent_scorecard()                       # always (re)writes agent_scorecards.json
-        if not _os.path.isfile(SCORED):
-            open(SCORED, "a").close()
+        # §7.5 counterfactual: score the reject/veto/select flags + refresh the report.
+        score_matured(market_data, ledger_path=DECISIONS, scored_path=DECISIONS_SCORED)
+        counterfactual_report()                 # always (re)writes counterfactual.json
+        for _f in (SCORED, DECISIONS_SCORED):   # ensure they exist for the routine git add
+            if not _os.path.isfile(_f):
+                open(_f, "a").close()
         print(f"   📈 Scored {_n_scored} matured forecast(s) → agent_scorecards.json"
               if _n_scored else "   📈 No forecasts matured yet (evidence clock ticking)")
     except Exception as _e:
