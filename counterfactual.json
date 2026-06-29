@@ -1,0 +1,10 @@
+{
+  "_meta": {
+    "note": "Counterfactual: does each model's reject/veto/select decision predict the right forward-return direction? gap = mean_kept \u2212 mean_flagged. Block-sampled effective N; NOT_SIGNIFICANT until both sides >= 10 (months at this cadence \u2014 \u00a77.4).",
+    "signals": {
+      "da_reject": "underperform",
+      "cro_veto": "underperform",
+      "pm_selected": "outperform"
+    }
+  }
+}
