@@ -135,8 +135,8 @@
       "Regulatory capital charges increase materially, forcing capital deployment constraints",
       "M&A activity by peers signals market share loss in core retail or commercial franchises"
     ],
-    "status": "open",
-    "actual_return": 0.0122,
+    "status": "closed",
+    "actual_return": 0.0494,
     "thesis_correct": true,
     "run_id": "20260612-134736",
     "exits": [
@@ -147,6 +147,14 @@
         "avg_price": 55.52,
         "realized_return": 0.0122,
         "full_exit": false
+      },
+      {
+        "date": "2026-06-29",
+        "run_id": "20260629-144800",
+        "exit_price": 58.26,
+        "avg_price": 55.52,
+        "realized_return": 0.0494,
+        "full_exit": true
       }
     ]
   },
@@ -630,6 +638,36 @@
       "A competitor announces meaningful market share wins in hydrogen or clean energy capex that LIN loses",
       "Industrial capex cycle data shows deterioration and LIN's backlog/order book declines YoY",
       "A technology breakthrough or regulation fundamentally shifts hydrogen economics away from merchant supply model"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "da678d68-b031-40bf-a61c-b84a6df97dea",
+    "run_id": "20260629-144800",
+    "date": "2026-06-29",
+    "ticker": "BAC",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "BAC re-rates higher as Fed rate cuts establish a structural floor on NIM compression while management executes disciplined capital return, creating a valuation floor at current multiples despite cyclical earnings headwinds.",
+    "anti_thesis": "BAC's bull thesis rests on NIM stabilization, but the bank carries one of the largest held-to-maturity bond portfolios in the sector\u2014accumulated at near-zero rates\u2014which continues to suppress asset repricing and cap NIM recovery even as liabilities reset higher. If the Fed cuts aggressively toward a sub-3.5% terminal rate, BAC faces simultaneous NIM compression and slowing loan demand, while its $100B+ unrealized HTM losses constrain capital flexibility and make the buyback acceleration story operationally difficult to sustain. At 0.8-0.9x book, the stock is not cheap enough to absorb a credit cycle turn combined with structural NIM underperformance versus peers.",
+    "catalysts": [
+      "2-3 quarter progression showing NIMs stabilize at higher absolute levels than market models; deposit migration slowing",
+      "Q3/Q4 earnings beats driven by credit normalization and lower loan loss provisions",
+      "Management announces accelerated buyback authorization or dividend increase at investor day, signaling confidence in earnings durability",
+      "Peer (JPM, WFC) earnings misses on NIM compression force BAC outperformance narrative as relative value story",
+      "Fed terminal rate expectations stabilize above market expectations, removing tail risk of aggressive cuts",
+      "Wealth management or investment banking franchise shows momentum offsetting rate headwinds"
+    ],
+    "confidence": 6,
+    "expected_return": 0.0,
+    "invalidates_if": [
+      "BAC reports two consecutive quarters of NIM compression >15bps and guidance lowered for forward outlook",
+      "Management suspends or materially reduces capital return guidance due to capital ratio concerns",
+      "Fed terminal rate signals shift to <2.5%, indicating more aggressive cutting cycle than current market consensus",
+      "Credit metrics deteriorate materially (NCO ratio crosses above peer average, charge-offs accelerate)",
+      "Deposit attrition accelerates or funding costs spike due to competitive pressure"
     ],
     "status": "open",
     "actual_return": null,
