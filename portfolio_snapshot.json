@@ -1,36 +1,42 @@
 {
-  "is_close": false,
+  "is_close": true,
   "portfolio": {
-    "as_of": "2026-07-01T09:46:42.508432-04:00",
-    "cash": 371.94,
-    "total_value": 507.883397135,
+    "as_of": "2026-07-01T16:06:05-04:00",
+    "cash": 325.91,
+    "total_value": 509.483724,
+    "available_qty": 325.91,
     "positions": [
       {
         "symbol": "MS",
         "qty": 0.215357,
-        "available_qty": 0.215357,
         "avg_price": 213.55,
-        "current_price": 209.3201,
-        "market_value": 45.078549,
-        "unrealized_pnl": -0.910939
+        "current_price": 211.86,
+        "market_value": 45.625534,
+        "unrealized_pnl": -0.363953
       },
       {
         "symbol": "VRTX",
         "qty": 0.101027,
-        "available_qty": 0.101027,
         "avg_price": 464.73,
-        "current_price": 497.15,
-        "market_value": 50.225573,
-        "unrealized_pnl": 3.275295
+        "current_price": 498.01,
+        "market_value": 50.312456,
+        "unrealized_pnl": 3.362178
       },
       {
         "symbol": "AXP",
         "qty": 0.119992,
-        "available_qty": 0.119992,
         "avg_price": 339.61,
-        "current_price": 338.2,
-        "market_value": 40.581294,
-        "unrealized_pnl": -0.169189
+        "current_price": 348.0,
+        "market_value": 41.757216,
+        "unrealized_pnl": 1.006733
+      },
+      {
+        "symbol": "EBAY",
+        "qty": 0.41228,
+        "avg_price": 111.65,
+        "current_price": 111.28,
+        "market_value": 45.878518,
+        "unrealized_pnl": -0.152544
       }
     ]
   },
@@ -2511,5 +2517,5 @@
     }
   },
   "regime": "NEUTRAL",
-  "written_at": "2026-07-01T13:51:17.619334+00:00"
+  "written_at": "2026-07-01T20:07:20.419194+00:00"
 }
