@@ -672,5 +672,34 @@
     "status": "open",
     "actual_return": null,
     "thesis_correct": null
+  },
+  {
+    "trade_id": "d736efb4-86ea-4e5b-8d45-a221f5259a4e",
+    "run_id": "20260701-134856",
+    "date": "2026-07-01",
+    "ticker": "EBAY",
+    "action": "BUY",
+    "target_weight": 0.09,
+    "thesis": "eBay is undervalued as a cash-generative marketplace with improving unit economics and strategic optionality in payments/advertising that the market is pricing as a mature, declining business rather than a structured asset with multiple value drivers.",
+    "anti_thesis": "eBay's core GMV has been in structural secular decline for years as Amazon, Shopify, and TikTok Shop continue to capture seller and buyer attention, and no amount of payments or advertising monetization can offset a shrinking transaction base. The advertising and managed payments margin expansion thesis is derivative of GMV scale \u2014 if GMV continues to erode, the monetization levers compress simultaneously rather than offsetting the volume decline. At ~$110 with ~$2B FCF, the stock already prices in a stable-to-mild-growth scenario, leaving little margin of safety if the GMV stabilization narrative breaks.",
+    "catalysts": [
+      "Quarterly advertising revenue acceleration inflection (now ~3-5% of GMV, underpenetrated vs. Amazon/Shopify at 6-8%+) breaking out as margin expander",
+      "Managed payments penetration milestone (now ~50%+ of GMV) reducing take-rate drag and unlocking incremental 30-50 bps EBITDA margin",
+      "Strategic partnerships or selective M&A in logistics/fulfillment that demonstrate structural differentiation vs. pure marketplace comparison",
+      "Sustained free cash flow generation enabling shareholder returns that reconnect the stock with its cash-generation reality (~$2B+ annual FCF capacity)",
+      "Same-store GMV stabilization for 2+ consecutive quarters signaling the bottom of the cycle and inflecting growth expectations"
+    ],
+    "confidence": 6,
+    "expected_return": 0.06,
+    "invalidates_if": [
+      "GMV declines accelerate quarter-over-quarter, indicating seller exit velocity is accelerating not stabilizing",
+      "Advertising revenue growth turns negative or fails to achieve 20%+ YoY growth for 2+ consecutive quarters",
+      "Managed payments adoption stalls below 50% of GMV, signaling merchant resistance and take-rate growth limitations",
+      "Free cash flow conversion deteriorates materially (below 80% of net income) due to capex escalation or working capital issues",
+      "Management loses confidence and announces a strategic review, asset sale, or dividend return that signals the business is being managed for cash extraction rather than growth"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
   }
 ]
