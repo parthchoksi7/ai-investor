@@ -1,0 +1,21 @@
+{
+  "pm_selected@21d": {
+    "n_flagged": 11,
+    "n_kept": 28,
+    "mean_return_flagged": 0.01599,
+    "mean_return_kept": -0.01178,
+    "gap_kept_minus_flagged": -0.02776,
+    "expected_direction": "outperform",
+    "adds_value": true,
+    "significant": true,
+    "verdict": "ADDS_VALUE"
+  },
+  "_meta": {
+    "note": "Counterfactual: does each model's reject/veto/select decision predict the right forward-return direction? gap = mean_kept \u2212 mean_flagged. Block-sampled effective N; NOT_SIGNIFICANT until both sides >= 10 (months at this cadence \u2014 \u00a77.4).",
+    "signals": {
+      "da_reject": "underperform",
+      "cro_veto": "underperform",
+      "pm_selected": "outperform"
+    }
+  }
+}
