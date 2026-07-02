@@ -302,6 +302,7 @@ Every run — including aborted runs — writes `system_health.json` to the repo
 | `decision_validation` | Guardrails rejected/clamped/skipped any decision (DEGRADED) — see `guardrails.py` |
 | `execution` | Any order rejected by the broker (no order id returned) → DEGRADED (partial fills) or FAILED (none filled), with per-ticker `failed_orders` detail; also any execution exception |
 | `reconciliation` | Decisions existed but zero fills reconciled live (FAILED — orders may have been placed with fills.json missing/empty) or partial (DEGRADED). Written by `mark_transactions_live` after `main.py`, via `health.append_check` |
+| `data_quality` | Snapshot breaches a §15.2 absolute floor (universe-fetched %, min history depth, quality coverage, NaN scan) → DEGRADED, or a hard floor → ABORTED. Classified by `data_quality.py`; report in `data_quality_report.json`, trend in `data_quality_history.jsonl` |
 | `supabase_publish` | Supabase publish failed |
 
 ### Pre-flight abort
@@ -313,6 +314,23 @@ The pipeline aborts before running any agents if either condition is true:
 This prevents the silent all-50 quant score failure mode where agents run but produce no trades because they have no quantitative signal. When aborted, `system_health.json` is written immediately and the alert fires.
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
+
+## Changelog — Jul 2 2026 (Phase 3 — Observability & alerting: the safety net)
+
+Redesign-pod Phase 3. "Nothing fails silently" — the layer that keeps the year-end
+verdict from being confounded by a starved pipeline. All offline / GitHub-Actions;
+**no live-order-path code changed** (the `main.py` touch is a `data_quality` health
+record + a provenance dict on the pending envelope, not order/qty/idempotency). PR #TBD.
+
+| Change | Why it mattered |
+|--------|-----------------|
+| `feat(data_quality)` **`data_quality.py` — the ABSOLUTE-floor gate (§15.2)** — `classify_data_quality(snapshot)` → OK/DEGRADED/ABORT + a 0–100 `data_quality_score` + breaches, over universe-fetched %, min history depth, quality coverage, NaN/Inf scan. Writes `data_quality_report.json` + append-mirrors `data_quality_history.jsonl`. | A *delta* check ("coverage dropped >10% WoW") missed the June 28% bug because a steady 28% never drops. Floors are **absolute**. Coverage < 80% blocks the momentum→fundamental strategy shift (§8) without aborting the run. |
+| `feat(provenance)` **§15.1 data-quality stamp** on every `forecasts.jsonl` row + the `pending_decisions.json` envelope; first-class `data_quality` health check in `main.py`. | December's verdict must **partition by data quality** and exclude below-floor runs, or a losing-strategy result is indistinguishable from a starved-pipeline result (a confounded "it didn't work"). |
+| `feat(heartbeat)` **dead-man's switch (§15.4)** — `heartbeat_check.py` + `heartbeat.yml`. Asserts every daily artifact exists + is dated today; **tiered** (a missing routine artifact fails only when the data plane is fresh — no cascade when the routine correctly skipped); non-trading days self-skip; opens/closes a `heartbeat-alert` issue. | A flow that never ran writes no failure — the per-flow checks are blind to it. This catches the Jun-11 silent cron skip + Jun-18 dead feed. |
+| `feat(digest)` **weekly pipeline-integrity digest (§15.5)** — `pipeline_digest.py` + `pipeline_digest.yml` → `pipeline_digest.md` (Friday). Coverage trend, DQ score, DEGRADED/ABORT days, abort rate. | Slow drift (coverage creeping 85%→60% over a month) must be visible before it's a crisis. |
+| `refactor(calendar)` **`market_calendar.py`** — single-source NYSE calendar; `preflight_gate` imports it (re-exports `NYSE_HOLIDAYS` for compatibility). | The heartbeat + gate must not drift on which days are trading days; two copies would. |
+
+> **Scope:** §15.3 matrix rows that need Phase 4/5 flows (dossier, risk_watch, rebalance-ISO-week, event digest, GH-LLM token budget) are deferred; the classifier/heartbeat slot them in without a rewrite. **QA:** full `pytest` green (**537**, +27: `TestMarketCalendar`, `TestDataQualityClassifier`, `TestDataQualityProvenance`, `TestHeartbeat`, `TestPipelineDigest`, `TestChaosSuite16_4`). Workflow YAML parses. Expert `/code-review high` run pre-commit per §7.0 (observability layer, not execution-path → `high` not `ultra`). Dry-run intentionally SKIPPED — 7/2 already executed today and a real `main.py` dry-run would overwrite `pending_decisions.json` (DEPLOYMENT §7.1 trading-day hazard).
 
 ## Changelog — Jun 17 2026 (post-run gap audit: regime publish + alerting + PM auditability)
 
