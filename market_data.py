@@ -16,36 +16,12 @@ POLYGON_KEY = os.getenv("POLYGON_API_KEY")
 FUNDAMENTALS_CACHE = "fundamentals_cache.json"
 PROVIDER_CACHE = "provider_cache.json"   # provider enrichment (#1), alternate-day 50/50 cache
 
-WATCHLIST = [
-    # Mega-cap Tech / AI / Cloud
-    "AAPL", "MSFT", "NVDA", "GOOGL", "GOOG", "AMZN", "META", "TSLA",
-    "ORCL", "IBM", "INTC", "QCOM", "TXN", "MU", "AMAT",
-    # Software / SaaS
-    "CRM", "ADBE", "NOW", "SNOW", "DDOG", "ZS", "CRWD", "PANW",
-    "TEAM", "WDAY", "MDB", "NET",
-    # Semiconductors
-    "AMD", "AVGO", "ARM", "MRVL", "SMCI",
-    # Consumer Tech / Internet
-    "NFLX", "SPOT", "UBER", "ABNB", "BKNG", "EBAY",
-    # Financials
-    "JPM", "BAC", "WFC", "GS", "MS", "C", "BLK", "AXP", "V", "MA", "PYPL",
-    # Healthcare / Biotech / Pharma
-    "JNJ", "UNH", "LLY", "ABBV", "PFE", "MRK", "BMY", "GILD", "AMGN",
-    "REGN", "VRTX", "ISRG", "TMO", "DHR",
-    # Consumer Discretionary / Retail
-    "HD", "LOW", "TGT", "WMT", "COST", "NKE", "SBUX", "MCD", "CMG",
-    "LULU", "TJX",
-    # Energy
-    "XOM", "CVX", "COP", "EOG", "SLB", "OXY", "NEE",
-    # Industrials / Aerospace
-    "CAT", "DE", "HON", "GE", "RTX", "LMT", "BA", "UPS",
-    # Materials / Real Estate
-    "FCX", "NEM", "LIN", "AMT", "PLD", "EQIX",
-    # Crypto-adjacent
-    "COIN", "MSTR",
-    # ETF Benchmarks
-    "SPY", "QQQ", "PLTR",
-]
+# The trading/scoring universe is owned by universe.py (single source of truth), so
+# the coverage gate + fetch cursor can reason about it without importing this module.
+# WATCHLIST is the always-active CORE (100 names); the gated ~400-name expansion
+# (universe.EXPANDED_UNIVERSE) is admitted only past the coverage floor + operator
+# flag — see universe.get_active_universe. Aliased here for backward compatibility.
+from universe import CORE_UNIVERSE as WATCHLIST
 
 SP500_HOLDINGS = {
     "AAPL":  0.070,

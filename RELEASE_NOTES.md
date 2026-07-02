@@ -13,6 +13,25 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — Phase 2: gated universe expansion (→ ~400) + resumable fetch cursor
+
+- **`universe.py`** — new single source of truth for the trading/scoring universe. `CORE_UNIVERSE`
+  (the historical 100-name WATCHLIST, verbatim; `market_data.WATCHLIST` now aliases it — DRY) plus
+  `EXPANDED_UNIVERSE` (**393 S&P-500-class names**, ~400 target).
+- **Coverage-gated:** `get_active_universe(coverage_ok, enabled)` returns the expanded pool ONLY
+  when the operator has enabled it (`UNIVERSE_EXPANDED` env, default OFF) **AND** fundamental
+  coverage has cleared the 80% floor. Both required — a wider pool on thin coverage adds
+  momentum-only names with no quality/value signal. **Zero behavior change now:** active universe
+  stays the core 100 until the operator flips the flag after verifying coverage in GH Actions logs.
+- **Resumable cursor** (`next_batch`/`save_batch`, `fetch_progress.json`) — hands out bounded fetch
+  batches with a wrap-around cursor persisted only on success, so a crash retries the same batch
+  (no gap) and a universe-size change resets to a fresh sweep. Needed because 400×210-day histories
+  can't be fetched in one run under Polygon's 5-calls/min. **Cursor is built + tested but not yet
+  wired into the fetch loop** — that needs the history carry-forward (Phase 4 storage split);
+  documented in MANUAL_TODO #6 as a hard prerequisite before enabling expansion.
+- **QA:** +9 (`TestUniverse`: core/expanded, gate requires both conditions, env flag, sequential
+  batches, wrap-around, size-change reset, crash-retry-same-batch, empty-universe).
+
 ### Added — Phase 2: corporate-action / split-adjustment guard + delisting detection (P0-3)
 
 - **Explicit `adjusted=true`** on the Polygon aggregates call (`market_data.get_extended_history`) —

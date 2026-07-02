@@ -3505,6 +3505,84 @@ class TestSECProvider:
         assert n[0] == 1     # one attempt total, then cached failure
 
 
+class TestUniverse:
+    """Phase 2: gated universe expansion + resumable fetch cursor."""
+
+    def test_core_is_the_watchlist(self):
+        import universe, market_data
+        assert market_data.WATCHLIST is universe.CORE_UNIVERSE
+        assert len(universe.CORE_UNIVERSE) == 100
+
+    def test_expanded_superset_of_core_and_larger(self):
+        import universe
+        assert set(universe.CORE_UNIVERSE) <= set(universe.EXPANDED_UNIVERSE)
+        assert len(universe.EXPANDED_UNIVERSE) > 300      # ~400 target
+        # no duplicates in the built expanded list
+        assert len(universe.EXPANDED_UNIVERSE) == len(set(universe.EXPANDED_UNIVERSE))
+
+    def test_gate_requires_both_enabled_and_coverage(self):
+        import universe
+        assert universe.get_active_universe(coverage_ok=True,  enabled=False) == universe.CORE_UNIVERSE
+        assert universe.get_active_universe(coverage_ok=False, enabled=True)  == universe.CORE_UNIVERSE
+        assert universe.get_active_universe(coverage_ok=True,  enabled=True)  == universe.EXPANDED_UNIVERSE
+
+    def test_gate_reads_env_flag_by_default(self, monkeypatch):
+        import universe
+        monkeypatch.delenv("UNIVERSE_EXPANDED", raising=False)
+        assert universe.get_active_universe(coverage_ok=True) == universe.CORE_UNIVERSE   # default OFF
+        monkeypatch.setenv("UNIVERSE_EXPANDED", "true")
+        assert universe.get_active_universe(coverage_ok=True) == universe.EXPANDED_UNIVERSE
+
+    def test_cursor_hands_out_sequential_batches(self, tmp_path):
+        import universe
+        path = str(tmp_path / "fp.json")
+        tickers = [f"T{i}" for i in range(10)]
+        b1, c1 = universe.next_batch(tickers, 4, path)
+        assert b1 == tickers[0:4] and c1 == 0
+        universe.save_batch(tickers, 4, c1, path)
+        b2, c2 = universe.next_batch(tickers, 4, path)
+        assert b2 == tickers[4:8] and c2 == 4
+        universe.save_batch(tickers, 4, c2, path)
+        b3, c3 = universe.next_batch(tickers, 4, path)
+        assert b3 == tickers[8:10] and c3 == 8            # short final batch
+
+    def test_cursor_wraps_around(self, tmp_path):
+        import universe
+        path = str(tmp_path / "fp.json")
+        tickers = [f"T{i}" for i in range(6)]
+        _, c = universe.next_batch(tickers, 4, path)
+        nc = universe.save_batch(tickers, 4, c, path)     # 0+4=4 < 6
+        _, c = universe.next_batch(tickers, 4, path)
+        assert c == 4
+        nc = universe.save_batch(tickers, 4, c, path)     # 4+4=8 >= 6 → wrap to 0
+        assert nc == 0
+        b, c = universe.next_batch(tickers, 4, path)
+        assert c == 0 and b == tickers[0:4]               # fresh sweep
+
+    def test_cursor_resets_on_universe_size_change(self, tmp_path):
+        import universe, json
+        path = str(tmp_path / "fp.json")
+        (tmp_path / "fp.json").write_text(json.dumps({"cursor": 3, "universe_size": 10}))
+        # a different-sized universe must NOT resume mid-way through the old one
+        b, c = universe.next_batch([f"T{i}" for i in range(5)], 2, path)
+        assert c == 0 and b == ["T0", "T1"]
+
+    def test_crash_before_save_retries_same_batch(self, tmp_path):
+        import universe
+        path = str(tmp_path / "fp.json")
+        tickers = [f"T{i}" for i in range(10)]
+        b1, _ = universe.next_batch(tickers, 4, path)     # fetch starts...
+        # ...crash before save_batch → cursor not advanced
+        b1_again, _ = universe.next_batch(tickers, 4, path)
+        assert b1_again == b1                             # same batch retried, no gap
+
+    def test_empty_universe_safe(self, tmp_path):
+        import universe
+        path = str(tmp_path / "fp.json")
+        assert universe.next_batch([], 4, path) == ([], 0)
+        assert universe.save_batch([], 4, 0, path) == 0
+
+
 class TestCorporateActions:
     """P0-3: split/print-outlier detection + delisted-holding detection (offline)."""
 
