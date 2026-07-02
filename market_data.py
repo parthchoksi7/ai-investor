@@ -343,10 +343,13 @@ def _enrich_with_provider(all_tickers: list, fundamentals: dict, today=None):
                 age = None
         # Coverage-aware TTL: a ticker that returned real data refreshes every 2
         # days; one that came back empty (non-US, ADR, or FMP premium-only) waits
-        # 30 days before re-checking so the daily budget isn't burned on misses.
+        # 7 days before re-checking so the daily budget isn't burned on misses.
+        # full_refresh bypasses the TTL entirely — a manual "refresh all" must be
+        # able to recover stale EMPTY entries (e.g. the ones the SEC-403 era wrote),
+        # otherwise those empties are pinned for 7 days and coverage can't heal.
         has_data = bool(entry and (entry.get("fundamentals") or entry.get("next_earnings")))
         ttl = 2 if (entry is None or has_data) else 7
-        due = entry is None or age is None or age >= ttl
+        due = full_refresh or entry is None or age is None or age >= ttl
         if (full_refresh or _provider_group(t) == today_group) and due:
             entry = {"fundamentals":  provider.fundamentals(t),
                      "next_earnings": provider.next_earnings_date(t),

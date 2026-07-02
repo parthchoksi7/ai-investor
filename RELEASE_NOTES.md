@@ -28,6 +28,16 @@ that form (verified: **200 + 10,426 CIK entries**).
   confirms the number on the full pipeline.
 - **No live-order-path change.** Enrichment/scoring only; runs in GitHub Actions (`fetch_snapshot.py`).
 
+### Fixed — Phase 2: `full_refresh` now bypasses the enrichment TTL
+
+Follow-on from the UA fix. The first post-fix CI run showed `cik_map_ok: True` (map loads) but
+coverage *still* 41% — the `provider_cache.json` (restored via `actions/cache`) held **empty**
+entries stamped today from the 403-era runs, and the manual `full_refresh` bypassed only the 50/50
+group, **not** the per-ticker TTL (`age 0 < 7` → "not due"). So a manual "refresh all" couldn't
+recover stale empties — they stayed pinned for 7 days. `full_refresh` now forces `due=True`, the
+correct semantic. Regression test `test_full_refresh_bypasses_ttl_on_stale_empty`. (Normal daily
+crons heal without this too, just slower; the flag is the operator escape hatch.)
+
 ### Fixed — Phase 2: code-review remediation (`/code-review high`, 6-angle × verify)
 
 Findings from the pre-PR expert review, remediated before opening the PR:

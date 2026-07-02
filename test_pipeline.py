@@ -4163,7 +4163,31 @@ class TestProviderEnrichmentCache:
         cache_path.write_text(json.dumps({"AAPL": {"fundamentals": None, "next_earnings": None,
                               "fetched": (d - timedelta(days=5)).isoformat()}}))   # empty, 5d old
         md._enrich_with_provider(["AAPL"], {}, today=d)
-        assert fetched == []     # empty entry, age 5 < 30-day backoff → not re-fetched
+        assert fetched == []     # empty entry, age 5 < 7-day backoff → not re-fetched
+
+    def test_full_refresh_bypasses_ttl_on_stale_empty(self, tmp_path, monkeypatch):
+        # A manual "refresh all" MUST recover a stale EMPTY entry (e.g. the empties
+        # the SEC-403 era wrote); otherwise full_refresh bypasses only the 50/50
+        # group but not the TTL, so the empties stay pinned for 7 days and coverage
+        # can't heal. Regression for the UA-403 recovery path.
+        import market_data as md, data_providers, json
+        from datetime import date, timedelta
+        cache_path = tmp_path / "pc.json"
+        monkeypatch.setattr(md, "PROVIDER_CACHE", str(cache_path))
+        monkeypatch.setenv("FMP_API_KEY", "x")
+        monkeypatch.setenv("FULL_REFRESH", "true")
+        fetched = []
+        class FakeP:
+            def fundamentals(self, t): fetched.append(t); return {"gross_margin": 0.4}
+            def next_earnings_date(self, t): return None
+        monkeypatch.setattr(data_providers, "get_provider", lambda: FakeP())
+        d = date(2026, 6, 15)                       # any day; group is irrelevant under full_refresh
+        cache_path.write_text(json.dumps({"AAPL": {"fundamentals": None, "next_earnings": None,
+                              "fetched": d.isoformat()}}))   # empty, age 0 → normally not due
+        fund = {}
+        md._enrich_with_provider(["AAPL"], fund, today=d)
+        assert fetched == ["AAPL"]                  # full_refresh forced the re-fetch despite age 0
+        assert fund["AAPL"]["gross_margin"] == 0.4  # real data now populated
 
 
 # ── journal._load — corrupt-JSON resilience ───────────────────────────────────
