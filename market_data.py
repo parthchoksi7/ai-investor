@@ -278,7 +278,42 @@ def _provider_group(ticker: str) -> int:
     return int(hashlib.md5(ticker.encode()).hexdigest(), 16) % 2
 
 
-def _enrich_with_provider(all_tickers: list, fundamentals: dict, today=None) -> dict:
+# Quality-factor fields that count a ticker as "fundamentally covered" (SEC EDGAR
+# supplies these for ~all US equities; FMP adds the valuation trio on top).
+_QUALITY_COVERAGE_FIELDS = ("gross_margin", "operating_margin", "debt_to_equity")
+
+# Absolute coverage floor (IPS Appendix A). A steady low coverage — not a drop —
+# was the June bug, so the gate is an ABSOLUTE floor, not a week-over-week delta.
+FUNDAMENTAL_COVERAGE_FLOOR_PCT = 80.0
+
+
+def _compute_fundamental_coverage(all_tickers: list, fundamentals: dict,
+                                  cik_map_ok: bool | None) -> dict:
+    """Measure real fundamental coverage over the active universe.
+
+    Coverage silently collapsing (the SEC CIK-map swallow) was invisible before
+    this: it is now a first-class ``data_quality`` field on the snapshot so the
+    observability layer (Phase 3) can gate the strategy shift on the IPS floor.
+    ``cik_map_ok`` is None when the provider path isn't SEC-backed (e.g. tests).
+    """
+    active = len(all_tickers)
+    covered = sum(
+        1 for t in all_tickers
+        if isinstance(fundamentals.get(t), dict)
+        and any(f in fundamentals[t] for f in _QUALITY_COVERAGE_FIELDS)
+    )
+    pct = round(100.0 * covered / active, 1) if active else 0.0
+    return {
+        "fundamental_coverage_pct": pct,
+        "fundamentals_covered":     covered,
+        "active_universe":          active,
+        "coverage_floor_pct":       FUNDAMENTAL_COVERAGE_FLOOR_PCT,
+        "coverage_ok":              pct >= FUNDAMENTAL_COVERAGE_FLOOR_PCT,
+        "cik_map_ok":               cik_map_ok,
+    }
+
+
+def _enrich_with_provider(all_tickers: list, fundamentals: dict, today=None):
     """Overlay real provider fundamentals + a verified earnings calendar onto the
     snapshot, using an ALTERNATE-DAY 50/50 cache.
 
@@ -300,7 +335,19 @@ def _enrich_with_provider(all_tickers: list, fundamentals: dict, today=None) -> 
     from data_providers import get_provider, StubProvider
     provider = get_provider()
     if isinstance(provider, StubProvider):
-        return earnings_calendar   # test stub → no-op, no HTTP
+        return earnings_calendar, None   # test stub → no-op, no HTTP; coverage unmeasured
+
+    # Surface a SEC CIK-map load failure loudly. cik_map_ok() loads the map once;
+    # if it failed, every SEC lookup would return None (0% coverage) with no trace —
+    # exactly the swallowed failure mode. We still proceed (FMP data, if any, and the
+    # warm provider_cache remain valid), but the failure is recorded on data_quality.
+    cik_map_ok = None
+    if hasattr(provider, "cik_map_ok"):
+        cik_map_ok = provider.cik_map_ok()
+        if not cik_map_ok:
+            print("   ❌ SEC EDGAR CIK map failed to load — new-ticker fundamentals "
+                  "unavailable this run (cached entries still apply).")
+
     today = today or _date.today()
     today_group = today.toordinal() % 2               # alternates every calendar day
 
@@ -344,10 +391,15 @@ def _enrich_with_provider(all_tickers: list, fundamentals: dict, today=None) -> 
     with open(tmp, "w") as f:
         json.dump(cache, f, indent=2)
     os.replace(tmp, PROVIDER_CACHE)
+    data_quality = _compute_fundamental_coverage(all_tickers, fundamentals, cik_map_ok)
     if refreshed or earnings_calendar:
         print(f"   📅 Provider enrichment: refreshed {refreshed} ticker(s) today; "
               f"{len(earnings_calendar)} earnings date(s) live")
-    return earnings_calendar
+    print(f"   📊 Fundamental coverage: {data_quality['fundamental_coverage_pct']}% "
+          f"({data_quality['fundamentals_covered']}/{data_quality['active_universe']}) "
+          f"floor={FUNDAMENTAL_COVERAGE_FLOOR_PCT}% "
+          f"{'OK' if data_quality['coverage_ok'] else '⚠ BELOW FLOOR'}")
+    return earnings_calendar, data_quality
 
 
 def get_market_snapshot(force: bool = False) -> dict:
@@ -483,10 +535,14 @@ def get_market_snapshot(force: bool = False) -> dict:
 
     # ── Real-data enrichment (#1) — alternate-day 50/50 cache (FMP or SEC EDGAR) ──
     earnings_calendar: dict = {}
+    data_quality: dict | None = None
     try:
-        earnings_calendar = _enrich_with_provider(all_tickers, fundamentals)
+        earnings_calendar, data_quality = _enrich_with_provider(all_tickers, fundamentals)
     except Exception as e:
         print(f"   ⚠ provider enrichment skipped: {e}")
+
+    if data_quality is None:
+        data_quality = _compute_fundamental_coverage(all_tickers, fundamentals, None)
 
     return {
         "date":             today_str,
@@ -496,6 +552,7 @@ def get_market_snapshot(force: bool = False) -> dict:
         "prices":           prices,
         "history":          history,
         "fundamentals":     fundamentals,
+        "data_quality":     data_quality,
         "earnings_calendar": earnings_calendar,
         "news":             articles,
         "ticker_news":      ticker_news,

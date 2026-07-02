@@ -169,19 +169,43 @@ class SECProvider:
     def __init__(self, timeout: int = 15):
         self.timeout = timeout
         self._cik: dict[str, str] = {}   # ticker → 10-digit zero-padded CIK (lazy)
+        self._cik_load_attempted = False # load is tried exactly once (no retry storm)
+        self._cik_load_ok        = False # True iff the map loaded with ≥1 entry
+        self._cik_load_error: str | None = None
 
     def _ensure_cik_map(self) -> None:
-        if self._cik:
+        # Attempt the load exactly once. Previously any failure was swallowed into
+        # ``self._cik = {}`` with no signal AND, because an empty dict is falsy,
+        # every subsequent per-ticker call re-hit SEC — a silent retry storm that
+        # collapsed fundamental coverage to 0% with no trace (the June 28%-coverage
+        # incident class). Now: one attempt, and the outcome is recorded on
+        # ``_cik_load_ok`` so the enrichment layer can tell a genuine load FAILURE
+        # (→ abort / DEGRADED) apart from a legitimate ticker-not-in-map (→ None).
+        if self._cik_load_attempted:
             return
+        self._cik_load_attempted = True
         import requests
         try:
             r = requests.get(self.TICKERS_URL, headers=self.HEADERS, timeout=self.timeout)
+            r.raise_for_status()
             self._cik = {
                 v["ticker"].upper(): str(v["cik_str"]).zfill(10)
                 for v in r.json().values()
             }
-        except Exception:
+        except Exception as e:
             self._cik = {}
+            self._cik_load_error = str(e)
+        self._cik_load_ok = bool(self._cik)
+
+    def cik_map_ok(self) -> bool:
+        """Whether the EDGAR CIK map loaded (≥1 entry). Loads it on first call.
+
+        This is the signal the enrichment layer checks to distinguish a real load
+        failure — every ticker would return None, i.e. 0% coverage — from the
+        normal case where a specific ticker simply isn't SEC-registered.
+        """
+        self._ensure_cik_map()
+        return self._cik_load_ok
 
     def _get_us_gaap(self, ticker: str) -> dict:
         import requests
@@ -285,6 +309,12 @@ class CascadeProvider:
 
     def estimates(self, ticker: str) -> dict | None:
         return self._primary.estimates(ticker)
+
+    def cik_map_ok(self) -> bool:
+        """SEC EDGAR is the quality-factor fallback for the ~65% of the universe
+        FMP's free tier doesn't cover, so its CIK-map health gates coverage here
+        too. Delegates to the SEC fallback."""
+        return self._fallback.cik_map_ok()
 
 
 def get_provider() -> MarketDataProvider:

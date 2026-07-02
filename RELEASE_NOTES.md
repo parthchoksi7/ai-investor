@@ -13,6 +13,26 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — Phase 2: SEC fundamental-coverage swallow + first-class coverage measurement
+
+- **Root cause (`data_providers.py`):** `SECProvider._ensure_cik_map` swallowed *any* CIK-map
+  fetch failure into `self._cik = {}` with **no signal** — after which every ticker lookup returned
+  `None`, collapsing fundamental coverage to 0% invisibly (the June 28%-coverage incident class).
+  Worse, an empty dict is falsy, so the "load once" guard never latched and every per-ticker call
+  re-hit SEC (a silent retry storm).
+- **Fix:** the CIK-map load is now attempted **exactly once** (latched on `_cik_load_attempted`),
+  and its outcome is recorded on `_cik_load_ok`. New `SECProvider.cik_map_ok()` (and a
+  `CascadeProvider` delegate) let the enrichment layer distinguish a real load **failure**
+  (→ surfaced loudly, recorded) from a legitimate ticker-not-in-map (→ `None`). `raise_for_status()`
+  now treats a 403/500 as a failure instead of parsing an error body into an empty map.
+- **Measurement:** every snapshot now carries a **`data_quality`** block —
+  `fundamental_coverage_pct`, `fundamentals_covered/active_universe`, `cik_map_ok`, and an
+  **absolute** `coverage_ok` gate against the IPS **80% floor** (`market_data._compute_fundamental_coverage`).
+  The floor is absolute, not a WoW delta, because a *steady* 28% (nothing dropping) was the exact
+  June bug a delta check would have missed. Coverage is printed each fetch.
+- **QA:** **477 green** (+8: CIK-map ok/failure/http-error/once-on-failure, Cascade delegate,
+  coverage counts quality fields / above-floor / empty-universe).
+
 ### Fixed — Phase 1: forecast feed un-broken + backfilled (the measurement evidence clock)
 
 - **Root cause (silent since 2026-06-18):** `forecasts.jsonl` / `forecasts_scored.jsonl` /

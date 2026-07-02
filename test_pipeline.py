@@ -3303,6 +3303,7 @@ class TestSECProvider:
             call_log.append(url)
             import types, json as _json
             resp = types.SimpleNamespace()
+            resp.raise_for_status = lambda: None
             if "company_tickers" in url:
                 resp.json = lambda: self.TICKERS_RESP
             else:
@@ -3336,7 +3337,8 @@ class TestSECProvider:
         import requests, types
         p = SECProvider(timeout=5)
         monkeypatch.setattr(requests, "get",
-                            lambda url, **kw: types.SimpleNamespace(json=lambda: self.TICKERS_RESP))
+                            lambda url, **kw: types.SimpleNamespace(
+                                json=lambda: self.TICKERS_RESP, raise_for_status=lambda: None))
         assert p.fundamentals("ZZZZ") is None   # not in CIK map
 
     def test_no_earnings_or_estimates(self, monkeypatch):
@@ -3365,6 +3367,7 @@ class TestSECProvider:
         }
         def fake_get(url, **kw):
             r = types.SimpleNamespace()
+            r.raise_for_status = lambda: None
             r.json = (lambda: self.TICKERS_RESP) if "company_tickers" in url else (lambda: facts)
             return r
         monkeypatch.setattr(requests, "get", fake_get)
@@ -3380,6 +3383,7 @@ class TestSECProvider:
         def fake_get(url, **kw):
             call_n[0] += 1
             r = types.SimpleNamespace()
+            r.raise_for_status = lambda: None
             if "company_tickers" in url:
                 r.json = lambda: self.TICKERS_RESP
             else:
@@ -3391,6 +3395,94 @@ class TestSECProvider:
     def test_conforms_to_protocol(self):
         from data_providers import SECProvider, MarketDataProvider
         assert isinstance(SECProvider(), MarketDataProvider)
+
+    def test_cik_map_ok_true_on_load(self, monkeypatch):
+        p, _ = self._make_provider(monkeypatch)
+        assert p.cik_map_ok() is True     # map loaded with ≥1 entry
+
+    def test_cik_map_ok_false_on_load_failure(self, monkeypatch):
+        # A failed CIK-map fetch must surface as cik_map_ok()==False, NOT a silent
+        # empty map that zeros coverage with no trace (the June incident class).
+        from data_providers import SECProvider
+        import requests
+        p = SECProvider(timeout=5)
+        def boom(url, **kw):
+            raise requests.exceptions.ConnectionError("edgar down")
+        monkeypatch.setattr(requests, "get", boom)
+        assert p.cik_map_ok() is False
+        assert p._cik_load_error is not None
+        assert p.fundamentals("AAPL") is None   # every lookup None, but signalled
+
+    def test_cik_map_ok_false_on_http_error(self, monkeypatch):
+        # A 500/403 (raise_for_status) is a load FAILURE, not an empty universe.
+        from data_providers import SECProvider
+        import requests, types
+        p = SECProvider(timeout=5)
+        def fake_get(url, **kw):
+            r = types.SimpleNamespace(json=lambda: {})
+            def raise_():
+                raise requests.exceptions.HTTPError("403")
+            r.raise_for_status = raise_
+            return r
+        monkeypatch.setattr(requests, "get", fake_get)
+        assert p.cik_map_ok() is False
+
+    def test_cik_map_load_attempted_once_on_failure(self, monkeypatch):
+        # After a failure, we do NOT retry on every subsequent call (no retry storm).
+        from data_providers import SECProvider
+        import requests
+        p = SECProvider(timeout=5)
+        n = [0]
+        def boom(url, **kw):
+            n[0] += 1
+            raise requests.exceptions.ConnectionError("down")
+        monkeypatch.setattr(requests, "get", boom)
+        p.fundamentals("AAPL"); p.fundamentals("MSFT"); p.cik_map_ok()
+        assert n[0] == 1     # one attempt total, then cached failure
+
+
+class TestCascadeCikMapOk:
+    def test_cascade_delegates_cik_map_ok_to_fallback(self, monkeypatch):
+        from data_providers import CascadeProvider, FMPProvider, SECProvider
+        sec = SECProvider(timeout=5)
+        import requests, types
+        monkeypatch.setattr(requests, "get",
+                            lambda url, **kw: types.SimpleNamespace(
+                                json=lambda: {"0": {"cik_str": 1, "ticker": "AAPL", "title": "x"}},
+                                raise_for_status=lambda: None))
+        c = CascadeProvider(FMPProvider(api_key=None), sec)
+        assert c.cik_map_ok() is True
+
+
+class TestFundamentalCoverage:
+    def test_coverage_counts_quality_fields(self):
+        import market_data as md
+        fund = {
+            "AAPL": {"gross_margin": 0.4, "operating_margin": 0.3},   # covered
+            "MSFT": {"debt_to_equity": 0.5},                          # covered
+            "ZZZZ": {"pe_ratio": 30},                                 # valuation only → NOT covered
+            "NONE": None,                                             # missing
+        }
+        dq = md._compute_fundamental_coverage(["AAPL", "MSFT", "ZZZZ", "NONE"], fund, cik_map_ok=True)
+        assert dq["fundamentals_covered"] == 2
+        assert dq["active_universe"] == 4
+        assert dq["fundamental_coverage_pct"] == 50.0
+        assert dq["coverage_ok"] is False           # 50% < 80% floor
+        assert dq["cik_map_ok"] is True
+
+    def test_coverage_ok_above_floor(self):
+        import market_data as md
+        fund = {t: {"gross_margin": 0.4} for t in ("A", "B", "C", "D")}
+        fund["E"] = None
+        dq = md._compute_fundamental_coverage(["A", "B", "C", "D", "E"], fund, cik_map_ok=True)
+        assert dq["fundamental_coverage_pct"] == 80.0
+        assert dq["coverage_ok"] is True            # 80% == floor → OK
+
+    def test_empty_universe_no_divide_by_zero(self):
+        import market_data as md
+        dq = md._compute_fundamental_coverage([], {}, cik_map_ok=None)
+        assert dq["fundamental_coverage_pct"] == 0.0
+        assert dq["cik_map_ok"] is None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3687,7 +3779,8 @@ class TestProviderEnrichmentCache:
         from datetime import date
         monkeypatch.setattr(data_providers, "get_provider", lambda: data_providers.StubProvider())
         fund = {}
-        assert md._enrich_with_provider(["AAPL"], fund, today=date(2026, 6, 15)) == {}
+        ec, dq = md._enrich_with_provider(["AAPL"], fund, today=date(2026, 6, 15))
+        assert ec == {} and dq is None                           # stub → no-op, coverage unmeasured
         assert fund == {}                                        # untouched, no HTTP
 
     def test_fetches_on_group_day_and_caches(self, tmp_path, monkeypatch):
@@ -3703,7 +3796,7 @@ class TestProviderEnrichmentCache:
         while d.toordinal() % 2 != md._provider_group("AAPL"):   # land on AAPL's group day
             d += timedelta(days=1)
         fund = {}
-        ec = md._enrich_with_provider(["AAPL"], fund, today=d)
+        ec, _dq = md._enrich_with_provider(["AAPL"], fund, today=d)
         assert ec["AAPL"] == "2026-07-30" and fund["AAPL"]["pe_ratio"] == 30
         assert json.load(open(tmp_path / "pc.json"))["AAPL"]["fetched"] == d.isoformat()
 
@@ -3724,7 +3817,7 @@ class TestProviderEnrichmentCache:
         while d.toordinal() % 2 == md._provider_group("AAPL"):   # land OFF AAPL's group day
             d += timedelta(days=1)
         fund = {}
-        ec = md._enrich_with_provider(["AAPL"], fund, today=d)
+        ec, _dq = md._enrich_with_provider(["AAPL"], fund, today=d)
         assert fetched == []                          # not its day → no fetch
         assert fund["AAPL"]["pe_ratio"] == 25         # served from cache
         assert ec["AAPL"] == "2026-08-01"
