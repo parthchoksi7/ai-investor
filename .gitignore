@@ -17,6 +17,10 @@ performance_report.json
 # It was previously ignored, so the routine's `git add` was a silent no-op and every
 # cloud run's forecasts were lost (the feed froze at 2026-06-18). The routine now
 # commits these files (ROUTINE_DAILY_CYCLE.md STEP 5) — same lesson as fills.json.
+# NOTE: factor_history.jsonl is likewise intentionally TRACKED — the full-universe
+# point-in-time factor time series appended by fetch_snapshot.py and committed by
+# market_data.yml (GH Actions is the only plane that scores the whole universe
+# daily). It is the substrate for factor-persistence / IC; do NOT ignore it.
 # Analysis / recovery artifacts — regenerated from logs on demand.
 deliberation_stats.json
 reconciliation_report.json

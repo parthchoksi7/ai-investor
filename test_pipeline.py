@@ -447,7 +447,9 @@ class TestRiskMetrics:
 class TestScoreAllTickers:
     def test_composite_weight_formula_all_factors(self):
         # When every factor has real data the composite uses all four base weights.
-        from quant_engine import score_all_tickers
+        # Weights are read from FACTOR_WEIGHTS (source of truth) so the test tracks
+        # the Phase 2 re-weight instead of pinning stale literals.
+        from quant_engine import score_all_tickers, FACTOR_WEIGHTS, FORMULA_VERSION
         history = _flat(100.0, 210)
         market_data = {
             "history": {"AAPL": history, "SPY": history},
@@ -456,11 +458,12 @@ class TestScoreAllTickers:
         scores = score_all_tickers(market_data)
         s = scores["AAPL"]
         assert set(s["factors_used"]) == {"momentum", "quality", "valuation", "volatility"}
+        assert s["formula_version"] == FORMULA_VERSION
         expected = (
-            s["momentum_score"]   * 0.30
-            + s["quality_score"]  * 0.25
-            + s["valuation_score"] * 0.20
-            + s["volatility_score"] * 0.25
+            s["momentum_score"]    * FACTOR_WEIGHTS["momentum"]
+            + s["quality_score"]   * FACTOR_WEIGHTS["quality"]
+            + s["valuation_score"] * FACTOR_WEIGHTS["valuation"]
+            + s["volatility_score"] * FACTOR_WEIGHTS["volatility"]
         )
         assert s["composite_score"] == pytest.approx(expected, abs=0.15)
 
@@ -468,14 +471,15 @@ class TestScoreAllTickers:
         # Phase 3.1 honesty: with NO fundamentals, quality/valuation carry no
         # real data and must be dropped — the composite is momentum+volatility
         # renormalized to their own weights, NOT blended with two constant 50s.
-        from quant_engine import score_all_tickers
+        from quant_engine import score_all_tickers, FACTOR_WEIGHTS
         history = _flat(100.0, 210)
         market_data = {"history": {"AAPL": history, "SPY": history}, "fundamentals": {}}
         s = score_all_tickers(market_data)["AAPL"]
         assert s["factors_used"] == ["momentum", "volatility"]
         assert s["quality_available"] is False
         assert s["valuation_available"] is False
-        expected = (s["momentum_score"] * 0.30 + s["volatility_score"] * 0.25) / 0.55
+        wm, wv = FACTOR_WEIGHTS["momentum"], FACTOR_WEIGHTS["volatility"]
+        expected = (s["momentum_score"] * wm + s["volatility_score"] * wv) / (wm + wv)
         assert s["composite_score"] == pytest.approx(expected, abs=0.05)
 
     def test_composite_no_real_factor_is_neutral(self):
@@ -498,6 +502,66 @@ class TestScoreAllTickers:
         assert "MSFT" in scores
         assert scores["MSFT"]["beta"] is None
         assert 0 <= scores["MSFT"]["composite_score"] <= 100
+
+
+class TestFactorHistory:
+    def _scores(self):
+        from quant_engine import FORMULA_VERSION
+        return {
+            "AAPL": {"composite_score": 62.0, "factors_used": ["momentum", "volatility"],
+                     "formula_version": FORMULA_VERSION, "momentum_score": 70,
+                     "momentum_available": True, "volatility_score": 55,
+                     "volatility_available": True, "beta": 1.1},
+            "MSFT": {"composite_score": 58.0, "factors_used": ["momentum"],
+                     "formula_version": FORMULA_VERSION, "momentum_score": 58,
+                     "momentum_available": True, "beta": None},
+        }
+
+    def test_appends_one_row_per_ticker_with_formula_version(self, tmp_path):
+        from quant_engine import log_factor_history, FORMULA_VERSION
+        import json
+        path = str(tmp_path / "fh.jsonl")
+        n = log_factor_history(self._scores(), as_of="2026-07-02", path=path)
+        assert n == 2
+        rows = [json.loads(l) for l in open(path) if l.strip()]
+        assert {r["ticker"] for r in rows} == {"AAPL", "MSFT"}
+        assert all(r["formula_version"] == FORMULA_VERSION for r in rows)
+        assert all(r["date"] == "2026-07-02" for r in rows)
+        aapl = next(r for r in rows if r["ticker"] == "AAPL")
+        assert aapl["composite_score"] == 62.0 and aapl["beta"] == 1.1
+
+    def test_idempotent_same_day_same_formula(self, tmp_path):
+        from quant_engine import log_factor_history
+        path = str(tmp_path / "fh.jsonl")
+        log_factor_history(self._scores(), as_of="2026-07-02", path=path)
+        n2 = log_factor_history(self._scores(), as_of="2026-07-02", path=path)
+        assert n2 == 0                                   # no duplicate rows
+        rows = [l for l in open(path) if l.strip()]
+        assert len(rows) == 2
+
+    def test_new_day_appends_again(self, tmp_path):
+        from quant_engine import log_factor_history
+        path = str(tmp_path / "fh.jsonl")
+        log_factor_history(self._scores(), as_of="2026-07-02", path=path)
+        n2 = log_factor_history(self._scores(), as_of="2026-07-03", path=path)
+        assert n2 == 2
+        rows = [l for l in open(path) if l.strip()]
+        assert len(rows) == 4
+
+    def test_formula_boundary_is_a_distinct_key(self, tmp_path):
+        # A re-weight (new formula_version) for the SAME date is NOT a duplicate —
+        # both regimes are recorded so IC is computed within, never across, a boundary.
+        from quant_engine import log_factor_history, FORMULA_VERSION
+        import json
+        path = str(tmp_path / "fh.jsonl")
+        s = self._scores()
+        log_factor_history(s, as_of="2026-07-02", path=path)
+        for v in s.values():
+            v["formula_version"] = "3.0-experimental"
+        n2 = log_factor_history(s, as_of="2026-07-02", path=path)
+        assert n2 == 2
+        versions = {json.loads(l)["formula_version"] for l in open(path) if l.strip()}
+        assert versions == {FORMULA_VERSION, "3.0-experimental"}
 
     def test_fundamentals_used_when_available(self):
         from quant_engine import score_all_tickers

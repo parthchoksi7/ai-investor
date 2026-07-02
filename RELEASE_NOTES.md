@@ -13,6 +13,27 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Changed — Phase 2: composite re-weight (quality tilt) + `formula_version` + factor_history
+
+- **Re-weighted `FACTOR_WEIGHTS`** from `momentum .30 / quality .25 / valuation .20 / low-vol .25`
+  → **`momentum .15 / quality .35 / valuation .25 / low-vol .25`** — momentum demoted to a minor
+  confirm; quality/value/low-vol carry the signal. Rationale (IPS 9–12mo horizon, CA top-bracket):
+  momentum is short-horizon and turnover-heavy (tax-suicidal); quality/value/low-vol are the
+  persistent, lower-turnover factors for a multi-quarter hold. **Deterministic change — its edge is
+  proven or falsified in `backtest/`, not on faith**, and gated on the coverage fix (quality/value
+  are only real once EDGAR clears the 80% floor).
+- **`FORMULA_VERSION` ("2.0-quality-tilt")** stamped on every composite score and every
+  `factor_history` row. IC / factor persistence must **never** be computed across a formula
+  boundary (mixing pre-/post-reweight composites corrupts the signal) — **P0-2**.
+- **`factor_history.jsonl`** — new append-only, full-universe, point-in-time factor time series
+  (`quant_engine.log_factor_history`), idempotent per `(date, ticker, formula_version)`, the
+  substrate for factor-persistence / IC. Written & committed by the **GH Actions** path
+  (`fetch_snapshot.py` + `market_data.yml`) — the only plane that scores the whole universe daily.
+- **Observed:** on the committed pre-fix 2026-06-26 snapshot, quality coverage is **39/100 (39%)** —
+  below the 80% floor, exactly what the new measurement is meant to surface; universe expansion
+  stays gated until GH Actions (with EDGAR reachable) clears the floor.
+- **QA:** +7 (`TestFactorHistory` ×4, formula_version stamp + `FACTOR_WEIGHTS`-derived composite tests).
+
 ### Fixed — Phase 2: SEC fundamental-coverage swallow + first-class coverage measurement
 
 - **Root cause (`data_providers.py`):** `SECProvider._ensure_cik_map` swallowed *any* CIK-map

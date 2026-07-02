@@ -41,6 +41,25 @@ with open("market_snapshot.json", "w") as f:
     json.dump(snapshot, f)
 print(f"Saved market_snapshot.json (date={snapshot['date']}, {len(snapshot['prices'])} tickers)")
 
+dq = snapshot.get("data_quality") or {}
+if dq:
+    ok = "OK" if dq.get("coverage_ok") else "⚠ BELOW 80% FLOOR"
+    print(f"Fundamental coverage: {dq.get('fundamental_coverage_pct')}% "
+          f"({dq.get('fundamentals_covered')}/{dq.get('active_universe')}) — {ok}")
+
+# Score the FULL universe point-in-time and append to the factor_history time
+# series. This runs in GH Actions (not the cloud routine, which scores only
+# candidates) so factor-persistence / IC analysis has a complete daily record.
+# Every row carries formula_version so IC is never computed across a re-weight
+# boundary (P0-2). Idempotent per (date, ticker, formula_version).
+try:
+    from quant_engine import score_all_tickers, log_factor_history, FORMULA_VERSION
+    scores = score_all_tickers(snapshot)
+    n = log_factor_history(scores, as_of=snapshot["date"])
+    print(f"factor_history.jsonl: +{n} row(s) (formula {FORMULA_VERSION}, {len(scores)} scored)")
+except Exception as e:
+    print(f"WARNING: factor_history append failed — {e}")
+
 # Also upload to Supabase for website and health_check.yml use.
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
