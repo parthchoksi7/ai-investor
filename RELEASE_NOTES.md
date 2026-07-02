@@ -13,6 +13,21 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — Phase 2: SEC EDGAR User-Agent 403 (the actual cause of the coverage collapse)
+
+The Phase 2 coverage *detector* did its job: the first real CI run (`full_refresh`, 100 names)
+surfaced `cik_map_ok: false` with only **41%** quality coverage — EDGAR was contributing nothing
+even from GitHub Actions. Root cause was **not** IP blocking (the earlier hypothesis): SEC's Akamai
+WAF rejects the bot-style User-Agent `ai-investor-bot/1.0 …` with **HTTP 403**. SEC fair-access
+requires the documented `Company Name contact@email` form. Fixed the `SECProvider.HEADERS` UA to
+that form (verified: **200 + 10,426 CIK entries**).
+- **Impact:** projected quality coverage over the core universe jumps **41% → 96%** (misses are
+  ARM/SPOT foreign 20-F filers + the 2 ETFs — correct). This clears the IPS 80% floor, so
+  `coverage_ok` flips True and the composite re-weight (quality 35%) is now backed by real data
+  rather than renormalizing away — the `⛔ RE-WEIGHT NOT FAIRLY TESTED` caveat can clear once CI
+  confirms the number on the full pipeline.
+- **No live-order-path change.** Enrichment/scoring only; runs in GitHub Actions (`fetch_snapshot.py`).
+
 ### Fixed — Phase 2: code-review remediation (`/code-review high`, 6-angle × verify)
 
 Findings from the pre-PR expert review, remediated before opening the PR:

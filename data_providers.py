@@ -164,7 +164,13 @@ class SECProvider:
 
     TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
     FACTS_URL   = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
-    HEADERS     = {"User-Agent": "ai-investor-bot/1.0 ai-investor-bot@github.com"}
+    # SEC fair-access requires the UA be a declared identity in the documented
+    # "Company Name contact@email" form. A slash-version/bot-style UA
+    # ("ai-investor-bot/1.0 …") is rejected by SEC's Akamai WAF with 403 — which
+    # silently collapsed EDGAR quality coverage to ~0 (the reason the CIK-map load
+    # was failing even in CI). This exact string returns 200 + 10k+ CIK entries;
+    # do NOT reintroduce a "/version" token. See sec.gov/os/webmaster-faq#developers
+    HEADERS     = {"User-Agent": "AI Investor Research admin@parth-choksi.com"}
 
     def __init__(self, timeout: int = 15):
         self.timeout = timeout
