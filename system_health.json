@@ -1,28 +1,28 @@
 {
-  "run_id": "20260701-134856",
-  "date": "2026-07-01",
-  "timestamp": "2026-07-01T13:52:28.772016+00:00",
+  "run_id": "20260702-134722",
+  "date": "2026-07-02",
+  "timestamp": "2026-07-02T13:49:41.961974+00:00",
   "overall_status": "FAILED",
   "checks": {
     "portfolio": {
       "status": "OK",
       "message": "",
-      "ts": "2026-07-01T13:48:56.384602+00:00",
-      "total_value": 507.883397135,
-      "cash": 371.94,
-      "positions": 3
+      "ts": "2026-07-02T13:47:22.989034+00:00",
+      "total_value": 512.222881025,
+      "cash": 325.91,
+      "positions": 4
     },
     "kill_switch": {
       "status": "OK",
       "message": "",
-      "ts": "2026-07-01T13:48:56.384638+00:00"
+      "ts": "2026-07-02T13:47:22.993637+00:00"
     },
     "market_data": {
       "status": "OK",
       "message": "",
-      "ts": "2026-07-01T13:48:56.432816+00:00",
+      "ts": "2026-07-02T13:47:23.034735+00:00",
       "source": "market_snapshot_file",
-      "data_date": "2026-07-01",
+      "data_date": "2026-07-02",
       "tickers": 100,
       "history_min_bars": 206,
       "history_avg_bars": 209.8
@@ -30,25 +30,25 @@
     "quant_scores": {
       "status": "OK",
       "message": "",
-      "ts": "2026-07-01T13:48:56.444060+00:00",
-      "real_scores": 100,
+      "ts": "2026-07-02T13:47:23.046056+00:00",
+      "real_scores": 99,
       "total": 100
     },
     "decision_validation": {
       "status": "DEGRADED",
       "message": "2 rejected, 0 clamped, 0 skipped by guardrails",
-      "ts": "2026-07-01T13:51:16.781288+00:00",
-      "passed": 3,
+      "ts": "2026-07-02T13:49:39.453942+00:00",
+      "passed": 1,
       "rejected": [
         {
-          "ticker": "JNJ",
-          "action": "BUY",
-          "reason": "wash-sale/anti-churn: sold 2026-06-10, 21d ago (< 30d re-entry block)"
+          "ticker": "EBAY",
+          "action": "SELL",
+          "reason": "good-faith-violation guard: bought 2026-07-01, < 2 trading days ago (cash account)"
         },
         {
           "ticker": "V",
           "action": "BUY",
-          "reason": "Financials sector would be 27% > 25% cap"
+          "reason": "Financials sector would be 26% > 25% cap"
         }
       ],
       "modified": [],
@@ -57,82 +57,66 @@
     "agent_1_regime": {
       "status": "OK",
       "message": "",
-      "ts": "2026-07-01T13:51:16.781308+00:00",
-      "regime": "NEUTRAL",
-      "confidence": 55
+      "ts": "2026-07-02T13:49:39.453967+00:00",
+      "regime": "RISK_ON",
+      "confidence": 72
     },
     "agent_2_research": {
       "status": "OK",
       "message": "",
-      "ts": "2026-07-01T13:51:16.781329+00:00",
+      "ts": "2026-07-02T13:49:39.453994+00:00",
       "total": 20
     },
     "agent_3_earnings": {
       "status": "OK",
       "message": "",
-      "ts": "2026-07-01T13:51:16.781343+00:00",
+      "ts": "2026-07-02T13:49:39.454011+00:00",
       "total": 20
     },
     "agent_4_devils_advocate": {
       "status": "OK",
       "message": "",
-      "ts": "2026-07-01T13:51:16.781361+00:00",
+      "ts": "2026-07-02T13:49:39.454028+00:00",
       "total": 20
     },
     "agent_5_position_review": {
       "status": "OK",
       "message": "",
-      "ts": "2026-07-01T13:51:16.781367+00:00",
-      "reviewed": 3,
-      "reduce_exit_recommended": 0
+      "ts": "2026-07-02T13:49:39.454036+00:00",
+      "reviewed": 4,
+      "reduce_exit_recommended": 1
     },
     "agent_6_portfolio_manager": {
       "status": "OK",
       "message": "",
-      "ts": "2026-07-01T13:51:16.781372+00:00",
-      "proposed": 4,
-      "final_decisions": 1
+      "ts": "2026-07-02T13:49:39.454040+00:00",
+      "proposed": 2,
+      "final_decisions": 0
     },
     "agent_7_cro": {
       "status": "OK",
       "message": "",
-      "ts": "2026-07-01T13:51:16.781376+00:00",
-      "approved": false,
-      "vetoed": [
-        "JPM"
-      ],
-      "risk_budget": 72
+      "ts": "2026-07-02T13:49:39.454043+00:00",
+      "approved": true,
+      "vetoed": [],
+      "risk_budget": 28
     },
     "cash_discipline": {
-      "status": "OK",
-      "message": "",
-      "ts": "2026-07-01T13:51:17.611253+00:00",
-      "cash_pct": 73.2
-    },
-    "execution": {
-      "status": "OK",
-      "message": "",
-      "ts": "2026-07-01T13:51:17.611316+00:00",
-      "decisions": 1,
-      "executed": 1,
-      "dry_run": true
+      "status": "DEGRADED",
+      "message": "Cash 63.6% exceeds 15% review ceiling and no BUYs this run \u2014 26 consecutive run(s) above threshold (review PM deployment).",
+      "ts": "2026-07-02T13:49:39.868066+00:00",
+      "cash_pct": 63.6,
+      "consecutive_runs_above_threshold": 26
     },
     "supabase_publish": {
       "status": "FAILED",
       "message": "403 Forbidden",
-      "ts": "2026-07-01T13:51:18.991318+00:00"
-    },
-    "reconciliation": {
-      "status": "OK",
-      "message": "",
-      "ts": "2026-07-01T13:52:28.771989+00:00",
-      "filled": [
-        "EBAY"
-      ]
+      "ts": "2026-07-02T13:49:41.961782+00:00"
     }
   },
   "alerts": [
     "[DEGRADED] decision_validation: 2 rejected, 0 clamped, 0 skipped by guardrails",
+    "[DEGRADED] cash_discipline: Cash 63.6% exceeds 15% review ceiling and no BUYs this run \u2014 26 consecutive run(s) above threshold (review PM deployment).",
     "[FAILED] supabase_publish: 403 Forbidden"
   ]
 }
