@@ -256,10 +256,6 @@ def _provider_group(ticker: str) -> int:
     return int(hashlib.md5(ticker.encode()).hexdigest(), 16) % 2
 
 
-# Quality-factor fields that count a ticker as "fundamentally covered" (SEC EDGAR
-# supplies these for ~all US equities; FMP adds the valuation trio on top).
-_QUALITY_COVERAGE_FIELDS = ("gross_margin", "operating_margin", "debt_to_equity")
-
 # Absolute coverage floor (IPS Appendix A). A steady low coverage — not a drop —
 # was the June bug, so the gate is an ABSOLUTE floor, not a week-over-week delta.
 FUNDAMENTAL_COVERAGE_FLOOR_PCT = 80.0
@@ -271,24 +267,19 @@ def _compute_fundamental_coverage(all_tickers: list, fundamentals: dict,
 
     Coverage silently collapsing (the SEC CIK-map swallow) was invisible before
     this: it is now a first-class ``data_quality`` field on the snapshot so the
-    observability layer (Phase 3) can gate the strategy shift on the IPS floor.
+    observability layer (Phase 3) can gate the strategy shift on the IPS floor. The
+    quality/valuation counts come from the ONE shared `data_providers.fundamental_coverage`
+    so the backtest and live paths never disagree. ``coverage_ok`` gates on the
+    QUALITY floor (EDGAR-achievable); valuation is reported for transparency but is
+    structurally capped by FMP's free tier and is NOT part of the gate.
     ``cik_map_ok`` is None when the provider path isn't SEC-backed (e.g. tests).
     """
-    active = len(all_tickers)
-    covered = sum(
-        1 for t in all_tickers
-        if isinstance(fundamentals.get(t), dict)
-        and any(f in fundamentals[t] for f in _QUALITY_COVERAGE_FIELDS)
-    )
-    pct = round(100.0 * covered / active, 1) if active else 0.0
-    return {
-        "fundamental_coverage_pct": pct,
-        "fundamentals_covered":     covered,
-        "active_universe":          active,
-        "coverage_floor_pct":       FUNDAMENTAL_COVERAGE_FLOOR_PCT,
-        "coverage_ok":              pct >= FUNDAMENTAL_COVERAGE_FLOOR_PCT,
-        "cik_map_ok":               cik_map_ok,
-    }
+    from data_providers import fundamental_coverage
+    cov = fundamental_coverage(all_tickers, fundamentals)
+    cov["coverage_floor_pct"] = FUNDAMENTAL_COVERAGE_FLOOR_PCT
+    cov["coverage_ok"]        = cov["fundamental_coverage_pct"] >= FUNDAMENTAL_COVERAGE_FLOOR_PCT
+    cov["cik_map_ok"]         = cik_map_ok
+    return cov
 
 
 def _enrich_with_provider(all_tickers: list, fundamentals: dict, today=None):
@@ -323,8 +314,11 @@ def _enrich_with_provider(all_tickers: list, fundamentals: dict, today=None):
     if hasattr(provider, "cik_map_ok"):
         cik_map_ok = provider.cik_map_ok()
         if not cik_map_ok:
-            print("   ❌ SEC EDGAR CIK map failed to load — new-ticker fundamentals "
-                  "unavailable this run (cached entries still apply).")
+            # SEC EDGAR is the fallback for names FMP's free tier misses. If it's
+            # unreachable (it blocks residential IPs), FMP data + the warm cache are
+            # still valid — this is a coverage caveat, not a run failure.
+            print("   ⚠ SEC EDGAR CIK map unavailable — SEC-fallback fundamentals off "
+                  "this run (FMP data + cached entries still apply); recorded in data_quality.")
 
     today = today or _date.today()
     today_group = today.toordinal() % 2               # alternates every calendar day

@@ -13,6 +13,33 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — Phase 2: code-review remediation (`/code-review high`, 6-angle × verify)
+
+Findings from the pre-PR expert review, remediated before opening the PR:
+- **`detect_price_outliers` emitted raw epoch-ms integers** as the finding `date` (live snapshot
+  bars carry Polygon epoch-ms, not ISO). Now normalized to `YYYY-MM-DD` (`_norm_date`) — the log
+  line and `data_quality.price_outliers` are readable + consistent with every other date field.
+- **Coverage was computed by two divergent copies** (`market_data` + `backtest/engine`), each with
+  its own quality-fields tuple — the exact "backtest clears the floor, live doesn't" drift risk.
+  Consolidated into ONE `data_providers.fundamental_coverage`. It now also reports **valuation
+  coverage separately** (the gate is on QUALITY, EDGAR-achievable; valuation is FMP-capped ~35% and
+  transparency-only) — closes the "coverage_ok True while valuation can't express" depth gap.
+- **`log_factor_history` used a non-atomic temp-file dance + an O(whole-file) dedup read.** Replaced
+  with a plain append (repo ledger convention) and a dedup set bounded to *today's* rows.
+- **Fetch cursor keyed on universe *size* only** → a same-length membership swap silently resumed
+  mid-sweep (coverage gap). Now keyed on a content **fingerprint** — any membership/order change
+  resets the sweep.
+- **`SECProvider` empty-200 body** now records a diagnostic error string (was a silent blank map);
+  **`price_outlier_pct`** is also honored if placed under `guardrails:` (was a silent no-op);
+  **`cik_map_ok` banner softened** (SEC is a fallback — FMP data may be fine); **`FORMULA_VERSION`
+  comment** de-overstated (it's a provenance label the future IC analyzer must group by, not an
+  enforced invariant).
+- **Accepted/deferred (documented):** `universe` cursor + `find_unpriced_holdings` live wiring →
+  Phase 4/5; a `factor_history` freshness alert → Phase 3; the live re-weight lands before a *fair*
+  backtest can run (blocked on GH-Actions coverage) — intentional per plan §9, surfaced for the owner.
+- **QA:** **509 green** (+5: valuation coverage, shared-helper agreement, epoch-ms→ISO, cursor
+  content-swap reset, empty-200 diagnostic).
+
 ### Changed — Phase 2: quant-only shadow arm re-backtested on the new weighting + coverage gate
 
 - **Re-ran `backtest/` on the quality-tilted composite** (it reuses `score_all_tickers` unchanged).

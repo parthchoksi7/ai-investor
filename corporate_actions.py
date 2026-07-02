@@ -28,12 +28,26 @@ performance.py's report caveats).
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from policy import get as _policy_get
 
 
 def _outlier_threshold_pct() -> float:
     """1-day move (percent) beyond which a print is suspect. From policy.yaml."""
     return float(_policy_get("price_outlier_pct", 35))
+
+
+def _norm_date(d):
+    """Normalize a bar date to an ISO 'YYYY-MM-DD' string. Live snapshot bars carry
+    an epoch-MILLISECOND integer (Polygon 't'); tests/other paths may pass an ISO
+    string. Return the input unchanged if it's neither."""
+    if isinstance(d, (int, float)):
+        try:
+            return datetime.fromtimestamp(d / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+        except (ValueError, OverflowError, OSError):
+            return d
+    return d
 
 
 def detect_price_outliers(history: dict, threshold_pct: float | None = None) -> list[dict]:
@@ -68,7 +82,7 @@ def detect_price_outliers(history: dict, threshold_pct: float | None = None) -> 
                 if abs(change_pct) >= thr:
                     findings.append({
                         "ticker":     ticker,
-                        "date":       bar.get("date"),
+                        "date":       _norm_date(bar.get("date")),
                         "prev_close": prev,
                         "close":      close,
                         "change_pct": round(change_pct, 2),

@@ -195,6 +195,10 @@ class SECProvider:
         except Exception as e:
             self._cik = {}
             self._cik_load_error = str(e)
+        if not self._cik and self._cik_load_error is None:
+            # HTTP 200 but an empty/malformed-but-valid body (e.g. transient CDN {}):
+            # record WHY so a 0%-coverage run is diagnosable, not a silent blank.
+            self._cik_load_error = "empty CIK map (200 OK, no entries)"
         self._cik_load_ok = bool(self._cik)
 
     def cik_map_ok(self) -> bool:
@@ -274,6 +278,38 @@ class SECProvider:
 
 
 _QUALITY_FIELDS = {"gross_margin", "operating_margin", "debt_to_equity"}
+# Valuation fields require FMP (price-relative ratios); SEC EDGAR does NOT supply them,
+# so valuation coverage is structurally capped near FMP's free-tier reach (~35%).
+_VALUATION_FIELDS = {"pe_ratio", "fcf_yield", "ev_ebitda"}
+
+
+def fundamental_coverage(tickers, fundamentals: dict) -> dict:
+    """Single source of truth for 'how much real fundamental data do we have'.
+
+    Returns quality AND valuation coverage separately over ``tickers``. Both the live
+    snapshot gate (market_data) and the backtest caveat (backtest/engine) call this, so
+    the number that gates the quality-tilt re-weight is computed ONE way — a fork here
+    would let the backtest clear the 80% floor while the live snapshot doesn't (or vice
+    versa). Quality (EDGAR, ~all US equities) is the primary gate; valuation is reported
+    for transparency because it can't structurally reach the floor without paid FMP.
+    """
+    total = len(tickers)
+
+    def _covered(fields: set) -> int:
+        return sum(
+            1 for t in tickers
+            if isinstance(fundamentals.get(t), dict) and (fields & fundamentals[t].keys())
+        )
+
+    q = _covered(_QUALITY_FIELDS)
+    v = _covered(_VALUATION_FIELDS)
+    return {
+        "active_universe":           total,
+        "fundamentals_covered":      q,
+        "fundamental_coverage_pct":  round(100.0 * q / total, 1) if total else 0.0,
+        "valuation_covered":         v,
+        "valuation_coverage_pct":    round(100.0 * v / total, 1) if total else 0.0,
+    }
 
 
 class CascadeProvider:

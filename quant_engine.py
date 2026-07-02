@@ -31,10 +31,13 @@ FACTOR_WEIGHTS = {
     "volatility": 0.25,
 }
 
-# Stamped on every composite score and every factor_history row. IC / factor
-# persistence must NEVER be computed across a formula_version boundary (mixing
-# pre- and post-reweight composites corrupts the signal) — P0-2. Bump this string
-# whenever FACTOR_WEIGHTS or any sub-score formula changes.
+# Stamped on every composite score and every factor_history row. It is the KEY a
+# future factor-IC / persistence analyzer MUST group by — mixing pre- and
+# post-reweight composites corrupts the signal (P0-2). NOTE: this is a provenance
+# label, not an enforced invariant; nothing computes factor IC across the boundary
+# *yet* (the harness scores agent forecasts, not factor_history), so the guarantee
+# is "the data is grouped-by-able", and the eventual analyzer must honor it. Bump
+# this string whenever FACTOR_WEIGHTS or any sub-score formula changes.
 FORMULA_VERSION = "2.0-quality-tilt"
 
 
@@ -324,13 +327,22 @@ def log_factor_history(scores: dict, as_of: str, path: str = "factor_history.jso
     Written by the GH Actions scoring step (full-universe, point-in-time) — this
     is the substrate for factor-persistence / IC analysis. Every row carries
     `formula_version` so downstream IC is computed WITHIN a weighting regime, never
-    across a boundary (P0-2). Idempotent per (date, ticker, formula_version): a
-    re-run for the same day+formula does not duplicate rows. Returns rows appended.
+    across a boundary (P0-2). Idempotent per (ticker, formula_version) WITHIN today's
+    date: a re-run for the same day+formula does not duplicate rows. Returns rows
+    appended.
+
+    Rows accumulate append-only (repo convention, like calibration's ledgers); a
+    plain line append is the atomic-enough idiom used for every ledger here — the
+    prior temp-file copy added I/O and a stranded-temp risk without any real atomicity.
+    The dedup set is bounded to TODAY's rows (older dates can never collide with today),
+    so memory stays O(universe) rather than O(whole file). File compaction/rotation is
+    Phase 4 (§12 storage split).
     """
     import json as _json
     import os as _os
 
-    existing: set = set()
+    # Only today's (ticker, formula_version) keys can collide with today's append.
+    today_keys: set = set()
     if _os.path.isfile(path):
         with open(path) as f:
             for line in f:
@@ -339,26 +351,24 @@ def log_factor_history(scores: dict, as_of: str, path: str = "factor_history.jso
                     continue
                 try:
                     r = _json.loads(line)
-                    existing.add((r.get("date"), r.get("ticker"), r.get("formula_version")))
                 except _json.JSONDecodeError:
                     continue
+                if r.get("date") == as_of:
+                    today_keys.add((r.get("ticker"), r.get("formula_version")))
 
-    appended = 0
-    tmp = path + ".tmp_append"
-    with open(tmp, "w") as f:
-        for ticker, s in sorted(scores.items()):
-            key = (as_of, ticker, s.get("formula_version", FORMULA_VERSION))
-            if key in existing:
-                continue
-            row = {"date": as_of, "ticker": ticker}
-            for field in _FACTOR_HISTORY_FIELDS:
-                if field in s:
-                    row[field] = s[field]
-            f.write(_json.dumps(row) + "\n")
-            appended += 1
-    # append the new rows to the real file, then discard the temp
-    if appended:
-        with open(tmp) as src, open(path, "a") as dst:
-            dst.write(src.read())
-    _os.remove(tmp)
-    return appended
+    rows_out = []
+    for ticker, s in sorted(scores.items()):
+        fv = s.get("formula_version", FORMULA_VERSION)
+        if (ticker, fv) in today_keys:
+            continue
+        row = {"date": as_of, "ticker": ticker}
+        for field in _FACTOR_HISTORY_FIELDS:
+            if field in s:
+                row[field] = s[field]
+        rows_out.append(row)
+
+    if rows_out:
+        with open(path, "a") as f:
+            for row in rows_out:
+                f.write(_json.dumps(row) + "\n")
+    return len(rows_out)

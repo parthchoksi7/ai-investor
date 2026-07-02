@@ -3537,6 +3537,18 @@ class TestSECProvider:
         monkeypatch.setattr(requests, "get", fake_get)
         assert p.cik_map_ok() is False
 
+    def test_empty_200_body_records_diagnostic_error(self, monkeypatch):
+        # HTTP 200 with an empty {} body → load fails, but WHY must be recorded (not
+        # a silent blank map) so a 0%-coverage run is diagnosable.
+        from data_providers import SECProvider
+        import requests, types
+        p = SECProvider(timeout=5)
+        monkeypatch.setattr(requests, "get",
+                            lambda url, **kw: types.SimpleNamespace(
+                                json=lambda: {}, raise_for_status=lambda: None))
+        assert p.cik_map_ok() is False
+        assert p._cik_load_error is not None and "empty" in p._cik_load_error.lower()
+
     def test_cik_map_load_attempted_once_on_failure(self, monkeypatch):
         # After a failure, we do NOT retry on every subsequent call (no retry storm).
         from data_providers import SECProvider
@@ -3609,9 +3621,21 @@ class TestUniverse:
         import universe, json
         path = str(tmp_path / "fp.json")
         (tmp_path / "fp.json").write_text(json.dumps({"cursor": 3, "universe_size": 10}))
-        # a different-sized universe must NOT resume mid-way through the old one
+        # a different-sized universe (or an old size-keyed file) must NOT resume mid-way
         b, c = universe.next_batch([f"T{i}" for i in range(5)], 2, path)
         assert c == 0 and b == ["T0", "T1"]
+
+    def test_cursor_resets_on_same_size_content_swap(self, tmp_path):
+        # A same-LENGTH membership change must reset the sweep — keying on size alone
+        # would silently skip the first N names of the new ordering (coverage gap).
+        import universe
+        path = str(tmp_path / "fp.json")
+        u1 = [f"T{i}" for i in range(6)]
+        _, c = universe.next_batch(u1, 4, path)
+        universe.save_batch(u1, 4, c, path)          # cursor advances to 4 for u1
+        u2 = u1[:5] + ["SWAPPED"]                     # same length, one name changed
+        b, c = universe.next_batch(u2, 4, path)
+        assert c == 0 and b == u2[0:4]               # fresh sweep, not resumed at 4
 
     def test_crash_before_save_retries_same_batch(self, tmp_path):
         import universe
@@ -3654,6 +3678,17 @@ class TestCorporateActions:
         hist = {"BB": [{"date": "d1", "close": 100.0}, {"date": "d2", "close": 90.0}]}  # -10%
         assert detect_price_outliers(hist, threshold_pct=5) != []
         assert detect_price_outliers(hist, threshold_pct=15) == []
+
+    def test_epoch_ms_date_normalized_to_iso(self):
+        # Live snapshot bars carry epoch-MS integer dates (Polygon 't'); the finding
+        # must emit a readable ISO string, not a raw epoch int.
+        from corporate_actions import detect_price_outliers
+        hist = {"ZZ": [{"date": 1748736000000, "close": 100.0},
+                       {"date": 1748822400000, "close": 40.0}]}   # -60%
+        out = detect_price_outliers(hist)
+        assert len(out) == 1
+        assert isinstance(out[0]["date"], str) and out[0]["date"].count("-") == 2   # YYYY-MM-DD
+        assert out[0]["date"].startswith("2025-")
 
     def test_bad_bar_breaks_chain_no_false_positive(self):
         from corporate_actions import detect_price_outliers
@@ -3744,6 +3779,32 @@ class TestFundamentalCoverage:
         dq = md._compute_fundamental_coverage([], {}, cik_map_ok=None)
         assert dq["fundamental_coverage_pct"] == 0.0
         assert dq["cik_map_ok"] is None
+
+    def test_valuation_coverage_reported_separately(self):
+        # Quality (EDGAR) and valuation (FMP-only) coverage are measured separately;
+        # the gate (coverage_ok) is on QUALITY, valuation is transparency-only.
+        import market_data as md
+        fund = {
+            "A": {"gross_margin": 0.4, "pe_ratio": 20},   # quality + valuation
+            "B": {"gross_margin": 0.3},                    # quality only
+            "C": {"pe_ratio": 15},                         # valuation only (NOT quality-covered)
+            "D": None,
+        }
+        dq = md._compute_fundamental_coverage(["A", "B", "C", "D"], fund, cik_map_ok=True)
+        assert dq["fundamental_coverage_pct"] == 50.0     # A,B quality-covered
+        assert dq["valuation_coverage_pct"] == 50.0       # A,C valuation-covered
+        assert dq["coverage_ok"] is False                 # gate is on quality, 50% < 80%
+
+    def test_shared_helper_backtest_and_live_agree(self):
+        # The backtest coverage and the live snapshot coverage come from ONE helper.
+        import data_providers, market_data as md
+        from backtest.engine import _coverage_pct
+        fund = {"A": {"gross_margin": 0.4}, "B": {"operating_margin": 0.2}, "C": None}
+        # live path (all tickers)
+        live = md._compute_fundamental_coverage(["A", "B", "C"], fund, None)["fundamental_coverage_pct"]
+        # backtest path (history keys, benchmarks excluded) — same underlying helper
+        bt = _coverage_pct({"A": [], "B": [], "C": [], "SPY": []}, fund)
+        assert live == bt == round(100 * 2 / 3, 1)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

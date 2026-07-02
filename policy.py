@@ -97,7 +97,10 @@ def _load(path: str | None = None) -> dict:
                 else:
                     print(f"⚠ policy.yaml {k}={v!r} failed validation; "
                           f"keeping default {_DEFAULTS[k]!r} (capital-safety guard)")
-        pov = data_quality.get("price_outlier_pct")
+        # Canonical location is the data_quality: block, but accept it under
+        # guardrails: too (the natural place an operator might add it) rather than
+        # silently ignoring a misplaced-but-valid setting.
+        pov = data_quality.get("price_outlier_pct", guardrails.get("price_outlier_pct"))
         if pov is not None:
             if _VALIDATORS["price_outlier_pct"](pov):
                 merged["price_outlier_pct"] = pov

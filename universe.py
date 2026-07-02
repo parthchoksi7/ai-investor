@@ -155,23 +155,35 @@ def _load_progress(path: str) -> dict:
     return {}
 
 
+def _universe_fingerprint(tickers: list[str]) -> str:
+    """Stable fingerprint of the exact universe CONTENTS (order-sensitive), so a
+    same-length swap (remove one name, add another) is detected as a different
+    universe and resets the sweep. Keying on size alone would silently resume the
+    old cursor and skip the first N names of the new ordering — a silent coverage gap."""
+    import hashlib
+    h = hashlib.sha1("\n".join(tickers).encode()).hexdigest()
+    return h[:16]
+
+
 def next_batch(tickers: list[str], batch_size: int,
                path: str = FETCH_PROGRESS) -> tuple[list[str], int]:
     """Return the next ``batch_size`` tickers to fetch and the new cursor position.
 
-    Advances a persisted wrap-around cursor keyed by the universe *size* (a change
-    in universe size resets the cursor to 0, so a just-expanded universe starts a
-    fresh sweep instead of resuming mid-way through a smaller list). Persisting is
-    the caller's job via ``save_batch`` after a successful fetch — so a crash mid-
-    fetch does NOT advance the cursor and the same batch is retried next run. Returns
-    ``([], 0)`` for an empty universe. ``batch_size`` ≥ len → the whole universe.
+    Advances a persisted wrap-around cursor keyed by a fingerprint of the universe
+    CONTENTS — any change to the universe (size OR membership/order) resets the cursor
+    to 0, so a changed universe starts a fresh sweep instead of resuming mid-way and
+    skipping names. Persisting is the caller's job via ``save_batch`` after a
+    successful fetch — so a crash mid-fetch does NOT advance the cursor and the same
+    batch is retried next run. Returns ``([], 0)`` for an empty universe.
+    ``batch_size`` ≥ len → the whole universe.
     """
     n = len(tickers)
     if n == 0 or batch_size <= 0:
         return [], 0
     prog = _load_progress(path)
     cursor = prog.get("cursor", 0)
-    if prog.get("universe_size") != n or not isinstance(cursor, int) or cursor < 0 or cursor >= n:
+    if (prog.get("fingerprint") != _universe_fingerprint(tickers)
+            or not isinstance(cursor, int) or cursor < 0 or cursor >= n):
         cursor = 0
     end = min(cursor + batch_size, n)
     return tickers[cursor:end], cursor
@@ -180,7 +192,8 @@ def next_batch(tickers: list[str], batch_size: int,
 def save_batch(tickers: list[str], batch_size: int, cursor: int,
                path: str = FETCH_PROGRESS) -> int:
     """Persist the advanced cursor after a batch fetch succeeds. Returns the new
-    cursor (wrapped to 0 at the end of the universe). Atomic write."""
+    cursor (wrapped to 0 at the end of the universe). Atomic write. Stores the
+    universe fingerprint so a later membership change resets the sweep."""
     n = len(tickers)
     if n == 0 or batch_size <= 0:
         return 0
@@ -189,6 +202,6 @@ def save_batch(tickers: list[str], batch_size: int, cursor: int,
         new_cursor = 0            # wrap → next run starts a fresh sweep
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
-        json.dump({"cursor": new_cursor, "universe_size": n}, f, indent=2)
+        json.dump({"cursor": new_cursor, "fingerprint": _universe_fingerprint(tickers)}, f, indent=2)
     os.replace(tmp, path)
     return new_cursor
