@@ -111,7 +111,9 @@ def get_extended_history(ticker: str, days: int = 210) -> list[dict]:
         to_date   = date.today().strftime("%Y-%m-%d")
         from_date = (date.today() - timedelta(days=days + 90)).strftime("%Y-%m-%d")
         url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{from_date}/{to_date}"
-        params = {"apiKey": POLYGON_KEY, "sort": "asc", "limit": days}
+        # adjusted=true EXPLICITLY (not left to the API default): an unadjusted split
+        # reads as a ~-50% one-day crash and poisons momentum/vol for that name (P0-3).
+        params = {"apiKey": POLYGON_KEY, "sort": "asc", "limit": days, "adjusted": "true"}
         try:
             r = requests.get(url, params=params, timeout=10)
             results = r.json().get("results", [])
@@ -543,6 +545,20 @@ def get_market_snapshot(force: bool = False) -> dict:
 
     if data_quality is None:
         data_quality = _compute_fundamental_coverage(all_tickers, fundamentals, None)
+
+    # Corporate-action / bad-print guard (P0-3): flag suspect 1-day moves so an
+    # unhandled split or bad print is surfaced, not silently scored. Detection only.
+    try:
+        from corporate_actions import detect_price_outliers
+        outliers = detect_price_outliers(history)
+        data_quality["price_outliers"] = outliers
+        data_quality["price_outlier_count"] = len(outliers)
+        if outliers:
+            top = outliers[0]
+            print(f"   ⚠ {len(outliers)} suspect 1-day price move(s) flagged "
+                  f"(worst: {top['ticker']} {top['change_pct']}% on {top['date']})")
+    except Exception as e:
+        print(f"   ⚠ price-outlier scan skipped: {e}")
 
     return {
         "date":             today_str,

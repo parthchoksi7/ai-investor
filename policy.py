@@ -37,6 +37,8 @@ _DEFAULTS: dict = {
     "wash_sale_reentry_days":   30,
     "min_net_edge":             0.0,
     "blocked_tickers":          ["TSLA"],
+    # data-quality: 1-day move > this PERCENT with no corporate action = suspect print
+    "price_outlier_pct":        35,
 }
 
 # Per-key validators for the guardrails scalars. A value that fails validation is
@@ -63,8 +65,10 @@ _VALIDATORS = {
     "gfv_window_trading_days":  lambda v: _is_int(v) and v >= 0,
     "min_holding_trading_days": lambda v: _is_int(v) and v >= 0,
     "wash_sale_reentry_days":   lambda v: _is_int(v) and v >= 0,
+    # PERCENT (1..100) — a fraction typo (0.35) or an absurd value is rejected
+    "price_outlier_pct":        lambda v: _is_num(v) and 1 <= v <= 100,
 }
-_GUARDRAIL_KEYS = tuple(_VALIDATORS)
+_GUARDRAIL_KEYS = tuple(k for k in _VALIDATORS if k != "price_outlier_pct")
 
 _POLICY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "policy.yaml")
 
@@ -84,6 +88,7 @@ def _load(path: str | None = None) -> dict:
             raw = yaml.safe_load(f) or {}
         guardrails = raw.get("guardrails", {}) or {}
         universe = raw.get("universe", {}) or {}
+        data_quality = raw.get("data_quality", {}) or {}
         for k in _GUARDRAIL_KEYS:
             if k in guardrails and guardrails[k] is not None:
                 v = guardrails[k]
@@ -92,6 +97,13 @@ def _load(path: str | None = None) -> dict:
                 else:
                     print(f"⚠ policy.yaml {k}={v!r} failed validation; "
                           f"keeping default {_DEFAULTS[k]!r} (capital-safety guard)")
+        pov = data_quality.get("price_outlier_pct")
+        if pov is not None:
+            if _VALIDATORS["price_outlier_pct"](pov):
+                merged["price_outlier_pct"] = pov
+            else:
+                print(f"⚠ policy.yaml price_outlier_pct={pov!r} failed validation; "
+                      f"keeping default {_DEFAULTS['price_outlier_pct']!r}")
         if raw.get("policy_version"):
             merged["policy_version"] = raw["policy_version"]
         bt = universe.get("blocked_tickers")

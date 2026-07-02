@@ -17,7 +17,9 @@
 #   universe size            : 100 → 400  (IPS §5; apply Phase 2, gated on coverage)
 # ─────────────────────────────────────────────────────────────────────────────
 
-policy_version: "1.0-phase0-parity"
+# v1.1 (Phase 2): + data_quality.price_outlier_pct (detection-only; NO guardrail
+# behavior change — all guardrail values remain the Phase 0 parity baseline).
+policy_version: "1.1-phase2-dataquality"
 
 guardrails:
   max_target_weight:        0.10   # IPS max_position_pct (10%) — clamp + qty recompute
@@ -31,3 +33,9 @@ guardrails:
 
 universe:
   blocked_tickers: ["TSLA"]        # IPS §5 exclusions — never bought or sold
+
+data_quality:
+  # >N% 1-day move with no known corporate action = suspect print (unhandled split
+  # or bad data) that corrupts momentum/vol. Detection-only in Phase 2 (flagged in
+  # data_quality); IPS Appendix A resilience.price_outlier_quarantine_pct.
+  price_outlier_pct: 35

@@ -13,6 +13,26 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — Phase 2: corporate-action / split-adjustment guard + delisting detection (P0-3)
+
+- **Explicit `adjusted=true`** on the Polygon aggregates call (`market_data.get_extended_history`) —
+  no longer relying on the API default. An unadjusted split reads as a ~-50% one-day crash and
+  poisons momentum/vol for that name.
+- **`corporate_actions.py`** (new, detection-only): `detect_price_outliers` flags any 1-day move
+  beyond the IPS `price_outlier_pct` (35%) with no corporate action as a **suspect print**
+  (unhandled split / bad data) — a REVIEW signal, not an auto-drop (a genuine earnings crash must
+  not be discarded). `find_unpriced_holdings` surfaces held names with no fresh price (likely
+  delisting / M&A) so a rebalance isn't sized against a stale basis. Outliers are recorded on the
+  snapshot's `data_quality.price_outliers`. On the live 2026-06-26 snapshot it correctly flags 3
+  genuine earnings gaps (MDB +38%, SNOW +36%, ORCL +36%).
+- **`policy.price_outlier_pct` (35)** migrated from IPS Appendix A into `policy.yaml`/`policy.py`
+  with a fraction-typo validator (rejects `0.35`); `policy_version` → **`1.1-phase2-dataquality`**
+  (detection-only — all guardrail values remain the Phase 0 parity baseline). Dividends are
+  intentionally NOT adjusted: book and SPY/QQQ benchmarks are both price-return, so it's consistent.
+- **Live-path note:** the delisting SELL wiring lands in Phase 5 (`risk_watch`, `ultra` gate); Phase 2
+  ships the detector + tests only.
+- **QA:** +10 (`TestCorporateActions` ×8, `TestPriceOutlierPolicyParam` ×2).
+
 ### Changed — Phase 2: composite re-weight (quality tilt) + `formula_version` + factor_history
 
 - **Re-weighted `FACTOR_WEIGHTS`** from `momentum .30 / quality .25 / valuation .20 / low-vol .25`

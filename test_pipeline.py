@@ -3505,6 +3505,79 @@ class TestSECProvider:
         assert n[0] == 1     # one attempt total, then cached failure
 
 
+class TestCorporateActions:
+    """P0-3: split/print-outlier detection + delisted-holding detection (offline)."""
+
+    def test_detects_split_like_outlier(self):
+        from corporate_actions import detect_price_outliers
+        # A ~-50% overnight move (unadjusted 2:1 split shape) with default 35% threshold.
+        hist = {"ZZ": [{"date": "2026-01-01", "close": 100.0},
+                       {"date": "2026-01-02", "close": 49.0},   # -51%
+                       {"date": "2026-01-03", "close": 50.0}]}
+        out = detect_price_outliers(hist)
+        assert len(out) == 1
+        assert out[0]["ticker"] == "ZZ" and out[0]["change_pct"] == -51.0
+
+    def test_normal_moves_not_flagged(self):
+        from corporate_actions import detect_price_outliers
+        hist = {"AA": [{"date": "d1", "close": 100.0},
+                       {"date": "d2", "close": 103.0},   # +3%
+                       {"date": "d3", "close": 98.0}]}    # -4.85%
+        assert detect_price_outliers(hist) == []
+
+    def test_custom_threshold(self):
+        from corporate_actions import detect_price_outliers
+        hist = {"BB": [{"date": "d1", "close": 100.0}, {"date": "d2", "close": 90.0}]}  # -10%
+        assert detect_price_outliers(hist, threshold_pct=5) != []
+        assert detect_price_outliers(hist, threshold_pct=15) == []
+
+    def test_bad_bar_breaks_chain_no_false_positive(self):
+        from corporate_actions import detect_price_outliers
+        # A None/zero close must not create a phantom infinite/huge move.
+        hist = {"CC": [{"date": "d1", "close": 100.0},
+                       {"date": "d2", "close": 0.0},      # bad print — chain breaks
+                       {"date": "d3", "close": 101.0}]}   # vs d2 would be huge, but chain reset
+        assert detect_price_outliers(hist) == []
+
+    def test_uses_policy_threshold_by_default(self):
+        from corporate_actions import detect_price_outliers, _outlier_threshold_pct
+        import policy
+        assert _outlier_threshold_pct() == policy.VALUES["price_outlier_pct"] == 35
+
+    def test_find_unpriced_holdings_list_of_strings(self):
+        from corporate_actions import find_unpriced_holdings
+        prices = {"AAPL": {"close": 200.0}, "MSFT": {"close": 400.0}}
+        holdings = ["AAPL", "DELISTED", "MSFT"]
+        assert find_unpriced_holdings(holdings, prices) == ["DELISTED"]
+
+    def test_find_unpriced_holdings_position_dicts(self):
+        from corporate_actions import find_unpriced_holdings
+        prices = {"AAPL": {"close": 200.0}, "GONE": {"close": 0.0}}   # zero close = suspect
+        holdings = [{"ticker": "AAPL", "quantity": 1}, {"ticker": "GONE", "quantity": 2},
+                    {"ticker": "MISSING", "quantity": 3}]
+        assert find_unpriced_holdings(holdings, prices) == ["GONE", "MISSING"]
+
+    def test_empty_inputs_safe(self):
+        from corporate_actions import detect_price_outliers, find_unpriced_holdings
+        assert detect_price_outliers({}) == []
+        assert detect_price_outliers(None) == []
+        assert find_unpriced_holdings([], {}) == []
+        assert find_unpriced_holdings(None, {}) == []
+
+
+class TestPriceOutlierPolicyParam:
+    def test_default_present_and_valid(self):
+        import policy
+        assert policy.VALUES["price_outlier_pct"] == 35
+
+    def test_fraction_typo_rejected(self):
+        # 0.35 (a fraction typo for 35%) must be rejected → default kept.
+        import policy
+        v = policy._VALIDATORS["price_outlier_pct"]
+        assert v(35) is True and v(50) is True
+        assert v(0.35) is False and v(0) is False and v(200) is False
+
+
 class TestCascadeCikMapOk:
     def test_cascade_delegates_cik_map_ok_to_fallback(self, monkeypatch):
         from data_providers import CascadeProvider, FMPProvider, SECProvider
@@ -4918,7 +4991,9 @@ class TestPolicyParity:
         loaded = policy._load()  # reads the real policy.yaml next to the module
         for k, v in self.HISTORICAL.items():
             assert loaded[k] == v, f"policy.yaml {k}={loaded[k]!r} != historical {v!r}"
-        assert loaded["policy_version"] == "1.0-phase0-parity"
+        # Phase 2 bumped the version (added detection-only price_outlier_pct); the
+        # GUARDRAIL values above remain the parity baseline (asserted in the loop).
+        assert loaded["policy_version"] == "1.1-phase2-dataquality"
 
     def test_guardrails_constants_sourced_from_policy(self):
         """guardrails.* constants equal the policy values AND the historical ones."""
@@ -4969,7 +5044,7 @@ class TestPolicyParity:
     def test_policy_version_helper(self):
         import policy
         assert policy.policy_version() == policy.VALUES["policy_version"]
-        assert policy.policy_version() == "1.0-phase0-parity"
+        assert policy.policy_version() == "1.1-phase2-dataquality"
 
     def test_validation_rejects_units_typo_keeps_cap(self, tmp_path):
         """A percent/fraction units typo (10 instead of 0.10) must NOT disable the cap —
