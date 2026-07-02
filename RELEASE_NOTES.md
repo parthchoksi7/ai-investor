@@ -13,6 +13,154 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — Phase 2: SEC EDGAR User-Agent 403 (the actual cause of the coverage collapse)
+
+The Phase 2 coverage *detector* did its job: the first real CI run (`full_refresh`, 100 names)
+surfaced `cik_map_ok: false` with only **41%** quality coverage — EDGAR was contributing nothing
+even from GitHub Actions. Root cause was **not** IP blocking (the earlier hypothesis): SEC's Akamai
+WAF rejects the bot-style User-Agent `ai-investor-bot/1.0 …` with **HTTP 403**. SEC fair-access
+requires the documented `Company Name contact@email` form. Fixed the `SECProvider.HEADERS` UA to
+that form (verified: **200 + 10,426 CIK entries**).
+- **Impact:** projected quality coverage over the core universe jumps **41% → 96%** (misses are
+  ARM/SPOT foreign 20-F filers + the 2 ETFs — correct). This clears the IPS 80% floor, so
+  `coverage_ok` flips True and the composite re-weight (quality 35%) is now backed by real data
+  rather than renormalizing away — the `⛔ RE-WEIGHT NOT FAIRLY TESTED` caveat can clear once CI
+  confirms the number on the full pipeline.
+- **No live-order-path change.** Enrichment/scoring only; runs in GitHub Actions (`fetch_snapshot.py`).
+
+### Fixed — Phase 2: `full_refresh` now bypasses the enrichment TTL
+
+Follow-on from the UA fix. The first post-fix CI run showed `cik_map_ok: True` (map loads) but
+coverage *still* 41% — the `provider_cache.json` (restored via `actions/cache`) held **empty**
+entries stamped today from the 403-era runs, and the manual `full_refresh` bypassed only the 50/50
+group, **not** the per-ticker TTL (`age 0 < 7` → "not due"). So a manual "refresh all" couldn't
+recover stale empties — they stayed pinned for 7 days. `full_refresh` now forces `due=True`, the
+correct semantic. Regression test `test_full_refresh_bypasses_ttl_on_stale_empty`. (Normal daily
+crons heal without this too, just slower; the flag is the operator escape hatch.)
+
+### Fixed — Phase 2: code-review remediation (`/code-review high`, 6-angle × verify)
+
+Findings from the pre-PR expert review, remediated before opening the PR:
+- **`detect_price_outliers` emitted raw epoch-ms integers** as the finding `date` (live snapshot
+  bars carry Polygon epoch-ms, not ISO). Now normalized to `YYYY-MM-DD` (`_norm_date`) — the log
+  line and `data_quality.price_outliers` are readable + consistent with every other date field.
+- **Coverage was computed by two divergent copies** (`market_data` + `backtest/engine`), each with
+  its own quality-fields tuple — the exact "backtest clears the floor, live doesn't" drift risk.
+  Consolidated into ONE `data_providers.fundamental_coverage`. It now also reports **valuation
+  coverage separately** (the gate is on QUALITY, EDGAR-achievable; valuation is FMP-capped ~35% and
+  transparency-only) — closes the "coverage_ok True while valuation can't express" depth gap.
+- **`log_factor_history` used a non-atomic temp-file dance + an O(whole-file) dedup read.** Replaced
+  with a plain append (repo ledger convention) and a dedup set bounded to *today's* rows.
+- **Fetch cursor keyed on universe *size* only** → a same-length membership swap silently resumed
+  mid-sweep (coverage gap). Now keyed on a content **fingerprint** — any membership/order change
+  resets the sweep.
+- **`SECProvider` empty-200 body** now records a diagnostic error string (was a silent blank map);
+  **`price_outlier_pct`** is also honored if placed under `guardrails:` (was a silent no-op);
+  **`cik_map_ok` banner softened** (SEC is a fallback — FMP data may be fine); **`FORMULA_VERSION`
+  comment** de-overstated (it's a provenance label the future IC analyzer must group by, not an
+  enforced invariant).
+- **Accepted/deferred (documented):** `universe` cursor + `find_unpriced_holdings` live wiring →
+  Phase 4/5; a `factor_history` freshness alert → Phase 3; the live re-weight lands before a *fair*
+  backtest can run (blocked on GH-Actions coverage) — intentional per plan §9, surfaced for the owner.
+- **QA:** **509 green** (+5: valuation coverage, shared-helper agreement, epoch-ms→ISO, cursor
+  content-swap reset, empty-200 diagnostic).
+
+### Changed — Phase 2: quant-only shadow arm re-backtested on the new weighting + coverage gate
+
+- **Re-ran `backtest/` on the quality-tilted composite** (it reuses `score_all_tickers` unchanged).
+  The report is now explicitly framed as the **quant-only SHADOW ARM** (IPS §3.3 baseline the LLM
+  book is measured against) and stamps `formula_version` + `fundamental_coverage_pct`.
+- **Honest verdict (with the caveat that makes it honest):** on the committed 2026-06-26 snapshot
+  the re-weighted quant-only arm returns **−3.96% vs SPY +10.42%** (after-tax alpha −14.38%). **This
+  is NOT a fair test of the re-weight** — snapshot coverage is **39.8%**, far below the 80% floor, so
+  the quality/valuation tilt cannot express (61% of names score momentum+vol only and the higher
+  quality weight just renormalizes away). The report now **inserts a loud `⛔ RE-WEIGHT NOT FAIRLY
+  TESTED` caveat** below the floor and directs a re-run once GH Actions coverage clears (plan §9-3).
+  No verdict on the re-weight is drawn until then — per the quant-researcher discipline, an
+  unproven signal is reported as unproven, not dressed up.
+- **QA:** +4 (formula-version stamp, below-floor caveat present / above-floor absent, backtest
+  determinism / reproducibility).
+
+### Added — Phase 2: gated universe expansion (→ ~400) + resumable fetch cursor
+
+- **`universe.py`** — new single source of truth for the trading/scoring universe. `CORE_UNIVERSE`
+  (the historical 100-name WATCHLIST, verbatim; `market_data.WATCHLIST` now aliases it — DRY) plus
+  `EXPANDED_UNIVERSE` (**393 S&P-500-class names**, ~400 target).
+- **Coverage-gated:** `get_active_universe(coverage_ok, enabled)` returns the expanded pool ONLY
+  when the operator has enabled it (`UNIVERSE_EXPANDED` env, default OFF) **AND** fundamental
+  coverage has cleared the 80% floor. Both required — a wider pool on thin coverage adds
+  momentum-only names with no quality/value signal. **Zero behavior change now:** active universe
+  stays the core 100 until the operator flips the flag after verifying coverage in GH Actions logs.
+- **Resumable cursor** (`next_batch`/`save_batch`, `fetch_progress.json`) — hands out bounded fetch
+  batches with a wrap-around cursor persisted only on success, so a crash retries the same batch
+  (no gap) and a universe-size change resets to a fresh sweep. Needed because 400×210-day histories
+  can't be fetched in one run under Polygon's 5-calls/min. **Cursor is built + tested but not yet
+  wired into the fetch loop** — that needs the history carry-forward (Phase 4 storage split);
+  documented in MANUAL_TODO #6 as a hard prerequisite before enabling expansion.
+- **QA:** +9 (`TestUniverse`: core/expanded, gate requires both conditions, env flag, sequential
+  batches, wrap-around, size-change reset, crash-retry-same-batch, empty-universe).
+
+### Added — Phase 2: corporate-action / split-adjustment guard + delisting detection (P0-3)
+
+- **Explicit `adjusted=true`** on the Polygon aggregates call (`market_data.get_extended_history`) —
+  no longer relying on the API default. An unadjusted split reads as a ~-50% one-day crash and
+  poisons momentum/vol for that name.
+- **`corporate_actions.py`** (new, detection-only): `detect_price_outliers` flags any 1-day move
+  beyond the IPS `price_outlier_pct` (35%) with no corporate action as a **suspect print**
+  (unhandled split / bad data) — a REVIEW signal, not an auto-drop (a genuine earnings crash must
+  not be discarded). `find_unpriced_holdings` surfaces held names with no fresh price (likely
+  delisting / M&A) so a rebalance isn't sized against a stale basis. Outliers are recorded on the
+  snapshot's `data_quality.price_outliers`. On the live 2026-06-26 snapshot it correctly flags 3
+  genuine earnings gaps (MDB +38%, SNOW +36%, ORCL +36%).
+- **`policy.price_outlier_pct` (35)** migrated from IPS Appendix A into `policy.yaml`/`policy.py`
+  with a fraction-typo validator (rejects `0.35`); `policy_version` → **`1.1-phase2-dataquality`**
+  (detection-only — all guardrail values remain the Phase 0 parity baseline). Dividends are
+  intentionally NOT adjusted: book and SPY/QQQ benchmarks are both price-return, so it's consistent.
+- **Live-path note:** the delisting SELL wiring lands in Phase 5 (`risk_watch`, `ultra` gate); Phase 2
+  ships the detector + tests only.
+- **QA:** +10 (`TestCorporateActions` ×8, `TestPriceOutlierPolicyParam` ×2).
+
+### Changed — Phase 2: composite re-weight (quality tilt) + `formula_version` + factor_history
+
+- **Re-weighted `FACTOR_WEIGHTS`** from `momentum .30 / quality .25 / valuation .20 / low-vol .25`
+  → **`momentum .15 / quality .35 / valuation .25 / low-vol .25`** — momentum demoted to a minor
+  confirm; quality/value/low-vol carry the signal. Rationale (IPS 9–12mo horizon, CA top-bracket):
+  momentum is short-horizon and turnover-heavy (tax-suicidal); quality/value/low-vol are the
+  persistent, lower-turnover factors for a multi-quarter hold. **Deterministic change — its edge is
+  proven or falsified in `backtest/`, not on faith**, and gated on the coverage fix (quality/value
+  are only real once EDGAR clears the 80% floor).
+- **`FORMULA_VERSION` ("2.0-quality-tilt")** stamped on every composite score and every
+  `factor_history` row. IC / factor persistence must **never** be computed across a formula
+  boundary (mixing pre-/post-reweight composites corrupts the signal) — **P0-2**.
+- **`factor_history.jsonl`** — new append-only, full-universe, point-in-time factor time series
+  (`quant_engine.log_factor_history`), idempotent per `(date, ticker, formula_version)`, the
+  substrate for factor-persistence / IC. Written & committed by the **GH Actions** path
+  (`fetch_snapshot.py` + `market_data.yml`) — the only plane that scores the whole universe daily.
+- **Observed:** on the committed pre-fix 2026-06-26 snapshot, quality coverage is **39/100 (39%)** —
+  below the 80% floor, exactly what the new measurement is meant to surface; universe expansion
+  stays gated until GH Actions (with EDGAR reachable) clears the floor.
+- **QA:** +7 (`TestFactorHistory` ×4, formula_version stamp + `FACTOR_WEIGHTS`-derived composite tests).
+
+### Fixed — Phase 2: SEC fundamental-coverage swallow + first-class coverage measurement
+
+- **Root cause (`data_providers.py`):** `SECProvider._ensure_cik_map` swallowed *any* CIK-map
+  fetch failure into `self._cik = {}` with **no signal** — after which every ticker lookup returned
+  `None`, collapsing fundamental coverage to 0% invisibly (the June 28%-coverage incident class).
+  Worse, an empty dict is falsy, so the "load once" guard never latched and every per-ticker call
+  re-hit SEC (a silent retry storm).
+- **Fix:** the CIK-map load is now attempted **exactly once** (latched on `_cik_load_attempted`),
+  and its outcome is recorded on `_cik_load_ok`. New `SECProvider.cik_map_ok()` (and a
+  `CascadeProvider` delegate) let the enrichment layer distinguish a real load **failure**
+  (→ surfaced loudly, recorded) from a legitimate ticker-not-in-map (→ `None`). `raise_for_status()`
+  now treats a 403/500 as a failure instead of parsing an error body into an empty map.
+- **Measurement:** every snapshot now carries a **`data_quality`** block —
+  `fundamental_coverage_pct`, `fundamentals_covered/active_universe`, `cik_map_ok`, and an
+  **absolute** `coverage_ok` gate against the IPS **80% floor** (`market_data._compute_fundamental_coverage`).
+  The floor is absolute, not a WoW delta, because a *steady* 28% (nothing dropping) was the exact
+  June bug a delta check would have missed. Coverage is printed each fetch.
+- **QA:** **477 green** (+8: CIK-map ok/failure/http-error/once-on-failure, Cascade delegate,
+  coverage counts quality fields / above-floor / empty-universe).
+
 ### Fixed — Phase 1: forecast feed un-broken + backfilled (the measurement evidence clock)
 
 - **Root cause (silent since 2026-06-18):** `forecasts.jsonl` / `forecasts_scored.jsonl` /

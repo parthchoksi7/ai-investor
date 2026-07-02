@@ -164,24 +164,58 @@ class SECProvider:
 
     TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
     FACTS_URL   = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
-    HEADERS     = {"User-Agent": "ai-investor-bot/1.0 ai-investor-bot@github.com"}
+    # SEC fair-access requires the UA be a declared identity in the documented
+    # "Company Name contact@email" form. A slash-version/bot-style UA
+    # ("ai-investor-bot/1.0 …") is rejected by SEC's Akamai WAF with 403 — which
+    # silently collapsed EDGAR quality coverage to ~0 (the reason the CIK-map load
+    # was failing even in CI). This exact string returns 200 + 10k+ CIK entries;
+    # do NOT reintroduce a "/version" token. See sec.gov/os/webmaster-faq#developers
+    HEADERS     = {"User-Agent": "AI Investor Research admin@parth-choksi.com"}
 
     def __init__(self, timeout: int = 15):
         self.timeout = timeout
         self._cik: dict[str, str] = {}   # ticker → 10-digit zero-padded CIK (lazy)
+        self._cik_load_attempted = False # load is tried exactly once (no retry storm)
+        self._cik_load_ok        = False # True iff the map loaded with ≥1 entry
+        self._cik_load_error: str | None = None
 
     def _ensure_cik_map(self) -> None:
-        if self._cik:
+        # Attempt the load exactly once. Previously any failure was swallowed into
+        # ``self._cik = {}`` with no signal AND, because an empty dict is falsy,
+        # every subsequent per-ticker call re-hit SEC — a silent retry storm that
+        # collapsed fundamental coverage to 0% with no trace (the June 28%-coverage
+        # incident class). Now: one attempt, and the outcome is recorded on
+        # ``_cik_load_ok`` so the enrichment layer can tell a genuine load FAILURE
+        # (→ abort / DEGRADED) apart from a legitimate ticker-not-in-map (→ None).
+        if self._cik_load_attempted:
             return
+        self._cik_load_attempted = True
         import requests
         try:
             r = requests.get(self.TICKERS_URL, headers=self.HEADERS, timeout=self.timeout)
+            r.raise_for_status()
             self._cik = {
                 v["ticker"].upper(): str(v["cik_str"]).zfill(10)
                 for v in r.json().values()
             }
-        except Exception:
+        except Exception as e:
             self._cik = {}
+            self._cik_load_error = str(e)
+        if not self._cik and self._cik_load_error is None:
+            # HTTP 200 but an empty/malformed-but-valid body (e.g. transient CDN {}):
+            # record WHY so a 0%-coverage run is diagnosable, not a silent blank.
+            self._cik_load_error = "empty CIK map (200 OK, no entries)"
+        self._cik_load_ok = bool(self._cik)
+
+    def cik_map_ok(self) -> bool:
+        """Whether the EDGAR CIK map loaded (≥1 entry). Loads it on first call.
+
+        This is the signal the enrichment layer checks to distinguish a real load
+        failure — every ticker would return None, i.e. 0% coverage — from the
+        normal case where a specific ticker simply isn't SEC-registered.
+        """
+        self._ensure_cik_map()
+        return self._cik_load_ok
 
     def _get_us_gaap(self, ticker: str) -> dict:
         import requests
@@ -250,6 +284,38 @@ class SECProvider:
 
 
 _QUALITY_FIELDS = {"gross_margin", "operating_margin", "debt_to_equity"}
+# Valuation fields require FMP (price-relative ratios); SEC EDGAR does NOT supply them,
+# so valuation coverage is structurally capped near FMP's free-tier reach (~35%).
+_VALUATION_FIELDS = {"pe_ratio", "fcf_yield", "ev_ebitda"}
+
+
+def fundamental_coverage(tickers, fundamentals: dict) -> dict:
+    """Single source of truth for 'how much real fundamental data do we have'.
+
+    Returns quality AND valuation coverage separately over ``tickers``. Both the live
+    snapshot gate (market_data) and the backtest caveat (backtest/engine) call this, so
+    the number that gates the quality-tilt re-weight is computed ONE way — a fork here
+    would let the backtest clear the 80% floor while the live snapshot doesn't (or vice
+    versa). Quality (EDGAR, ~all US equities) is the primary gate; valuation is reported
+    for transparency because it can't structurally reach the floor without paid FMP.
+    """
+    total = len(tickers)
+
+    def _covered(fields: set) -> int:
+        return sum(
+            1 for t in tickers
+            if isinstance(fundamentals.get(t), dict) and (fields & fundamentals[t].keys())
+        )
+
+    q = _covered(_QUALITY_FIELDS)
+    v = _covered(_VALUATION_FIELDS)
+    return {
+        "active_universe":           total,
+        "fundamentals_covered":      q,
+        "fundamental_coverage_pct":  round(100.0 * q / total, 1) if total else 0.0,
+        "valuation_covered":         v,
+        "valuation_coverage_pct":    round(100.0 * v / total, 1) if total else 0.0,
+    }
 
 
 class CascadeProvider:
@@ -285,6 +351,12 @@ class CascadeProvider:
 
     def estimates(self, ticker: str) -> dict | None:
         return self._primary.estimates(ticker)
+
+    def cik_map_ok(self) -> bool:
+        """SEC EDGAR is the quality-factor fallback for the ~65% of the universe
+        FMP's free tier doesn't cover, so its CIK-map health gates coverage here
+        too. Delegates to the SEC fallback."""
+        return self._fallback.cik_map_ok()
 
 
 def get_provider() -> MarketDataProvider:

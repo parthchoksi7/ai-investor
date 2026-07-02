@@ -136,7 +136,20 @@ def run_backtest(strategy,
         "final_equity":          equity_curve[-1][1] if equity_curve else float(initial_capital),
         "traded_notional_total": round(traded_notional_total, 2),
         "benchmark_curve":       _benchmark_curve(idx, axis, warmup, float(initial_capital)),
+        "fundamental_coverage_pct": _coverage_pct(history, fundamentals),
     }
+
+
+def _coverage_pct(history: dict, fundamentals: dict) -> float:
+    """Percent of scored tickers with real QUALITY fundamentals — via the ONE shared
+    `data_providers.fundamental_coverage` so the backtest and the live snapshot gate
+    can't disagree. Below the 80% floor the quality/valuation tilt cannot express
+    (most names score momentum+vol only) so the backtest is NOT a fair test of the
+    re-weight — the report flags this. Benchmarks (SPY/QQQ) are excluded from the
+    denominator to match the tradeable universe."""
+    from data_providers import fundamental_coverage
+    tickers = [t for t in history if t not in EXCLUDE]
+    return fundamental_coverage(tickers, fundamentals)["fundamental_coverage_pct"]
 
 
 def _benchmark_curve(idx: dict, axis: list, warmup: int, capital: float) -> list:

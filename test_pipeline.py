@@ -447,7 +447,9 @@ class TestRiskMetrics:
 class TestScoreAllTickers:
     def test_composite_weight_formula_all_factors(self):
         # When every factor has real data the composite uses all four base weights.
-        from quant_engine import score_all_tickers
+        # Weights are read from FACTOR_WEIGHTS (source of truth) so the test tracks
+        # the Phase 2 re-weight instead of pinning stale literals.
+        from quant_engine import score_all_tickers, FACTOR_WEIGHTS, FORMULA_VERSION
         history = _flat(100.0, 210)
         market_data = {
             "history": {"AAPL": history, "SPY": history},
@@ -456,11 +458,12 @@ class TestScoreAllTickers:
         scores = score_all_tickers(market_data)
         s = scores["AAPL"]
         assert set(s["factors_used"]) == {"momentum", "quality", "valuation", "volatility"}
+        assert s["formula_version"] == FORMULA_VERSION
         expected = (
-            s["momentum_score"]   * 0.30
-            + s["quality_score"]  * 0.25
-            + s["valuation_score"] * 0.20
-            + s["volatility_score"] * 0.25
+            s["momentum_score"]    * FACTOR_WEIGHTS["momentum"]
+            + s["quality_score"]   * FACTOR_WEIGHTS["quality"]
+            + s["valuation_score"] * FACTOR_WEIGHTS["valuation"]
+            + s["volatility_score"] * FACTOR_WEIGHTS["volatility"]
         )
         assert s["composite_score"] == pytest.approx(expected, abs=0.15)
 
@@ -468,14 +471,15 @@ class TestScoreAllTickers:
         # Phase 3.1 honesty: with NO fundamentals, quality/valuation carry no
         # real data and must be dropped — the composite is momentum+volatility
         # renormalized to their own weights, NOT blended with two constant 50s.
-        from quant_engine import score_all_tickers
+        from quant_engine import score_all_tickers, FACTOR_WEIGHTS
         history = _flat(100.0, 210)
         market_data = {"history": {"AAPL": history, "SPY": history}, "fundamentals": {}}
         s = score_all_tickers(market_data)["AAPL"]
         assert s["factors_used"] == ["momentum", "volatility"]
         assert s["quality_available"] is False
         assert s["valuation_available"] is False
-        expected = (s["momentum_score"] * 0.30 + s["volatility_score"] * 0.25) / 0.55
+        wm, wv = FACTOR_WEIGHTS["momentum"], FACTOR_WEIGHTS["volatility"]
+        expected = (s["momentum_score"] * wm + s["volatility_score"] * wv) / (wm + wv)
         assert s["composite_score"] == pytest.approx(expected, abs=0.05)
 
     def test_composite_no_real_factor_is_neutral(self):
@@ -498,6 +502,66 @@ class TestScoreAllTickers:
         assert "MSFT" in scores
         assert scores["MSFT"]["beta"] is None
         assert 0 <= scores["MSFT"]["composite_score"] <= 100
+
+
+class TestFactorHistory:
+    def _scores(self):
+        from quant_engine import FORMULA_VERSION
+        return {
+            "AAPL": {"composite_score": 62.0, "factors_used": ["momentum", "volatility"],
+                     "formula_version": FORMULA_VERSION, "momentum_score": 70,
+                     "momentum_available": True, "volatility_score": 55,
+                     "volatility_available": True, "beta": 1.1},
+            "MSFT": {"composite_score": 58.0, "factors_used": ["momentum"],
+                     "formula_version": FORMULA_VERSION, "momentum_score": 58,
+                     "momentum_available": True, "beta": None},
+        }
+
+    def test_appends_one_row_per_ticker_with_formula_version(self, tmp_path):
+        from quant_engine import log_factor_history, FORMULA_VERSION
+        import json
+        path = str(tmp_path / "fh.jsonl")
+        n = log_factor_history(self._scores(), as_of="2026-07-02", path=path)
+        assert n == 2
+        rows = [json.loads(l) for l in open(path) if l.strip()]
+        assert {r["ticker"] for r in rows} == {"AAPL", "MSFT"}
+        assert all(r["formula_version"] == FORMULA_VERSION for r in rows)
+        assert all(r["date"] == "2026-07-02" for r in rows)
+        aapl = next(r for r in rows if r["ticker"] == "AAPL")
+        assert aapl["composite_score"] == 62.0 and aapl["beta"] == 1.1
+
+    def test_idempotent_same_day_same_formula(self, tmp_path):
+        from quant_engine import log_factor_history
+        path = str(tmp_path / "fh.jsonl")
+        log_factor_history(self._scores(), as_of="2026-07-02", path=path)
+        n2 = log_factor_history(self._scores(), as_of="2026-07-02", path=path)
+        assert n2 == 0                                   # no duplicate rows
+        rows = [l for l in open(path) if l.strip()]
+        assert len(rows) == 2
+
+    def test_new_day_appends_again(self, tmp_path):
+        from quant_engine import log_factor_history
+        path = str(tmp_path / "fh.jsonl")
+        log_factor_history(self._scores(), as_of="2026-07-02", path=path)
+        n2 = log_factor_history(self._scores(), as_of="2026-07-03", path=path)
+        assert n2 == 2
+        rows = [l for l in open(path) if l.strip()]
+        assert len(rows) == 4
+
+    def test_formula_boundary_is_a_distinct_key(self, tmp_path):
+        # A re-weight (new formula_version) for the SAME date is NOT a duplicate —
+        # both regimes are recorded so IC is computed within, never across, a boundary.
+        from quant_engine import log_factor_history, FORMULA_VERSION
+        import json
+        path = str(tmp_path / "fh.jsonl")
+        s = self._scores()
+        log_factor_history(s, as_of="2026-07-02", path=path)
+        for v in s.values():
+            v["formula_version"] = "3.0-experimental"
+        n2 = log_factor_history(s, as_of="2026-07-02", path=path)
+        assert n2 == 2
+        versions = {json.loads(l)["formula_version"] for l in open(path) if l.strip()}
+        assert versions == {FORMULA_VERSION, "3.0-experimental"}
 
     def test_fundamentals_used_when_available(self):
         from quant_engine import score_all_tickers
@@ -3099,6 +3163,52 @@ class TestBacktestReport:
         assert rep["trading_days"] > 100 and rep["n_trades"] > 0
         assert rep["strategy"]["total_return"] is not None and rep["spy"] is not None
 
+    def test_report_stamps_formula_version(self):
+        from backtest.report import build_report
+        from quant_engine import FORMULA_VERSION
+        rep = build_report({
+            "equity_curve": [("d1", 100.0), ("d2", 101.0)], "benchmark_curve": [],
+            "transactions": [], "initial_capital": 100.0, "final_equity": 101.0,
+            "traded_notional_total": 0.0, "fundamental_coverage_pct": 90.0,
+        })
+        assert rep["formula_version"] == FORMULA_VERSION
+        assert rep["fundamental_coverage_pct"] == 90.0
+
+    def test_below_floor_coverage_adds_reweight_caveat(self):
+        from backtest.report import build_report
+        rep = build_report({
+            "equity_curve": [("d1", 100.0), ("d2", 101.0)], "benchmark_curve": [],
+            "transactions": [], "initial_capital": 100.0, "final_equity": 101.0,
+            "traded_notional_total": 0.0, "fundamental_coverage_pct": 39.8,
+        })
+        assert any("RE-WEIGHT NOT FAIRLY TESTED" in c for c in rep["caveats"])
+
+    def test_above_floor_coverage_no_reweight_caveat(self):
+        from backtest.report import build_report
+        rep = build_report({
+            "equity_curve": [("d1", 100.0), ("d2", 101.0)], "benchmark_curve": [],
+            "transactions": [], "initial_capital": 100.0, "final_equity": 101.0,
+            "traded_notional_total": 0.0, "fundamental_coverage_pct": 85.0,
+        })
+        assert not any("RE-WEIGHT NOT FAIRLY TESTED" in c for c in rep["caveats"])
+
+    def test_backtest_deterministic_reproducible(self):
+        # Same snapshot → identical equity curve + trades (no RNG, no wall-clock).
+        from backtest.engine import run_backtest
+        from backtest.strategies import quant_momentum_vol
+        snap = {"history": {
+            "SPY":  _bt_bars([100 * (1.001 ** i) for i in range(40)]),
+            "WIN":  _bt_bars([100 * (1.004 ** i) for i in range(40)]),
+            "MEH":  _bt_bars([100 * (1.0005 ** i) for i in range(40)]),
+        }, "fundamentals": {}}
+        r1 = run_backtest(quant_momentum_vol, snapshot=snap, initial_capital=10_000.0,
+                          rebalance_days=5, warmup=22)
+        r2 = run_backtest(quant_momentum_vol, snapshot=snap, initial_capital=10_000.0,
+                          rebalance_days=5, warmup=22)
+        assert r1["equity_curve"] == r2["equity_curve"]
+        assert r1["final_equity"] == r2["final_equity"]
+        assert r1["fundamental_coverage_pct"] == r2["fundamental_coverage_pct"] == 0.0
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Edge cases / failure scenarios (QA hardening pass)
@@ -3303,6 +3413,7 @@ class TestSECProvider:
             call_log.append(url)
             import types, json as _json
             resp = types.SimpleNamespace()
+            resp.raise_for_status = lambda: None
             if "company_tickers" in url:
                 resp.json = lambda: self.TICKERS_RESP
             else:
@@ -3336,7 +3447,8 @@ class TestSECProvider:
         import requests, types
         p = SECProvider(timeout=5)
         monkeypatch.setattr(requests, "get",
-                            lambda url, **kw: types.SimpleNamespace(json=lambda: self.TICKERS_RESP))
+                            lambda url, **kw: types.SimpleNamespace(
+                                json=lambda: self.TICKERS_RESP, raise_for_status=lambda: None))
         assert p.fundamentals("ZZZZ") is None   # not in CIK map
 
     def test_no_earnings_or_estimates(self, monkeypatch):
@@ -3365,6 +3477,7 @@ class TestSECProvider:
         }
         def fake_get(url, **kw):
             r = types.SimpleNamespace()
+            r.raise_for_status = lambda: None
             r.json = (lambda: self.TICKERS_RESP) if "company_tickers" in url else (lambda: facts)
             return r
         monkeypatch.setattr(requests, "get", fake_get)
@@ -3380,6 +3493,7 @@ class TestSECProvider:
         def fake_get(url, **kw):
             call_n[0] += 1
             r = types.SimpleNamespace()
+            r.raise_for_status = lambda: None
             if "company_tickers" in url:
                 r.json = lambda: self.TICKERS_RESP
             else:
@@ -3391,6 +3505,306 @@ class TestSECProvider:
     def test_conforms_to_protocol(self):
         from data_providers import SECProvider, MarketDataProvider
         assert isinstance(SECProvider(), MarketDataProvider)
+
+    def test_cik_map_ok_true_on_load(self, monkeypatch):
+        p, _ = self._make_provider(monkeypatch)
+        assert p.cik_map_ok() is True     # map loaded with ≥1 entry
+
+    def test_cik_map_ok_false_on_load_failure(self, monkeypatch):
+        # A failed CIK-map fetch must surface as cik_map_ok()==False, NOT a silent
+        # empty map that zeros coverage with no trace (the June incident class).
+        from data_providers import SECProvider
+        import requests
+        p = SECProvider(timeout=5)
+        def boom(url, **kw):
+            raise requests.exceptions.ConnectionError("edgar down")
+        monkeypatch.setattr(requests, "get", boom)
+        assert p.cik_map_ok() is False
+        assert p._cik_load_error is not None
+        assert p.fundamentals("AAPL") is None   # every lookup None, but signalled
+
+    def test_cik_map_ok_false_on_http_error(self, monkeypatch):
+        # A 500/403 (raise_for_status) is a load FAILURE, not an empty universe.
+        from data_providers import SECProvider
+        import requests, types
+        p = SECProvider(timeout=5)
+        def fake_get(url, **kw):
+            r = types.SimpleNamespace(json=lambda: {})
+            def raise_():
+                raise requests.exceptions.HTTPError("403")
+            r.raise_for_status = raise_
+            return r
+        monkeypatch.setattr(requests, "get", fake_get)
+        assert p.cik_map_ok() is False
+
+    def test_empty_200_body_records_diagnostic_error(self, monkeypatch):
+        # HTTP 200 with an empty {} body → load fails, but WHY must be recorded (not
+        # a silent blank map) so a 0%-coverage run is diagnosable.
+        from data_providers import SECProvider
+        import requests, types
+        p = SECProvider(timeout=5)
+        monkeypatch.setattr(requests, "get",
+                            lambda url, **kw: types.SimpleNamespace(
+                                json=lambda: {}, raise_for_status=lambda: None))
+        assert p.cik_map_ok() is False
+        assert p._cik_load_error is not None and "empty" in p._cik_load_error.lower()
+
+    def test_cik_map_load_attempted_once_on_failure(self, monkeypatch):
+        # After a failure, we do NOT retry on every subsequent call (no retry storm).
+        from data_providers import SECProvider
+        import requests
+        p = SECProvider(timeout=5)
+        n = [0]
+        def boom(url, **kw):
+            n[0] += 1
+            raise requests.exceptions.ConnectionError("down")
+        monkeypatch.setattr(requests, "get", boom)
+        p.fundamentals("AAPL"); p.fundamentals("MSFT"); p.cik_map_ok()
+        assert n[0] == 1     # one attempt total, then cached failure
+
+
+class TestUniverse:
+    """Phase 2: gated universe expansion + resumable fetch cursor."""
+
+    def test_core_is_the_watchlist(self):
+        import universe, market_data
+        assert market_data.WATCHLIST is universe.CORE_UNIVERSE
+        assert len(universe.CORE_UNIVERSE) == 100
+
+    def test_expanded_superset_of_core_and_larger(self):
+        import universe
+        assert set(universe.CORE_UNIVERSE) <= set(universe.EXPANDED_UNIVERSE)
+        assert len(universe.EXPANDED_UNIVERSE) > 300      # ~400 target
+        # no duplicates in the built expanded list
+        assert len(universe.EXPANDED_UNIVERSE) == len(set(universe.EXPANDED_UNIVERSE))
+
+    def test_gate_requires_both_enabled_and_coverage(self):
+        import universe
+        assert universe.get_active_universe(coverage_ok=True,  enabled=False) == universe.CORE_UNIVERSE
+        assert universe.get_active_universe(coverage_ok=False, enabled=True)  == universe.CORE_UNIVERSE
+        assert universe.get_active_universe(coverage_ok=True,  enabled=True)  == universe.EXPANDED_UNIVERSE
+
+    def test_gate_reads_env_flag_by_default(self, monkeypatch):
+        import universe
+        monkeypatch.delenv("UNIVERSE_EXPANDED", raising=False)
+        assert universe.get_active_universe(coverage_ok=True) == universe.CORE_UNIVERSE   # default OFF
+        monkeypatch.setenv("UNIVERSE_EXPANDED", "true")
+        assert universe.get_active_universe(coverage_ok=True) == universe.EXPANDED_UNIVERSE
+
+    def test_cursor_hands_out_sequential_batches(self, tmp_path):
+        import universe
+        path = str(tmp_path / "fp.json")
+        tickers = [f"T{i}" for i in range(10)]
+        b1, c1 = universe.next_batch(tickers, 4, path)
+        assert b1 == tickers[0:4] and c1 == 0
+        universe.save_batch(tickers, 4, c1, path)
+        b2, c2 = universe.next_batch(tickers, 4, path)
+        assert b2 == tickers[4:8] and c2 == 4
+        universe.save_batch(tickers, 4, c2, path)
+        b3, c3 = universe.next_batch(tickers, 4, path)
+        assert b3 == tickers[8:10] and c3 == 8            # short final batch
+
+    def test_cursor_wraps_around(self, tmp_path):
+        import universe
+        path = str(tmp_path / "fp.json")
+        tickers = [f"T{i}" for i in range(6)]
+        _, c = universe.next_batch(tickers, 4, path)
+        nc = universe.save_batch(tickers, 4, c, path)     # 0+4=4 < 6
+        _, c = universe.next_batch(tickers, 4, path)
+        assert c == 4
+        nc = universe.save_batch(tickers, 4, c, path)     # 4+4=8 >= 6 → wrap to 0
+        assert nc == 0
+        b, c = universe.next_batch(tickers, 4, path)
+        assert c == 0 and b == tickers[0:4]               # fresh sweep
+
+    def test_cursor_resets_on_universe_size_change(self, tmp_path):
+        import universe, json
+        path = str(tmp_path / "fp.json")
+        (tmp_path / "fp.json").write_text(json.dumps({"cursor": 3, "universe_size": 10}))
+        # a different-sized universe (or an old size-keyed file) must NOT resume mid-way
+        b, c = universe.next_batch([f"T{i}" for i in range(5)], 2, path)
+        assert c == 0 and b == ["T0", "T1"]
+
+    def test_cursor_resets_on_same_size_content_swap(self, tmp_path):
+        # A same-LENGTH membership change must reset the sweep — keying on size alone
+        # would silently skip the first N names of the new ordering (coverage gap).
+        import universe
+        path = str(tmp_path / "fp.json")
+        u1 = [f"T{i}" for i in range(6)]
+        _, c = universe.next_batch(u1, 4, path)
+        universe.save_batch(u1, 4, c, path)          # cursor advances to 4 for u1
+        u2 = u1[:5] + ["SWAPPED"]                     # same length, one name changed
+        b, c = universe.next_batch(u2, 4, path)
+        assert c == 0 and b == u2[0:4]               # fresh sweep, not resumed at 4
+
+    def test_crash_before_save_retries_same_batch(self, tmp_path):
+        import universe
+        path = str(tmp_path / "fp.json")
+        tickers = [f"T{i}" for i in range(10)]
+        b1, _ = universe.next_batch(tickers, 4, path)     # fetch starts...
+        # ...crash before save_batch → cursor not advanced
+        b1_again, _ = universe.next_batch(tickers, 4, path)
+        assert b1_again == b1                             # same batch retried, no gap
+
+    def test_empty_universe_safe(self, tmp_path):
+        import universe
+        path = str(tmp_path / "fp.json")
+        assert universe.next_batch([], 4, path) == ([], 0)
+        assert universe.save_batch([], 4, 0, path) == 0
+
+
+class TestCorporateActions:
+    """P0-3: split/print-outlier detection + delisted-holding detection (offline)."""
+
+    def test_detects_split_like_outlier(self):
+        from corporate_actions import detect_price_outliers
+        # A ~-50% overnight move (unadjusted 2:1 split shape) with default 35% threshold.
+        hist = {"ZZ": [{"date": "2026-01-01", "close": 100.0},
+                       {"date": "2026-01-02", "close": 49.0},   # -51%
+                       {"date": "2026-01-03", "close": 50.0}]}
+        out = detect_price_outliers(hist)
+        assert len(out) == 1
+        assert out[0]["ticker"] == "ZZ" and out[0]["change_pct"] == -51.0
+
+    def test_normal_moves_not_flagged(self):
+        from corporate_actions import detect_price_outliers
+        hist = {"AA": [{"date": "d1", "close": 100.0},
+                       {"date": "d2", "close": 103.0},   # +3%
+                       {"date": "d3", "close": 98.0}]}    # -4.85%
+        assert detect_price_outliers(hist) == []
+
+    def test_custom_threshold(self):
+        from corporate_actions import detect_price_outliers
+        hist = {"BB": [{"date": "d1", "close": 100.0}, {"date": "d2", "close": 90.0}]}  # -10%
+        assert detect_price_outliers(hist, threshold_pct=5) != []
+        assert detect_price_outliers(hist, threshold_pct=15) == []
+
+    def test_epoch_ms_date_normalized_to_iso(self):
+        # Live snapshot bars carry epoch-MS integer dates (Polygon 't'); the finding
+        # must emit a readable ISO string, not a raw epoch int.
+        from corporate_actions import detect_price_outliers
+        hist = {"ZZ": [{"date": 1748736000000, "close": 100.0},
+                       {"date": 1748822400000, "close": 40.0}]}   # -60%
+        out = detect_price_outliers(hist)
+        assert len(out) == 1
+        assert isinstance(out[0]["date"], str) and out[0]["date"].count("-") == 2   # YYYY-MM-DD
+        assert out[0]["date"].startswith("2025-")
+
+    def test_bad_bar_breaks_chain_no_false_positive(self):
+        from corporate_actions import detect_price_outliers
+        # A None/zero close must not create a phantom infinite/huge move.
+        hist = {"CC": [{"date": "d1", "close": 100.0},
+                       {"date": "d2", "close": 0.0},      # bad print — chain breaks
+                       {"date": "d3", "close": 101.0}]}   # vs d2 would be huge, but chain reset
+        assert detect_price_outliers(hist) == []
+
+    def test_uses_policy_threshold_by_default(self):
+        from corporate_actions import detect_price_outliers, _outlier_threshold_pct
+        import policy
+        assert _outlier_threshold_pct() == policy.VALUES["price_outlier_pct"] == 35
+
+    def test_find_unpriced_holdings_list_of_strings(self):
+        from corporate_actions import find_unpriced_holdings
+        prices = {"AAPL": {"close": 200.0}, "MSFT": {"close": 400.0}}
+        holdings = ["AAPL", "DELISTED", "MSFT"]
+        assert find_unpriced_holdings(holdings, prices) == ["DELISTED"]
+
+    def test_find_unpriced_holdings_position_dicts(self):
+        from corporate_actions import find_unpriced_holdings
+        prices = {"AAPL": {"close": 200.0}, "GONE": {"close": 0.0}}   # zero close = suspect
+        holdings = [{"ticker": "AAPL", "quantity": 1}, {"ticker": "GONE", "quantity": 2},
+                    {"ticker": "MISSING", "quantity": 3}]
+        assert find_unpriced_holdings(holdings, prices) == ["GONE", "MISSING"]
+
+    def test_empty_inputs_safe(self):
+        from corporate_actions import detect_price_outliers, find_unpriced_holdings
+        assert detect_price_outliers({}) == []
+        assert detect_price_outliers(None) == []
+        assert find_unpriced_holdings([], {}) == []
+        assert find_unpriced_holdings(None, {}) == []
+
+
+class TestPriceOutlierPolicyParam:
+    def test_default_present_and_valid(self):
+        import policy
+        assert policy.VALUES["price_outlier_pct"] == 35
+
+    def test_fraction_typo_rejected(self):
+        # 0.35 (a fraction typo for 35%) must be rejected → default kept.
+        import policy
+        v = policy._VALIDATORS["price_outlier_pct"]
+        assert v(35) is True and v(50) is True
+        assert v(0.35) is False and v(0) is False and v(200) is False
+
+
+class TestCascadeCikMapOk:
+    def test_cascade_delegates_cik_map_ok_to_fallback(self, monkeypatch):
+        from data_providers import CascadeProvider, FMPProvider, SECProvider
+        sec = SECProvider(timeout=5)
+        import requests, types
+        monkeypatch.setattr(requests, "get",
+                            lambda url, **kw: types.SimpleNamespace(
+                                json=lambda: {"0": {"cik_str": 1, "ticker": "AAPL", "title": "x"}},
+                                raise_for_status=lambda: None))
+        c = CascadeProvider(FMPProvider(api_key=None), sec)
+        assert c.cik_map_ok() is True
+
+
+class TestFundamentalCoverage:
+    def test_coverage_counts_quality_fields(self):
+        import market_data as md
+        fund = {
+            "AAPL": {"gross_margin": 0.4, "operating_margin": 0.3},   # covered
+            "MSFT": {"debt_to_equity": 0.5},                          # covered
+            "ZZZZ": {"pe_ratio": 30},                                 # valuation only → NOT covered
+            "NONE": None,                                             # missing
+        }
+        dq = md._compute_fundamental_coverage(["AAPL", "MSFT", "ZZZZ", "NONE"], fund, cik_map_ok=True)
+        assert dq["fundamentals_covered"] == 2
+        assert dq["active_universe"] == 4
+        assert dq["fundamental_coverage_pct"] == 50.0
+        assert dq["coverage_ok"] is False           # 50% < 80% floor
+        assert dq["cik_map_ok"] is True
+
+    def test_coverage_ok_above_floor(self):
+        import market_data as md
+        fund = {t: {"gross_margin": 0.4} for t in ("A", "B", "C", "D")}
+        fund["E"] = None
+        dq = md._compute_fundamental_coverage(["A", "B", "C", "D", "E"], fund, cik_map_ok=True)
+        assert dq["fundamental_coverage_pct"] == 80.0
+        assert dq["coverage_ok"] is True            # 80% == floor → OK
+
+    def test_empty_universe_no_divide_by_zero(self):
+        import market_data as md
+        dq = md._compute_fundamental_coverage([], {}, cik_map_ok=None)
+        assert dq["fundamental_coverage_pct"] == 0.0
+        assert dq["cik_map_ok"] is None
+
+    def test_valuation_coverage_reported_separately(self):
+        # Quality (EDGAR) and valuation (FMP-only) coverage are measured separately;
+        # the gate (coverage_ok) is on QUALITY, valuation is transparency-only.
+        import market_data as md
+        fund = {
+            "A": {"gross_margin": 0.4, "pe_ratio": 20},   # quality + valuation
+            "B": {"gross_margin": 0.3},                    # quality only
+            "C": {"pe_ratio": 15},                         # valuation only (NOT quality-covered)
+            "D": None,
+        }
+        dq = md._compute_fundamental_coverage(["A", "B", "C", "D"], fund, cik_map_ok=True)
+        assert dq["fundamental_coverage_pct"] == 50.0     # A,B quality-covered
+        assert dq["valuation_coverage_pct"] == 50.0       # A,C valuation-covered
+        assert dq["coverage_ok"] is False                 # gate is on quality, 50% < 80%
+
+    def test_shared_helper_backtest_and_live_agree(self):
+        # The backtest coverage and the live snapshot coverage come from ONE helper.
+        import data_providers, market_data as md
+        from backtest.engine import _coverage_pct
+        fund = {"A": {"gross_margin": 0.4}, "B": {"operating_margin": 0.2}, "C": None}
+        # live path (all tickers)
+        live = md._compute_fundamental_coverage(["A", "B", "C"], fund, None)["fundamental_coverage_pct"]
+        # backtest path (history keys, benchmarks excluded) — same underlying helper
+        bt = _coverage_pct({"A": [], "B": [], "C": [], "SPY": []}, fund)
+        assert live == bt == round(100 * 2 / 3, 1)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3687,7 +4101,8 @@ class TestProviderEnrichmentCache:
         from datetime import date
         monkeypatch.setattr(data_providers, "get_provider", lambda: data_providers.StubProvider())
         fund = {}
-        assert md._enrich_with_provider(["AAPL"], fund, today=date(2026, 6, 15)) == {}
+        ec, dq = md._enrich_with_provider(["AAPL"], fund, today=date(2026, 6, 15))
+        assert ec == {} and dq is None                           # stub → no-op, coverage unmeasured
         assert fund == {}                                        # untouched, no HTTP
 
     def test_fetches_on_group_day_and_caches(self, tmp_path, monkeypatch):
@@ -3703,7 +4118,7 @@ class TestProviderEnrichmentCache:
         while d.toordinal() % 2 != md._provider_group("AAPL"):   # land on AAPL's group day
             d += timedelta(days=1)
         fund = {}
-        ec = md._enrich_with_provider(["AAPL"], fund, today=d)
+        ec, _dq = md._enrich_with_provider(["AAPL"], fund, today=d)
         assert ec["AAPL"] == "2026-07-30" and fund["AAPL"]["pe_ratio"] == 30
         assert json.load(open(tmp_path / "pc.json"))["AAPL"]["fetched"] == d.isoformat()
 
@@ -3724,7 +4139,7 @@ class TestProviderEnrichmentCache:
         while d.toordinal() % 2 == md._provider_group("AAPL"):   # land OFF AAPL's group day
             d += timedelta(days=1)
         fund = {}
-        ec = md._enrich_with_provider(["AAPL"], fund, today=d)
+        ec, _dq = md._enrich_with_provider(["AAPL"], fund, today=d)
         assert fetched == []                          # not its day → no fetch
         assert fund["AAPL"]["pe_ratio"] == 25         # served from cache
         assert ec["AAPL"] == "2026-08-01"
@@ -3748,7 +4163,31 @@ class TestProviderEnrichmentCache:
         cache_path.write_text(json.dumps({"AAPL": {"fundamentals": None, "next_earnings": None,
                               "fetched": (d - timedelta(days=5)).isoformat()}}))   # empty, 5d old
         md._enrich_with_provider(["AAPL"], {}, today=d)
-        assert fetched == []     # empty entry, age 5 < 30-day backoff → not re-fetched
+        assert fetched == []     # empty entry, age 5 < 7-day backoff → not re-fetched
+
+    def test_full_refresh_bypasses_ttl_on_stale_empty(self, tmp_path, monkeypatch):
+        # A manual "refresh all" MUST recover a stale EMPTY entry (e.g. the empties
+        # the SEC-403 era wrote); otherwise full_refresh bypasses only the 50/50
+        # group but not the TTL, so the empties stay pinned for 7 days and coverage
+        # can't heal. Regression for the UA-403 recovery path.
+        import market_data as md, data_providers, json
+        from datetime import date, timedelta
+        cache_path = tmp_path / "pc.json"
+        monkeypatch.setattr(md, "PROVIDER_CACHE", str(cache_path))
+        monkeypatch.setenv("FMP_API_KEY", "x")
+        monkeypatch.setenv("FULL_REFRESH", "true")
+        fetched = []
+        class FakeP:
+            def fundamentals(self, t): fetched.append(t); return {"gross_margin": 0.4}
+            def next_earnings_date(self, t): return None
+        monkeypatch.setattr(data_providers, "get_provider", lambda: FakeP())
+        d = date(2026, 6, 15)                       # any day; group is irrelevant under full_refresh
+        cache_path.write_text(json.dumps({"AAPL": {"fundamentals": None, "next_earnings": None,
+                              "fetched": d.isoformat()}}))   # empty, age 0 → normally not due
+        fund = {}
+        md._enrich_with_provider(["AAPL"], fund, today=d)
+        assert fetched == ["AAPL"]                  # full_refresh forced the re-fetch despite age 0
+        assert fund["AAPL"]["gross_margin"] == 0.4  # real data now populated
 
 
 # ── journal._load — corrupt-JSON resilience ───────────────────────────────────
@@ -4761,7 +5200,9 @@ class TestPolicyParity:
         loaded = policy._load()  # reads the real policy.yaml next to the module
         for k, v in self.HISTORICAL.items():
             assert loaded[k] == v, f"policy.yaml {k}={loaded[k]!r} != historical {v!r}"
-        assert loaded["policy_version"] == "1.0-phase0-parity"
+        # Phase 2 bumped the version (added detection-only price_outlier_pct); the
+        # GUARDRAIL values above remain the parity baseline (asserted in the loop).
+        assert loaded["policy_version"] == "1.1-phase2-dataquality"
 
     def test_guardrails_constants_sourced_from_policy(self):
         """guardrails.* constants equal the policy values AND the historical ones."""
@@ -4812,7 +5253,7 @@ class TestPolicyParity:
     def test_policy_version_helper(self):
         import policy
         assert policy.policy_version() == policy.VALUES["policy_version"]
-        assert policy.policy_version() == "1.0-phase0-parity"
+        assert policy.policy_version() == "1.1-phase2-dataquality"
 
     def test_validation_rejects_units_typo_keeps_cap(self, tmp_path):
         """A percent/fraction units typo (10 instead of 0.10) must NOT disable the cap —

@@ -15,12 +15,30 @@ import math
 # Base factor weights. They sum to 1.0 when every factor has real data; when a
 # factor is unavailable it is dropped and the remaining weights are renormalized
 # (so the composite is always a weighted average over real factors only).
+#
+# Phase 2 re-weight (formula 2.0): tilted toward quality + valuation + low-vol,
+# with momentum DEMOTED to a minor confirm. Rationale (IPS §horizon = 9–12 months):
+# momentum is a short-horizon, high-turnover signal that is tax-suicidal in a CA
+# top-bracket account; quality (margins, low leverage), valuation, and low-vol are
+# the persistent, lower-turnover factors appropriate to a multi-quarter hold. This
+# is a DETERMINISTIC change — its edge is proven or falsified in backtest/, not on
+# faith. The change is gated on the §8 fundamental-coverage fix: quality/valuation
+# are only real once SEC EDGAR coverage clears the 80% floor.
 FACTOR_WEIGHTS = {
-    "momentum":   0.30,
-    "quality":    0.25,
-    "valuation":  0.20,
+    "momentum":   0.15,
+    "quality":    0.35,
+    "valuation":  0.25,
     "volatility": 0.25,
 }
+
+# Stamped on every composite score and every factor_history row. It is the KEY a
+# future factor-IC / persistence analyzer MUST group by — mixing pre- and
+# post-reweight composites corrupts the signal (P0-2). NOTE: this is a provenance
+# label, not an enforced invariant; nothing computes factor IC across the boundary
+# *yet* (the harness scores agent forecasts, not factor_history), so the guarantee
+# is "the data is grouped-by-able", and the eventual analyzer must honor it. Bump
+# this string whenever FACTOR_WEIGHTS or any sub-score formula changes.
+FORMULA_VERSION = "2.0-quality-tilt"
 
 
 def _mean(values: list) -> float:
@@ -282,6 +300,7 @@ def score_all_tickers(market_data: dict) -> dict:
             "data_available": len(history) > 0,
             "composite_score": round(composite, 1),
             "factors_used": factors_used,
+            "formula_version": FORMULA_VERSION,
             **momentum,
             **quality,
             **valuation,
@@ -289,3 +308,67 @@ def score_all_tickers(market_data: dict) -> dict:
         }
 
     return scores
+
+
+# Sub-score fields worth persisting per ticker/day (the raw factor inputs to IC).
+_FACTOR_HISTORY_FIELDS = (
+    "composite_score", "factors_used", "formula_version",
+    "momentum_score", "momentum_available",
+    "quality_score", "quality_available",
+    "valuation_score", "valuation_available",
+    "volatility_score", "volatility_available",
+    "beta",
+)
+
+
+def log_factor_history(scores: dict, as_of: str, path: str = "factor_history.jsonl") -> int:
+    """Append one factor row per scored ticker to an append-only JSONL time series.
+
+    Written by the GH Actions scoring step (full-universe, point-in-time) — this
+    is the substrate for factor-persistence / IC analysis. Every row carries
+    `formula_version` so downstream IC is computed WITHIN a weighting regime, never
+    across a boundary (P0-2). Idempotent per (ticker, formula_version) WITHIN today's
+    date: a re-run for the same day+formula does not duplicate rows. Returns rows
+    appended.
+
+    Rows accumulate append-only (repo convention, like calibration's ledgers); a
+    plain line append is the atomic-enough idiom used for every ledger here — the
+    prior temp-file copy added I/O and a stranded-temp risk without any real atomicity.
+    The dedup set is bounded to TODAY's rows (older dates can never collide with today),
+    so memory stays O(universe) rather than O(whole file). File compaction/rotation is
+    Phase 4 (§12 storage split).
+    """
+    import json as _json
+    import os as _os
+
+    # Only today's (ticker, formula_version) keys can collide with today's append.
+    today_keys: set = set()
+    if _os.path.isfile(path):
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = _json.loads(line)
+                except _json.JSONDecodeError:
+                    continue
+                if r.get("date") == as_of:
+                    today_keys.add((r.get("ticker"), r.get("formula_version")))
+
+    rows_out = []
+    for ticker, s in sorted(scores.items()):
+        fv = s.get("formula_version", FORMULA_VERSION)
+        if (ticker, fv) in today_keys:
+            continue
+        row = {"date": as_of, "ticker": ticker}
+        for field in _FACTOR_HISTORY_FIELDS:
+            if field in s:
+                row[field] = s[field]
+        rows_out.append(row)
+
+    if rows_out:
+        with open(path, "a") as f:
+            for row in rows_out:
+                f.write(_json.dumps(row) + "\n")
+    return len(rows_out)
