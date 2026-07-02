@@ -1,0 +1,140 @@
+name: Daily Heartbeat (dead-man's switch)
+
+# §15.4 — the backstop for failures that produce NO error: a silently-skipped
+# cron (Jun 11) or a dead feed (Jun 18) write no failure signal, so the per-flow
+# health checks can't catch them. This runs late each weekday and asserts every
+# expected daily artifact exists and is dated today; a missing one opens a
+# `heartbeat-alert` GitHub Issue. Non-trading days self-skip inside the script.
+on:
+  schedule:
+    # 6:00 PM EDT (22:00 UTC) weekdays — after the routine's last retry (12:45 PM)
+    # and the EOD snapshot (4 PM). A DST shift to 5 PM EST is harmless (still after
+    # 4 PM), so this cron is intentionally NOT in update_dst.yml.
+    - cron: '0 22 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Run heartbeat check
+        id: hb
+        run: |
+          set +e
+          python heartbeat_check.py
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+
+      - name: Open or update heartbeat issue on missing artifacts
+        if: steps.hb.outputs.exit_code != '0'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const r  = JSON.parse(fs.readFileSync('heartbeat_report.json', 'utf8'));
+            if (r.skipped) { console.log(`Heartbeat skipped: ${r.skipped}`); return; }
+
+            // Ensure the heartbeat-alert label exists
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner, repo: context.repo.repo, name: 'heartbeat-alert',
+              });
+            } catch (e) {
+              if (e.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  name: 'heartbeat-alert', color: 'b60205',
+                  description: 'Dead-man\'s switch — an expected daily artifact is missing',
+                });
+              }
+            }
+
+            const rows = (r.checks || [])
+              .map(c => {
+                const si = c.status.startsWith('OK') ? '✅' : '🚫';
+                return `| ${si} \`${c.name}\` | ${c.tier} | ${c.status} | ${c.artifact_date || '—'} |`;
+              })
+              .join('\n');
+
+            // Body as an array of indented literals (see alert.yml — a column-0
+            // template literal would break out of the YAML block scalar).
+            const body = [
+              `## 🚨 AI Investor — Heartbeat Alert (missing daily artifact)`,
+              ``,
+              `**Trading day:** ${r.as_of}`,
+              `**Data plane fresh:** ${r.data_plane_fresh}`,
+              `**Missing / stale (required):** ${(r.missing || []).join(', ') || '—'}`,
+              ``,
+              `A flow that never ran writes no failure signal — this is the dead-man's switch catching it.`,
+              r.data_plane_fresh
+                ? `The data plane is fresh but a routine artifact is missing → the cloud routine likely did **not run** despite fresh data (silent skip).`
+                : `The data plane itself is stale → the **GitHub Actions fetch** likely skipped/failed (cron delay or dead feed). Consider a manual \`market_data.yml\` dispatch.`,
+              ``,
+              `## Artifacts`,
+              `| Artifact | Tier | Status | Date |`,
+              `|----------|------|--------|------|`,
+              rows,
+              ``,
+              (r.warnings || []).length
+                ? `## Warnings\n` + r.warnings.map(w => `- \`${w.name}\` (${w.artifact_date || 'missing'}) — ${w.note}`).join('\n')
+                : ``,
+              ``,
+              `---`,
+              `[market_data.yml](../../actions/workflows/market_data.yml) · [system health](../../blob/main/system_health.json) · [data-quality report](../../blob/main/data_quality_report.json)`,
+            ].join('\n');
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'heartbeat-alert',
+            });
+
+            if (existing.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.data[0].number, body,
+              });
+              console.log(`Updated heartbeat issue #${existing.data[0].number}`);
+            } else {
+              const issue = await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title: `🚨 Heartbeat alert — ${r.as_of} (missing: ${(r.missing || []).join(', ')})`,
+                body, labels: ['heartbeat-alert'],
+              });
+              console.log(`Created heartbeat issue #${issue.data.number}`);
+            }
+
+      - name: Close heartbeat issue on recovery
+        if: steps.hb.outputs.exit_code == '0'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            let r = {};
+            try { r = JSON.parse(fs.readFileSync('heartbeat_report.json', 'utf8')); } catch (e) {}
+            if (r.skipped) { console.log(`Heartbeat skipped: ${r.skipped}`); return; }
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'heartbeat-alert',
+            });
+            for (const issue of existing.data) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `✅ Heartbeat recovered — all expected artifacts present and dated **${r.as_of}**. Auto-closing.`,
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: issue.number, state: 'closed',
+              });
+              console.log(`Closed heartbeat issue #${issue.number}`);
+            }
