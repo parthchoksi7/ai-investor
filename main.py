@@ -218,6 +218,25 @@ def run_daily_cycle():
                       source=source, data_date=data_date,
                       history_min_bars=min_depth)
 
+    # ── Data-quality gate (§15.2) — prefer the report committed by GH Actions
+    # (fetch_snapshot classified the full-universe fetch); classify the in-memory
+    # snapshot as a fallback for local runs / a missing report. Records a first-class
+    # `data_quality` health check and carries the provenance stamp onto every
+    # forecast + the pending_decisions envelope so December can partition by it.
+    from data_quality import (classify_data_quality, write_report, load_report,
+                              provenance_stamp, DEGRADED as DQ_DEGRADED, ABORT as DQ_ABORT)
+    dq_report = load_report()
+    if not dq_report or dq_report.get("data_date") != data_date:
+        dq_report = classify_data_quality(market_data)
+        write_report(dq_report)
+    dq_provenance = provenance_stamp(dq_report)
+    _dq_status = {DQ_ABORT: ABORTED, DQ_DEGRADED: DEGRADED}.get(dq_report.get("status"), OK)
+    health.record("data_quality", _dq_status,
+                  message=("; ".join(dq_report.get("breaches", [])) or "all floors OK"),
+                  score=dq_report.get("data_quality_score"),
+                  strategy_shift_ok=dq_report.get("strategy_shift_ok"),
+                  dq_hash=dq_report.get("hash"))
+
     if not prices:
         print("\n   No price data available (market may be closed). Skipping.")
         health.record("pipeline", ABORTED, message="No price data — market may be closed")
@@ -487,7 +506,8 @@ def run_daily_cycle():
     try:
         from calibration import log_forecasts, log_decisions
         _n_fc = log_forecasts(run_id, today, pipeline_state,
-                              pipeline_state.get("candidates", []), market_data["prices"])
+                              pipeline_state.get("candidates", []), market_data["prices"],
+                              provenance=dq_provenance)
         # §7.5 counterfactual: log the reject/veto/select flags for forward scoring.
         _n_dec = log_decisions(run_id, today, pipeline_state, market_data["prices"])
         if _n_fc or _n_dec:
@@ -539,6 +559,7 @@ def run_daily_cycle():
             "date":                 today,
             "generated_at":         run_start,
             "policy_version":       _policy_version(),   # change-control provenance (§18.4)
+            "data_quality":         dq_provenance,       # §15.1 covariate — harness partitions the year-end verdict by this
             "execution_started_at": None,
             "executed_at":          None,
             "decisions":            decisions,

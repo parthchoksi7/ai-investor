@@ -127,7 +127,8 @@ def _iter_jsonl(path: str):
 
 def log_forecasts(run_id: str, date_str: str, pipeline_state: dict,
                   candidates: list, prices: dict,
-                  horizons: tuple = HORIZONS, path: str = LEDGER) -> int:
+                  horizons: tuple = HORIZONS, path: str = LEDGER,
+                  provenance: dict | None = None) -> int:
     """Append this run's per-(agent, ticker, HORIZON) numeric forecasts. Returns count.
 
     Each forecast is logged at EVERY horizon in `horizons` (§7.3.2), so the scorecard
@@ -137,7 +138,12 @@ def log_forecasts(run_id: str, date_str: str, pipeline_state: dict,
     `signal_close` is stamped for REFERENCE ONLY (the close the signal was computed on).
     It is NOT the return base: score_matured() derives the executable entry (next-session
     open) at scoring time so there is no one-bar look-ahead (A1).
+
+    `provenance` (§15.1) — the run's data-quality stamp (score/status/hash) merged into
+    every row, so the harness can PARTITION the year-end IC comparison by data quality
+    and exclude below-floor runs instead of silently averaging a starved run in.
     """
+    prov = provenance or {}
     rows = []
     for ticker in candidates:
         signal_close = (prices.get(ticker) or {}).get("close")
@@ -151,7 +157,7 @@ def log_forecasts(run_id: str, date_str: str, pipeline_state: dict,
                         "run_id": run_id, "date": date_str, "agent": agent, "field": field,
                         "ticker": ticker, "value": float(v),
                         "signal_close": float(signal_close), "horizon_days": int(h),
-                        "schema": SCHEMA_VERSION,
+                        "schema": SCHEMA_VERSION, **prov,
                     })
     if rows:
         _append_jsonl(path, rows)

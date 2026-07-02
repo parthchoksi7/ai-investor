@@ -1,0 +1,47 @@
+{
+  "date": "2026-07-02",
+  "data_date": "2026-07-02",
+  "generated_at": "2026-07-02T20:42:40.864697+00:00",
+  "status": "OK",
+  "data_quality_score": 100,
+  "strategy_shift_ok": true,
+  "expected_universe": 100,
+  "fetched_universe": 100,
+  "metrics": {
+    "universe_fetched_pct": {
+      "value": 100.0,
+      "status": "OK",
+      "degraded_below": 95.0,
+      "abort_below": 80.0
+    },
+    "min_history_depth": {
+      "value": 206,
+      "status": "OK",
+      "degraded_below": 60,
+      "abort_below": 22
+    },
+    "fundamental_coverage_pct": {
+      "value": 96.0,
+      "status": "OK",
+      "degraded_below": 80.0,
+      "abort_below": null
+    },
+    "nan_inf_count": {
+      "value": 0,
+      "status": "OK",
+      "degraded_below": null,
+      "abort_below": null
+    },
+    "valuation_coverage_pct": {
+      "value": 22.0,
+      "status": "OK",
+      "degraded_below": null,
+      "abort_below": null,
+      "informational": true
+    }
+  },
+  "breaches": [],
+  "cik_map_ok": true,
+  "price_outlier_count": 2,
+  "hash": "9d71ceb3c330dd12"
+}
