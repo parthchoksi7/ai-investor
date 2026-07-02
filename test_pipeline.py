@@ -3163,6 +3163,52 @@ class TestBacktestReport:
         assert rep["trading_days"] > 100 and rep["n_trades"] > 0
         assert rep["strategy"]["total_return"] is not None and rep["spy"] is not None
 
+    def test_report_stamps_formula_version(self):
+        from backtest.report import build_report
+        from quant_engine import FORMULA_VERSION
+        rep = build_report({
+            "equity_curve": [("d1", 100.0), ("d2", 101.0)], "benchmark_curve": [],
+            "transactions": [], "initial_capital": 100.0, "final_equity": 101.0,
+            "traded_notional_total": 0.0, "fundamental_coverage_pct": 90.0,
+        })
+        assert rep["formula_version"] == FORMULA_VERSION
+        assert rep["fundamental_coverage_pct"] == 90.0
+
+    def test_below_floor_coverage_adds_reweight_caveat(self):
+        from backtest.report import build_report
+        rep = build_report({
+            "equity_curve": [("d1", 100.0), ("d2", 101.0)], "benchmark_curve": [],
+            "transactions": [], "initial_capital": 100.0, "final_equity": 101.0,
+            "traded_notional_total": 0.0, "fundamental_coverage_pct": 39.8,
+        })
+        assert any("RE-WEIGHT NOT FAIRLY TESTED" in c for c in rep["caveats"])
+
+    def test_above_floor_coverage_no_reweight_caveat(self):
+        from backtest.report import build_report
+        rep = build_report({
+            "equity_curve": [("d1", 100.0), ("d2", 101.0)], "benchmark_curve": [],
+            "transactions": [], "initial_capital": 100.0, "final_equity": 101.0,
+            "traded_notional_total": 0.0, "fundamental_coverage_pct": 85.0,
+        })
+        assert not any("RE-WEIGHT NOT FAIRLY TESTED" in c for c in rep["caveats"])
+
+    def test_backtest_deterministic_reproducible(self):
+        # Same snapshot → identical equity curve + trades (no RNG, no wall-clock).
+        from backtest.engine import run_backtest
+        from backtest.strategies import quant_momentum_vol
+        snap = {"history": {
+            "SPY":  _bt_bars([100 * (1.001 ** i) for i in range(40)]),
+            "WIN":  _bt_bars([100 * (1.004 ** i) for i in range(40)]),
+            "MEH":  _bt_bars([100 * (1.0005 ** i) for i in range(40)]),
+        }, "fundamentals": {}}
+        r1 = run_backtest(quant_momentum_vol, snapshot=snap, initial_capital=10_000.0,
+                          rebalance_days=5, warmup=22)
+        r2 = run_backtest(quant_momentum_vol, snapshot=snap, initial_capital=10_000.0,
+                          rebalance_days=5, warmup=22)
+        assert r1["equity_curve"] == r2["equity_curve"]
+        assert r1["final_equity"] == r2["final_equity"]
+        assert r1["fundamental_coverage_pct"] == r2["fundamental_coverage_pct"] == 0.0
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Edge cases / failure scenarios (QA hardening pass)

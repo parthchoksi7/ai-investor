@@ -62,9 +62,33 @@ def build_report(result: dict) -> dict:
     turnover = round((result["traded_notional_total"] / avg_eq) / years, 2) if (avg_eq and years) else None
 
     spy_total = bench["total_return"] if bench else None
+
+    from quant_engine import FORMULA_VERSION
+    coverage = result.get("fundamental_coverage_pct")
+
+    caveats = [
+        "Quant-only (no LLM) — this IS the quant-only shadow arm (IPS §3.3 baseline); "
+        "the LLM book is forward-tested against it, not backtested.",
+        "SPY is price-return (no dividends). Costs = effective spread + slippage (cost_model).",
+        "After-tax subtracts CA tax on realized gains (mostly short-term in a <1yr window); "
+        "unrealized gains untaxed (deferred), matching the SPY-hold alternative.",
+        "SURVIVORSHIP BIAS: the universe is only tickers in today's snapshot (no delisted/"
+        "bankrupt names) and is FIXED over the whole window — this biases returns upward. "
+        "A point-in-time universe is needed before trusting the absolute numbers.",
+        "~10 months of bars from a single snapshot — short sample; not yet a skill claim.",
+    ]
+    if isinstance(coverage, (int, float)) and coverage < 80.0:
+        caveats.insert(0,
+            f"⛔ RE-WEIGHT NOT FAIRLY TESTED: fundamental coverage is {coverage}% (< 80% floor), "
+            f"so the quality/valuation tilt in formula {FORMULA_VERSION} cannot express — most "
+            f"names score momentum+vol only. Re-run once GH Actions coverage clears the floor "
+            f"(plan §9-3) before drawing any verdict on the re-weight.")
+
     return {
         "strategy":  strat,
         "spy":       bench,
+        "formula_version":             FORMULA_VERSION,
+        "fundamental_coverage_pct":    coverage,
         "alpha_total_return":          round(strat["total_return"] - spy_total, 4) if spy_total is not None else None,
         "realized_gain":               round(st + lt, 2),
         "short_term_gain":             round(st, 2),
@@ -79,16 +103,7 @@ def build_report(result: dict) -> dict:
         "trading_days":                days,
         "final_equity":                round(final, 2),
         "initial_capital":             round(init, 2),
-        "caveats": [
-            "Quant-only (no LLM) — the deterministic layer; the LLM is forward-tested, not backtested.",
-            "SPY is price-return (no dividends). Costs = effective spread + slippage (cost_model).",
-            "After-tax subtracts CA tax on realized gains (mostly short-term in a <1yr window); "
-            "unrealized gains untaxed (deferred), matching the SPY-hold alternative.",
-            "SURVIVORSHIP BIAS: the universe is only tickers in today's snapshot (no delisted/"
-            "bankrupt names) and is FIXED over the whole window — this biases returns upward. "
-            "A point-in-time universe is needed before trusting the absolute numbers.",
-            "~10 months of bars from a single snapshot — short sample; not yet a skill claim.",
-        ],
+        "caveats":                     caveats,
     }
 
 
@@ -98,8 +113,11 @@ def _pct(x):
 
 def print_report(rep: dict) -> None:
     print("\n" + "=" * 60)
-    print("🧪  BACKTEST — quant-only strategy vs SPY (after CA tax)")
+    print("🧪  BACKTEST — quant-only SHADOW ARM vs SPY (after CA tax)")
     print("=" * 60)
+    cov = rep.get("fundamental_coverage_pct")
+    print(f"   formula {rep.get('formula_version', '?')} | "
+          f"fundamental coverage {cov if cov is not None else '?'}%")
     print(f"   {rep['trading_days']} trading days | {rep['n_trades']} trades | "
           f"ann. turnover {rep['annualized_turnover']}x | "
           f"${rep['initial_capital']:,.0f} → ${rep['final_equity']:,.0f}")

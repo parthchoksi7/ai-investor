@@ -13,6 +13,22 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Changed — Phase 2: quant-only shadow arm re-backtested on the new weighting + coverage gate
+
+- **Re-ran `backtest/` on the quality-tilted composite** (it reuses `score_all_tickers` unchanged).
+  The report is now explicitly framed as the **quant-only SHADOW ARM** (IPS §3.3 baseline the LLM
+  book is measured against) and stamps `formula_version` + `fundamental_coverage_pct`.
+- **Honest verdict (with the caveat that makes it honest):** on the committed 2026-06-26 snapshot
+  the re-weighted quant-only arm returns **−3.96% vs SPY +10.42%** (after-tax alpha −14.38%). **This
+  is NOT a fair test of the re-weight** — snapshot coverage is **39.8%**, far below the 80% floor, so
+  the quality/valuation tilt cannot express (61% of names score momentum+vol only and the higher
+  quality weight just renormalizes away). The report now **inserts a loud `⛔ RE-WEIGHT NOT FAIRLY
+  TESTED` caveat** below the floor and directs a re-run once GH Actions coverage clears (plan §9-3).
+  No verdict on the re-weight is drawn until then — per the quant-researcher discipline, an
+  unproven signal is reported as unproven, not dressed up.
+- **QA:** +4 (formula-version stamp, below-floor caveat present / above-floor absent, backtest
+  determinism / reproducibility).
+
 ### Added — Phase 2: gated universe expansion (→ ~400) + resumable fetch cursor
 
 - **`universe.py`** — new single source of truth for the trading/scoring universe. `CORE_UNIVERSE`

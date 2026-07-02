@@ -136,7 +136,27 @@ def run_backtest(strategy,
         "final_equity":          equity_curve[-1][1] if equity_curve else float(initial_capital),
         "traded_notional_total": round(traded_notional_total, 2),
         "benchmark_curve":       _benchmark_curve(idx, axis, warmup, float(initial_capital)),
+        "fundamental_coverage_pct": _coverage_pct(history, fundamentals),
     }
+
+
+_QUALITY_FIELDS = ("gross_margin", "operating_margin", "debt_to_equity")
+
+
+def _coverage_pct(history: dict, fundamentals: dict) -> float:
+    """Fraction (percent) of scored tickers with real quality fundamentals. Below
+    the 80% floor, the quality/valuation tilt in the re-weighted composite cannot
+    express — most names score momentum+vol only — so the backtest is NOT a fair
+    test of the re-weight (the report flags this)."""
+    tickers = [t for t in history if t not in EXCLUDE]
+    if not tickers:
+        return 0.0
+    covered = sum(
+        1 for t in tickers
+        if isinstance(fundamentals.get(t), dict)
+        and any(f in fundamentals[t] for f in _QUALITY_FIELDS)
+    )
+    return round(100.0 * covered / len(tickers), 1)
 
 
 def _benchmark_curve(idx: dict, axis: list, warmup: int, capital: float) -> list:
