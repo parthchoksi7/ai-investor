@@ -83,6 +83,12 @@ _ARTIFACTS = [
     ("market_snapshot",      "json_date",  "market_snapshot.json",     "data"),
     ("data_quality_report",  "json_date",  "data_quality_report.json", "data"),
     ("factor_history",       "jsonl_date", "factor_history.jsonl",     "data"),
+    # research_dossier is the Phase-4 producer's output + the (future) Wednesday agent
+    # input. build_dossier only WRITES a valid, today-dated dossier (it refuses to
+    # overwrite a good one with a stale/invalid build), so a snapshot-fresh but
+    # dossier-stale day means the build failed — catch it here before a consumer trades
+    # on a silently-stale dossier (the devops-review blind spot).
+    ("research_dossier",     "json_date",  "research_dossier.json",    "data"),
     ("system_health",        "json_date",  "system_health.json",       "compute"),
 ]
 # Informational only — a legitimate 0-candidate day writes no forecast row, so a stale
@@ -96,7 +102,9 @@ _WARN_ARTIFACTS = [
 def _artifact_date(kind: str, path: str, root: str) -> str | None:
     full = str(Path(root) / path)
     if kind == "json_date":
-        return _json_date(full, "date", "data_date")
+        # `as_of` covers research_dossier.json (its freshness key); the snapshot/report
+        # use `date`/`data_date`. Checking all three is safe — the others lack `as_of`.
+        return _json_date(full, "date", "data_date", "as_of")
     return _jsonl_last_date(full)
 
 

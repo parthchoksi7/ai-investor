@@ -5610,8 +5610,10 @@ class TestDataQualityProvenance:
 
 class TestHeartbeat:
     def _seed(self, root, snapshot_date=None, dq_date=None, factor_date=None,
-              health_date=None, forecast_date=None):
+              health_date=None, forecast_date=None, dossier_date=None):
         import os
+        if dossier_date is None:      # dossier is a data-plane artifact → tie to dq by default
+            dossier_date = dq_date
         def _wj(name, d):
             if d is not None:
                 with open(os.path.join(root, name), "w") as f:
@@ -5623,6 +5625,7 @@ class TestHeartbeat:
         _wj("market_snapshot.json", snapshot_date)
         _wj("data_quality_report.json", dq_date)
         _wl("factor_history.jsonl", factor_date)
+        _wj("research_dossier.json", dossier_date)
         _wj("system_health.json", health_date)
         _wl("forecasts.jsonl", forecast_date)
 
@@ -5632,6 +5635,16 @@ class TestHeartbeat:
         self._seed(str(tmp_path), d, d, d, d, d)
         r = check_heartbeat(as_of=d, root=str(tmp_path))
         assert r["ok"] is True and r["missing"] == []
+
+    def test_stale_dossier_when_data_fresh_alerts(self, tmp_path):
+        # Stage A blind-spot fix: snapshot/dq/factor all fresh, but build_dossier failed
+        # to write today's dossier (left a stale one). The consumer would otherwise trade
+        # on a silently-stale dossier — the heartbeat must flag it.
+        from heartbeat_check import check_heartbeat
+        d, old = "2026-07-02", "2026-06-30"
+        self._seed(str(tmp_path), d, d, d, d, d, dossier_date=old)
+        r = check_heartbeat(as_of=d, root=str(tmp_path))
+        assert r["ok"] is False and "research_dossier" in r["missing"]
 
     def test_missing_snapshot_alerts(self, tmp_path):
         # Jun 11 class: cron skipped, no snapshot.
@@ -6194,3 +6207,104 @@ class TestSECFilingDatePartial:
         p = self._provider(monkeypatch, facts)
         f = p.fundamentals("XYZ")
         assert f["gross_margin"] == 0.4 and "_as_of_filing" not in f
+
+
+class TestDossierSignalLogging:
+    """Stage A: observational logging of dossier persistence + event-presence signals."""
+
+    def _dossier(self, as_of="2026-07-02"):
+        return {"as_of": as_of, "tickers": {
+            "AAA": {"persistence": {"composite_7d_mean": 72.0},
+                    "events": [{"type": "earnings", "summary": "beat"}]},
+            "BBB": {"persistence": {"composite_7d_mean": 40.0}, "events": []},
+        }}
+
+    def test_logs_persistence_and_event_present(self, tmp_path):
+        import calibration
+        path = str(tmp_path / "fc.jsonl")
+        n = calibration.log_dossier_signals("r1", "2026-07-02", self._dossier(),
+                                            {"AAA": {"close": 100.0}, "BBB": {"close": 50.0}},
+                                            path=path)
+        rows = [json.loads(l) for l in open(path) if l.strip()]
+        agents = {r["agent"] for r in rows}
+        assert agents == {"persist_mean", "event_present"}
+        # AAA has an event → flag 1.0; BBB has none → 0.0
+        ev = {r["ticker"]: r["value"] for r in rows if r["agent"] == "event_present"
+              and r["horizon_days"] == 21}
+        assert ev["AAA"] == 1.0 and ev["BBB"] == 0.0
+        pm = {r["ticker"]: r["value"] for r in rows if r["agent"] == "persist_mean"
+              and r["horizon_days"] == 21}
+        assert pm["AAA"] == 72.0
+
+    def test_stale_dossier_logs_nothing(self, tmp_path):
+        import calibration
+        path = str(tmp_path / "fc.jsonl")
+        n = calibration.log_dossier_signals("r1", "2026-07-02", self._dossier(as_of="2026-06-30"),
+                                            {"AAA": {"close": 100.0}}, path=path)
+        assert n == 0 and not (tmp_path / "fc.jsonl").exists()
+
+    def test_missing_or_bad_dossier_safe(self, tmp_path):
+        import calibration
+        path = str(tmp_path / "fc.jsonl")
+        assert calibration.log_dossier_signals("r1", "2026-07-02", None,
+                                               {"AAA": {"close": 1.0}}, path=path) == 0
+        assert calibration.log_dossier_signals("r1", "2026-07-02", {},
+                                               {"AAA": {"close": 1.0}}, path=path) == 0
+
+    def test_provenance_stamped_on_dossier_signals(self, tmp_path):
+        import calibration
+        path = str(tmp_path / "fc.jsonl")
+        prov = {"data_quality_score": 90, "data_quality_hash": "h1"}
+        calibration.log_dossier_signals("r1", "2026-07-02", self._dossier(),
+                                        {"AAA": {"close": 100.0}}, path=path, provenance=prov)
+        rows = [json.loads(l) for l in open(path) if l.strip()]
+        assert all(r.get("data_quality_hash") == "h1" for r in rows)
+
+
+class TestEventDigestBudgetCap:
+    """Stage A: token-budget cap (§15.2 P2-13) on the event digest."""
+
+    def test_cap_limits_chunks_and_flags(self):
+        import event_digest as ed
+        # (MAX_CHUNKS+3) chunks' worth of articles → only MAX_CHUNKS processed, capped=True
+        n_articles = (ed.MAX_CHUNKS + 3) * ed.BATCH_SIZE
+        stub = _stub_safe_call([([], True)] * (ed.MAX_CHUNKS + 3))
+        _, stats = ed.extract_events(_news(n_articles), {"AAPL"}, "2026-07-02", safe_call=stub)
+        assert stats["chunks"] == ed.MAX_CHUNKS         # never exceeds the cap
+        assert stats["capped"] is True
+        assert stats["chunks_available"] == ed.MAX_CHUNKS + 3
+
+    def test_under_cap_not_flagged(self):
+        import event_digest as ed
+        stub = _stub_safe_call([([], True), ([], True)])
+        _, stats = ed.extract_events(_news(2 * ed.BATCH_SIZE), {"AAPL"}, "2026-07-02", safe_call=stub)
+        assert stats["capped"] is False
+
+    def test_capped_run_degrades_report(self, tmp_path):
+        import data_quality as dq, json
+        rep = str(tmp_path / "dq.json")
+        json.dump({"status": "OK", "data_quality_score": 100, "date": "2026-07-02",
+                   "metrics": {}, "breaches": []}, open(rep, "w"))
+        out = dq.merge_event_digest_into_report(
+            {"chunks": 15, "chunks_ok": 15, "parse_success_rate": 1.0,
+             "capped": True, "chunks_available": 18, "max_chunks": 15}, path=rep)
+        assert out["status"] == "DEGRADED"
+        assert any("budget cap" in b for b in out["breaches"])
+
+
+class TestEventDigestTickerNewsPriority:
+    """Stage A review fix: ticker_news must survive the token cap (kept at the head)."""
+
+    def test_ticker_news_in_first_chunk_under_cap(self, tmp_path):
+        import event_digest as ed
+        # 1 mover ticker_news (NVDA) + a large broad feed (> cap) of AAPL articles.
+        broad = _news((ed.MAX_CHUNKS + 5) * ed.BATCH_SIZE, ticker="AAPL")
+        snap = {"_data_date": "2026-07-02", "news": broad,
+                "ticker_news": {"NVDA": _news(1, ticker="NVDA")}}
+        first_msgs = []
+        def stub(model, system, user_msg, default, max_tokens=1200, return_meta=False):
+            first_msgs.append(user_msg)
+            return ([], {"parsed_ok": True, "raw": "", "stop_reason": "end_turn"})
+        ed.digest(snap, {"NVDA", "AAPL"}, path=str(tmp_path / "e.jsonl"), safe_call=stub)
+        # NVDA (ticker_news, prepended) must appear in the FIRST chunk — not dropped by the cap.
+        assert "NVDA" in first_msgs[0]
