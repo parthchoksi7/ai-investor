@@ -42,6 +42,10 @@ fetch_progress.json
 # heartbeat_report.json is transient — written only inside the heartbeat.yml run
 # for its github-script step to read; never committed.
 heartbeat_report.json
+# NOTE: research_dossier.json + events.jsonl are intentionally TRACKED (Phase 4,
+# §12) — the dossier is the ONLY artifact the Wednesday cloud agents read (built by
+# build_dossier.py, committed by market_data.yml); events.jsonl is the append-only
+# event time series the dossier synthesizes from. Do NOT ignore them.
 
 # Paper drafts and reviewer notes — pre-publication, not part of the codebase.
 PAPER_DRAFT.md
