@@ -26,7 +26,7 @@ Reuses the deterministic spine unchanged: `quant_engine._pct_return`,
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 
 from quant_engine import _pct_return, compute_risk_metrics
@@ -166,7 +166,8 @@ def _earnings_block(next_date: str | None, as_of: str) -> dict:
     return {"next_date": next_date, "days_until": d, "imminent": 0 <= d <= 7}
 
 
-def _last_decision(ticker: str, journal: list[dict], current_close: float | None) -> tuple[dict | None, dict | None]:
+def _last_decision(ticker: str, journal: list[dict], current_close: float | None,
+                   as_of: str) -> tuple[dict | None, dict | None]:
     """(last_decision, since_entry) for a held/recently-touched name, from the journal.
     last_decision anchors the entry; since_entry is the cumulative move from the entry
     price to the current close. Both None when the journal has no entry for the ticker."""
@@ -182,13 +183,17 @@ def _last_decision(ticker: str, journal: list[dict], current_close: float | None
     if isinstance(entry_px, (int, float)) and entry_px > 0 and isinstance(current_close, (int, float)):
         since = {"entry_price": entry_px, "current_price": current_close,
                  "cum_return": round((current_close - entry_px) / entry_px, 4),
-                 "days_since_entry": _days_since(last.get("date"))}
+                 "days_since_entry": _days_since(last.get("date"), as_of)}
     return ld, since
 
 
-def _days_since(d: str | None) -> int | None:
+def _days_since(d: str | None, as_of: str) -> int | None:
+    # Measure from as_of (the dossier's date), NOT date.today() — the dossier is a
+    # reproducible, as-of-dated research artifact; a rebuild/backfill must yield the
+    # same value, so wall-clock 'today' would make it non-deterministic.
     try:
-        return (date.today() - datetime.strptime(d, "%Y-%m-%d").date()).days
+        return (datetime.strptime(as_of, "%Y-%m-%d").date()
+                - datetime.strptime(d, "%Y-%m-%d").date()).days
     except Exception:
         return None
 
@@ -253,7 +258,7 @@ def build_dossier(snapshot: dict, factor_rows: list[dict], journal: list[dict],
             },
         }
         if t in holdings:
-            ld, since = _last_decision(t, journal, p.get("close"))
+            ld, since = _last_decision(t, journal, p.get("close"), as_of)
             rec["last_decision"], rec["since_entry"] = ld, since
         tickers[t] = rec
 

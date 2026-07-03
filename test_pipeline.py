@@ -5839,6 +5839,9 @@ class TestBuildDossier:
         assert ld and ld["action"] == "BUY"
         se = d["tickers"]["AAA"]["since_entry"]
         assert se["entry_price"] == 80.0 and se["cum_return"] == round((100.0 - 80.0) / 80.0, 4)
+        # days_since_entry measured from as_of (2026-07-03), NOT wall-clock today (reproducible)
+        from datetime import date as _date
+        assert se["days_since_entry"] == (_date(2026, 7, 3) - _date(2026, 6, 1)).days
         assert "last_decision" not in d["tickers"]["BBB"]     # non-holding
 
     def test_events_attached(self):
