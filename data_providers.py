@@ -288,11 +288,14 @@ class SECProvider:
         if not out:
             return None
         # No-look-ahead vintage: the bundle isn't fully available until the LATEST of
-        # its inputs was filed. Absent when SEC omitted `filed` (older facts) — the
-        # dossier then treats vintage as unknown rather than assuming fresh.
-        fd = [d for d in filed_dates if isinstance(d, str)]
-        if fd:
-            out["_as_of_filing"] = max(fd)
+        # its inputs was filed. Stamp ONLY when EVERY contributing input carries a filed
+        # date — a partial set would take max() over the present subset, which can
+        # UNDERSTATE the true vintage (a missing-filed latest figure paired with an
+        # older filed one), and an understated stamp defeats the `> as_of` look-ahead
+        # drop in a historical replay. If any is missing → omit → dossier treats vintage
+        # as unknown (age=null), which is honest rather than a silent understatement.
+        if filed_dates and all(isinstance(d, str) for d in filed_dates):
+            out["_as_of_filing"] = max(filed_dates)
         return out
 
     def next_earnings_date(self, ticker: str) -> str | None:

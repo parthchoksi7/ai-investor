@@ -6165,3 +6165,32 @@ class TestSECFilingDate:
         dq = d["tickers"]["AAA"]["data_quality"]
         assert dq["fundamentals_age_days"] is not None and dq["fundamentals_age_days"] > 100
         assert dq["fundamentals_stale"] is True         # >100d → stale (real bool, not null)
+
+
+class TestSECFilingDatePartial:
+    """Increment 3 review fix: omit _as_of_filing when vintage is only PARTIALLY known."""
+
+    def _provider(self, monkeypatch, facts):
+        from data_providers import SECProvider
+        import requests, types
+        p = SECProvider(timeout=5)
+        def fake_get(url, **kwargs):
+            resp = types.SimpleNamespace(raise_for_status=lambda: None)
+            resp.json = (lambda: {"0": {"cik_str": 1, "ticker": "XYZ", "title": "X"}}) \
+                if "company_tickers" in url else (lambda: facts)
+            return resp
+        monkeypatch.setattr(requests, "get", fake_get)
+        return p
+
+    def test_partial_filed_omits_stamp(self, monkeypatch):
+        # Revenue has filed, GrossProfit does NOT → we cannot know the bundle's true
+        # latest vintage → omit _as_of_filing (understating it would be a look-ahead).
+        facts = {"facts": {"us-gaap": {
+            "Revenues": {"units": {"USD": [{"end": "2025-12-31", "val": 1000,
+                                            "form": "10-K", "filed": "2026-02-10"}]}},
+            "GrossProfit": {"units": {"USD": [{"end": "2025-12-31", "val": 400,
+                                               "form": "10-K"}]}},   # no `filed`
+        }}}
+        p = self._provider(monkeypatch, facts)
+        f = p.fundamentals("XYZ")
+        assert f["gross_margin"] == 0.4 and "_as_of_filing" not in f

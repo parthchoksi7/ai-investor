@@ -28,7 +28,13 @@ the bundle isn't available until its last input was filed).
   no single filing date) → they report vintage-unknown (`age=null`, `stale=null`), which the
   dossier already handles. `fundamental_coverage` is unaffected (it counts the quality fields,
   not `_as_of_filing`).
-- **Producer-side, zero order-path change.** **QA:** **576 tests green** (+3: `TestSECFilingDate`).
+- **`/code-review` fix:** stamp `_as_of_filing` ONLY when *every* contributing input has a
+  filed date — a partial set could `max()` over the present subset and **understate** vintage,
+  which in a historical replay is the look-ahead direction (a not-yet-public filing slipping
+  past the `> as_of` drop). Missing → vintage unknown (honest). Cross-file/cache/conventions
+  angle returned clean.
+- **Producer-side, zero order-path change.** **QA:** **577 tests green** (+4: `TestSECFilingDate`,
+  `TestSECFilingDatePartial`).
 
 ### Added — Phase 4 (increment 2): the Haiku event digest (`event_digest.py`)
 
