@@ -7,8 +7,10 @@ file in sync when you change it.
 - **Schedule (cron):** `45 13,14,15,16 * * 1-5` — 9:45 / 10:45 / 11:45 / 12:45 AM **EDT**, Mon–Fri
   (initial attempt + 3 hourly retries to survive GitHub Actions scheduled-cron delay).
   - **Winter (EST, set in November):** `45 14,15,16,17 * * 1-5`. Revert in March.
-- **Secrets are redacted below** (`<…>`). The live routine holds the real
-  `POLYGON_API_KEY` and `SUPABASE_SERVICE_KEY`; never commit those to this repo.
+- **No API secrets belong in this prompt.** The cloud plane can't reach Polygon or Supabase
+  (both 403), so `POLYGON_API_KEY` / `SUPABASE_*` are unused here (STEP 2 explains why). The
+  real Supabase write runs in GitHub Actions with the GitHub secret store. Keep the routine
+  prompt secret-free; the only broker access is the Robinhood MCP connector (no creds stored).
 - The `STEP 0` gate + the `pending_decisions.json` idempotency envelope together guarantee the
   pipeline executes **at most once per day**, only on the first attempt that sees fresh data.
   See `preflight_gate.py` and the "Daily Trading Cycle" section of `CLAUDE.md`.
@@ -104,10 +106,21 @@ STEP 2 — Set up environment
 (Code was already pulled in STEP 0 — do not pull again.)
 
 Create .env:
-POLYGON_API_KEY=<POLYGON_API_KEY>
 DRY_RUN=true
-SUPABASE_URL=<SUPABASE_URL>
-SUPABASE_SERVICE_KEY=<SUPABASE_SERVICE_KEY>
+
+NO API SECRETS ARE NEEDED HERE — and none should be pasted into this prompt. This cloud
+plane cannot reach Polygon or Supabase (both 403), so:
+  • POLYGON_API_KEY is unused — market_data.py reads the committed market_snapshot.json
+    (get_market_snapshot() checks the local file first); every Polygon call is guarded by
+    `if POLYGON_KEY`, so its absence is a no-op.
+  • SUPABASE_URL / SUPABASE_SERVICE_KEY are unused — publish.py writes portfolio_snapshot.json
+    and then, with no keys, prints "Supabase not configured — skipping" and returns cleanly.
+    The committed portfolio_snapshot.json push triggers publish.yml in GitHub Actions, which
+    does the REAL Supabase write using the GitHub Actions secret store. Secrets live there,
+    not in this prompt.
+Keeping secrets out of the routine prompt avoids exposing them somewhere that gets pasted or
+logged. (If a future increment ever genuinely needs a cloud-side secret, use the routine env
+injection — the same mechanism that provides the Anthropic OAuth token — not an inline value.)
 
 IMPORTANT: DRY_RUN=true is correct and intentional. robin_stocks (the Python Robinhood library)
 is blocked in this cloud environment. Setting DRY_RUN=true prevents main.py from calling it and

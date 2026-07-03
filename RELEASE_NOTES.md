@@ -13,6 +13,17 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Security — remove unused API secrets from both routine prompts
+
+Both canonical routine prompts (`ROUTINE_DAILY_CYCLE.md`, `ROUTINE_EOD_CLOSE.md`) had `.env`
+blocks writing `POLYGON_API_KEY` / `SUPABASE_URL` / `SUPABASE_SERVICE_KEY`. Verified against the
+code that **all three are unused in the cloud plane** (it 403s on both services): `market_data.py`
+reads the committed `market_snapshot.json`, and `publish.py` writes `portfolio_snapshot.json`
+then skips Supabase cleanly with no keys — the real write runs in GitHub Actions (`publish.yml`)
+with the GitHub secret store. STEP 2 is now just `DRY_RUN=true` with a comment explaining why no
+secrets belong in the prompt. **Requires a live-routine sync** (MANUAL_TODO #0) to take effect,
+and the pasted keys should be rotated.
+
 ### Added — Phase 4 (increment 3): `_as_of_filing` stamping (SEC provider)
 
 Makes the dossier's no-look-ahead fundamentals guard **live instead of inert**.

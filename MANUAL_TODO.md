@@ -10,6 +10,18 @@ _Last refreshed: 2026-07-02 (Phases 2 + 3 deployed to `main`; Phase 4 producer l
 
 ## 🔴 Live routine prompt sync (cannot be done from code)
 
+### [ ] 0. SECURITY — strip the inline secrets from BOTH live routine prompts
+- **Why:** STEP 2 of both live routines currently writes a `.env` with `POLYGON_API_KEY`,
+  `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` — but the cloud plane can't reach Polygon or Supabase
+  (both 403), so **all three are unused** (verified: `market_data.py` reads the committed
+  snapshot; `publish.py` writes `portfolio_snapshot.json` then skips Supabase cleanly with no
+  keys → the real write is in GitHub Actions). Secrets in a prompt are worse hygiene than a
+  secret store — they get pasted/logged.
+- **How:** routines UI → both routines → replace STEP 2's `.env` block with just `DRY_RUN=true`
+  (daily) per the updated `ROUTINE_DAILY_CYCLE.md` / `ROUTINE_EOD_CLOSE.md`. Nothing else changes.
+- **Also rotate** the pasted keys (Supabase service key first — full DB write; then Polygon) and
+  update the **GitHub Actions** secret `SUPABASE_SERVICE_KEY` / `POLYGON_API_KEY` after rotating.
+
 ### [ ] 1. Sync the live DAILY routine prompt with `ROUTINE_DAILY_CYCLE.md`
 - **Why:** the live Anthropic routine prompt is **NOT** auto-updated by a repo change. The
   canonical `ROUTINE_DAILY_CYCLE.md` STEP 4/5 `git add` lines list every artifact the cloud
@@ -22,12 +34,11 @@ _Last refreshed: 2026-07-02 (Phases 2 + 3 deployed to `main`; Phase 4 producer l
   **already** commits — so **Phase 3 adds NO new routine-sync requirement.** No change needed
   for Phase 3.
 - **How:** routines UI → `YOUR_ROUTINE_ID_DAILY` → paste the STEP 4 + STEP 5 `git add` lines
-  from `ROUTINE_DAILY_CYCLE.md`, substituting the real redacted secrets (`POLYGON_API_KEY`,
-  `SUPABASE_SERVICE_KEY`, account number). Diff your live prompt against the MD to be sure
-  STEP 0 `git checkout -B main origin/main`, STEP 1 `as_of`, and STEP 4 claim-commit-push are
-  all present.
-- **Why Claude can't:** no access to the secrets; editing a live scheduled routine is an
-  account action.
+  from `ROUTINE_DAILY_CYCLE.md`, substituting only the real account number (the redacted
+  `YOUR_ACCOUNT_NUMBER`). **No API secrets go in the prompt anymore** — see item #0. Diff your
+  live prompt against the MD to be sure STEP 0 `git checkout -B main origin/main`, STEP 1
+  `as_of`, and STEP 4 claim-commit-push are all present.
+- **Why Claude can't:** editing a live scheduled routine is an account action.
 
 ### [ ] 2. Sync the live EOD routine prompt (only if drifted)
 - Diff `ROUTINE_EOD_CLOSE.md` against the live `YOUR_ROUTINE_ID_EOD` prompt; sync if drifted.

@@ -8,8 +8,9 @@ file in sync whenever you change either one.
 - **Schedule (cron):** `0 20 * * 1-5` — 4:00 PM **EDT**, Mon–Fri.
   - **Winter (EST, set in November):** `0 21 * * 1-5`. Revert in March.
 - **Places no orders.** Records the official 4:00 PM closing portfolio value to Supabase.
-- **Secrets are redacted below** (`<…>`). The live routine holds the real
-  `POLYGON_API_KEY` and `SUPABASE_SERVICE_KEY`; never commit those to this repo.
+- **No API secrets belong in this prompt.** This routine can't reach Supabase (403), so
+  `POLYGON_API_KEY` / `SUPABASE_*` are unused here (STEP 2 explains why); the real Supabase
+  write runs in GitHub Actions with the GitHub secret store. Keep the prompt secret-free.
 
 ## ⚠️ The two non-obvious requirements that make this routine actually publish
 
@@ -71,9 +72,14 @@ does not enforce freshness, but write it anyway for consistency with the daily c
 
 STEP 2 — Set up environment
 Create .env:
-POLYGON_API_KEY=<POLYGON_API_KEY>
-SUPABASE_URL=<SUPABASE_URL>
-SUPABASE_SERVICE_KEY=<SUPABASE_SERVICE_KEY>
+DRY_RUN=true
+
+NO API SECRETS ARE NEEDED HERE — and none should be pasted into this prompt. This routine
+places no orders and cannot reach Supabase (403). `publish.py --close` writes
+portfolio_snapshot.json (with is_close/close_value) and then, with no keys, prints
+"Supabase not configured — skipping" and returns cleanly; the committed portfolio_snapshot.json
+push triggers publish.yml in GitHub Actions, which does the REAL Supabase write using the
+GitHub Actions secret store. POLYGON_API_KEY is likewise unused here. Keep the prompt secret-free.
 
 Install dependencies:
 pip install -r requirements.txt -q
