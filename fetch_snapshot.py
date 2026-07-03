@@ -78,6 +78,17 @@ try:
 except Exception as e:
     print(f"WARNING: factor_history append failed — {e}")
 
+# Step 5 (§11.3) — build the per-ticker research dossier: the single synthesis point
+# that collapses the raw layer (snapshot + factor_history + fundamentals + events +
+# journal) into the small denormalized record the Wednesday agents will read. Research
+# artifact ONLY — zero order code. Reads the files fetch_snapshot just wrote above.
+try:
+    import build_dossier as _bd
+    rc = _bd.main()
+    print(f"build_dossier exit={rc}")
+except Exception as e:
+    print(f"WARNING: build_dossier failed — {e}")
+
 # Also upload to Supabase for website and health_check.yml use.
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_SERVICE_KEY")

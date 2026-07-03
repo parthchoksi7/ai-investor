@@ -13,6 +13,36 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — Phase 4 (increment 1): the research dossier producer (`build_dossier.py`)
+
+The single synthesis point of the research pipeline (§11.3/§12.2). `build_dossier.py`
+collapses the raw append-only layer (snapshot + `factor_history` + fundamentals + events
++ decision journal) into `research_dossier.json` — one small, denormalized, as-of-dated
+record per ticker — the artifact the Wednesday decision agents will eventually read
+instead of a firehose (206 OHLCV bars + 50 news articles per name).
+
+- **Capital-integrity invariant honored:** runs in GitHub Actions, writes a research
+  artifact ONLY, contains **zero order code**. Blast radius of any bug = "degraded
+  dossier," never "unintended trade." Wired as Step 5 of `fetch_snapshot.py`; committed by
+  `market_data.yml`.
+- **No look-ahead:** a fundamental whose `_as_of_filing` is after `as_of` is dropped;
+  persistence is computed only *within* one `formula_version` (never across a re-weight
+  boundary — P0-2). Per-ticker `price_as_of` stamped (P0-1) so the future consumer can
+  re-quote live rather than trust a 1–4-day-old slice price.
+- **Schema validation (P1-5):** `validate_dossier()` gates on required top-level + per-
+  ticker keys AND freshness (`as_of == today`, `built_from_days ≥ 2`) — a malformed/stale
+  dossier must ABORT the Wednesday gate, never be silently traded on.
+- **Reuses the deterministic spine unchanged** (`quant_engine._pct_return` /
+  `compute_risk_metrics`; journal + `corporate_actions` helpers) — no divergence from
+  scoring. Returns stored as fractions to match the §12.2 contract.
+- **PRODUCER ONLY:** the cloud routine does NOT yet consume the dossier — that consumer
+  change (+ gate freshness routing) is a later increment coordinated with Phase 5. See
+  MANUAL_TODO #8. Deferred: Haiku event digest → `events.jsonl`, `_as_of_filing`
+  fundamentals stamping, per-lot FIFO tax dates.
+- **Surfaced a real data issue (P0-3):** the dossier exposed split-unadjusted history
+  (ORCL `ret_21d ≈ −0.43`) — tracked in MANUAL_TODO #9, not a builder bug.
+- **QA:** **551 tests green** (+13: `TestBuildDossier`, `TestDossierValidation`).
+
 ## [2026-07-02] — Phase 2 (data layer) + Phase 3 (observability & alerting)  ·  main
 
 ### Fixed — `market_data.yml` push race (Phase 3 follow-up)

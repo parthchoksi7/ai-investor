@@ -50,7 +50,12 @@ Haiku runs for each of up to 20 candidates. Sonnet runs 3 times total. Prompt ca
 | `execute.py` | Robinhood order execution via `robin_stocks` |
 | `journal.py` | `decision_journal.json` + kill switch |
 | `health.py` | `HealthTracker` — records every pipeline step to `system_health.json` |
-| `fetch_snapshot.py` | Run by GitHub Actions to pre-fetch and commit market data |
+| `fetch_snapshot.py` | Run by GitHub Actions to pre-fetch and commit market data; also runs Step 3 factor-history append, the §15.2 data-quality classify, and Step 5 `build_dossier` |
+| `data_quality.py` | §15.2 absolute-floor gate: `classify_data_quality(snapshot)` → OK/DEGRADED/ABORT + 0–100 score + provenance stamp; writes `data_quality_report.json` + `data_quality_history.jsonl` |
+| `heartbeat_check.py` | §15.4 dead-man's switch — asserts every daily artifact exists + is dated today (tiered data/compute planes); run by `heartbeat.yml` |
+| `pipeline_digest.py` | §15.5 weekly integrity digest (coverage trend / DQ score / abort rate) → `pipeline_digest.md`; run by `pipeline_digest.yml` |
+| `market_calendar.py` | Single-source NYSE trading calendar (`NYSE_HOLIDAYS`, `is_trading_day`); imported by `preflight_gate` + heartbeat |
+| `build_dossier.py` | Phase 4 Step 5 synthesis — collapses the raw layer into `research_dossier.json` (one denormalized per-ticker record, the Wednesday agent input); schema-validates; **zero order code** |
 | `preflight_gate.py` | STEP 0 gate the routine runs first each attempt — PROCEED / SKIP-RETRY / SKIP-DONE (see below) |
 | `ROUTINE_DAILY_CYCLE.md` | Canonical, version-controlled copy of the daily routine prompt (secrets redacted) |
 | `ROUTINE_EOD_CLOSE.md` | Canonical, version-controlled copy of the EOD close routine prompt (secrets redacted) |
@@ -314,6 +319,22 @@ The pipeline aborts before running any agents if either condition is true:
 This prevents the silent all-50 quant score failure mode where agents run but produce no trades because they have no quantitative signal. When aborted, `system_health.json` is written immediately and the alert fires.
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
+
+## Changelog — Jul 2 2026 (Phase 4 increment 1 — the research dossier producer)
+
+Redesign-pod Phase 4, first increment. Builds the **producer** of the research pipeline;
+the risky **consumer** changes (cloud routine reading the dossier, execution sizing, per-lot
+tax dates) are deferred to later increments coordinated with Phase 5. **Zero live-order-path
+change** — `build_dossier.py` runs in GitHub Actions and writes a research artifact only
+(the §11.5 capital-integrity invariant: research jobs contain zero order code). PR #TBD.
+
+| Change | Why it mattered |
+|--------|-----------------|
+| `feat(dossier)` **`build_dossier.py` — the single synthesis point (§11.3/§12.2)** — collapses the raw append-only layer (snapshot + `factor_history` + fundamentals + events + journal) into `research_dossier.json`: one small, denormalized, as-of-dated record per ticker. Wired as Step 5 of `fetch_snapshot.py`; committed by `market_data.yml`. | Prevents "Wednesday overload" — the decision agents read a ~1 KB digest per name, not 206 OHLCV bars + 50 news articles. One synthesis point; agents never touch raw data. |
+| `feat(dossier)` **no-look-ahead + provenance** — a fundamental with `_as_of_filing > as_of` is dropped; persistence computed only within one `formula_version` (P0-2); per-ticker `price_as_of` stamped (P0-1). | The dossier is the year-end audit substrate — every field as-of-dated, no future data, no cross-re-weight persistence. `price_as_of` lets the future consumer re-quote live rather than size on a stale slice price. |
+| `feat(dossier)` **schema validation (`validate_dossier`, P1-5)** — required-keys + freshness (`as_of == today`, `built_from_days ≥ 2`). | A malformed/stale dossier must ABORT the Wednesday gate, never be silently traded on. |
+
+> **Scope:** PRODUCER ONLY — the cloud routine does not yet read the dossier (later increment + routine sync, MANUAL_TODO #8). Deferred: Haiku event digest → `events.jsonl`, `_as_of_filing` fundamentals stamping, per-lot FIFO tax dates. **Surfaced a real data issue:** split-unadjusted history (ORCL `ret_21d ≈ −0.43`, MANUAL_TODO #9, P0-3). **QA:** full `pytest` green (**551**, +13: `TestBuildDossier`, `TestDossierValidation`). Reuses `quant_engine`/`journal`/`corporate_actions` helpers unchanged. Expert review pre-commit per §7.0.
 
 ## Changelog — Jul 2 2026 (Phase 3 — Observability & alerting: the safety net)
 

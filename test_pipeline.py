@@ -5748,3 +5748,136 @@ class TestChaosSuite16_4:
         from heartbeat_check import check_heartbeat
         r = check_heartbeat(as_of="2026-07-02", root=str(tmp_path))   # empty dir
         assert r["ok"] is False and "market_snapshot" in r["missing"]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 4 — build_dossier (research pipeline synthesis, §11.3/§12.2)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _dossier_snapshot(as_of="2026-07-03"):
+    """Minimal snapshot for build_dossier tests: 2 names + SPY, with history."""
+    def _hist(base):
+        return [{"date": 1782000000000 + i * 86400000, "open": base, "high": base * 1.01,
+                 "low": base * 0.99, "close": base * (1 + i * 0.001), "volume": 1e6}
+                for i in range(130)]
+    return {
+        "date": as_of, "_data_date": as_of,
+        "prices": {"AAA": {"ticker": "AAA", "close": 100.0, "change_pct": 1.2},
+                   "BBB": {"ticker": "BBB", "close": 50.0, "change_pct": -0.5},
+                   "SPY": {"ticker": "SPY", "close": 400.0, "change_pct": 0.3}},
+        "history": {"AAA": _hist(90.0), "BBB": _hist(48.0), "SPY": _hist(390.0)},
+        "fundamentals": {"AAA": {"gross_margin": 0.6, "operating_margin": 0.3, "debt_to_equity": 0.4}},
+        "earnings_calendar": {"AAA": "2026-07-06"},
+    }
+
+
+def _factor_rows(as_of="2026-07-03", fv="2.0-quality-tilt"):
+    rows = []
+    for i, d in enumerate(["2026-07-01", "2026-07-02", as_of]):
+        rows.append({"date": d, "ticker": "AAA", "composite_score": 70 + i,
+                     "momentum_score": 80, "quality_score": 64, "valuation_score": 50,
+                     "volatility_score": 55, "factors_used": ["momentum", "quality", "volatility"],
+                     "formula_version": fv})
+        rows.append({"date": d, "ticker": "BBB", "composite_score": 40 + i,
+                     "momentum_score": 45, "quality_score": 50, "valuation_score": 50,
+                     "volatility_score": 60, "factors_used": ["momentum", "quality", "volatility"],
+                     "formula_version": fv})
+    return rows
+
+
+class TestBuildDossier:
+    def test_builds_valid_schema(self):
+        import build_dossier as bd
+        d = bd.build_dossier(_dossier_snapshot(), _factor_rows(), [], [])
+        ok, errors = bd.validate_dossier(d, as_of="2026-07-03")
+        assert ok, errors
+        assert d["n_tickers"] == 2 and set(d["tickers"]) == {"AAA", "BBB"}
+
+    def test_benchmarks_excluded(self):
+        import build_dossier as bd
+        d = bd.build_dossier(_dossier_snapshot(), _factor_rows(), [], [])
+        assert "SPY" not in d["tickers"] and "QQQ" not in d["tickers"]
+
+    def test_price_as_of_stamped(self):
+        # P0-1: each record carries the price date so the consumer can re-quote live.
+        import build_dossier as bd
+        d = bd.build_dossier(_dossier_snapshot(), _factor_rows(), [], [])
+        assert d["tickers"]["AAA"]["price_as_of"] == "2026-07-03"
+
+    def test_returns_are_fractions(self):
+        import build_dossier as bd
+        d = bd.build_dossier(_dossier_snapshot(), _factor_rows(), [], [])
+        hs = d["tickers"]["AAA"]["history_summary"]
+        assert -1.0 < hs["ret_21d"] < 1.0       # fraction, not percent
+        assert hs["max_dd_126d"] <= 0.0
+
+    def test_no_lookahead_drops_future_filing(self):
+        # A fundamental filed AFTER as_of must not appear (no look-ahead).
+        import build_dossier as bd
+        snap = _dossier_snapshot(as_of="2026-07-03")
+        snap["fundamentals"]["AAA"] = {"gross_margin": 0.6, "_as_of_filing": "2026-09-01"}
+        d = bd.build_dossier(snap, _factor_rows(), [], [])
+        assert d["tickers"]["AAA"]["fundamentals"] == {}
+
+    def test_persistence_within_formula_version_only(self):
+        # P0-2: a row from a DIFFERENT formula_version must not enter the 7d window.
+        import build_dossier as bd
+        rows = _factor_rows(fv="2.0-quality-tilt")
+        rows.append({"date": "2026-06-30", "ticker": "AAA", "composite_score": 999,
+                     "factors_used": ["momentum"], "formula_version": "1.0-old"})
+        d = bd.build_dossier(_dossier_snapshot(), rows, [], [])
+        assert d["tickers"]["AAA"]["persistence"]["composite_7d_mean"] < 100   # 999 excluded
+
+    def test_holdings_get_last_decision(self):
+        import build_dossier as bd
+        journal = [{"ticker": "AAA", "action": "BUY", "date": "2026-06-01",
+                    "target_weight": 0.08, "thesis": "x", "status": "open",
+                    "confidence": 8, "entry_price": 80.0}]
+        d = bd.build_dossier(_dossier_snapshot(), _factor_rows(), journal, [],
+                             holdings={"AAA"})
+        ld = d["tickers"]["AAA"]["last_decision"]
+        assert ld and ld["action"] == "BUY"
+        se = d["tickers"]["AAA"]["since_entry"]
+        assert se["entry_price"] == 80.0 and se["cum_return"] == round((100.0 - 80.0) / 80.0, 4)
+        assert "last_decision" not in d["tickers"]["BBB"]     # non-holding
+
+    def test_events_attached(self):
+        import build_dossier as bd
+        events = [{"date": "2026-07-02", "ticker": "AAA", "type": "rating_change",
+                   "summary": "PT raised", "url": "http://x"}]
+        d = bd.build_dossier(_dossier_snapshot(), _factor_rows(), [], events)
+        evs = d["tickers"]["AAA"]["events"]
+        assert len(evs) == 1 and evs[0]["type"] == "rating_change"
+
+    def test_earnings_imminent_flag(self):
+        # AAA earnings 2026-07-06, as_of 2026-07-03 → 3 days → imminent.
+        import build_dossier as bd
+        d = bd.build_dossier(_dossier_snapshot(), _factor_rows(), [], [])
+        e = d["tickers"]["AAA"]["earnings"]
+        assert e["days_until"] == 3 and e["imminent"] is True
+
+
+class TestDossierValidation:
+    def test_missing_top_level_key(self):
+        import build_dossier as bd
+        ok, errors = bd.validate_dossier({"tickers": {}}, as_of=None)
+        assert not ok and any("schema" in e for e in errors)
+
+    def test_stale_as_of_rejected(self):
+        import build_dossier as bd
+        d = bd.build_dossier(_dossier_snapshot("2026-07-03"), _factor_rows(), [], [])
+        ok, errors = bd.validate_dossier(d, as_of="2026-07-06")
+        assert not ok and any("stale" in e for e in errors)
+
+    def test_insufficient_built_from_days(self):
+        import build_dossier as bd
+        d = bd.build_dossier(_dossier_snapshot(), _factor_rows()[:2], [], [])  # 1 day only
+        ok, errors = bd.validate_dossier(d, as_of="2026-07-03")
+        assert not ok and any("insufficient history" in e for e in errors)
+
+    def test_ticker_missing_required_key(self):
+        import build_dossier as bd
+        d = bd.build_dossier(_dossier_snapshot(), _factor_rows(), [], [])
+        del d["tickers"]["AAA"]["factors"]
+        ok, errors = bd.validate_dossier(d, as_of="2026-07-03")
+        assert not ok and any("missing keys" in e for e in errors)

@@ -62,7 +62,7 @@ jobs:
           # Actions is the only plane that scores the whole universe daily), or
           # factor-persistence / IC analysis silently loses its substrate (same
           # class as the forecasts.jsonl feed-freeze).
-          git add market_snapshot.json factor_history.jsonl data_quality_report.json data_quality_history.jsonl
+          git add market_snapshot.json factor_history.jsonl data_quality_report.json data_quality_history.jsonl research_dossier.json
           # Only commit if the file actually changed
           git diff --staged --quiet && echo "No changes to commit" || \
             git commit -m "chore: market snapshot [skip ci]"
