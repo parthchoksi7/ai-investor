@@ -4,7 +4,25 @@ Actions that **cannot be done from the repo by Claude** — they require the liv
 routines UI, real secrets (redacted from this repo), or an owner merge/deploy decision.
 Newest concern first. Check items off as you do them.
 
-_Last refreshed: 2026-07-02 (Phases 2 + 3 deployed to `main`; Phase 4 producer landing)._
+_Last refreshed: 2026-07-03 (Phases 0–4 + Phase-5 Stage A deployed; Stage B on hold; Stage C evidence-gated)._
+
+---
+
+## 📍 Redesign status & roadmap (where we are)
+
+| Phase | State |
+|-------|-------|
+| 0 Single-source limits · 1 Measurement · 2 Data layer · 3 Observability | ✅ deployed |
+| 4 Research pipeline — dossier producer · event digest · `_as_of_filing` | ✅ deployed (PRODUCER only; consumer is Stage C) |
+| **5 Stage A** — pre-consumer hardening (heartbeat dossier, signal logging, digest cap, Scenario E) | ✅ deployed |
+| **5 Stage B** — `risk_watch.py` (SELL-only daily safety net) | ⏸ **ON HOLD (owner decision)** — buildable anytime; real order-path change → needs `/code-review ultra` + weekend dry-run + routine sync + sign-off |
+| **5 Stage C** — dossier consumer + weekly rebalance (trades real capital) | 🔒 **evidence-gated** — build only when `stage_c_readiness.py` reports **DECIDABLE** (currently ACCUMULATING; ~1–3 months). Watch it in the weekly `pipeline_digest.md`. |
+| **Stage D** — storage split (§12.4) | 🔒 gated on `UNIVERSE_EXPANDED` (universe expansion) — not urgent at ~100 names |
+
+**Nothing is required right now.** The evidence clock (Stage A's `persist_mean` / `event_present`
+logging + the quant composite) accumulates on its own; `stage_c_readiness.py` flips the go/no-go
+when the scorecard's IC confidence intervals tighten. Stage B is the only "buildable now" item and
+is deliberately held pending your decision.
 
 ---
 

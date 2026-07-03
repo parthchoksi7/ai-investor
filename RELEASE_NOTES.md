@@ -13,6 +13,10 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+_Nothing pending._
+
+## [2026-07-03] — Phase 4 inc 2/3 · Phase 5 Stage A · Stage-C readiness monitor · routine secret removal  ·  main
+
 ### Added — Stage C readiness monitor (`stage_c_readiness.py`)
 
 A read-only gate on *when* to build the execution-path consumer. Stage C must not be built on

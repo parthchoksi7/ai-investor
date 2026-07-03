@@ -322,6 +322,23 @@ This prevents the silent all-50 quant score failure mode where agents run but pr
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
 
+## Changelog — Jul 3 2026 (Phase 4 inc 2/3 + Phase 5 Stage A + Stage-C readiness gate)
+
+Redesign-pod progress after the Phase-4 dossier producer. All producer/observability-side —
+**no live-order-path code changed**. Each shipped through `/code-review high` (multi-agent) with
+remediation, full `pytest`, and a PR. The three specialist persona reviews (senior_backend /
+platform_devops / ml_ai) were run against the whole Phase 0–4 foundation and their preconditions
+folded into Stage A. Newest first.
+
+| Change | Why it mattered |
+|--------|-----------------|
+| `feat(readiness)` **`stage_c_readiness.py`** (PR #24) — read-only evidence-clock gate: is the scorecard's forward-IC CI tight enough to DECIDE Stage C (`n_effective ≥ 30` AND `ci_halfwidth ≤ 0.15` on the quant composite + the Stage-A dossier signals)? Surfaced weekly in `pipeline_digest`. | Stage C (the consumer that trades) must be built on evidence, not faith — the ml_ai review showed the signals are noise at n_eff≈5 (quant IC 0.046, p=0.30, CI ±0.31). Decidable is symmetric: a tight CI around zero is as decisive as a positive one. |
+| `feat(stageA)` **Phase 5 Stage A — pre-consumer hardening** (PR #23): heartbeat now checks `research_dossier.json` (stale-dossier blind spot); `calibration.log_dossier_signals` logs `persist_mean` + `event_present` full-universe for an unbiased forward-IC read; `event_digest` `MAX_CHUNKS` token cap (§15.2 P2-13) with ticker_news prepended so the cap keeps high-signal news; Runbook **Scenario E** (bad/stale research artifact). | Satisfies every precondition the three persona reviews set before the execution-path consumer, and starts the measurement clock for the exact signals Stage C will depend on. |
+| `feat(data)` **Phase 4 inc 3 — `_as_of_filing` stamping** (PR #22): `SECProvider` stamps the 10-K `filed` date (latest among inputs, or omitted if any is missing). | Makes the dossier's no-look-ahead fundamentals guard LIVE instead of inert — `fundamentals_age_days`/`stale` were always `null` before. |
+| `feat(events)` **Phase 4 inc 2 — Haiku event digest** (PR #21): `event_digest.py` → `events.jsonl`, material per-ticker structured events; enrichment never gating; cross-day dedup; parse-fail/cap → `data_quality_report` DEGRADED. | Fills the `events.jsonl` the dossier consumes; compresses ~50 news articles into a handful of attributed events. |
+
+> **QA across the batch:** full `pytest` green (**592**). Full e2e (`DRY_RUN main.py`) exercised the deterministic spine + all plumbing; the local run's agent-auth failure (no cloud OAuth locally) was correctly caught by Phase-3 observability (`overall_status=FAILED`) — a positive validation. **Manual steps DONE** (owner): both routine prompts synced (secret-free) + keys rotated. **Roadmap:** Stage B (`risk_watch`) on hold; Stage C evidence-gated (watch `stage_c_readiness`); Stage D gated on universe expansion. See `MANUAL_TODO.md`.
+
 ## Changelog — Jul 2 2026 (Phase 4 increment 1 — the research dossier producer)
 
 Redesign-pod Phase 4, first increment. Builds the **producer** of the research pipeline;
