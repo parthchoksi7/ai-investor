@@ -13,6 +13,19 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+## [2026-07-02] — Phase 2 (data layer) + Phase 3 (observability & alerting)  ·  main
+
+### Fixed — `market_data.yml` push race (Phase 3 follow-up)
+
+Live CI validation of the new workflows surfaced it: a bare `git push` in the snapshot
+step fails with "failed to push some refs" if another main-pushing workflow (the new
+`pipeline_digest`, the EOD publish, a concurrent retry) lands first — dropping the
+snapshot + `factor_history` + `data_quality` artifacts for that run. Added a
+rebase-and-retry loop (same durability lesson as the routine STEP 5 push). Nothing else
+rewrites these files, so the rebase is safe. **Validated end-to-end:** `data_quality_
+report.json` (status OK, 96% coverage) + a fresh `data_quality_history.jsonl` row now
+reach `main` from the GitHub Actions path; heartbeat + weekly digest both run clean.
+
 ### Added — Phase 3: Observability & alerting (the safety net)
 
 "Nothing fails silently" — the layer that protects the year-end verdict from being

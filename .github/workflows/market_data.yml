@@ -68,4 +68,15 @@ jobs:
             git commit -m "chore: market snapshot [skip ci]"
 
       - name: Push snapshot
-        run: git push
+        # Bare `git push` fails with "failed to push some refs" if another workflow
+        # (pipeline_digest, the EOD publish, a concurrent market_data retry) lands on
+        # main first. Rebase-and-retry so a benign push race doesn't drop the snapshot
+        # + factor_history + data_quality artifacts (same durability lesson as the
+        # routine STEP 5 push). Nothing else rewrites these files, so the rebase is safe.
+        run: |
+          for i in 1 2 3; do
+            git push && exit 0
+            echo "push rejected (attempt $i) — rebasing on origin/main and retrying"
+            git pull --rebase origin main || exit 1
+          done
+          git push
