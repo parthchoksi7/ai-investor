@@ -25,14 +25,22 @@ consumer (Stage B/C) and the measurement clock the reviews asked for.
 - **Observational dossier-signal logging (`calibration.log_dossier_signals`)** — the ml_ai review's
   ask: the dossier's `persistence` (`composite_7d_mean`) and `event_present` signals are now logged
   as scored forecast rows (agents `persist_mean` / `event_present`), so their forward IC is measured
-  **independently, before any consumer trusts them**. Never affects a decision; fresh-dossier-only.
+  **independently, before any consumer trusts them**. Logged over the **full dossier universe** (not
+  the screened candidate subset) for an **unbiased** cross-sectional IC. Never affects a decision;
+  fresh-dossier-only.
 - **Event-digest token-budget cap (§15.2 P2-13)** — `MAX_CHUNKS=15` (300 articles/run) bounds Haiku
   spend regardless of feed size (a real guardrail once `UNIVERSE_EXPANDED`); a capped run keeps the
   newest chunks and floors `data_quality_report.json` at DEGRADED (→ alert), never silent.
 - **Runbook Scenario E** (bad/stale research artifact) — git-revert + re-dispatch `market_data.yml`;
   documents that a bad dossier is "degraded artifact," never an unintended trade.
-- **QA:** **585 tests green** (+8: heartbeat blind-spot, `TestDossierSignalLogging`,
-  `TestEventDigestBudgetCap`).
+- **`/code-review high` (2 angles) fixes:** the token cap dropped `ticker_news` first (it was
+  appended to the feed tail while the cap keeps the head) → now prepended so the cap preserves the
+  high-signal single-name news; a both-parse-fail-and-capped run records **both** breaches (was
+  `elif`); dossier-signal IC is now full-universe (was candidate-biased); Scenario E notes the
+  revert bundles the append-only ledgers. Heartbeat false-alarm risk verified **absent** (dossier
+  `as_of` derives from the snapshot date; morning crons run in the UTC==ET window).
+- **QA:** **586 tests green** (+9: heartbeat blind-spot, `TestDossierSignalLogging`,
+  `TestEventDigestBudgetCap`, `TestEventDigestTickerNewsPriority`).
 
 ### Security — remove unused API secrets from both routine prompts
 

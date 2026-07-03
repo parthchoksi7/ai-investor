@@ -259,12 +259,15 @@ def digest(snapshot: dict, universe: set[str], path: str = EVENTS_FILE,
     today, append the rest. Returns a stats dict for the health signal. Never raises
     into the pipeline (events are enrichment) — the caller wraps it too."""
     as_of = snapshot.get("_data_date") or snapshot.get("date")
-    news = list(snapshot.get("news") or [])
-    # Fold in per-mover ticker_news (also article dicts) so material single-name news
-    # isn't missed when it's absent from the broad feed.
+    # Per-mover ticker_news goes FIRST (highest-signal single-name news), THEN the broad
+    # feed. The MAX_CHUNKS token cap keeps the HEAD of this list, so ordering ticker_news
+    # first means the cap drops broad-feed tail, never the material single-name news the
+    # code deliberately folds in. Duplicates across the two are collapsed by event_key.
+    news = []
     for arts in (snapshot.get("ticker_news") or {}).values():
         if isinstance(arts, list):
             news.extend(arts)
+    news.extend(snapshot.get("news") or [])
     events, stats = extract_events(news, universe, as_of, safe_call=safe_call)
 
     # Dedup against a WINDOW (not just today): the feed re-surfaces multi-day-old

@@ -6223,7 +6223,6 @@ class TestDossierSignalLogging:
         import calibration
         path = str(tmp_path / "fc.jsonl")
         n = calibration.log_dossier_signals("r1", "2026-07-02", self._dossier(),
-                                            ["AAA", "BBB"],
                                             {"AAA": {"close": 100.0}, "BBB": {"close": 50.0}},
                                             path=path)
         rows = [json.loads(l) for l in open(path) if l.strip()]
@@ -6241,22 +6240,22 @@ class TestDossierSignalLogging:
         import calibration
         path = str(tmp_path / "fc.jsonl")
         n = calibration.log_dossier_signals("r1", "2026-07-02", self._dossier(as_of="2026-06-30"),
-                                            ["AAA"], {"AAA": {"close": 100.0}}, path=path)
+                                            {"AAA": {"close": 100.0}}, path=path)
         assert n == 0 and not (tmp_path / "fc.jsonl").exists()
 
     def test_missing_or_bad_dossier_safe(self, tmp_path):
         import calibration
         path = str(tmp_path / "fc.jsonl")
-        assert calibration.log_dossier_signals("r1", "2026-07-02", None, ["AAA"],
+        assert calibration.log_dossier_signals("r1", "2026-07-02", None,
                                                {"AAA": {"close": 1.0}}, path=path) == 0
-        assert calibration.log_dossier_signals("r1", "2026-07-02", {}, ["AAA"],
+        assert calibration.log_dossier_signals("r1", "2026-07-02", {},
                                                {"AAA": {"close": 1.0}}, path=path) == 0
 
     def test_provenance_stamped_on_dossier_signals(self, tmp_path):
         import calibration
         path = str(tmp_path / "fc.jsonl")
         prov = {"data_quality_score": 90, "data_quality_hash": "h1"}
-        calibration.log_dossier_signals("r1", "2026-07-02", self._dossier(), ["AAA"],
+        calibration.log_dossier_signals("r1", "2026-07-02", self._dossier(),
                                         {"AAA": {"close": 100.0}}, path=path, provenance=prov)
         rows = [json.loads(l) for l in open(path) if l.strip()]
         assert all(r.get("data_quality_hash") == "h1" for r in rows)
@@ -6291,3 +6290,21 @@ class TestEventDigestBudgetCap:
              "capped": True, "chunks_available": 18, "max_chunks": 15}, path=rep)
         assert out["status"] == "DEGRADED"
         assert any("budget cap" in b for b in out["breaches"])
+
+
+class TestEventDigestTickerNewsPriority:
+    """Stage A review fix: ticker_news must survive the token cap (kept at the head)."""
+
+    def test_ticker_news_in_first_chunk_under_cap(self, tmp_path):
+        import event_digest as ed
+        # 1 mover ticker_news (NVDA) + a large broad feed (> cap) of AAPL articles.
+        broad = _news((ed.MAX_CHUNKS + 5) * ed.BATCH_SIZE, ticker="AAPL")
+        snap = {"_data_date": "2026-07-02", "news": broad,
+                "ticker_news": {"NVDA": _news(1, ticker="NVDA")}}
+        first_msgs = []
+        def stub(model, system, user_msg, default, max_tokens=1200, return_meta=False):
+            first_msgs.append(user_msg)
+            return ([], {"parsed_ok": True, "raw": "", "stop_reason": "end_turn"})
+        ed.digest(snap, {"NVDA", "AAPL"}, path=str(tmp_path / "e.jsonl"), safe_call=stub)
+        # NVDA (ticker_news, prepended) must appear in the FIRST chunk — not dropped by the cap.
+        assert "NVDA" in first_msgs[0]

@@ -247,17 +247,18 @@ def merge_event_digest_into_report(stats: dict, path: str = REPORT_FILE,
             return {}
         report["event_digest"] = stats
         rate = stats.get("parse_success_rate", 1.0)
-        breach = None
+        # Record EACH condition independently (a busy news day can be both low-parse AND
+        # budget-capped) — a single escalation to DEGRADED, but both facts surfaced so the
+        # operator sees the full picture (raise the cap / investigate API health).
+        new_breaches = []
         if stats.get("chunks", 0) and rate < min_parse_rate:
-            breach = f"event_digest DEGRADED: parse_success_rate {rate} < {min_parse_rate}"
-        elif stats.get("capped"):
-            # Token-budget cap hit (§15.2 P2-13): the digest processed only the newest
-            # MAX_CHUNKS of a larger feed — surface it (raise the cap or investigate the
-            # feed size) rather than silently under-covering the news.
-            breach = (f"event_digest budget cap: processed {stats.get('max_chunks')} of "
-                      f"{stats.get('chunks_available')} chunks — news under-covered")
-        if breach:
-            report.setdefault("breaches", []).append(breach)
+            new_breaches.append(f"event_digest DEGRADED: parse_success_rate {rate} < {min_parse_rate}")
+        if stats.get("capped"):
+            new_breaches.append(
+                f"event_digest budget cap: processed {stats.get('max_chunks')} of "
+                f"{stats.get('chunks_available')} chunks — news under-covered")
+        if new_breaches:
+            report.setdefault("breaches", []).extend(new_breaches)
             if _SEVERITY.get(report.get("status"), 0) < _SEVERITY[DEGRADED]:
                 report["status"] = DEGRADED
                 report["data_quality_score"] = min(report.get("data_quality_score", 100), 85)

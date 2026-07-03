@@ -514,8 +514,8 @@ def run_daily_cycle():
         # persistence + event-presence signals so their forward IC is measured BEFORE a
         # consumer trusts them. Never used for a decision here; fresh-dossier only.
         from build_dossier import load_dossier
+        # Full dossier universe (not just candidates) → unbiased signal IC (see docstring).
         _n_ds = log_dossier_signals(run_id, today, load_dossier(),
-                                    pipeline_state.get("candidates", []),
                                     market_data["prices"], provenance=dq_provenance)
         if _n_fc or _n_dec or _n_ds:
             print(f"   🧮 Logged {_n_fc} forecast(s) + {_n_dec} decision flag(s) + {_n_ds} dossier-signal(s)")

@@ -695,9 +695,15 @@ DEGRADED for a digest parse-failure / budget cap.
 2. **Re-dispatch the producer:** `gh workflow run market_data.yml --repo parthchoksi7/ai-investor --field full_refresh=true`,
    then confirm a fresh `chore: market snapshot` commit lands on `main` and the artifact is dated today
    (`git show origin/main:research_dossier.json | python3 -c "import json,sys;print(json.load(sys.stdin)['as_of'])"`).
-3. **If a committed artifact is corrupt:** `git revert` the offending `chore: market snapshot` commit
-   (restores the prior valid artifact), then re-dispatch as in step 2. The prior dossier's freshness
-   gate keeps a consumer from trading on it in the meantime.
+3. **If a committed artifact is corrupt:** prefer **re-dispatch** (step 2) — `build_dossier` rebuilds
+   the dossier from the raw layer and the JSONL ledgers re-append idempotently, so a fresh run
+   overwrites the corrupt dossier without data loss. Only `git revert` the `chore: market snapshot`
+   commit as a last resort: that commit **bundles six files** (snapshot, `factor_history.jsonl`,
+   `data_quality_report.json`, `data_quality_history.jsonl`, `research_dossier.json`, `events.jsonl`),
+   so the revert also rolls back today's legitimately-appended `factor_history` / `data_quality_history`
+   rows — **you MUST then re-dispatch `market_data.yml`** (step 2) to re-append them, or that day is lost
+   from the append-only substrate. The prior dossier's freshness gate keeps a consumer from trading on
+   a stale one in the meantime.
 4. **If the digest is the cause** (DEGRADED for `parse_success_rate` or `budget cap`): the run still
    produced a valid dossier with fewer/omitted events — safe to proceed; investigate the Anthropic API
    health (parse failures) or raise `event_digest.MAX_CHUNKS` (budget cap) at leisure. Events are

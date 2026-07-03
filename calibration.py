@@ -201,8 +201,8 @@ def log_decisions(run_id: str, date_str: str, pipeline_state: dict,
     return len(rows)
 
 
-def log_dossier_signals(run_id: str, date_str: str, dossier: dict, candidates: list,
-                        prices: dict, horizons: tuple = HORIZONS, path: str = LEDGER,
+def log_dossier_signals(run_id: str, date_str: str, dossier: dict, prices: dict,
+                        horizons: tuple = HORIZONS, path: str = LEDGER,
                         provenance: dict | None = None) -> int:
     """OBSERVATIONAL-ONLY (Stage A): log the dossier's derived signals — persistence
     (`composite_7d_mean`) and event-presence — as scored forecast rows, so their forward
@@ -211,9 +211,12 @@ def log_dossier_signals(run_id: str, date_str: str, dossier: dict, candidates: l
     unchanged. Logs nothing when the dossier is stale (`as_of != date_str`) — a stale
     dossier's signals must not enter the evidence clock. Never raises into the caller.
 
-    Emits two agents: `persist_mean` (does the 7-day-smoothed composite predict returns
-    as well as / better than raw composite?) and `event_present` (does having a material
-    event predict forward return?)."""
+    Iterates the FULL dossier universe (not the screened candidate subset) so the IC is an
+    UNBIASED, full-cross-section measurement — measuring only among already-strong
+    candidates would condition the signal on the screen and mislead the Stage B/C go/no-go.
+    Emits two agents: `persist_mean` (does the 7-day-smoothed composite predict returns as
+    well as / better than raw composite?) and `event_present` (does having a material event
+    predict forward return?)."""
     if not isinstance(dossier, dict):
         return 0
     if str(dossier.get("as_of", ""))[:10] != str(date_str)[:10]:
@@ -221,8 +224,7 @@ def log_dossier_signals(run_id: str, date_str: str, dossier: dict, candidates: l
     tickers = dossier.get("tickers", {}) or {}
     prov = provenance or {}
     rows = []
-    for t in candidates:
-        rec = tickers.get(t)
+    for t, rec in tickers.items():
         if not isinstance(rec, dict):
             continue
         signal_close = (prices.get(t) or {}).get("close")
