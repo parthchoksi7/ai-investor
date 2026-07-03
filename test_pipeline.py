@@ -5884,3 +5884,73 @@ class TestDossierValidation:
         del d["tickers"]["AAA"]["factors"]
         ok, errors = bd.validate_dossier(d, as_of="2026-07-03")
         assert not ok and any("missing keys" in e for e in errors)
+
+
+class TestBuildDossierRemediation:
+    """Regression tests for the /code-review high findings on PR #20."""
+
+    def test_vol_ann_populated_not_always_none(self):
+        # BUG: read risk.get("annualized_vol") — a key compute_risk_metrics never
+        # returns — so vol_ann was ALWAYS None. Correct key is "volatility".
+        import build_dossier as bd
+        d = bd.build_dossier(_dossier_snapshot(), _factor_rows(), [], [])
+        assert d["tickers"]["AAA"]["history_summary"]["vol_ann"] is not None
+
+    def test_persistence_has_fixed_key_set(self):
+        # No-history + populated names must expose the SAME keys (no consumer KeyError).
+        import build_dossier as bd
+        snap = _dossier_snapshot()
+        snap["prices"]["CCC"] = {"ticker": "CCC", "close": 10.0, "change_pct": 0.0}
+        snap["history"]["CCC"] = snap["history"]["AAA"]
+        d = bd.build_dossier(snap, _factor_rows(), [], [])   # CCC has NO factor rows
+        keys_aaa = set(d["tickers"]["AAA"]["persistence"])
+        keys_ccc = set(d["tickers"]["CCC"]["persistence"])
+        assert keys_aaa == keys_ccc
+        assert {"formula_version", "rank_chg_7d"} <= keys_ccc   # present even with no history
+
+    def test_as_of_none_raises_not_crashes_midloop(self):
+        import build_dossier as bd, pytest
+        snap = _dossier_snapshot()
+        snap.pop("_data_date"); snap.pop("date")
+        with pytest.raises(ValueError):
+            bd.build_dossier(snap, _factor_rows(), [], [])
+
+    def test_none_ticker_factor_row_excluded_from_ranks(self):
+        # A malformed factor row (ticker=None) must not consume a rank ordinal.
+        import build_dossier as bd
+        rows = _factor_rows()
+        rows.append({"date": "2026-07-03", "ticker": None, "composite_score": 999,
+                     "factors_used": ["momentum"], "formula_version": "2.0-quality-tilt"})
+        d = bd.build_dossier(_dossier_snapshot(), rows, [], [])
+        assert None not in d["tickers"]              # phantom never surfaces
+
+    def test_fundamentals_stale_none_when_vintage_unknown(self):
+        # No _as_of_filing → age unknown → stale must be None (not False = "fresh").
+        import build_dossier as bd
+        d = bd.build_dossier(_dossier_snapshot(), _factor_rows(), [], [])
+        assert d["tickers"]["AAA"]["data_quality"]["fundamentals_age_days"] is None
+        assert d["tickers"]["AAA"]["data_quality"]["fundamentals_stale"] is None
+
+    def test_epoch_filing_date_does_not_bypass_lookahead(self):
+        # A future filing stamped as epoch-ms must still be dropped (not just ISO strings).
+        import build_dossier as bd
+        from datetime import datetime, timezone
+        future_ms = int(datetime(2026, 9, 1, tzinfo=timezone.utc).timestamp() * 1000)
+        snap = _dossier_snapshot(as_of="2026-07-03")
+        snap["fundamentals"]["AAA"] = {"gross_margin": 0.6, "_as_of_filing": future_ms}
+        d = bd.build_dossier(snap, _factor_rows(), [], [])
+        assert d["tickers"]["AAA"]["fundamentals"] == {}     # future filing dropped
+
+    def test_validate_rejects_stale_factors_even_with_history(self):
+        # built_from_days >= 2 but newest factor date != real today → stale, rejected.
+        import build_dossier as bd
+        d = bd.build_dossier(_dossier_snapshot("2026-07-03"), _factor_rows("2026-07-03"), [], [])
+        ok, errors = bd.validate_dossier(d, as_of="2026-07-06")   # real today is later
+        assert not ok and any("stale" in e for e in errors)
+
+    def test_rank_chg_true_7day_lookback_or_none(self):
+        # With < window+1 rows in the current formula_version, rank_chg_7d is None
+        # (never a 6-day proxy silently labeled 7d).
+        import build_dossier as bd
+        d = bd.build_dossier(_dossier_snapshot(), _factor_rows(), [], [])  # only 3 dates
+        assert d["tickers"]["AAA"]["persistence"]["rank_chg_7d"] is None

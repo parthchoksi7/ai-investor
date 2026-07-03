@@ -84,7 +84,19 @@ _Last refreshed: 2026-07-02 (Phases 2 + 3 deployed to `main`; Phase 4 producer l
 - **Deferred sub-workstreams (documented, not built):** the Haiku event digest → `events.jsonl`
   (a new GH-Actions LLM call + token cost); `fundamentals_store` stamping `_as_of_filing`
   (needed for real `fundamentals_age_days` / no-look-ahead — the dossier currently reports
-  `age=null` when the filing date is unknown); per-lot FIFO tax dates (P0-4).
+  `age=null` / `fundamentals_stale=null` when the filing date is unknown); per-lot FIFO tax
+  dates (P0-4).
+- **Deferred `/code-review high` findings (non-correctness — tracked, not blocking):**
+  (a) **storage wall (§12.4):** `research_dossier.json` is committed whole to git daily and grows
+  with the universe — the planned raw→curated storage split (dossier to object storage / compact
+  digest only) should land before the 400-name expansion. (b) **efficiency:** `build_dossier`
+  loads the entire (unbounded) `factor_history.jsonl` + double-reads the snapshot from disk — fine
+  now, revisit with the storage split (tail-read the recent window; pass the in-memory snapshot).
+  (c) **reuse:** `_read_jsonl` / `_load_json` / atomic-write / `_max_drawdown` are duplicated across
+  `data_quality` / `pipeline_digest` / `build_dossier` / `health` / `journal` / `performance` — a
+  shared `io_utils` helper is warranted in a dedicated cleanup PR. (d) **tunables:**
+  `_PERSISTENCE_WINDOW` / `_FUNDAMENTALS_STALE_DAYS` (and `market_data.FUNDAMENTAL_COVERAGE_FLOOR_PCT`)
+  should migrate into `policy.yaml` for the single-source-of-truth invariant.
 
 ### [ ] 9. Known live DATA issue surfaced by the dossier — split-unadjusted history (P0-3)
 - The dossier's `history_summary` shows e.g. ORCL `ret_21d ≈ −0.43` — a real artifact of

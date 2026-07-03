@@ -41,7 +41,20 @@ instead of a firehose (206 OHLCV bars + 50 news articles per name).
   fundamentals stamping, per-lot FIFO tax dates.
 - **Surfaced a real data issue (P0-3):** the dossier exposed split-unadjusted history
   (ORCL `ret_21d ≈ −0.43`) — tracked in MANUAL_TODO #9, not a builder bug.
-- **QA:** **551 tests green** (+13: `TestBuildDossier`, `TestDossierValidation`).
+- **Full multi-agent `/code-review high` — 9 correctness findings remediated:**
+  `vol_ann` was reading a non-existent key (`annualized_vol` → `volatility`, was *always
+  null*); the build-time freshness gate was a tautology (`validate` now runs against the
+  real ET trading date, and asserts the newest factor day == today); `as_of=None` now
+  fails loud instead of crashing mid-loop; `_persistence` returns a fixed key set (no
+  consumer `KeyError`); a `ticker=None` factor row no longer pollutes the rank maps;
+  `rank_chg_7d` is a true 7-day lookback with a numeric guard; the top-level
+  `formula_version` comes from the newest row (not an arbitrary ticker); an invalid/stale
+  dossier is **no longer written over the committed good one**; `fundamentals_stale` is
+  `null` (not `false`) when vintage is unknown, and a future epoch-ms `_as_of_filing` can't
+  bypass the no-look-ahead drop. Deferred (non-correctness, tracked in MANUAL_TODO #8):
+  storage-wall/git-bloat (§12.4), whole-file reads, `_read_jsonl` reuse, tunables → policy.
+- **QA:** **559 tests green** (+21: `TestBuildDossier`, `TestDossierValidation`,
+  `TestBuildDossierRemediation`).
 
 ## [2026-07-02] — Phase 2 (data layer) + Phase 3 (observability & alerting)  ·  main
 

@@ -84,25 +84,27 @@ def _latest_factor_row(rows: list[dict]) -> dict | None:
 def _persistence(rows: list[dict], as_of: str, window: int = _PERSISTENCE_WINDOW) -> dict:
     """Composite-score persistence over the last `window` rows, WITHIN the current
     formula_version only (never mix a re-weight boundary — P0-2). Rows are this
-    ticker's factor_history entries. rank_chg_7d is left None here (rank is a
-    cross-ticker property computed by the caller)."""
+    ticker's factor_history entries. `rank_chg_7d` is filled by the caller (rank is a
+    cross-ticker property). ALWAYS returns the same key set (None when unknown) so a
+    consumer can read persistence["formula_version"] / ["rank_chg_7d"] without a
+    KeyError on a no-history name."""
+    empty = {"composite_7d_mean": None, "composite_7d_std": None, "n": 0,
+             "formula_version": None, "rank_chg_7d": None}
     if not rows:
-        return {"composite_7d_mean": None, "composite_7d_std": None, "n": 0}
+        return empty
     latest = _latest_factor_row(rows)
-    fv = latest.get("formula_version")
+    fv = latest.get("formula_version") if latest else None
     same = [r for r in rows if r.get("formula_version") == fv
-            and str(r.get("date", "")) <= as_of
+            and as_of is not None and str(r.get("date", "")) <= as_of
             and isinstance(r.get("composite_score"), (int, float))]
     same.sort(key=lambda r: str(r.get("date", "")))
-    recent = same[-window:]
-    vals = [float(r["composite_score"]) for r in recent]
+    vals = [float(r["composite_score"]) for r in same[-window:]]
     if not vals:
-        return {"composite_7d_mean": None, "composite_7d_std": None, "n": 0}
+        return {**empty, "formula_version": fv}
     mean = sum(vals) / len(vals)
     var = sum((v - mean) ** 2 for v in vals) / len(vals)
-    return {"composite_7d_mean": round(mean, 2),
-            "composite_7d_std": round(var ** 0.5, 2),
-            "n": len(vals), "formula_version": fv}
+    return {"composite_7d_mean": round(mean, 2), "composite_7d_std": round(var ** 0.5, 2),
+            "n": len(vals), "formula_version": fv, "rank_chg_7d": None}
 
 
 def _history_summary(history: list[dict], spy_history: list[dict]) -> dict:
@@ -118,7 +120,9 @@ def _history_summary(history: list[dict], spy_history: list[dict]) -> dict:
         return round(v / 100.0, 4) if v is not None else None
     out: dict = {"ret_21d": _frac(21), "ret_63d": _frac(63), "ret_126d": _frac(126)}
     risk = compute_risk_metrics(history, spy_history)
-    out["vol_ann"] = risk.get("annualized_vol") if risk.get("volatility_available") else None
+    # compute_risk_metrics returns the annualized vol under key "volatility" (NOT
+    # "annualized_vol" — that key does not exist, so the old read was always None).
+    out["vol_ann"] = risk.get("volatility") if risk.get("volatility_available") else None
     out["beta"] = risk.get("beta")
     out["max_dd_126d"] = _max_drawdown(closes[-126:]) if len(closes) >= 2 else None
     return out
@@ -137,21 +141,26 @@ def _max_drawdown(closes: list[float]) -> float | None:
 
 
 def _fundamentals_block(fund: dict | None, as_of: str) -> tuple[dict, int | None]:
-    """(fundamentals-with-age, age_days). Drops any value whose `_as_of_filing` is
-    AFTER as_of (no look-ahead). age_days is None when the filing date is unknown
-    (the SEC provider does not yet stamp `_as_of_filing` — a Phase 4 follow-up)."""
+    """(fundamentals-with-age, age_days). No look-ahead: a value whose `_as_of_filing`
+    is AFTER as_of is dropped. The filing date is compared as a real date (parsed), so
+    a non-ISO string or an epoch-ms int can't silently bypass the guard. age_days is
+    None when the filing date is unknown/unparseable — the SEC provider does not yet
+    stamp `_as_of_filing` (Phase 4 follow-up), so callers must treat age=None as
+    'vintage unknown', NOT 'fresh'."""
     if not isinstance(fund, dict) or not fund:
         return {}, None
-    filing = fund.get("_as_of_filing")
+    filing_iso = _norm_date(fund.get("_as_of_filing"))     # epoch-ms → ISO; passes ISO through
     age = None
-    if isinstance(filing, str):
-        if filing > as_of:                      # look-ahead: filing not yet available
-            return {}, None
+    if isinstance(filing_iso, str) and as_of:
         try:
-            age = (datetime.strptime(as_of, "%Y-%m-%d").date()
-                   - datetime.strptime(filing, "%Y-%m-%d").date()).days
+            fdt = datetime.strptime(filing_iso, "%Y-%m-%d").date()
+            adt = datetime.strptime(as_of, "%Y-%m-%d").date()
         except Exception:
-            age = None
+            fdt = adt = None
+        if fdt and adt:
+            if fdt > adt:                        # look-ahead: filing not yet available
+                return {}, None
+            age = (adt - fdt).days
     return dict(fund), age
 
 
@@ -206,6 +215,11 @@ def build_dossier(snapshot: dict, factor_rows: list[dict], journal: list[dict],
     """Synthesize research_dossier.json from the raw layer. `holdings` (current
     position tickers) get last_decision/since_entry; all scored names get the rest."""
     as_of = as_of or snapshot.get("_data_date") or snapshot.get("date")
+    if not as_of:
+        # No dateable snapshot → can't build an as-of-dated artifact. Fail loud
+        # rather than crash mid-loop on `str(...) <= None` (TypeError) or emit a
+        # dossier with as_of=None that the freshness gate can't reason about.
+        raise ValueError("build_dossier: snapshot has no _data_date/date — cannot set as_of")
     price_as_of = snapshot.get("_data_date") or snapshot.get("date")
     holdings = holdings or set()
     prices = snapshot.get("prices") or {}
@@ -215,9 +229,13 @@ def build_dossier(snapshot: dict, factor_rows: list[dict], journal: list[dict],
     spy_history = history.get("SPY") or []
 
     # Index the raw layer by ticker once (avoid O(n²) rescans over the universe).
+    # Skip rows with a falsy ticker — a None key would otherwise pollute the
+    # cross-ticker rank maps (consuming an ordinal slot) while never surfacing in output.
     factors_by_ticker: dict[str, list] = {}
     for r in factor_rows:
-        factors_by_ticker.setdefault(r.get("ticker"), []).append(r)
+        rt = r.get("ticker")
+        if rt:
+            factors_by_ticker.setdefault(rt, []).append(r)
     events_by_ticker: dict[str, list] = {}
     for e in events_rows:
         events_by_ticker.setdefault(e.get("ticker"), []).append(
@@ -252,7 +270,11 @@ def build_dossier(snapshot: dict, factor_rows: list[dict], journal: list[dict],
             "history_summary": _history_summary(history.get(t, []), spy_history),
             "data_quality": {
                 "fundamentals_age_days": fund_age,
-                "fundamentals_stale": (fund_age is not None and fund_age > _FUNDAMENTALS_STALE_DAYS),
+                # None (not False) when vintage is UNKNOWN — the SEC provider does not
+                # yet stamp _as_of_filing, so we must NOT imply "fresh". Only a known
+                # age > threshold is affirmatively stale.
+                "fundamentals_stale": (fund_age > _FUNDAMENTALS_STALE_DAYS) if fund_age is not None
+                                      else (None if fund_block else False),
                 "factors_fresh": str(latest.get("date", "")) == as_of,
                 "coverage": coverage,
             },
@@ -266,6 +288,10 @@ def build_dossier(snapshot: dict, factor_rows: list[dict], journal: list[dict],
     _annotate_rank_change(tickers, factors_by_ticker, as_of)
 
     built_from = sorted({str(r.get("date")) for r in factor_rows if r.get("date")})[-_PERSISTENCE_WINDOW:]
+    # Top-level formula_version: the version of the MOST RECENT factor row overall,
+    # not an arbitrary first ticker (which may have had no rows → None). This is the
+    # file-level provenance a re-weight-boundary check trusts.
+    _newest = max(factor_rows, key=lambda r: str(r.get("date", "")), default={}) or {}
     return {
         "schema": SCHEMA_VERSION,
         "as_of": as_of,
@@ -273,13 +299,16 @@ def build_dossier(snapshot: dict, factor_rows: list[dict], journal: list[dict],
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "built_from_days": built_from,
         "n_tickers": len(tickers),
-        "formula_version": (next(iter(tickers.values()), {}).get("factors", {}) or {}).get("formula_version"),
+        "formula_version": _newest.get("formula_version"),
         "tickers": tickers,
     }
 
 
 def _annotate_rank_change(tickers: dict, factors_by_ticker: dict, as_of: str) -> None:
-    """Add persistence.rank_chg_7d = (rank 7d-ago − rank today) by composite; +ve = improved."""
+    """Add persistence.rank_chg_7d = (rank 7d-ago − rank today) by composite; +ve = improved.
+    Prior = the composite `_PERSISTENCE_WINDOW` trading days before the latest row (a
+    TRUE 7-day lookback: same[-(window+1)]), within the current formula_version only
+    (P0-2), and only over numeric composite scores (mirrors _persistence)."""
     def _rank_map(pick) -> dict:
         scored = []
         for t, rows in factors_by_ticker.items():
@@ -291,16 +320,20 @@ def _annotate_rank_change(tickers: dict, factors_by_ticker: dict, as_of: str) ->
         scored.sort(key=lambda x: x[1], reverse=True)
         return {t: i + 1 for i, (t, _) in enumerate(scored)}
 
+    def _numeric_same(rows):
+        fv = (_latest_factor_row(rows) or {}).get("formula_version")
+        return sorted([r for r in rows if r.get("formula_version") == fv
+                       and as_of is not None and str(r.get("date", "")) <= as_of
+                       and isinstance(r.get("composite_score"), (int, float))],
+                      key=lambda r: str(r.get("date", "")))
+
     def _today(rows):
-        r = _latest_factor_row(rows)
-        return r.get("composite_score") if r else None
+        same = _numeric_same(rows)
+        return same[-1]["composite_score"] if same else None
 
     def _prior(rows):
-        fv = (_latest_factor_row(rows) or {}).get("formula_version")
-        same = sorted([r for r in rows if r.get("formula_version") == fv
-                       and str(r.get("date", "")) <= as_of],
-                      key=lambda r: str(r.get("date", "")))
-        return same[-_PERSISTENCE_WINDOW]["composite_score"] if len(same) >= _PERSISTENCE_WINDOW else None
+        same = _numeric_same(rows)
+        return same[-(_PERSISTENCE_WINDOW + 1)]["composite_score"] if len(same) >= _PERSISTENCE_WINDOW + 1 else None
 
     today_rank, prior_rank = _rank_map(_today), _rank_map(_prior)
     for t, rec in tickers.items():
@@ -332,8 +365,15 @@ def validate_dossier(dossier: dict, as_of: str | None = None) -> tuple[bool, lis
     if as_of is not None:
         if dossier.get("as_of") != as_of:
             errors.append(f"stale: dossier.as_of={dossier.get('as_of')} != {as_of}")
-        if len(dossier.get("built_from_days", [])) < 2:
-            errors.append(f"insufficient history: built_from_days={dossier.get('built_from_days')} (< 2)")
+        bfd = dossier.get("built_from_days", []) or []
+        if len(bfd) < 2:
+            errors.append(f"insufficient history: built_from_days={bfd} (< 2)")
+        # built_from_days ≥ 2 only proves SOME history exists — it does not prove the
+        # NEWEST factor data is today's. Require max(built_from_days) == as_of so a
+        # snapshot that failed to refresh (old factor rows survive) is caught, not
+        # passed as fresh. Pass the REAL trading date as `as_of` for this to bite.
+        if bfd and max(str(d) for d in bfd) != as_of:
+            errors.append(f"stale factors: newest built_from_day={max(str(d) for d in bfd)} != {as_of}")
     return (not errors), errors
 
 
@@ -349,6 +389,7 @@ def load_dossier(path: str = DOSSIER_FILE) -> dict:
 
 
 def main() -> int:
+    from market_calendar import today_et
     snapshot = _load_json("market_snapshot.json", {})
     if not snapshot:
         print("build_dossier: no market_snapshot.json — nothing to build")
@@ -360,16 +401,27 @@ def main() -> int:
         journal = []
     holdings = {e.get("ticker") for e in journal
                 if e.get("status") == "open" and e.get("ticker")}
-    dossier = build_dossier(snapshot, factor_rows, journal, events_rows, holdings=holdings)
-    ok, errors = validate_dossier(dossier, as_of=dossier.get("as_of"))
-    write_dossier(dossier)
-    print(f"build_dossier: wrote {DOSSIER_FILE} — {dossier['n_tickers']} tickers, "
-          f"as_of={dossier['as_of']}, built_from_days={len(dossier['built_from_days'])}, "
-          f"schema_valid={ok}")
+    try:
+        dossier = build_dossier(snapshot, factor_rows, journal, events_rows, holdings=holdings)
+    except Exception as e:
+        print(f"build_dossier: BUILD FAILED — {e} (keeping prior research_dossier.json)")
+        return 3
+    # Validate against the REAL trading date (ET), not the dossier's own as_of — else
+    # the freshness check is a tautology (as_of == as_of) and a stale snapshot passes.
+    real_today = today_et().strftime("%Y-%m-%d")
+    ok, errors = validate_dossier(dossier, as_of=real_today)
     if not ok:
+        # Do NOT overwrite the committed (prior, valid) dossier with a stale/invalid one
+        # — market_data.yml git-adds whatever is on disk, so writing a bad file here
+        # would commit it. Leave the prior file; surface the failure (non-zero exit).
+        print(f"build_dossier: NOT writing — dossier invalid/stale vs {real_today} "
+              f"(as_of={dossier.get('as_of')}, tickers={dossier.get('n_tickers')}):")
         for e in errors[:10]:
             print(f"   ⚠ {e}")
         return 2
+    write_dossier(dossier)
+    print(f"build_dossier: wrote {DOSSIER_FILE} — {dossier['n_tickers']} tickers, "
+          f"as_of={dossier['as_of']}, built_from_days={len(dossier['built_from_days'])}, valid")
     return 0
 
 
