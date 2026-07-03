@@ -59,16 +59,12 @@ PROCEED, SKIP_RETRY, SKIP_DONE = 0, 10, 20
 # market the broker still ACCEPTS GFD orders but they sit `queued` and never fill,
 # expiring at the (nonexistent) close — so the routine must not run. This was a
 # live incident on Juneteenth 2026-06-19: the snapshot was dated "today", the gate
-# proceeded, and 4 orders were placed that could never fill. Dates are observed
-# closure dates (an observed holiday on a weekend shifts to the adjacent weekday).
-NYSE_HOLIDAYS = {
-    # 2026
-    "2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25",
-    "2026-06-19", "2026-07-03", "2026-09-07", "2026-11-26", "2026-12-25",
-    # 2027
-    "2027-01-01", "2027-01-18", "2027-02-15", "2027-03-26", "2027-05-31",
-    "2027-06-18", "2027-07-05", "2027-09-06", "2027-11-25", "2027-12-24",
-}
+# proceeded, and 4 orders were placed that could never fill.
+#
+# The calendar now lives in market_calendar.py (single source — the Phase 3
+# heartbeat also needs it). Re-exported here so existing importers/tests that
+# reference preflight_gate.NYSE_HOLIDAYS keep working.
+from market_calendar import NYSE_HOLIDAYS  # noqa: E402
 
 
 def _market_closed_today() -> tuple[bool, str]:

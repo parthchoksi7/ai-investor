@@ -47,6 +47,24 @@ if dq:
     print(f"Fundamental coverage: {dq.get('fundamental_coverage_pct')}% "
           f"({dq.get('fundamentals_covered')}/{dq.get('active_universe')}) — {ok}")
 
+# Data-quality gate (§15.2) — classify the snapshot against the ABSOLUTE floors and
+# write data_quality_report.json + append the data_quality_history.jsonl time series.
+# This is the first-class, gating, time-logged data-integrity signal the cloud
+# routine + heartbeat + weekly digest all read. Never fail the fetch on a classify
+# error — the snapshot itself was already written above.
+try:
+    from data_quality import classify_data_quality, write_report
+    _dq_report = classify_data_quality(snapshot)
+    write_report(_dq_report)
+    print(f"data_quality_report.json: status={_dq_report['status']} "
+          f"score={_dq_report['data_quality_score']} "
+          f"strategy_shift_ok={_dq_report['strategy_shift_ok']}")
+    if _dq_report["breaches"]:
+        for b in _dq_report["breaches"]:
+            print(f"   ⚠ {b}")
+except Exception as e:
+    print(f"WARNING: data_quality classification failed — {e}")
+
 # Score the FULL universe point-in-time and append to the factor_history time
 # series. This runs in GH Actions (not the cloud routine, which scores only
 # candidates) so factor-persistence / IC analysis has a complete daily record.

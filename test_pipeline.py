@@ -5474,3 +5474,277 @@ class TestMeasurementRigor:
         out = p.breadth_ceiling(str(card))
         assert out["available"] is True
         assert out["implied_ir_ceiling"] == round(0.1 * (100 ** 0.5), 3)   # IC×√breadth = 1.0
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 3 — Observability & alerting (§15) + the §16.4 chaos suite
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _dq_snapshot(coverage_pct=96.0, valuation_pct=22.0, universe=100, fetched=100,
+                 min_depth=200, cik_ok=True, nan_close=False, data_date="2026-07-02"):
+    """Build a minimal snapshot with a data_quality block for classifier tests."""
+    prices = {f"T{i}": {"close": 100.0 + i, "open": 100.0, "high": 101.0,
+                        "low": 99.0, "change_pct": 0.5} for i in range(fetched)}
+    if nan_close:
+        prices["T0"]["close"] = float("nan")
+    history = {t: [{"date": j, "close": 100.0} for j in range(min_depth)] for t in prices}
+    return {
+        "date": data_date, "_data_date": data_date,
+        "prices": prices, "history": history,
+        "data_quality": {
+            "active_universe": universe,
+            "fundamental_coverage_pct": coverage_pct,
+            "valuation_coverage_pct": valuation_pct,
+            "cik_map_ok": cik_ok,
+            "price_outlier_count": 0,
+        },
+    }
+
+
+class TestMarketCalendar:
+    def test_trading_day_true_on_weekday(self):
+        import market_calendar as mc
+        assert mc.is_trading_day("2026-07-02") is True     # Thursday
+
+    def test_weekend_is_not_trading_day(self):
+        import market_calendar as mc
+        assert mc.is_trading_day("2026-07-04") is False    # Saturday
+        assert mc.is_trading_day("2026-07-05") is False    # Sunday
+
+    def test_nyse_holiday_is_not_trading_day(self):
+        import market_calendar as mc
+        assert mc.is_trading_day("2026-07-03") is False    # Independence Day (observed)
+        assert mc.is_trading_day("2026-12-25") is False
+
+    def test_preflight_reexports_same_calendar(self):
+        # Single source: preflight_gate.NYSE_HOLIDAYS must be market_calendar's set.
+        import market_calendar as mc, preflight_gate as pg
+        assert pg.NYSE_HOLIDAYS is mc.NYSE_HOLIDAYS
+
+
+class TestDataQualityClassifier:
+    def test_clean_snapshot_is_ok(self):
+        from data_quality import classify_data_quality, OK
+        r = classify_data_quality(_dq_snapshot())
+        assert r["status"] == OK and r["data_quality_score"] == 100
+        assert r["strategy_shift_ok"] is True
+        assert r["breaches"] == []
+
+    def test_valuation_never_gates(self):
+        # Valuation is FMP-capped ~35% — reported, never DEGRADES the run.
+        from data_quality import classify_data_quality, OK
+        r = classify_data_quality(_dq_snapshot(valuation_pct=0.0))
+        assert r["status"] == OK
+        assert r["metrics"]["valuation_coverage_pct"]["informational"] is True
+
+    def test_missing_coverage_value_aborts_that_metric(self):
+        from data_quality import classify_data_quality
+        snap = _dq_snapshot()
+        snap["data_quality"]["fundamental_coverage_pct"] = None
+        r = classify_data_quality(snap)
+        assert r["metrics"]["fundamental_coverage_pct"]["status"] == "ABORT"
+
+
+class TestDataQualityFloorParity:
+    def test_coverage_floor_single_valued(self):
+        # The 80% quality-coverage floor lives in market_data (sets snapshot
+        # `coverage_ok`) AND data_quality._FLOORS (sets `strategy_shift_ok`). They
+        # MUST agree or the two gates disagree on the same run. Parity guard, same
+        # pattern as TestPolicyParity. If you intend to change the floor, change both.
+        import market_data as md
+        from data_quality import _FLOORS
+        assert md.FUNDAMENTAL_COVERAGE_FLOOR_PCT == _FLOORS["fundamental_coverage_pct"]["degraded"]
+
+
+class TestDataQualityProvenance:
+    def test_provenance_stamp_shape(self):
+        from data_quality import classify_data_quality, provenance_stamp
+        r = classify_data_quality(_dq_snapshot())
+        s = provenance_stamp(r)
+        assert set(s) == {"data_quality_score", "data_quality_status", "data_quality_hash"}
+        assert s["data_quality_score"] == 100 and s["data_quality_status"] == "OK"
+
+    def test_provenance_stamp_empty_safe(self):
+        from data_quality import provenance_stamp
+        s = provenance_stamp(None)
+        assert s["data_quality_score"] is None and s["data_quality_hash"] is None
+
+    def test_hash_excludes_volatile_fields(self):
+        # Two classifications of the SAME snapshot differ only in generated_at → same hash.
+        from data_quality import classify_data_quality
+        a = classify_data_quality(_dq_snapshot())
+        b = classify_data_quality(_dq_snapshot())
+        assert a["hash"] == b["hash"]
+
+    def test_hash_changes_when_a_metric_changes(self):
+        from data_quality import classify_data_quality
+        a = classify_data_quality(_dq_snapshot(coverage_pct=96.0))
+        b = classify_data_quality(_dq_snapshot(coverage_pct=40.0))
+        assert a["hash"] != b["hash"]
+
+    def test_write_report_appends_history(self, tmp_path):
+        from data_quality import classify_data_quality, write_report
+        rep = str(tmp_path / "dq.json"); hist = str(tmp_path / "dq_hist.jsonl")
+        r = classify_data_quality(_dq_snapshot())
+        write_report(r, path=rep, history_path=hist)
+        write_report(r, path=rep, history_path=hist)
+        lines = [l for l in open(hist) if l.strip()]
+        assert len(lines) == 2
+        row = json.loads(lines[0])
+        assert row["status"] == "OK" and row["coverage_pct"] == 96.0
+
+    def test_forecast_rows_carry_provenance(self, tmp_path):
+        import calibration
+        prov = {"data_quality_score": 85, "data_quality_status": "DEGRADED",
+                "data_quality_hash": "abc123"}
+        # 'research'→'confidence' is a real numeric forecast field (calibration._FORECASTS).
+        state = {"research": {"AAPL": {"confidence": 7}}}
+        path = str(tmp_path / "fc.jsonl")
+        n = calibration.log_forecasts("run1", "2026-07-02", state, ["AAPL"],
+                                      {"AAPL": {"close": 200.0}}, path=path, provenance=prov)
+        assert n > 0                                      # the field mapped → rows written
+        rows = [json.loads(l) for l in open(path) if l.strip()]
+        assert all(row.get("data_quality_hash") == "abc123" for row in rows)
+        assert all(row.get("data_quality_score") == 85 for row in rows)
+
+
+class TestHeartbeat:
+    def _seed(self, root, snapshot_date=None, dq_date=None, factor_date=None,
+              health_date=None, forecast_date=None):
+        import os
+        def _wj(name, d):
+            if d is not None:
+                with open(os.path.join(root, name), "w") as f:
+                    json.dump({"date": d}, f)
+        def _wl(name, d):
+            if d is not None:
+                with open(os.path.join(root, name), "w") as f:
+                    f.write(json.dumps({"date": d, "ticker": "X"}) + "\n")
+        _wj("market_snapshot.json", snapshot_date)
+        _wj("data_quality_report.json", dq_date)
+        _wl("factor_history.jsonl", factor_date)
+        _wj("system_health.json", health_date)
+        _wl("forecasts.jsonl", forecast_date)
+
+    def test_all_fresh_is_ok(self, tmp_path):
+        from heartbeat_check import check_heartbeat
+        d = "2026-07-02"
+        self._seed(str(tmp_path), d, d, d, d, d)
+        r = check_heartbeat(as_of=d, root=str(tmp_path))
+        assert r["ok"] is True and r["missing"] == []
+
+    def test_missing_snapshot_alerts(self, tmp_path):
+        # Jun 11 class: cron skipped, no snapshot.
+        from heartbeat_check import check_heartbeat
+        d = "2026-07-02"
+        self._seed(str(tmp_path), None, None, None, None, None)
+        r = check_heartbeat(as_of=d, root=str(tmp_path))
+        assert r["ok"] is False and "market_snapshot" in r["missing"]
+
+    def test_stale_health_when_data_fresh_alerts(self, tmp_path):
+        # Data plane fresh but routine didn't run (system_health stale) → silent skip.
+        from heartbeat_check import check_heartbeat
+        d, old = "2026-07-02", "2026-06-30"
+        self._seed(str(tmp_path), d, d, d, old, d)
+        r = check_heartbeat(as_of=d, root=str(tmp_path))
+        assert r["ok"] is False and "system_health" in r["missing"]
+
+    def test_stale_data_does_not_cascade_to_compute(self, tmp_path):
+        # If the data plane is stale, the routine correctly skipped — do NOT also
+        # flag its absent artifacts (no cascading false alarm).
+        from heartbeat_check import check_heartbeat
+        d, old = "2026-07-02", "2026-06-30"
+        self._seed(str(tmp_path), old, old, old, None, None)
+        r = check_heartbeat(as_of=d, root=str(tmp_path))
+        assert "system_health" not in r["missing"]      # not required when data stale
+        assert "market_snapshot" in r["missing"]         # the real (data-plane) failure
+
+    def test_forecast_freeze_is_warning_not_failure(self, tmp_path):
+        # Jun 18 dead feed: everything ran but forecasts stopped appending. A
+        # 0-candidate day legitimately writes none, so this is a WARNING, not a fail.
+        from heartbeat_check import check_heartbeat
+        d, old = "2026-07-02", "2026-06-01"
+        self._seed(str(tmp_path), d, d, d, d, old)
+        r = check_heartbeat(as_of=d, root=str(tmp_path))
+        assert r["ok"] is True
+        assert any(w["name"] == "forecasts" for w in r["warnings"])
+
+    def test_non_trading_day_skips(self, tmp_path):
+        from heartbeat_check import check_heartbeat
+        r = check_heartbeat(as_of="2026-07-04", root=str(tmp_path))   # Saturday
+        assert r["ok"] is True and r["skipped"]
+
+
+class TestPipelineDigest:
+    def test_digest_summarizes_window(self, tmp_path):
+        from pipeline_digest import build_digest
+        hist = str(tmp_path / "dq_hist.jsonl")
+        with open(hist, "w") as f:
+            f.write(json.dumps({"date": "2026-07-01", "status": "OK",
+                                "data_quality_score": 100, "coverage_pct": 96.0}) + "\n")
+            f.write(json.dumps({"date": "2026-07-02", "status": "DEGRADED",
+                                "data_quality_score": 85, "coverage_pct": 60.0}) + "\n")
+        d = build_digest(as_of="2026-07-02", dq_path=hist,
+                         health_path=str(tmp_path / "none.jsonl"))
+        assert d["dq_runs"] == 2
+        assert d["coverage_min"] == 60.0 and d["coverage_max"] == 96.0
+        assert len(d["degraded_or_abort_days"]) == 1
+
+    def test_digest_window_excludes_old_rows(self, tmp_path):
+        from pipeline_digest import build_digest
+        hist = str(tmp_path / "dq_hist.jsonl")
+        with open(hist, "w") as f:
+            f.write(json.dumps({"date": "2026-06-01", "status": "ABORT",
+                                "data_quality_score": 20, "coverage_pct": 28.0}) + "\n")
+            f.write(json.dumps({"date": "2026-07-02", "status": "OK",
+                                "data_quality_score": 100, "coverage_pct": 96.0}) + "\n")
+        d = build_digest(as_of="2026-07-02", window_days=7, dq_path=hist,
+                         health_path=str(tmp_path / "none.jsonl"))
+        assert d["dq_runs"] == 1          # the June row is outside the 7-day window
+
+
+class TestChaosSuite16_4:
+    """§16.4 — each historical silent-failure reproduced and asserted to trip a signal."""
+
+    def test_chronic_28pct_coverage_degrades_and_blocks_shift(self):
+        # THE June bug. Absolute floor (not delta): 28% coverage → DEGRADED + the
+        # momentum→fundamental strategy shift is blocked.
+        from data_quality import classify_data_quality, DEGRADED
+        r = classify_data_quality(_dq_snapshot(coverage_pct=28.0))
+        assert r["status"] == DEGRADED
+        assert r["strategy_shift_ok"] is False
+        assert any("fundamental_coverage_pct" in b for b in r["breaches"])
+
+    def test_steady_low_coverage_still_caught_no_drop(self):
+        # A delta check would MISS this — both runs at 28%, nothing "dropped".
+        from data_quality import classify_data_quality
+        a = classify_data_quality(_dq_snapshot(coverage_pct=28.0))
+        b = classify_data_quality(_dq_snapshot(coverage_pct=28.0))
+        assert a["strategy_shift_ok"] is False and b["strategy_shift_ok"] is False
+
+    def test_nan_close_flagged_degraded(self):
+        # Jun 16 publish break: a NaN close in the snapshot.
+        from data_quality import classify_data_quality, DEGRADED
+        r = classify_data_quality(_dq_snapshot(nan_close=True))
+        assert r["metrics"]["nan_inf_count"]["value"] >= 1
+        assert r["status"] == DEGRADED
+
+    def test_partial_fetch_universe_floor(self):
+        # Polygon 5/min rate-limit → partial fetch. <95% DEGRADED, <80% ABORT.
+        from data_quality import classify_data_quality, DEGRADED, ABORT
+        deg = classify_data_quality(_dq_snapshot(universe=100, fetched=90))
+        assert deg["status"] == DEGRADED
+        ab = classify_data_quality(_dq_snapshot(universe=100, fetched=70))
+        assert ab["status"] == ABORT
+
+    def test_dead_feed_thin_history_aborts(self):
+        # A dead/degraded feed returns almost no bars → min_history_depth ABORT.
+        from data_quality import classify_data_quality, ABORT
+        r = classify_data_quality(_dq_snapshot(min_depth=10))
+        assert r["status"] == ABORT
+
+    def test_cron_skip_caught_by_heartbeat(self, tmp_path):
+        # Jun 11 silent cron skip: no fresh snapshot on a trading day.
+        from heartbeat_check import check_heartbeat
+        r = check_heartbeat(as_of="2026-07-02", root=str(tmp_path))   # empty dir
+        assert r["ok"] is False and "market_snapshot" in r["missing"]

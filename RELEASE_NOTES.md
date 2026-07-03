@@ -13,6 +13,45 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — Phase 3: Observability & alerting (the safety net)
+
+"Nothing fails silently" — the layer that protects the year-end verdict from being
+confounded by a starved pipeline. All offline / GitHub-Actions; **no live-order-path
+code changed** (the `main.py` touch is a health-check record + a provenance dict on
+the pending envelope, not order/qty/idempotency).
+
+- **`data_quality.py` — the data-quality gate (§15.2).** `classify_data_quality(snapshot)`
+  scores every run against **ABSOLUTE floors** (not delta — a *steady* 28% coverage never
+  "drops", which is exactly why June's delta-blind check missed it): universe-fetched %,
+  min history depth, fundamental (quality) coverage, and a NaN/Inf scan. Emits an
+  OK/DEGRADED/ABORT status, a 0–100 `data_quality_score`, and the floor breaches. Writes
+  `data_quality_report.json` + append-mirrors `data_quality_history.jsonl` (the trend the
+  digest reads). Valuation coverage is reported but **never gates** (FMP-capped ~35%).
+- **Provenance stamp (§15.1).** Every `forecasts.jsonl` row and the `pending_decisions.json`
+  envelope now carry `{data_quality_score, status, hash}`, so the harness can **partition
+  the December verdict by data quality** and exclude below-floor runs instead of silently
+  averaging a starved run in. `main.py` records a first-class `data_quality` health check.
+- **Heartbeat dead-man's switch (§15.4) — `heartbeat_check.py` + `heartbeat.yml`.** Runs
+  late each weekday and asserts every expected daily artifact exists and is dated today.
+  **Tiered** so it never false-alarms: a missing routine artifact is a failure only when
+  the *data plane* is fresh (the routine should have run); if the data plane itself is
+  stale the routine correctly skipped, so no cascade. Non-trading days self-skip. Opens/
+  closes a `heartbeat-alert` GitHub Issue. Catches the class the per-flow checks can't —
+  Jun-11 silent cron skip, Jun-18 dead feed.
+- **Weekly pipeline-integrity digest (§15.5) — `pipeline_digest.py` + `pipeline_digest.yml`.**
+  Friday summary of the week's coverage trend, data-quality score, DEGRADED/ABORT days, and
+  abort rate → committed `pipeline_digest.md`. Slow drift (coverage creeping 85%→60% over a
+  month) is visible here before it is a crisis.
+- **`market_calendar.py` — single-source NYSE calendar.** Extracted from `preflight_gate`
+  (which now imports it) so the heartbeat and gate can't drift on which days are trading days.
+- **Chaos suite (§16.4).** Each historical silent-failure reproduced and asserted to trip a
+  signal: chronic 28% coverage → DEGRADED + strategy-shift block; steady-low (no-drop) still
+  caught; NaN close → DEGRADED; partial fetch → universe-floor DEGRADED/ABORT; thin history →
+  ABORT; cron skip → heartbeat alert. **537 tests green (+27).**
+- **Scope:** the §15.3 matrix rows that depend on Phase 4/5 flows (dossier, risk_watch,
+  rebalance-ISO-week, event digest, GH-LLM token budget) are intentionally deferred — the
+  classifier/heartbeat are structured to slot them in without a rewrite.
+
 ### Fixed — Phase 2: SEC EDGAR User-Agent 403 (the actual cause of the coverage collapse)
 
 The Phase 2 coverage *detector* did its job: the first real CI run (`full_refresh`, 100 names)
