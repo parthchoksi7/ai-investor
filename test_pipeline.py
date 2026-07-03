@@ -6308,3 +6308,54 @@ class TestEventDigestTickerNewsPriority:
         ed.digest(snap, {"NVDA", "AAPL"}, path=str(tmp_path / "e.jsonl"), safe_call=stub)
         # NVDA (ticker_news, prepended) must appear in the FIRST chunk — not dropped by the cap.
         assert "NVDA" in first_msgs[0]
+
+
+class TestStageCReadiness:
+    """Stage C readiness monitor — read-only evidence-clock gate."""
+
+    def _sig(self, ic=0.2, ci=0.10, n_eff=40, sig=True):
+        return {"ic": ic, "ic_shrunk": ic * 0.7, "ci_halfwidth": ci,
+                "n_effective": n_eff, "significant_bh": sig}
+
+    def test_ready_when_quant_and_a_dossier_signal_decidable(self):
+        import stage_c_readiness as scr
+        card = {scr.PRIMARY_QUANT: self._sig(),
+                "persist_mean.composite_7d_mean@21d": self._sig(),
+                "event_present.flag@21d": self._sig(ci=0.5)}   # this one wide, but the other is tight
+        a = scr.assess_readiness(card)
+        assert a["ready"] is True and a["quant_decidable"] and a["dossier_decidable"]
+
+    def test_not_ready_when_dossier_signals_absent(self):
+        import stage_c_readiness as scr
+        card = {scr.PRIMARY_QUANT: self._sig()}      # quant decidable, no dossier signals yet
+        a = scr.assess_readiness(card)
+        assert a["ready"] is False and a["quant_decidable"] and not a["dossier_decidable"]
+        assert any("not scored yet" in b for b in a["blockers"])
+
+    def test_wide_ci_not_decidable(self):
+        import stage_c_readiness as scr
+        card = {scr.PRIMARY_QUANT: self._sig(ci=0.314),        # the live case: n_eff ok, CI too wide
+                "persist_mean.composite_7d_mean@21d": self._sig()}
+        a = scr.assess_readiness(card)
+        assert a["ready"] is False and not a["quant_decidable"]
+        assert any("CI" in b for b in a["blockers"])
+
+    def test_low_n_effective_not_decidable(self):
+        import stage_c_readiness as scr
+        card = {scr.PRIMARY_QUANT: self._sig(n_eff=5),
+                "persist_mean.composite_7d_mean@21d": self._sig()}
+        a = scr.assess_readiness(card)
+        assert not a["quant_decidable"]
+
+    def test_missing_scorecard_safe(self):
+        import stage_c_readiness as scr
+        a = scr.assess_readiness({})
+        assert a["ready"] is False
+        assert scr.load_scorecard("/nonexistent/x.json") == {}
+
+    def test_summary_line(self):
+        import stage_c_readiness as scr
+        card = {scr.PRIMARY_QUANT: self._sig(),
+                "persist_mean.composite_7d_mean@21d": self._sig()}
+        line = scr.summary_line(scr.assess_readiness(card))
+        assert "DECIDABLE" in line and "quant ✓" in line

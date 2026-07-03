@@ -117,6 +117,25 @@ def render_markdown(d: dict) -> str:
     else:
         lines.append("## ✅ No degraded/aborted data-quality days this window")
     lines.append("")
+
+    # Stage C readiness — is the evidence clock decidable yet? (surfaced so the go/no-go
+    # is watched passively, not by eyeballing agent_scorecards.json.)
+    try:
+        from stage_c_readiness import assess_readiness, load_scorecard
+        a = assess_readiness(load_scorecard())
+        lines.append("## Stage C readiness")
+        lines.append(f"- **{a['verdict']}**")
+        for name, p in a["signals"].items():
+            if not p.get("present"):
+                lines.append(f"  - `{name}` — not scored yet")
+            else:
+                mark = "✅" if p["decidable"] else "⏳"
+                lines.append(f"  - {mark} `{name}` — ic={p['ic']} ci=±{p['ci_halfwidth']} "
+                             f"n_eff={p['n_effective']}")
+        lines.append("")
+    except Exception:
+        pass
+
     lines.append(f"_Generated {datetime.now().isoformat(timespec='seconds')}_")
     return "\n".join(lines)
 

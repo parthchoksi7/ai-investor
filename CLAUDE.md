@@ -55,6 +55,7 @@ Haiku runs for each of up to 20 candidates. Sonnet runs 3 times total. Prompt ca
 | `heartbeat_check.py` | §15.4 dead-man's switch — asserts every daily artifact exists + is dated today (tiered data/compute planes); run by `heartbeat.yml` |
 | `pipeline_digest.py` | §15.5 weekly integrity digest (coverage trend / DQ score / abort rate) → `pipeline_digest.md`; run by `pipeline_digest.yml` |
 | `market_calendar.py` | Single-source NYSE trading calendar (`NYSE_HOLIDAYS`, `is_trading_day`); imported by `preflight_gate` + heartbeat |
+| `stage_c_readiness.py` | Read-only evidence-clock gate — is the scorecard tight enough to DECIDE Stage C (go/no-go)? `assess_readiness()`; surfaced weekly in `pipeline_digest`; **zero order code** |
 | `build_dossier.py` | Phase 4 Step 5 synthesis — collapses the raw layer into `research_dossier.json` (one denormalized per-ticker record, the Wednesday agent input); schema-validates; **zero order code** |
 | `event_digest.py` | Phase 4 Step 4 — Haiku news→`events.jsonl` digest (material per-ticker events, deduped, no look-ahead); runs in GH Actions; enrichment only (never gates); reuses `analysis._safe_call`; **zero order code** |
 | `preflight_gate.py` | STEP 0 gate the routine runs first each attempt — PROCEED / SKIP-RETRY / SKIP-DONE (see below) |

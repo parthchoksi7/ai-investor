@@ -13,6 +13,19 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — Stage C readiness monitor (`stage_c_readiness.py`)
+
+A read-only gate on *when* to build the execution-path consumer. Stage C must not be built on
+faith — the ml_ai review showed the signals are noise at the current sample (quant IC 0.046,
+p=0.30, n_eff≈5, CI ±0.31). `assess_readiness()` reports whether the scorecard's forward-IC
+confidence intervals are tight enough to make the go/no-go **decidable** (symmetric: a tight CI
+around zero is just as decisive as one around a positive IC). Gates on the primary quant composite
++ the Stage-A dossier signals (`persist_mean`, `event_present`) reaching `n_effective ≥ 30` AND
+`ci_halfwidth ≤ 0.15`. Zero order code. Surfaced weekly in `pipeline_digest.py` so the go/no-go is
+watched passively, not by eyeballing `agent_scorecards.json`. Current read: **ACCUMULATING** (quant
+CI still ±0.31; dossier signals need ~21d to mature). **QA:** **592 tests green** (+6:
+`TestStageCReadiness`).
+
 ### Added — Phase 5 Stage A: pre-consumer hardening (satisfies the reviewer preconditions)
 
 Producer/observability-side only — **no order-path code changed**. Sets up the execution-path
