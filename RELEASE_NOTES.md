@@ -13,6 +13,10 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+_Nothing pending._
+
+## [2026-07-02] — Phase 4 (increment 1): research dossier producer  ·  PR #20 · main
+
 ### Added — Phase 4 (increment 1): the research dossier producer (`build_dossier.py`)
 
 The single synthesis point of the research pipeline (§11.3/§12.2). `build_dossier.py`

@@ -326,7 +326,7 @@ Redesign-pod Phase 4, first increment. Builds the **producer** of the research p
 the risky **consumer** changes (cloud routine reading the dossier, execution sizing, per-lot
 tax dates) are deferred to later increments coordinated with Phase 5. **Zero live-order-path
 change** — `build_dossier.py` runs in GitHub Actions and writes a research artifact only
-(the §11.5 capital-integrity invariant: research jobs contain zero order code). PR #TBD.
+(the §11.5 capital-integrity invariant: research jobs contain zero order code). PR #20 (merged).
 
 | Change | Why it mattered |
 |--------|-----------------|
@@ -341,7 +341,7 @@ change** — `build_dossier.py` runs in GitHub Actions and writes a research art
 Redesign-pod Phase 3. "Nothing fails silently" — the layer that keeps the year-end
 verdict from being confounded by a starved pipeline. All offline / GitHub-Actions;
 **no live-order-path code changed** (the `main.py` touch is a `data_quality` health
-record + a provenance dict on the pending envelope, not order/qty/idempotency). PR #TBD.
+record + a provenance dict on the pending envelope, not order/qty/idempotency). PR #19 (merged).
 
 | Change | Why it mattered |
 |--------|-----------------|
