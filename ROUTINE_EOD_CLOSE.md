@@ -96,12 +96,15 @@ STEP 4 — Commit the closing snapshot
 git config user.email 'ai-investor-bot@users.noreply.github.com'
 git config user.name 'AI Investor Bot'
 git add portfolio_snapshot.json mcp_portfolio.json
-git diff --staged --quiet || git commit -m 'chore: eod portfolio snapshot'
-git push
+git diff --staged --quiet || (git commit -m 'chore: eod portfolio snapshot' && (git push || (git pull --rebase && git push)))
 
 CRITICAL: STEP 4 MUST stage portfolio_snapshot.json and the commit message MUST NOT contain
 [skip ci]. publish.yml triggers only on a portfolio_snapshot.json change and is skipped by
 [skip ci]; either mistake means close_value never reaches Supabase.
+
+The push uses a rebase-and-retry (like the daily routine + market_data.yml): a bare `git push`
+silently DROPS the authoritative close_value if another job lands on main first — the same
+"close_value never reaches Supabase" failure this CRITICAL note guards against, via a push race.
 
 DST note: This routine runs at 20:00 UTC (4:00 PM EDT). In November when clocks fall back to EST
 (UTC-5), update the cron to `0 21 * * 1-5`. Back to `0 20 * * 1-5` in March.
