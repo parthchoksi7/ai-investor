@@ -5545,6 +5545,17 @@ class TestDataQualityClassifier:
         assert r["metrics"]["fundamental_coverage_pct"]["status"] == "ABORT"
 
 
+class TestDataQualityFloorParity:
+    def test_coverage_floor_single_valued(self):
+        # The 80% quality-coverage floor lives in market_data (sets snapshot
+        # `coverage_ok`) AND data_quality._FLOORS (sets `strategy_shift_ok`). They
+        # MUST agree or the two gates disagree on the same run. Parity guard, same
+        # pattern as TestPolicyParity. If you intend to change the floor, change both.
+        import market_data as md
+        from data_quality import _FLOORS
+        assert md.FUNDAMENTAL_COVERAGE_FLOOR_PCT == _FLOORS["fundamental_coverage_pct"]["degraded"]
+
+
 class TestDataQualityProvenance:
     def test_provenance_stamp_shape(self):
         from data_quality import classify_data_quality, provenance_stamp
