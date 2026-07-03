@@ -27,13 +27,15 @@ logic against a stub and never hit the network.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from hashlib import sha1
 from pathlib import Path
 
 EVENTS_FILE = "events.jsonl"
 BATCH_SIZE  = 20            # articles per Haiku call — bounds tokens + truncation risk
 _SUMMARY_MAX = 140
+_DEDUP_WINDOW_DAYS = 60     # dedup against events this many days back (the news feed
+                           # re-surfaces multi-day-old articles; must exceed that span)
 
 # Small fixed taxonomy — the model must map to one of these (else "other").
 EVENT_TYPES = {
@@ -73,13 +75,15 @@ def _article_date(article: dict) -> str | None:
 
 
 def event_key(e: dict) -> str:
-    """Stable dedup key: (ticker, date, type, summary-prefix). Same event on a re-run
-    hashes identically, so append-only never duplicates."""
+    """Stable dedup key: (ticker, date, type, FULL summary). Same event on a re-run
+    hashes identically, so append-only never duplicates. Uses the whole (≤140-char)
+    summary — a prefix would collide two genuinely-distinct same-day/type developments
+    that share an opening clause, silently dropping a real event."""
     raw = "|".join([
         str(e.get("ticker", "")).upper(),
         str(e.get("date", ""))[:10],
         str(e.get("type", "")).lower(),
-        str(e.get("summary", "")).strip().lower()[:80],
+        str(e.get("summary", "")).strip().lower(),
     ])
     return sha1(raw.encode()).hexdigest()[:16]
 
@@ -125,9 +129,14 @@ def extract_events(news: list[dict], universe: set[str], as_of: str,
                     f"{_fmt_batch(batch)}\n\nReturn the JSON array of material events.")
         result, meta = safe_call(_model(), system, user_msg, default=[],
                                   max_tokens=1200, return_meta=True)
-        if meta.get("parsed_ok") and isinstance(result, list):
+        if meta.get("parsed_ok"):
+            # A parse can succeed but return a non-array: Haiku sometimes emits a lone
+            # event object, or wraps the array as {"events":[...]}. Coerce all of these
+            # to a list so the events aren't silently dropped AND the chunk isn't
+            # miscounted as a parse failure (which would spuriously trip the DEGRADED gate).
+            items = _as_event_list(result)
             chunks_ok += 1
-            for e in result:
+            for e in items:
                 raw_count += 1
                 norm = _normalize_event(e, universe_u, as_of)
                 if norm:
@@ -140,6 +149,20 @@ def extract_events(news: list[dict], universe: set[str], as_of: str,
 def _model():
     from analysis import MODEL_FAST
     return MODEL_FAST
+
+
+def _as_event_list(result) -> list:
+    """Coerce a parsed model result into a list of event dicts: a bare list passes
+    through; {"events":[...]} (or the first list value) is unwrapped; a lone event
+    dict is wrapped; anything else → []."""
+    if isinstance(result, list):
+        return result
+    if isinstance(result, dict):
+        for v in result.values():
+            if isinstance(v, list):
+                return v
+        return [result]                               # a single event object
+    return []
 
 
 def _normalize_event(e: dict, universe_u: set[str], as_of: str) -> dict | None:
@@ -155,15 +178,34 @@ def _normalize_event(e: dict, universe_u: set[str], as_of: str) -> dict | None:
     summary = str(e.get("summary", "")).strip()[:_SUMMARY_MAX]
     if not summary:
         return None
-    date = str(e.get("date", ""))[:10]
-    if not date or date > as_of:                      # no look-ahead: drop future-dated
+    # The date MUST be an ISO string (the article's published_utc is one, and Haiku is
+    # asked for YYYY-MM-DD). Anything else — an int, an epoch, a garbage string — is an
+    # anomaly, dropped. This closes the guard a raw epoch would otherwise slip through
+    # (str(1725000000) string-compares below as_of; or an epoch-ms coercion lands on a
+    # bogus 1970 date). Require a real, parseable, non-future YYYY-MM-DD.
+    raw = e.get("date")
+    if not isinstance(raw, str):
+        return None
+    date = raw[:10]
+    try:
+        d = datetime.strptime(date, "%Y-%m-%d").date()
+        a = datetime.strptime(as_of, "%Y-%m-%d").date()
+    except ValueError:
+        return None                                   # unparseable date → drop
+    if d > a:                                          # no look-ahead: drop future-dated
         return None
     return {"date": date, "ticker": ticker, "type": etype, "summary": summary, "url": e.get("url")}
 
 
-def existing_keys(path: str = EVENTS_FILE, as_of: str | None = None) -> set[str]:
-    """Dedup keys already in events.jsonl. Bounded to `as_of`'s rows when given (the
-    same day's re-run is the only real duplicate source), else the whole file."""
+def existing_keys(path: str = EVENTS_FILE, since: str | None = None) -> set[str]:
+    """Dedup keys already in events.jsonl, over rows dated >= `since` (None = all).
+
+    The dedup window MUST span more than one day: the Polygon news feed (order=desc,
+    no date filter) re-returns the same multi-day-old article on consecutive runs, so
+    an event dated 06-30 logged on the 06-30 run reappears on the 07-03 run. Bounding
+    dedup to a single day would re-append it every day it persists in the feed. `since`
+    (caller passes ~as_of − 60d) both catches that cross-day duplication and bounds the
+    effective key set."""
     keys: set[str] = set()
     try:
         for line in Path(path).read_text().splitlines():
@@ -174,11 +216,19 @@ def existing_keys(path: str = EVENTS_FILE, as_of: str | None = None) -> set[str]
                 r = json.loads(line)
             except Exception:
                 continue
-            if isinstance(r, dict) and (as_of is None or str(r.get("date", ""))[:10] == as_of):
+            if isinstance(r, dict) and (since is None or str(r.get("date", ""))[:10] >= since):
                 keys.add(event_key(r))
     except FileNotFoundError:
         pass
     return keys
+
+
+def _minus_days(iso: str, days: int) -> str:
+    """as_of minus `days` as an ISO date string (dedup-window lower bound)."""
+    try:
+        return (datetime.strptime(iso[:10], "%Y-%m-%d").date() - timedelta(days=days)).strftime("%Y-%m-%d")
+    except Exception:
+        return iso
 
 
 def append_events(events: list[dict], path: str = EVENTS_FILE) -> int:
@@ -206,7 +256,10 @@ def digest(snapshot: dict, universe: set[str], path: str = EVENTS_FILE,
             news.extend(arts)
     events, stats = extract_events(news, universe, as_of, safe_call=safe_call)
 
-    seen = existing_keys(path, as_of=as_of)
+    # Dedup against a WINDOW (not just today): the feed re-surfaces multi-day-old
+    # articles, so a same-day-only check would re-append them every day they persist.
+    since = _minus_days(as_of, _DEDUP_WINDOW_DAYS) if as_of else None
+    seen = existing_keys(path, since=since)
     fresh, batch_seen = [], set()
     for e in events:
         k = event_key(e)

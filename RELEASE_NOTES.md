@@ -33,8 +33,20 @@ attribution so the Wednesday agents read a handful of real events per name, not 
   so a same-day re-run never duplicates. Folds in per-mover `ticker_news`.
 - **Reuses `analysis._safe_call` / `_cached_system` / `MODEL_FAST`** (the existing Haiku
   client + JSON-parse + retry spine); the LLM call is injectable so tests never hit the network.
-- **QA:** **567 tests green** (+8: `TestEventDigest`). `market_data.yml` gains
-  `ANTHROPIC_API_KEY` in the fetch env + `events.jsonl` in the commit.
+- **Full `/code-review high` — findings remediated:** (1) **cross-day duplication** — the
+  Polygon feed re-surfaces multi-day-old articles, and dedup was bounded to *today* only, so a
+  persistent article was re-appended daily; dedup now spans a 60-day window. (2) A Haiku
+  response that's a lone object or `{"events":[…]}` is now coerced to a list (was silently
+  dropped **and** miscounted as a parse failure, spuriously tripping DEGRADED). (3) A non-ISO/
+  epoch date is dropped (was slipping past the no-look-ahead guard as a bogus date). (4)
+  `event_key` uses the full summary (an 80-char prefix could collide two distinct events). (5)
+  **the DEGRADED signal now reaches production** — a <80% parse rate floors
+  `data_quality_report.json` at DEGRADED (→ cloud `data_quality` health check → alert.yml);
+  previously that computation lived only in the standalone CLI path. Deferred (tracked
+  MANUAL_TODO #8): `events.jsonl` retention/§12.4 storage split; prompt-injection is an accepted
+  enrichment-only limitation. Auth/shape/capital-integrity/conventions verified clean.
+- **QA:** **573 tests green** (+14: `TestEventDigest`, `TestEventDigestRemediation`).
+  `market_data.yml` gains `ANTHROPIC_API_KEY` in the fetch env + `events.jsonl` in the commit.
 
 ## [2026-07-02] — Phase 4 (increment 1): research dossier producer  ·  PR #20 · main
 

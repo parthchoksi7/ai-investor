@@ -6045,3 +6045,70 @@ class TestEventDigest:
             return ([], {"parsed_ok": True, "raw": "", "stop_reason": "end_turn"})
         ed.digest(snap, {"NVDA"}, path=str(tmp_path / "e.jsonl"), safe_call=stub)
         assert "NVDA" in captured["msg"]
+
+
+class TestEventDigestRemediation:
+    """Regression tests for the /code-review findings on the event digest."""
+
+    def test_cross_day_dedup(self, tmp_path):
+        # The feed re-surfaces a multi-day-old article; it must NOT be re-appended on a
+        # later run just because its date != today.
+        import event_digest as ed
+        path = str(tmp_path / "events.jsonl")
+        old = {"ticker": "AAPL", "type": "earnings", "summary": "beat Q2", "date": "2026-06-30"}
+        # Run on 6/30 logs it.
+        snap_630 = {"_data_date": "2026-06-30", "news": _news(1, date="2026-06-30")}
+        s1 = ed.digest(snap_630, {"AAPL"}, path=path, safe_call=_stub_safe_call([([dict(old)], True)]))
+        assert s1["events_written"] == 1
+        # Run on 7/03 sees the SAME 6/30 article again → must dedup (within 60d window).
+        snap_703 = {"_data_date": "2026-07-03", "news": _news(1, date="2026-06-30")}
+        s2 = ed.digest(snap_703, {"AAPL"}, path=path, safe_call=_stub_safe_call([([dict(old)], True)]))
+        assert s2["events_written"] == 0
+        assert len([l for l in open(path) if l.strip()]) == 1
+
+    def test_single_dict_result_coerced_not_lost(self):
+        # Haiku returns a lone event OBJECT (not an array) — must still be captured and
+        # the chunk counted as a parse success (not a spurious DEGRADED).
+        import event_digest as ed
+        lone = {"ticker": "AAPL", "type": "earnings", "summary": "beat", "date": "2026-07-02"}
+        stub = _stub_safe_call([(lone, True)])          # returns a dict, not a list
+        evs, stats = ed.extract_events(_news(1), {"AAPL"}, "2026-07-02", safe_call=stub)
+        assert len(evs) == 1 and stats["chunks_ok"] == 1 and stats["parse_success_rate"] == 1.0
+
+    def test_wrapped_events_key_coerced(self):
+        import event_digest as ed
+        wrapped = {"events": [{"ticker": "AAPL", "type": "earnings",
+                               "summary": "beat", "date": "2026-07-02"}]}
+        evs, stats = ed.extract_events(_news(1), {"AAPL"}, "2026-07-02",
+                                       safe_call=_stub_safe_call([(wrapped, True)]))
+        assert len(evs) == 1 and stats["chunks_ok"] == 1
+
+    def test_epoch_or_garbage_date_dropped(self):
+        # A non-ISO/epoch date must not slip past the look-ahead guard as a bogus date.
+        import event_digest as ed
+        bad = [{"ticker": "AAPL", "type": "earnings", "summary": "e", "date": 1725000000},
+               {"ticker": "AAPL", "type": "earnings", "summary": "g", "date": "not-a-date"}]
+        evs, _ = ed.extract_events(_news(1), {"AAPL"}, "2026-07-02",
+                                   safe_call=_stub_safe_call([(bad, True)]))
+        assert evs == []                                # both dropped
+
+    def test_event_digest_degradation_recorded_in_report(self, tmp_path):
+        # A <80% parse rate must floor the data_quality report at DEGRADED (not silent).
+        import data_quality as dq, json
+        rep = str(tmp_path / "dq.json")
+        json.dump({"status": "OK", "data_quality_score": 100, "date": "2026-07-02",
+                   "metrics": {}, "breaches": []}, open(rep, "w"))
+        out = dq.merge_event_digest_into_report({"chunks": 2, "chunks_ok": 1,
+                                                 "parse_success_rate": 0.5}, path=rep)
+        assert out["status"] == "DEGRADED"
+        assert any("event_digest" in b for b in out["breaches"])
+        assert out["event_digest"]["parse_success_rate"] == 0.5
+
+    def test_event_digest_ok_does_not_degrade_report(self, tmp_path):
+        import data_quality as dq, json
+        rep = str(tmp_path / "dq.json")
+        json.dump({"status": "OK", "data_quality_score": 100, "date": "2026-07-02",
+                   "metrics": {}, "breaches": []}, open(rep, "w"))
+        out = dq.merge_event_digest_into_report({"chunks": 3, "chunks_ok": 3,
+                                                 "parse_success_rate": 1.0}, path=rep)
+        assert out["status"] == "OK" and out["breaches"] == []
