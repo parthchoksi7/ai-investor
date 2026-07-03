@@ -229,3 +229,34 @@ def load_report(path: str = REPORT_FILE) -> dict:
         return json.loads(Path(path).read_text())
     except Exception:
         return {}
+
+
+def merge_event_digest_into_report(stats: dict, path: str = REPORT_FILE,
+                                   min_parse_rate: float = 0.8) -> dict:
+    """Fold the Step-4 Haiku event-digest stats into the ALREADY-written
+    data_quality_report.json so a digest failure is not silent (§15.2 lists "Haiku
+    digest parse-success rate | 80% → DEGRADED"). A parse rate below `min_parse_rate`
+    over ≥1 chunk adds a breach and floors the report status at DEGRADED, so the cloud
+    routine's `data_quality` health check surfaces it to alert.yml.
+
+    Patches the REPORT ONLY (not the history row — that was already appended by
+    write_report); best-effort, never raises into the fetch job."""
+    try:
+        report = load_report(path)
+        if not report:
+            return {}
+        report["event_digest"] = stats
+        rate = stats.get("parse_success_rate", 1.0)
+        if stats.get("chunks", 0) and rate < min_parse_rate:
+            report.setdefault("breaches", []).append(
+                f"event_digest DEGRADED: parse_success_rate {rate} < {min_parse_rate}")
+            if _SEVERITY.get(report.get("status"), 0) < _SEVERITY[DEGRADED]:
+                report["status"] = DEGRADED
+                report["data_quality_score"] = min(report.get("data_quality_score", 100), 85)
+            report["hash"] = report_hash(report)
+        tmp = path + ".tmp"
+        Path(tmp).write_text(json.dumps(report, indent=2, default=str))
+        Path(tmp).replace(path)
+        return report
+    except Exception:
+        return {}

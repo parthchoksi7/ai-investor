@@ -50,6 +50,9 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          # Anthropic key for the Step 4 Haiku event digest (GH Actions is the research
+          # plane that can reach the Anthropic API). If unset, the digest self-skips.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           FULL_REFRESH: ${{ inputs.full_refresh || 'false' }}
         run: python fetch_snapshot.py
 
@@ -62,7 +65,7 @@ jobs:
           # Actions is the only plane that scores the whole universe daily), or
           # factor-persistence / IC analysis silently loses its substrate (same
           # class as the forecasts.jsonl feed-freeze).
-          git add market_snapshot.json factor_history.jsonl data_quality_report.json data_quality_history.jsonl research_dossier.json
+          git add market_snapshot.json factor_history.jsonl data_quality_report.json data_quality_history.jsonl research_dossier.json events.jsonl
           # Only commit if the file actually changed
           git diff --staged --quiet && echo "No changes to commit" || \
             git commit -m "chore: market snapshot [skip ci]"

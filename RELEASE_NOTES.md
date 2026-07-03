@@ -13,7 +13,40 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
-_Nothing pending._
+### Added — Phase 4 (increment 2): the Haiku event digest (`event_digest.py`)
+
+Fills the `events.jsonl` time series the dossier already consumes (increment 1 wired the
+reader). Turns the snapshot's raw ~50-article news feed into a small, deduped, per-ticker
+set of MATERIAL structured events (`{date, ticker, type, summary, url}`) — compression +
+attribution so the Wednesday agents read a handful of real events per name, not the firehose.
+
+- **Runs in GitHub Actions** (the research plane can reach the Anthropic API) as Step 4 of
+  `fetch_snapshot.py`, BEFORE `build_dossier` (Step 5) so today's events reach the dossier.
+  Uses **Haiku** with a prompt-cached system block; news is **chunked** (20/call) so token
+  spend is bounded and one bad chunk degrades gracefully.
+- **Enrichment, never gating (§11.4):** a parse failure is recorded (parse-success rate;
+  <80% → DEGRADED) but NEVER blocks the pipeline. **Capital-integrity:** research artifact
+  only, zero order code.
+- **No look-ahead:** an event dated after `as_of` (future-stamped article) is dropped;
+  hallucinated/untracked tickers are filtered to the universe; unknown types map to `other`.
+- **Idempotent:** dedup by a stable `(ticker,date,type,summary)` key against today's rows,
+  so a same-day re-run never duplicates. Folds in per-mover `ticker_news`.
+- **Reuses `analysis._safe_call` / `_cached_system` / `MODEL_FAST`** (the existing Haiku
+  client + JSON-parse + retry spine); the LLM call is injectable so tests never hit the network.
+- **Full `/code-review high` — findings remediated:** (1) **cross-day duplication** — the
+  Polygon feed re-surfaces multi-day-old articles, and dedup was bounded to *today* only, so a
+  persistent article was re-appended daily; dedup now spans a 60-day window. (2) A Haiku
+  response that's a lone object or `{"events":[…]}` is now coerced to a list (was silently
+  dropped **and** miscounted as a parse failure, spuriously tripping DEGRADED). (3) A non-ISO/
+  epoch date is dropped (was slipping past the no-look-ahead guard as a bogus date). (4)
+  `event_key` uses the full summary (an 80-char prefix could collide two distinct events). (5)
+  **the DEGRADED signal now reaches production** — a <80% parse rate floors
+  `data_quality_report.json` at DEGRADED (→ cloud `data_quality` health check → alert.yml);
+  previously that computation lived only in the standalone CLI path. Deferred (tracked
+  MANUAL_TODO #8): `events.jsonl` retention/§12.4 storage split; prompt-injection is an accepted
+  enrichment-only limitation. Auth/shape/capital-integrity/conventions verified clean.
+- **QA:** **573 tests green** (+14: `TestEventDigest`, `TestEventDigestRemediation`).
+  `market_data.yml` gains `ANTHROPIC_API_KEY` in the fetch env + `events.jsonl` in the commit.
 
 ## [2026-07-02] — Phase 4 (increment 1): research dossier producer  ·  PR #20 · main
 

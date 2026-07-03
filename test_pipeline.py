@@ -5954,3 +5954,161 @@ class TestBuildDossierRemediation:
         import build_dossier as bd
         d = bd.build_dossier(_dossier_snapshot(), _factor_rows(), [], [])  # only 3 dates
         assert d["tickers"]["AAA"]["persistence"]["rank_chg_7d"] is None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 4 (increment 2) — event_digest (Haiku news→events, §11.3 step 4)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _stub_safe_call(events_by_call):
+    """safe_call stub returning successive canned event arrays. Each element is
+    (events, parsed_ok); each call pops the next."""
+    calls = list(events_by_call)
+    def _call(model, system, user_msg, default, max_tokens=1200, return_meta=False):
+        evs, ok = calls.pop(0) if calls else (default, False)
+        result = evs if ok else default
+        return (result, {"parsed_ok": ok, "raw": "", "stop_reason": "end_turn"}) if return_meta else result
+    return _call
+
+
+def _news(n, date="2026-07-02", ticker="AAPL"):
+    return [{"title": f"t{i}", "description": "d", "published_utc": f"{date}T10:00:00Z",
+             "tickers": [ticker]} for i in range(n)]
+
+
+class TestEventDigest:
+    def test_extract_filters_universe_and_normalizes(self):
+        import event_digest as ed
+        stub = _stub_safe_call([([
+            {"ticker": "aapl", "type": "price_target", "summary": "PT up", "date": "2026-07-02"},
+            {"ticker": "ZZZZ", "type": "earnings", "summary": "untracked", "date": "2026-07-02"},
+            {"ticker": "MSFT", "type": "weird", "summary": "bad type", "date": "2026-07-02"},
+        ], True)])
+        evs, stats = ed.extract_events(_news(1), {"AAPL", "MSFT"}, "2026-07-02", safe_call=stub)
+        assert {e["ticker"] for e in evs} == {"AAPL", "MSFT"}   # ZZZZ dropped, aapl upper-cased
+        assert next(e for e in evs if e["ticker"] == "MSFT")["type"] == "other"
+        assert stats["parse_success_rate"] == 1.0
+
+    def test_no_lookahead_drops_future_event(self):
+        import event_digest as ed
+        stub = _stub_safe_call([([
+            {"ticker": "AAPL", "type": "product", "summary": "future", "date": "2026-09-01"},
+            {"ticker": "AAPL", "type": "product", "summary": "today", "date": "2026-07-02"},
+        ], True)])
+        evs, _ = ed.extract_events(_news(1), {"AAPL"}, "2026-07-02", safe_call=stub)
+        assert len(evs) == 1 and evs[0]["summary"] == "today"
+
+    def test_empty_news_is_safe(self):
+        import event_digest as ed
+        evs, stats = ed.extract_events([], {"AAPL"}, "2026-07-02", safe_call=_stub_safe_call([]))
+        assert evs == [] and stats["chunks"] == 0 and stats["parse_success_rate"] == 1.0
+
+    def test_chunking_multiple_calls(self):
+        import event_digest as ed
+        stub = _stub_safe_call([([], True), ([], True), ([], True)])
+        _, stats = ed.extract_events(_news(45), {"AAPL"}, "2026-07-02", safe_call=stub)
+        assert stats["chunks"] == 3 and stats["chunks_ok"] == 3
+
+    def test_parse_failure_degrades_rate(self):
+        import event_digest as ed
+        stub = _stub_safe_call([([{"ticker": "AAPL", "type": "earnings",
+                                   "summary": "ok", "date": "2026-07-02"}], True),
+                                ([], False)])
+        evs, stats = ed.extract_events(_news(40), {"AAPL"}, "2026-07-02", safe_call=stub)
+        assert stats["chunks"] == 2 and stats["chunks_ok"] == 1
+        assert stats["parse_success_rate"] == 0.5              # → DEGRADED (<0.8)
+
+    def test_digest_dedups_within_and_across_runs(self, tmp_path):
+        import event_digest as ed
+        path = str(tmp_path / "events.jsonl")
+        snap = {"_data_date": "2026-07-02", "news": _news(1)}
+        one = {"ticker": "AAPL", "type": "earnings", "summary": "beat", "date": "2026-07-02"}
+        s1 = ed.digest(snap, {"AAPL"}, path=path, safe_call=_stub_safe_call([([one, dict(one)], True)]))
+        assert s1["events_written"] == 1 and s1["events_deduped"] == 1
+        s2 = ed.digest(snap, {"AAPL"}, path=path, safe_call=_stub_safe_call([([dict(one)], True)]))
+        assert s2["events_written"] == 0
+        assert len([l for l in open(path) if l.strip()]) == 1
+
+    def test_event_key_stable(self):
+        import event_digest as ed
+        a = {"ticker": "AAPL", "date": "2026-07-02", "type": "earnings", "summary": "Beat X"}
+        b = {"ticker": "aapl", "date": "2026-07-02T00:00", "type": "EARNINGS", "summary": "beat x  "}
+        assert ed.event_key(a) == ed.event_key(b)
+
+    def test_ticker_news_folded_in(self, tmp_path):
+        import event_digest as ed
+        snap = {"_data_date": "2026-07-02", "news": [],
+                "ticker_news": {"NVDA": _news(1, ticker="NVDA")}}
+        captured = {}
+        def stub(model, system, user_msg, default, max_tokens=1200, return_meta=False):
+            captured["msg"] = user_msg
+            return ([], {"parsed_ok": True, "raw": "", "stop_reason": "end_turn"})
+        ed.digest(snap, {"NVDA"}, path=str(tmp_path / "e.jsonl"), safe_call=stub)
+        assert "NVDA" in captured["msg"]
+
+
+class TestEventDigestRemediation:
+    """Regression tests for the /code-review findings on the event digest."""
+
+    def test_cross_day_dedup(self, tmp_path):
+        # The feed re-surfaces a multi-day-old article; it must NOT be re-appended on a
+        # later run just because its date != today.
+        import event_digest as ed
+        path = str(tmp_path / "events.jsonl")
+        old = {"ticker": "AAPL", "type": "earnings", "summary": "beat Q2", "date": "2026-06-30"}
+        # Run on 6/30 logs it.
+        snap_630 = {"_data_date": "2026-06-30", "news": _news(1, date="2026-06-30")}
+        s1 = ed.digest(snap_630, {"AAPL"}, path=path, safe_call=_stub_safe_call([([dict(old)], True)]))
+        assert s1["events_written"] == 1
+        # Run on 7/03 sees the SAME 6/30 article again → must dedup (within 60d window).
+        snap_703 = {"_data_date": "2026-07-03", "news": _news(1, date="2026-06-30")}
+        s2 = ed.digest(snap_703, {"AAPL"}, path=path, safe_call=_stub_safe_call([([dict(old)], True)]))
+        assert s2["events_written"] == 0
+        assert len([l for l in open(path) if l.strip()]) == 1
+
+    def test_single_dict_result_coerced_not_lost(self):
+        # Haiku returns a lone event OBJECT (not an array) — must still be captured and
+        # the chunk counted as a parse success (not a spurious DEGRADED).
+        import event_digest as ed
+        lone = {"ticker": "AAPL", "type": "earnings", "summary": "beat", "date": "2026-07-02"}
+        stub = _stub_safe_call([(lone, True)])          # returns a dict, not a list
+        evs, stats = ed.extract_events(_news(1), {"AAPL"}, "2026-07-02", safe_call=stub)
+        assert len(evs) == 1 and stats["chunks_ok"] == 1 and stats["parse_success_rate"] == 1.0
+
+    def test_wrapped_events_key_coerced(self):
+        import event_digest as ed
+        wrapped = {"events": [{"ticker": "AAPL", "type": "earnings",
+                               "summary": "beat", "date": "2026-07-02"}]}
+        evs, stats = ed.extract_events(_news(1), {"AAPL"}, "2026-07-02",
+                                       safe_call=_stub_safe_call([(wrapped, True)]))
+        assert len(evs) == 1 and stats["chunks_ok"] == 1
+
+    def test_epoch_or_garbage_date_dropped(self):
+        # A non-ISO/epoch date must not slip past the look-ahead guard as a bogus date.
+        import event_digest as ed
+        bad = [{"ticker": "AAPL", "type": "earnings", "summary": "e", "date": 1725000000},
+               {"ticker": "AAPL", "type": "earnings", "summary": "g", "date": "not-a-date"}]
+        evs, _ = ed.extract_events(_news(1), {"AAPL"}, "2026-07-02",
+                                   safe_call=_stub_safe_call([(bad, True)]))
+        assert evs == []                                # both dropped
+
+    def test_event_digest_degradation_recorded_in_report(self, tmp_path):
+        # A <80% parse rate must floor the data_quality report at DEGRADED (not silent).
+        import data_quality as dq, json
+        rep = str(tmp_path / "dq.json")
+        json.dump({"status": "OK", "data_quality_score": 100, "date": "2026-07-02",
+                   "metrics": {}, "breaches": []}, open(rep, "w"))
+        out = dq.merge_event_digest_into_report({"chunks": 2, "chunks_ok": 1,
+                                                 "parse_success_rate": 0.5}, path=rep)
+        assert out["status"] == "DEGRADED"
+        assert any("event_digest" in b for b in out["breaches"])
+        assert out["event_digest"]["parse_success_rate"] == 0.5
+
+    def test_event_digest_ok_does_not_degrade_report(self, tmp_path):
+        import data_quality as dq, json
+        rep = str(tmp_path / "dq.json")
+        json.dump({"status": "OK", "data_quality_score": 100, "date": "2026-07-02",
+                   "metrics": {}, "breaches": []}, open(rep, "w"))
+        out = dq.merge_event_digest_into_report({"chunks": 3, "chunks_ok": 3,
+                                                 "parse_success_rate": 1.0}, path=rep)
+        assert out["status"] == "OK" and out["breaches"] == []
