@@ -78,6 +78,23 @@ try:
 except Exception as e:
     print(f"WARNING: factor_history append failed — {e}")
 
+# Step 4 (§11.3) — Haiku event digest: compress the raw news feed into a small, deduped,
+# per-ticker events.jsonl the dossier folds in. Runs BEFORE build_dossier so today's
+# events reach the dossier. Enrichment, NEVER gating — a failure here must not stop the
+# pipeline (events enrich; they don't gate). Needs ANTHROPIC_API_KEY in the GH env.
+try:
+    if os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE"):
+        from event_digest import digest as _digest
+        from universe import CORE_UNIVERSE as _UNIV
+        _stats = _digest(snapshot, set(_UNIV))
+        print(f"event_digest: written={_stats.get('events_written')} "
+              f"deduped={_stats.get('events_deduped')} "
+              f"parse_ok_rate={_stats.get('parse_success_rate')}")
+    else:
+        print("event_digest: skipped — no ANTHROPIC_API_KEY in env (events stay empty)")
+except Exception as e:
+    print(f"WARNING: event_digest failed (non-fatal, events are enrichment) — {e}")
+
 # Step 5 (§11.3) — build the per-ticker research dossier: the single synthesis point
 # that collapses the raw layer (snapshot + factor_history + fundamentals + events +
 # journal) into the small denormalized record the Wednesday agents will read. Research

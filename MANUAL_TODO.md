@@ -81,11 +81,16 @@ _Last refreshed: 2026-07-02 (Phases 2 + 3 deployed to `main`; Phase 4 producer l
   (`dossier.as_of == today` AND `built_from_days ≥ 2` → else SKIP/RETRY). That is an
   execution-adjacent change and must be coordinated with the Phase 5 weekly cadence — do not
   wire the consumer piecemeal.
-- **Deferred sub-workstreams (documented, not built):** the Haiku event digest → `events.jsonl`
-  (a new GH-Actions LLM call + token cost); `fundamentals_store` stamping `_as_of_filing`
-  (needed for real `fundamentals_age_days` / no-look-ahead — the dossier currently reports
-  `age=null` / `fundamentals_stale=null` when the filing date is unknown); per-lot FIFO tax
-  dates (P0-4).
+- **Increment 2 shipped — the Haiku event digest** (`event_digest.py`, `events.jsonl`): now
+  runs as Step 4 of the GH-Actions fetch and feeds the dossier. **Manual check:** confirm the
+  `ANTHROPIC_API_KEY` Actions secret is present (it is per the Jun-9 incident log) — if unset,
+  the digest self-skips (events stay empty; the dossier still builds). **Token cost:** the
+  digest adds Anthropic spend to `market_data.yml` (Haiku, chunked 20/call, cached) — the §15.2
+  token-budget cap + alert (P2-13) is still deferred; watch the first few runs' cost.
+- **Deferred sub-workstreams (documented, not built):** `fundamentals_store` stamping
+  `_as_of_filing` (needed for real `fundamentals_age_days` / no-look-ahead — the dossier
+  currently reports `age=null` / `fundamentals_stale=null` when the filing date is unknown);
+  per-lot FIFO tax dates (P0-4).
 - **Deferred `/code-review high` findings (non-correctness — tracked, not blocking):**
   (a) **storage wall (§12.4):** `research_dossier.json` is committed whole to git daily and grows
   with the universe — the planned raw→curated storage split (dossier to object storage / compact
