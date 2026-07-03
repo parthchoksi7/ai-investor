@@ -48,14 +48,9 @@ heartbeat_report.json
 # event time series the dossier synthesizes from. Do NOT ignore them.
 
 # Paper drafts and reviewer notes — pre-publication, not part of the codebase.
-PAPER_DRAFT.md
-PAPER_ARXIV.md
-PAPER_C.md
-PAPER_C.tex
+# Moved under papers/ (Jul 3 2026 repo reorg) to keep root uncluttered.
+papers/
 *.tex
-RESEARCH_THESIS.md
-REVIEWER_FEEDBACK_BACKLOG.md
-REVIEWER_FEEDBACK_PLAN.md
 eval/
 
 # NOTE: the routine's data + audit files (portfolio_snapshot.json, trades.csv,
