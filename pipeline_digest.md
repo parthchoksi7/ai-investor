@@ -1,6 +1,6 @@
-# Pipeline-Integrity Digest — week ending 2026-07-02
+# Pipeline-Integrity Digest — week ending 2026-07-03
 
-_Window: 2026-06-26 .. 2026-07-02 · §15.5 weekly summary_
+_Window: 2026-06-27 .. 2026-07-03 · §15.5 weekly summary_
 
 ## Data quality
 - **Runs logged:** 1
@@ -15,4 +15,4 @@ _Window: 2026-06-26 .. 2026-07-02 · §15.5 weekly summary_
 
 ## ✅ No degraded/aborted data-quality days this window
 
-_Generated 2026-07-02T13:50:40_
+_Generated 2026-07-03T02:13:28_
