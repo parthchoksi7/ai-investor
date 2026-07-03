@@ -36,6 +36,12 @@ BATCH_SIZE  = 20            # articles per Haiku call — bounds tokens + trunca
 _SUMMARY_MAX = 140
 _DEDUP_WINDOW_DAYS = 60     # dedup against events this many days back (the news feed
                            # re-surfaces multi-day-old articles; must exceed that span)
+# Token-budget cap (§15.2 P2-13): hard ceiling on Haiku calls per run so digest cost is
+# bounded regardless of feed size. At BATCH_SIZE=20 this is 300 articles/run — well above
+# today's ~50-article feed, but a real guardrail once UNIVERSE_EXPANDED drives more
+# ticker_news. On a cap, the newest chunks are kept (feed is order=desc) and the run is
+# flagged `capped` (surfaced into data_quality_report → DEGRADED) so it is not silent.
+MAX_CHUNKS = 15
 
 # Small fixed taxonomy — the model must map to one of these (else "other").
 EVENT_TYPES = {
@@ -123,7 +129,10 @@ def extract_events(news: list[dict], universe: set[str], as_of: str,
     universe_u = {t.upper() for t in universe}
     events, chunks, chunks_ok, raw_count = [], 0, 0, 0
     universe_hint = ", ".join(sorted(universe_u))
-    for batch in _chunks(news, BATCH_SIZE):
+    all_batches = list(_chunks(news, BATCH_SIZE))
+    capped = len(all_batches) > MAX_CHUNKS
+    batches = all_batches[:MAX_CHUNKS]             # token-budget cap: keep the newest chunks
+    for batch in batches:
         chunks += 1
         user_msg = (f"TRACKED TICKERS: {universe_hint}\n\nARTICLES (one JSON per line):\n"
                     f"{_fmt_batch(batch)}\n\nReturn the JSON array of material events.")
@@ -143,7 +152,9 @@ def extract_events(news: list[dict], universe: set[str], as_of: str,
                     events.append(norm)
     rate = (chunks_ok / chunks) if chunks else 1.0
     return events, {"chunks": chunks, "chunks_ok": chunks_ok,
-                    "parse_success_rate": round(rate, 3), "raw_events": raw_count}
+                    "parse_success_rate": round(rate, 3), "raw_events": raw_count,
+                    "capped": capped, "chunks_available": len(all_batches),
+                    "max_chunks": MAX_CHUNKS}
 
 
 def _model():

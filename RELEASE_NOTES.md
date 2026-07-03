@@ -13,6 +13,27 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — Phase 5 Stage A: pre-consumer hardening (satisfies the reviewer preconditions)
+
+Producer/observability-side only — **no order-path code changed**. Sets up the execution-path
+consumer (Stage B/C) and the measurement clock the reviews asked for.
+
+- **Heartbeat now checks `research_dossier.json`** (data-plane tier) — closes the platform-review
+  blind spot: a snapshot-fresh but dossier-stale day (a `build_dossier` failure that left a stale
+  file) now trips the dead-man's switch, before a consumer could trade on it. `_artifact_date`
+  reads the dossier's `as_of` key.
+- **Observational dossier-signal logging (`calibration.log_dossier_signals`)** — the ml_ai review's
+  ask: the dossier's `persistence` (`composite_7d_mean`) and `event_present` signals are now logged
+  as scored forecast rows (agents `persist_mean` / `event_present`), so their forward IC is measured
+  **independently, before any consumer trusts them**. Never affects a decision; fresh-dossier-only.
+- **Event-digest token-budget cap (§15.2 P2-13)** — `MAX_CHUNKS=15` (300 articles/run) bounds Haiku
+  spend regardless of feed size (a real guardrail once `UNIVERSE_EXPANDED`); a capped run keeps the
+  newest chunks and floors `data_quality_report.json` at DEGRADED (→ alert), never silent.
+- **Runbook Scenario E** (bad/stale research artifact) — git-revert + re-dispatch `market_data.yml`;
+  documents that a bad dossier is "degraded artifact," never an unintended trade.
+- **QA:** **585 tests green** (+8: heartbeat blind-spot, `TestDossierSignalLogging`,
+  `TestEventDigestBudgetCap`).
+
 ### Security — remove unused API secrets from both routine prompts
 
 Both canonical routine prompts (`ROUTINE_DAILY_CYCLE.md`, `ROUTINE_EOD_CLOSE.md`) had `.env`

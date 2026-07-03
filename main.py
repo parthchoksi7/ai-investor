@@ -504,14 +504,21 @@ def run_daily_cycle():
     # calibration. OBSERVATIONAL: logging only, never affects a decision, and
     # never raises into the pipeline.
     try:
-        from calibration import log_forecasts, log_decisions
+        from calibration import log_forecasts, log_decisions, log_dossier_signals
         _n_fc = log_forecasts(run_id, today, pipeline_state,
                               pipeline_state.get("candidates", []), market_data["prices"],
                               provenance=dq_provenance)
         # §7.5 counterfactual: log the reject/veto/select flags for forward scoring.
         _n_dec = log_decisions(run_id, today, pipeline_state, market_data["prices"])
-        if _n_fc or _n_dec:
-            print(f"   🧮 Logged {_n_fc} forecast(s) + {_n_dec} decision flag(s)")
+        # Stage A: OBSERVATIONAL-ONLY — read the (committed) dossier and log its
+        # persistence + event-presence signals so their forward IC is measured BEFORE a
+        # consumer trusts them. Never used for a decision here; fresh-dossier only.
+        from build_dossier import load_dossier
+        _n_ds = log_dossier_signals(run_id, today, load_dossier(),
+                                    pipeline_state.get("candidates", []),
+                                    market_data["prices"], provenance=dq_provenance)
+        if _n_fc or _n_dec or _n_ds:
+            print(f"   🧮 Logged {_n_fc} forecast(s) + {_n_dec} decision flag(s) + {_n_ds} dossier-signal(s)")
     except Exception as _e:
         print(f"   ⚠ forecast logging skipped: {_e}")
 

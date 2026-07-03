@@ -680,3 +680,25 @@ Use this when the scheduled routine fails or you need to intervene.
 1. Ensure `pending_decisions.json` either doesn't exist or has `executed_at = null` and `date = today`.
 2. Run the pipeline: `DRY_RUN=true python main.py`
 3. Follow Scenario A.
+
+### Scenario E — Bad or stale research artifact (dossier / events / data-quality)
+
+The Phase-4 research artifacts (`research_dossier.json`, `events.jsonl`, `data_quality_report.json`)
+are produced by `market_data.yml` (GitHub Actions), never by the routine. A bad/stale one is a
+**research** failure — blast radius is *"degraded dossier,"* never an unintended trade. Symptoms:
+a `heartbeat-alert` issue naming `research_dossier` (data plane fresh but dossier stale — `build_dossier`
+refused to overwrite a good file with an invalid/stale build), or a `data_quality` health check
+DEGRADED for a digest parse-failure / budget cap.
+
+1. **Confirm it's research-only.** No orders are at risk — this is upstream of any decision. If the
+   dossier is stale, the (future) consumer's freshness gate will SKIP-RETRY rather than trade on it.
+2. **Re-dispatch the producer:** `gh workflow run market_data.yml --repo parthchoksi7/ai-investor --field full_refresh=true`,
+   then confirm a fresh `chore: market snapshot` commit lands on `main` and the artifact is dated today
+   (`git show origin/main:research_dossier.json | python3 -c "import json,sys;print(json.load(sys.stdin)['as_of'])"`).
+3. **If a committed artifact is corrupt:** `git revert` the offending `chore: market snapshot` commit
+   (restores the prior valid artifact), then re-dispatch as in step 2. The prior dossier's freshness
+   gate keeps a consumer from trading on it in the meantime.
+4. **If the digest is the cause** (DEGRADED for `parse_success_rate` or `budget cap`): the run still
+   produced a valid dossier with fewer/omitted events — safe to proceed; investigate the Anthropic API
+   health (parse failures) or raise `event_digest.MAX_CHUNKS` (budget cap) at leisure. Events are
+   enrichment, never gating.
