@@ -13,6 +13,23 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — Phase 4 (increment 3): `_as_of_filing` stamping (SEC provider)
+
+Makes the dossier's no-look-ahead fundamentals guard **live instead of inert**.
+`SECProvider.fundamentals` now stamps `_as_of_filing` — the SEC 10-K `filed` date (when
+the figure became public), taken as the LATEST filing among the inputs used (conservative:
+the bundle isn't available until its last input was filed).
+
+- **Impact:** the dossier's `fundamentals_age_days` and `fundamentals_stale` are now REAL
+  (were always `null` — increment 1 built the reader, but nothing stamped the date). The
+  future-filing look-ahead drop (`_as_of_filing > as_of` → drop) now actually fires. Verified
+  live: CAT `2026-02-13`, DE `2025-12-18`, JNJ `2026-02-11`.
+- **Honest partial coverage:** FMP-covered names (~35%) still lack a filing date (FMP TTM has
+  no single filing date) → they report vintage-unknown (`age=null`, `stale=null`), which the
+  dossier already handles. `fundamental_coverage` is unaffected (it counts the quality fields,
+  not `_as_of_filing`).
+- **Producer-side, zero order-path change.** **QA:** **576 tests green** (+3: `TestSECFilingDate`).
+
 ### Added — Phase 4 (increment 2): the Haiku event digest (`event_digest.py`)
 
 Fills the `events.jsonl` time series the dossier already consumes (increment 1 wired the

@@ -44,7 +44,7 @@ Haiku runs for each of up to 20 candidates. Sonnet runs 3 times total. Prompt ca
 |------|---------|
 | `main.py` | Entry point — 9-step orchestration with full health tracking |
 | `market_data.py` | Polygon.io: prices, 210-day history, fundamentals, news; calls `_enrich_with_provider()` |
-| `data_providers.py` | Provider abstraction: `SECProvider` (EDGAR, free, no key) / `FMPProvider` (key req.) / `StubProvider` (tests); `get_provider()` factory |
+| `data_providers.py` | Provider abstraction: `SECProvider` (EDGAR, free, no key; stamps `_as_of_filing` = 10-K filed date for no-look-ahead) / `FMPProvider` (key req.) / `StubProvider` (tests); `get_provider()` factory |
 | `quant_engine.py` | Pure Python scoring (no LLM) |
 | `analysis.py` | 7-agent pipeline |
 | `execute.py` | Robinhood order execution via `robin_stocks` |

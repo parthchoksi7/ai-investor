@@ -94,10 +94,13 @@ _Last refreshed: 2026-07-02 (Phases 2 + 3 deployed to `main`; Phase 4 producer l
   LLM news summarization — a crafted headline tagged to a real ticker can yield a fabricated
   "material" event with a structured veneer; severity is low (enrichment-only, and the same raw
   feed already reaches the agents), but treat dossier events as leads, not facts.
-- **Deferred sub-workstreams (documented, not built):** `fundamentals_store` stamping
-  `_as_of_filing` (needed for real `fundamentals_age_days` / no-look-ahead — the dossier
-  currently reports `age=null` / `fundamentals_stale=null` when the filing date is unknown);
-  per-lot FIFO tax dates (P0-4).
+- **Increment 3 shipped — `_as_of_filing` stamping** (`data_providers.SECProvider`): SEC
+  fundamentals now carry the 10-K `filed` date (the no-look-ahead availability date), so the
+  dossier reports REAL `fundamentals_age_days` / `fundamentals_stale` (was `null`) and the
+  future-filing look-ahead drop is now LIVE, not inert. Note: FMP-covered names (~35%) still
+  lack a filing date (FMP TTM has no single filing); those report vintage-unknown, which is
+  honest. Old `provider_cache.json` entries backfill `_as_of_filing` on their normal TTL refresh.
+- **Deferred sub-workstreams (documented, not built):** per-lot FIFO tax dates (P0-4).
 - **Deferred `/code-review high` findings (non-correctness — tracked, not blocking):**
   (a) **storage wall (§12.4):** `research_dossier.json` is committed whole to git daily and grows
   with the universe — the planned raw→curated storage split (dossier to object storage / compact

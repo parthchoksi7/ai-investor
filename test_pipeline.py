@@ -6112,3 +6112,56 @@ class TestEventDigestRemediation:
         out = dq.merge_event_digest_into_report({"chunks": 3, "chunks_ok": 3,
                                                  "parse_success_rate": 1.0}, path=rep)
         assert out["status"] == "OK" and out["breaches"] == []
+
+
+class TestSECFilingDate:
+    """Increment 3: SECProvider stamps `_as_of_filing` (the no-look-ahead availability date)."""
+
+    def _provider(self, monkeypatch, facts):
+        from data_providers import SECProvider
+        import requests, types
+        p = SECProvider(timeout=5)
+        def fake_get(url, **kwargs):
+            resp = types.SimpleNamespace(raise_for_status=lambda: None)
+            resp.json = (lambda: {"0": {"cik_str": 1, "ticker": "XYZ", "title": "X"}}) \
+                if "company_tickers" in url else (lambda: facts)
+            return resp
+        monkeypatch.setattr(requests, "get", fake_get)
+        return p
+
+    def test_stamps_latest_filed_among_inputs(self, monkeypatch):
+        facts = {"facts": {"us-gaap": {
+            "Revenues": {"units": {"USD": [{"end": "2025-12-31", "val": 1000,
+                                            "form": "10-K", "filed": "2026-02-10"}]}},
+            "GrossProfit": {"units": {"USD": [{"end": "2025-12-31", "val": 400,
+                                               "form": "10-K", "filed": "2026-02-10"}]}},
+            "StockholdersEquity": {"units": {"USD": [{"end": "2025-12-31", "val": 500,
+                                                      "form": "10-K", "filed": "2026-03-01"}]}},
+            "LongTermDebt": {"units": {"USD": [{"end": "2025-12-31", "val": 250,
+                                                "form": "10-K", "filed": "2026-02-10"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        f = p.fundamentals("XYZ")
+        assert f["gross_margin"] == 0.4 and f["debt_to_equity"] == 0.5
+        # latest filed among used inputs = the equity filing 2026-03-01 (conservative)
+        assert f["_as_of_filing"] == "2026-03-01"
+
+    def test_omits_as_of_filing_when_sec_has_no_filed(self, monkeypatch):
+        facts = {"facts": {"us-gaap": {
+            "Revenues": {"units": {"USD": [{"end": "2025-12-31", "val": 1000, "form": "10-K"}]}},
+            "GrossProfit": {"units": {"USD": [{"end": "2025-12-31", "val": 400, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        f = p.fundamentals("XYZ")
+        assert f["gross_margin"] == 0.4 and "_as_of_filing" not in f   # vintage unknown, not faked
+
+    def test_dossier_computes_real_age_from_stamped_filing(self):
+        # End-to-end: a stamped filing makes the dossier's fundamentals_age_days REAL
+        # (null before increment 3) and the no-look-ahead drop LIVE.
+        import build_dossier as bd
+        snap = _dossier_snapshot(as_of="2026-07-03")
+        snap["fundamentals"]["AAA"] = {"gross_margin": 0.6, "_as_of_filing": "2026-02-13"}
+        d = bd.build_dossier(snap, _factor_rows(), [], [])
+        dq = d["tickers"]["AAA"]["data_quality"]
+        assert dq["fundamentals_age_days"] is not None and dq["fundamentals_age_days"] > 100
+        assert dq["fundamentals_stale"] is True         # >100d → stale (real bool, not null)
