@@ -234,8 +234,12 @@ class SECProvider:
             return {}
 
     @staticmethod
-    def _latest_annual(us_gaap: dict, *concepts: str) -> float | None:
-        """Most-recent 10-K USD value for the first matching XBRL concept."""
+    def _latest_annual(us_gaap: dict, *concepts: str) -> tuple[float | None, str | None]:
+        """(value, filed_date) for the most-recent 10-K USD value of the first matching
+        XBRL concept. `filed_date` is the SEC ``filed`` field (YYYY-MM-DD) of the chosen
+        entry — when the figure became PUBLIC, i.e. the no-look-ahead availability date
+        (a 2025 fiscal year's 10-K filed 2026-02 is unusable before 2026-02). Returns
+        (None, None) if no matching annual entry is found."""
         for concept in concepts:
             entries = us_gaap.get(concept, {}).get("units", {}).get("USD", [])
             annual = [
@@ -243,38 +247,56 @@ class SECProvider:
                 if e.get("form") in ("10-K", "10-K/A") and isinstance(e.get("val"), (int, float))
             ]
             if annual:
-                return float(max(annual, key=lambda x: x.get("end", ""))["val"])
-        return None
+                chosen = max(annual, key=lambda x: x.get("end", ""))
+                filed = chosen.get("filed")
+                return float(chosen["val"]), (filed if isinstance(filed, str) else None)
+        return None, None
 
     def fundamentals(self, ticker: str) -> dict | None:
-        """Return gross_margin, operating_margin, debt_to_equity from the latest
-        10-K. Returns None if the ticker is not found in EDGAR or has no annual
-        filing. P/E, FCF yield, EV/EBITDA require price data and are omitted
-        (use FMPProvider for those)."""
+        """Return gross_margin, operating_margin, debt_to_equity from the latest 10-K,
+        plus `_as_of_filing` (the latest SEC filing date among the inputs used — the
+        no-look-ahead availability date the dossier reads to compute fundamentals age /
+        drop future-dated filings). Returns None if the ticker is not found in EDGAR or
+        has no annual filing. P/E, FCF yield, EV/EBITDA require price data and are
+        omitted (use FMPProvider for those)."""
         g = self._get_us_gaap(ticker)
         if not g:
             return None
-        rev = self._latest_annual(
+        rev, rev_f = self._latest_annual(
             g, "Revenues",
             "RevenueFromContractWithCustomerExcludingAssessedTax",
             "SalesRevenueNet",
             "SalesRevenueGoodsNet",
         )
-        gp  = self._latest_annual(g, "GrossProfit")
-        op  = self._latest_annual(g, "OperatingIncomeLoss")
-        eq  = self._latest_annual(
+        gp,  gp_f  = self._latest_annual(g, "GrossProfit")
+        op,  op_f  = self._latest_annual(g, "OperatingIncomeLoss")
+        eq,  eq_f  = self._latest_annual(
             g, "StockholdersEquity",
             "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
         )
-        ltd = self._latest_annual(g, "LongTermDebt", "LongTermDebtNoncurrent")
+        ltd, ltd_f = self._latest_annual(g, "LongTermDebt", "LongTermDebtNoncurrent")
 
         out: dict[str, float] = {}
+        filed_dates: list[str] = []
         if rev and rev > 0:
-            if gp is not None:  out["gross_margin"]     = round(gp / rev, 4)
-            if op is not None:  out["operating_margin"] = round(op / rev, 4)
+            if gp is not None:
+                out["gross_margin"]     = round(gp / rev, 4); filed_dates += [rev_f, gp_f]
+            if op is not None:
+                out["operating_margin"] = round(op / rev, 4); filed_dates += [rev_f, op_f]
         if eq and eq > 0 and ltd is not None:
-            out["debt_to_equity"] = round(ltd / eq, 4)
-        return out or None
+            out["debt_to_equity"] = round(ltd / eq, 4); filed_dates += [eq_f, ltd_f]
+        if not out:
+            return None
+        # No-look-ahead vintage: the bundle isn't fully available until the LATEST of
+        # its inputs was filed. Stamp ONLY when EVERY contributing input carries a filed
+        # date — a partial set would take max() over the present subset, which can
+        # UNDERSTATE the true vintage (a missing-filed latest figure paired with an
+        # older filed one), and an understated stamp defeats the `> as_of` look-ahead
+        # drop in a historical replay. If any is missing → omit → dossier treats vintage
+        # as unknown (age=null), which is honest rather than a silent understatement.
+        if filed_dates and all(isinstance(d, str) for d in filed_dates):
+            out["_as_of_filing"] = max(filed_dates)
+        return out
 
     def next_earnings_date(self, ticker: str) -> str | None:
         return None   # EDGAR has no forward earnings calendar; use FMPProvider for this
