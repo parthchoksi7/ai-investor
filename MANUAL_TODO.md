@@ -4,7 +4,28 @@ Actions that **cannot be done from the repo by Claude** — they require the liv
 routines UI, real secrets (redacted from this repo), or an owner merge/deploy decision.
 Newest concern first. Check items off as you do them.
 
-_Last refreshed: 2026-07-03 (Phases 0–4 + Phase-5 Stage A deployed; Stage B on hold; Stage C evidence-gated)._
+_Last refreshed: 2026-07-04 (Phases 0–5 ALL STAGES deployed; go-live Monday 2026-07-06 pending the routine sync below)._
+
+---
+
+## 🔴 ACTION REQUIRED BEFORE MONDAY 9:45 AM ET — sync the DAILY routine prompt
+
+### [ ] 0. Paste the new `ROUTINE_DAILY_CYCLE.md` into the live daily routine (`YOUR_ROUTINE_ID_DAILY`)
+- **What changed:** STEP 0 now branches on FOUR gate exits (new: `30` = risk-watch mode);
+  STEP 3 runs `main.py` OR `risk_watch.py` by mode (+ SELL-only assertion); STEP 4 gains
+  GUARD 4 (mode integrity), `git add last_rebalance.json` in the claim commit, and the
+  P0-1 stale-price re-quote; STEP 5 `git add` gains `last_rebalance.json`.
+- **Substitute** the account number (search `YOUR_ACCOUNT_NUMBER`) as before. No secrets.
+- **If you DON'T sync in time:** safe degradation — the old prompt stops cleanly on the
+  unknown exit 30 (risk-watch days no-op, no stop-loss net) and **Wednesday still trades
+  correctly** (exit 0 semantics are compatible). Sync activates the daily safety net.
+- The EOD routine is **unchanged** — no sync needed.
+
+### [ ] 0b. (Later, your call) Flip `UNIVERSE_EXPANDED` for the ~400-name universe
+- Set the GitHub Actions **variable** (Settings → Secrets and variables → Actions →
+  Variables) `UNIVERSE_EXPANDED=true`. Code-gated on prior-day coverage ≥ 80% too, so
+  the flip alone is safe. Watch the first expanded run's duration + coverage, and that
+  the committed `market_snapshot.json` stays ~6 MB (slimmed). Until flipped: zero change.
 
 ---
 
@@ -13,32 +34,19 @@ _Last refreshed: 2026-07-03 (Phases 0–4 + Phase-5 Stage A deployed; Stage B on
 | Phase | State |
 |-------|-------|
 | 0 Single-source limits · 1 Measurement · 2 Data layer · 3 Observability | ✅ deployed |
-| 4 Research pipeline — dossier producer · event digest · `_as_of_filing` | ✅ deployed (PRODUCER only; consumer is Stage C) |
-| **5 Stage A** — pre-consumer hardening (heartbeat dossier, signal logging, digest cap, Scenario E) | ✅ deployed |
-| **5 Stage B** — `risk_watch.py` (SELL-only daily safety net) | ⏸ **ON HOLD (owner decision)** — buildable anytime; real order-path change → needs `/code-review ultra` + weekend dry-run + routine sync + sign-off |
-| **5 Stage C** — dossier consumer + weekly rebalance (trades real capital) | 🔒 **evidence-gated** — build only when `stage_c_readiness.py` reports **DECIDABLE** (currently ACCUMULATING; ~1–3 months). Watch it in the weekly `pipeline_digest.md`. |
-| **Stage D** — storage split (§12.4) | 🔒 gated on `UNIVERSE_EXPANDED` (universe expansion) — not urgent at ~100 names |
-
-**Nothing is required right now.** The evidence clock (Stage A's `persist_mean` / `event_present`
-logging + the quant composite) accumulates on its own; `stage_c_readiness.py` flips the go/no-go
-when the scorecard's IC confidence intervals tighten. Stage B is the only "buildable now" item and
-is deliberately held pending your decision.
+| 4 Research pipeline — dossier producer · event digest · `_as_of_filing` | ✅ deployed |
+| **5 Stage A** — pre-consumer hardening | ✅ deployed |
+| **5 Stage B** — `risk_watch.py` (SELL-only daily safety net) | ✅ **deployed 2026-07-04** (owner-directed) — live after the routine sync above |
+| **5 Stage C** — dossier consumer + weekly Wednesday rebalance | ✅ **deployed 2026-07-04** (owner-directed, **overriding the evidence gate** — `stage_c_readiness` still ACCUMULATING; it keeps measuring, the §10.3 success/kill bar is unchanged) |
+| **Stage D** — expansion-ready fetch + interim §12.4 storage split | ✅ code deployed, **operator-gated** — flips with the `UNIVERSE_EXPANDED` variable (item 0b) |
+| Phase 6 — exit-logic prompt rewrite (invalidation-gated exits) | ⏭ next build phase (forward-tested, `/code-review ultra`) |
+| Full §12.4 storage split (dossier-only commit, Supabase raw) | ⏭ deferred until the expanded snapshot hits the §12.6 triggers |
 
 ---
 
-## ✅ Live routine prompt sync — DONE (2026-07-03)
+## ✅ Live routine prompt sync — DONE (2026-07-03) *(superseded by item 0 above)*
 
-- **[x] 0. Secrets stripped from both live routine prompts** — STEP 2 is now just `DRY_RUN=true`
-  (Polygon/Supabase unused in the cloud plane). Keys **rotated** and the GitHub Actions secrets
-  (`SUPABASE_SERVICE_KEY`, `POLYGON_API_KEY`) updated.
-- **[x] 1. DAILY routine synced** with `ROUTINE_DAILY_CYCLE.md` — the Phase-1 forecast/counterfactual
-  ledgers are in STEP 4/5 `git add`; account number substituted. (Phase 3 provenance rides inside
-  already-committed files; Phase 4 producer artifacts are committed by GitHub Actions, not the routine.)
-- **[x] 2. EOD routine synced** with `ROUTINE_EOD_CLOSE.md` — including the hardened STEP 4
-  rebase-retry push (a bare push could silently drop the authoritative `close_value`).
-
-> **Next routine sync needed:** only when the **Stage C dossier consumer** ships (it rewrites STEP 0
-> mode-routing + STEP 3 dossier read / live-MCP sizing). That PR will carry its own updated prompt.
+- **[x] Secrets stripped, keys rotated; daily + EOD synced to the Jul-3 prompts.**
 
 ---
 

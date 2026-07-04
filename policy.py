@@ -143,7 +143,8 @@ def _load(path: str | None = None) -> dict:
                 print(f"⚠ policy.yaml blocked_tickers={bt!r} not a list[str]; "
                       f"keeping default {_DEFAULTS['blocked_tickers']!r}")
     except Exception as e:  # missing file, missing yaml, parse error — never break the live path
-        print(f"⚠ policy.yaml not loaded ({e!r}); using built-in defaults (no behavior change)")
+        print(f"⚠ policy.yaml not loaded ({e!r}); using built-in defaults "
+              "(the v2.0 operative baseline — identical to the shipped policy.yaml)")
     return merged
 
 

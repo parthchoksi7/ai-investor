@@ -74,7 +74,10 @@ jobs:
           # Actions is the only plane that scores the whole universe daily), or
           # factor-persistence / IC analysis silently loses its substrate (same
           # class as the forecasts.jsonl feed-freeze).
-          git add market_snapshot.json factor_history.jsonl data_quality_report.json data_quality_history.jsonl research_dossier.json events.jsonl
+          # forecasts_scored.jsonl + agent_scorecards.json: Stage D moved long-horizon
+          # forecast maturation onto this plane (full history lives here) — without
+          # committing them, every GH-plane score_matured result is silently lost.
+          git add market_snapshot.json factor_history.jsonl data_quality_report.json data_quality_history.jsonl research_dossier.json events.jsonl forecasts_scored.jsonl agent_scorecards.json
           # Only commit if the file actually changed
           git diff --staged --quiet && echo "No changes to commit" || \
             git commit -m "chore: market snapshot [skip ci]"
