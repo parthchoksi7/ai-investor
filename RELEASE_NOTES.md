@@ -13,7 +13,63 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
-_Nothing pending._
+### Added — Phase 5 Stages B + C + D: weekly cadence · risk_watch · dossier consumer · gated universe expansion
+
+**THE live-path change** (owner-directed 2026-07-04, overriding the evidence gate — see note below).
+The daily 7-agent trading cycle becomes a **weekly Wednesday rebalance** plus a **daily
+deterministic SELL-only safety net**. Requires a **live-routine sync** (`ROUTINE_DAILY_CYCLE.md`)
+before it takes effect.
+
+- **Policy v2.0 (`2.0-phase5-weekly`)** — §18.4-governed migrations: `min_holding_trading_days`
+  5 → **30** (IPS §7.2, risk exits exempt); new `single_name_stop_pct: 0.25` (the risk_watch
+  catastrophe brake, §6.7); `rebalance_weekday: 2`; `tax_aware_hold_window_trading_days: 30`
+  (IPS §7.5); `safe_mode_index_drop_pct: 7` (§18.5). `policy._DEFAULTS` now tracks the OPERATIVE
+  baseline so a YAML load failure can never silently roll back a governed migration.
+- **Gate mode routing (`preflight_gate.py`)** — exit **0 PROCEED/REBALANCE** (Wednesday, or
+  Thu/Fri catch-up for a rebalance-less ISO week; requires fresh snapshot AND fresh
+  `research_dossier.json`), **30 PROCEED/RISK-WATCH** (all other trading days; no snapshot
+  dependency — the safety net must never be disabled by a late cron, P1-7), 10/20 unchanged.
+  Once-per-ISO-week lock via **`last_rebalance.json`** (mirrored by `journal.py` on the
+  claim/executed stamps — durable across risk_watch's daily envelope overwrite). A Wednesday
+  claim-without-executed **disables** the Thu/Fri catch-up (orders may exist — Scenario B).
+- **`risk_watch.py` (Stage B)** — SELL-only decision generator on the **existing** envelope
+  (same claim → MCP orders → stamp → `mark_transactions_live` machinery; zero new order code).
+  Trigger set is tight + LLM-free: −25% stop from broker cost basis on live MCP prices; kill-switch
+  checked daily; cross-mode SELL interlock (never sells a name the rebalance traded this ISO week);
+  structural never-BUY. Quantitative `invalidates_if` triggers deliberately NOT wired (no structured
+  `price_stop` field exists yet — regex-mining was rejected Jun 13).
+- **Dossier consumer (Stage C)** — `main.py` validates `research_dossier.json` against the real
+  ET date and **ABORTS the rebalance on a stale/invalid dossier** (P1-5); agents 2/5/6 read the
+  dossier's synthesis (persistence, deduped events, as-of-dated fundamentals, `since_entry` entry
+  anchors); PM prompt gains the weekly-horizon + tax-aware-hold discipline block. Envelope gains
+  `mode` + per-decision `price_as_of`/`sizing_price` (P0-1 — the routine re-quotes stale-priced
+  orders via live MCP quotes).
+- **New guards** — `enforce_tax_aware_hold` (block a discretionary SELL of a gained lot within
+  ~30 trading days of its 1-year LT-tax date; per-lot FIFO via `tax_lots`; risk exits exempt) and
+  `enforce_safe_mode` / `crisis_safe_mode_active` (§18.5: SPY 1-day drop ≥ 7% halts all new BUYs,
+  DEGRADED health alert; None-data never traps).
+- **Missed-week dead-man's switch** — Friday's heartbeat alerts when an ISO week has no rebalance
+  claim/execution; the weekly digest reports the week's rebalance status.
+- **Stage D (gated)** — expansion-ready fetch: crash-resumable `raw_history_store.json`
+  (checkpoint every 25 tickers; a mid-sweep crash resumes, never refetches), ≤5-day carry-forward
+  with per-ticker `price_as_of_by_ticker` stamps, Polygon 429 backoff, dynamic active universe
+  (`UNIVERSE_EXPANDED` repo variable AND prior-day coverage ≥ 80%), committed-snapshot slimming
+  (expansion names at 63-bar tails; core+held full depth — interim §12.4, ~13 MB → ~6 MB/day),
+  GH-plane forecast maturation (long-horizon forecasts on expansion names mature where full
+  history lives), 5:00 AM ET early cron. **Zero behavior change until the operator sets the
+  `UNIVERSE_EXPANDED` Actions variable.**
+- **Routine prompt** rewritten with mode routing + GUARD 4 (a risk_watch envelope containing a
+  BUY is never executed) + the stale-price re-quote step. **⚠ Live-routine sync required.**
+
+> **Evidence-gate override (governance note):** `stage_c_readiness.py` reports ACCUMULATING
+> (signals statistically indistinguishable from noise, n_eff≈5, CI ±0.31). The owner directed
+> building and going live now rather than waiting for DECIDABLE. The monitor keeps running as
+> measurement; the pre-registered §10.3 success/kill criteria and the harness partitioning are
+> unchanged — the verdict clock simply runs concurrently with the live consumer.
+
+**QA:** full `pytest` green (**667**, +75: gate mode-routing, ISO-week lock, risk_watch triggers +
+envelope, tax-aware hold, crisis safe-mode, heartbeat missed-week, Stage D slim/carry-forward,
+dossier-consumer prompt injection; policy-parity oracle updated to the v2.0 operative baseline).
 
 ## [2026-07-03] — Phase 4 inc 2/3 · Phase 5 Stage A · Stage-C readiness monitor · routine secret removal  ·  main
 

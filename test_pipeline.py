@@ -1342,12 +1342,24 @@ class TestPreflightGate:
     def _write(self, tmp_path, name, obj):
         (tmp_path / name).write_text(json.dumps(obj))
 
+    def _fresh_dossier(self, tmp_path, date=None):
+        """Phase 5: a rebalance-day PROCEED also requires a fresh research dossier
+        (as_of == today, ≥2 built_from_days with the newest == today, tickers)."""
+        d = date or self._today_et()
+        from datetime import datetime, timedelta
+        prev = (datetime.strptime(d, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+        self._write(tmp_path, "research_dossier.json",
+                    {"schema": "dossier-1.0", "as_of": d, "n_tickers": 1,
+                     "built_from_days": [prev, d], "tickers": {"AAPL": {}}})
+
     def test_proceed_when_fresh_and_not_executed(self, tmp_path):
+        # OPEN_DAY 2026-06-17 is a WEDNESDAY — the rebalance day, so exit 0.
         today = self._today_et()
         self._write(tmp_path, "market_snapshot.json",
                     {"date": today, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 200}})
         self._write(tmp_path, "pending_decisions.json", {"date": today, "executed_at": None})
-        assert self._run(tmp_path) == 0  # PROCEED
+        self._fresh_dossier(tmp_path)
+        assert self._run(tmp_path) == 0  # PROCEED/REBALANCE
 
     def test_skip_done_when_already_executed_today(self, tmp_path):
         today = self._today_et()
@@ -1372,6 +1384,22 @@ class TestPreflightGate:
         self._write(tmp_path, "market_snapshot.json",
                     {"date": today, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 5}})
         assert self._run(tmp_path) == 10  # SKIP/RETRY — <22 bars
+
+    def test_skip_retry_when_dossier_missing_on_rebalance_day(self, tmp_path):
+        """Fresh snapshot but NO dossier → the rebalance must not run (P1-5)."""
+        today = self._today_et()
+        self._write(tmp_path, "market_snapshot.json",
+                    {"date": today, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 200}})
+        assert self._run(tmp_path) == 10
+
+    def test_skip_retry_when_dossier_stale_on_rebalance_day(self, tmp_path):
+        today = self._today_et()
+        self._write(tmp_path, "market_snapshot.json",
+                    {"date": today, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 200}})
+        self._write(tmp_path, "research_dossier.json",
+                    {"schema": "dossier-1.0", "as_of": "2020-01-01", "n_tickers": 1,
+                     "built_from_days": ["2019-12-31", "2020-01-01"], "tickers": {"AAPL": {}}})
+        assert self._run(tmp_path) == 10
 
     def test_done_takes_precedence_over_stale(self, tmp_path):
         """If already executed, skip-done even if the snapshot looks stale."""
@@ -1420,11 +1448,12 @@ class TestPreflightGateMarketClosed(TestPreflightGate):
         assert self._run(tmp_path, date_override=self.HOLIDAY) == 10
 
     def test_open_trading_day_still_proceeds(self, tmp_path):
-        """Control: a normal weekday with fresh data still PROCEEDs (the calendar
+        """Control: the rebalance weekday with fresh data still PROCEEDs (the calendar
         check does not over-block)."""
         self._fresh_snapshot(tmp_path, self.OPEN_DAY)
         self._write(tmp_path, "pending_decisions.json", {"date": self.OPEN_DAY, "executed_at": None})
-        assert self._run(tmp_path) == 0  # PROCEED
+        self._fresh_dossier(tmp_path)
+        assert self._run(tmp_path) == 0  # PROCEED/REBALANCE
 
 
 class TestCanaryAuth:
@@ -2025,10 +2054,13 @@ class TestPreflightGateExecutionClaim(TestPreflightGate):
         today = self._today_et()
         self._write(tmp_path, "market_snapshot.json",
                     {"date": today, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 200}})
+        # A claim from a PRIOR ISO WEEK — neither the daily idempotency (rule 1b)
+        # nor the once-per-ISO-week rebalance lock may block today's rebalance.
         self._write(tmp_path, "pending_decisions.json",
                     {"date": "2020-01-01", "run_id": "x", "executed_at": None,
                      "execution_started_at": "2020-01-01T13:50:00Z"})
-        assert self._run(tmp_path) == 0  # stale claim from a prior day — PROCEED
+        self._fresh_dossier(tmp_path)
+        assert self._run(tmp_path) == 0  # stale claim from a prior week — PROCEED
 
 
 # ── execute.get_portfolio_summary — mcp_portfolio.json freshness (Fix 4) ─────
@@ -2651,14 +2683,15 @@ class TestAfterTaxScorecard:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestMinHoldingPeriod:
-    """Block discretionary SELLs of names bought < 5 trading days ago (anti-churn)."""
+    """Block discretionary SELLs of names bought < 30 trading days ago (anti-churn;
+    policy v2.0 raised the floor from 5 per IPS §7.2 — the 9–12mo horizon)."""
 
     def _txs(self, *buys):
         return [{"ticker": t, "action": "BUY", "date": d, "dry_run": False} for t, d in buys]
 
     def test_blocks_recent_buy(self):
         import guardrails
-        # bought Fri 2026-06-12, selling Mon 2026-06-15 → 1 trading day < 5
+        # bought Fri 2026-06-12, selling Mon 2026-06-15 → 1 trading day < 30
         kept, rej = guardrails.enforce_min_holding_period(
             [{"ticker": "MRK", "action": "SELL", "target_weight": 0.0}],
             {"positions": []}, transactions=self._txs(("MRK", "2026-06-12")),
@@ -2666,11 +2699,21 @@ class TestMinHoldingPeriod:
         assert kept == [] and len(rej) == 1
         assert "min-holding" in rej[0]["rejected_reason"]
 
-    def test_allows_old_buy(self):
+    def test_blocks_buy_between_5_and_30_trading_days(self):
+        # 9 trading days held — allowed under the old 5-day floor, BLOCKED under v2.0's 30.
         import guardrails
         kept, rej = guardrails.enforce_min_holding_period(
             [{"ticker": "MRK", "action": "SELL", "target_weight": 0.0}],
             {"positions": []}, transactions=self._txs(("MRK", "2026-06-01")),
+            today="2026-06-12")
+        assert kept == [] and len(rej) == 1
+
+    def test_allows_old_buy(self):
+        import guardrails
+        # bought Mon 2026-04-27, selling Fri 2026-06-12 → 34 trading days ≥ 30
+        kept, rej = guardrails.enforce_min_holding_period(
+            [{"ticker": "MRK", "action": "SELL", "target_weight": 0.0}],
+            {"positions": []}, transactions=self._txs(("MRK", "2026-04-27")),
             today="2026-06-12")
         assert len(kept) == 1 and rej == []
 
@@ -3273,12 +3316,13 @@ class TestBacktestEdgeCases:
 class TestGuardrailBoundaries:
     """Off-by-one boundaries on the holding-period and wash-sale windows."""
 
-    def test_min_hold_exactly_5_trading_days_allowed(self):
+    def test_min_hold_exactly_30_trading_days_allowed(self):
         import guardrails as g
-        # Fri 2026-06-05 → Fri 2026-06-12 = exactly 5 trading days; '< 5' blocks, so 5 is allowed
+        # Fri 2026-05-01 → Fri 2026-06-12 = exactly 30 trading days; '< 30' blocks,
+        # so 30 is allowed (v2.0 boundary — was 5 pre-Phase-5)
         kept, rej = g.enforce_min_holding_period(
             [{"ticker": "X", "action": "SELL", "target_weight": 0.0}], {"positions": []},
-            transactions=[{"ticker": "X", "action": "BUY", "date": "2026-06-05", "dry_run": False}],
+            transactions=[{"ticker": "X", "action": "BUY", "date": "2026-05-01", "dry_run": False}],
             today="2026-06-12")
         assert len(kept) == 1 and rej == []
 
@@ -4565,6 +4609,7 @@ class TestPreflightGateMissingPending(TestPreflightGate):
         today = self._today_et()
         self._write(tmp_path, "market_snapshot.json",
                     {"date": today, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 200}})
+        self._fresh_dossier(tmp_path)
         # no pending_decisions.json written at all → falls through to snapshot check → PROCEED
         assert self._run(tmp_path) == 0
 
@@ -5166,55 +5211,63 @@ class TestSafeCallNoRetryOnGenuineDefault:
 # ── Phase 0: policy.yaml single-source parity (zero behavior change) ─────────────
 
 class TestPolicyParity:
-    """policy.yaml is the new single source of truth for the deterministic limits.
+    """policy.yaml is the single source of truth for the deterministic limits.
 
-    These tests are the PARITY GUARANTEE for Phase 0: they assert that the values
-    served from policy.yaml — and the guardrails/execute constants now sourced from
-    it — are byte-identical to the historical hard-coded constants. If any of these
-    fail, Phase 0 changed behavior, which it must not.
+    These tests are the OPERATIVE-BASELINE GUARANTEE: the values served from
+    policy.yaml, the guardrails/execute constants sourced from it, AND the
+    built-in _DEFAULTS fallback must all agree on the deployed policy. Phase 0
+    proved parity with the historical constants; the v2.0 Phase-5 migration
+    (min-hold 5→30, + stop / rebalance-weekday / tax-hold / safe-mode keys) is a
+    §18.4-governed change — this oracle now asserts the v2.0 values, so any
+    future drift (in either the yaml or the fallback) fails loudly.
     """
 
-    # The historical constants, restated here independently as the parity oracle.
-    HISTORICAL = {
+    # The OPERATIVE v2.0 values, restated here independently as the oracle.
+    OPERATIVE = {
         "max_target_weight":        0.10,
         "max_buy_notional_pct":     0.12,
         "min_order_notional":       5.00,
         "gfv_window_trading_days":  2,
         "max_sector_weight":        0.25,
-        "min_holding_trading_days": 5,
+        "min_holding_trading_days": 30,     # v2.0 migration (was 5) — IPS §7.2
         "wash_sale_reentry_days":   30,
         "min_net_edge":             0.0,
+        "tax_aware_hold_window_trading_days": 30,   # v2.0 — IPS §7.5
+        "rebalance_weekday":        2,              # v2.0 — Wednesday
+        "single_name_stop_pct":     0.25,           # v2.0 — risk_watch stop (§6.7)
+        "safe_mode_index_drop_pct": 7,              # v2.0 — §18.5 crisis brake
         "blocked_tickers":          ["TSLA"],
     }
 
-    def test_defaults_match_historical_constants(self):
-        """policy._DEFAULTS (the fallback) equals the historical constants — so even
-        if policy.yaml is unreadable, behavior is identical to pre-Phase-0."""
+    def test_defaults_match_operative_baseline(self):
+        """policy._DEFAULTS (the fallback) equals the OPERATIVE policy — a yaml load
+        failure must never silently roll back a governed migration (e.g. revert the
+        30-day min-hold to 5 or lose the rebalance weekday)."""
         import policy
-        for k, v in self.HISTORICAL.items():
-            assert policy._DEFAULTS[k] == v, f"_DEFAULTS[{k}] drifted from historical"
+        for k, v in self.OPERATIVE.items():
+            assert policy._DEFAULTS[k] == v, f"_DEFAULTS[{k}] drifted from operative baseline"
 
-    def test_policy_yaml_matches_historical(self):
-        """The shipped policy.yaml carries the parity values (not the IPS targets)."""
+    def test_policy_yaml_matches_operative(self):
+        """The shipped policy.yaml carries the operative v2.0 values."""
         import policy
         loaded = policy._load()  # reads the real policy.yaml next to the module
-        for k, v in self.HISTORICAL.items():
-            assert loaded[k] == v, f"policy.yaml {k}={loaded[k]!r} != historical {v!r}"
-        # Phase 2 bumped the version (added detection-only price_outlier_pct); the
-        # GUARDRAIL values above remain the parity baseline (asserted in the loop).
-        assert loaded["policy_version"] == "1.1-phase2-dataquality"
+        for k, v in self.OPERATIVE.items():
+            assert loaded[k] == v, f"policy.yaml {k}={loaded[k]!r} != operative {v!r}"
+        assert loaded["policy_version"] == "2.0-phase5-weekly"
 
     def test_guardrails_constants_sourced_from_policy(self):
-        """guardrails.* constants equal the policy values AND the historical ones."""
+        """guardrails.* constants equal the policy values AND the operative ones."""
         import guardrails, policy
         assert guardrails.MAX_TARGET_WEIGHT        == policy.VALUES["max_target_weight"]        == 0.10
         assert guardrails.MAX_BUY_NOTIONAL_PCT     == policy.VALUES["max_buy_notional_pct"]     == 0.12
         assert guardrails.MIN_ORDER_NOTIONAL       == policy.VALUES["min_order_notional"]       == 5.00
         assert guardrails.GFV_WINDOW_TRADING_DAYS  == policy.VALUES["gfv_window_trading_days"]  == 2
         assert guardrails.MAX_SECTOR_WEIGHT        == policy.VALUES["max_sector_weight"]        == 0.25
-        assert guardrails.MIN_HOLDING_TRADING_DAYS == policy.VALUES["min_holding_trading_days"] == 5
+        assert guardrails.MIN_HOLDING_TRADING_DAYS == policy.VALUES["min_holding_trading_days"] == 30
         assert guardrails.WASH_SALE_REENTRY_DAYS   == policy.VALUES["wash_sale_reentry_days"]   == 30
         assert guardrails.MIN_NET_EDGE             == policy.VALUES["min_net_edge"]             == 0.0
+        assert guardrails.TAX_AWARE_HOLD_WINDOW    == policy.VALUES["tax_aware_hold_window_trading_days"] == 30
+        assert guardrails.SAFE_MODE_INDEX_DROP_PCT == policy.VALUES["safe_mode_index_drop_pct"] == 7
 
     def test_blocked_tickers_sourced_from_policy(self):
         import execute, policy
@@ -5253,7 +5306,7 @@ class TestPolicyParity:
     def test_policy_version_helper(self):
         import policy
         assert policy.policy_version() == policy.VALUES["policy_version"]
-        assert policy.policy_version() == "1.1-phase2-dataquality"
+        assert policy.policy_version() == "2.0-phase5-weekly"
 
     def test_validation_rejects_units_typo_keeps_cap(self, tmp_path):
         """A percent/fraction units typo (10 instead of 0.10) must NOT disable the cap —
@@ -5275,7 +5328,34 @@ class TestPolicyParity:
         bad = tmp_path / "policy.yaml"
         bad.write_text("guardrails:\n  min_holding_trading_days: '30 days'\n")
         result = policy._load(str(bad))
-        assert result["min_holding_trading_days"] == 5   # default kept
+        assert result["min_holding_trading_days"] == 30   # default kept (v2.0 baseline)
+
+    def test_validation_rejects_percent_form_stop(self, tmp_path):
+        """single_name_stop_pct: 25 (the IPS percent form) must be REJECTED — read as a
+        fraction it would be a 2500% stop that never fires. Default 0.25 kept."""
+        import policy
+        bad = tmp_path / "policy.yaml"
+        bad.write_text("risk:\n  single_name_stop_pct: 25\n")
+        result = policy._load(str(bad))
+        assert result["single_name_stop_pct"] == 0.25
+
+    def test_v2_sectioned_keys_load_from_their_sections(self, tmp_path):
+        """trading:/risk: sectioned keys overlay from their own sections."""
+        import policy
+        p = tmp_path / "policy.yaml"
+        p.write_text("trading:\n  rebalance_weekday: 3\n"
+                     "risk:\n  single_name_stop_pct: 0.30\n  safe_mode_index_drop_pct: 10\n")
+        result = policy._load(str(p))
+        assert result["rebalance_weekday"] == 3
+        assert result["single_name_stop_pct"] == 0.30
+        assert result["safe_mode_index_drop_pct"] == 10
+
+    def test_weekend_rebalance_weekday_rejected(self, tmp_path):
+        """rebalance_weekday: 6 (Sunday) would silently never fire — rejected."""
+        import policy
+        p = tmp_path / "policy.yaml"
+        p.write_text("trading:\n  rebalance_weekday: 6\n")
+        assert policy._load(str(p))["rebalance_weekday"] == 2
 
     def test_validation_rejects_bad_blocked_tickers(self, tmp_path):
         """blocked_tickers must be a list[str]; anything else keeps the default."""
@@ -6359,3 +6439,545 @@ class TestStageCReadiness:
                 "persist_mean.composite_7d_mean@21d": self._sig()}
         line = scr.summary_line(scr.assess_readiness(card))
         assert "DECIDABLE" in line and "quant ✓" in line
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase 5 (Stages B/C/D) — weekly cadence, risk_watch, dossier consumer, Stage D
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestPreflightGateModeRouting(TestPreflightGate):
+    """§6.3 mode routing: 0 REBALANCE (Wed / Thu-Fri catch-up) · 30 RISK-WATCH ·
+    10 SKIP/RETRY · 20 SKIP/DONE. Uses the week of 2026-06-22 (Mon) — no NYSE
+    holidays that week. OPEN_DAY (2026-06-17) is the Wednesday of the prior week."""
+
+    MON, TUE, WED, THU, FRI = ("2026-06-22", "2026-06-23", "2026-06-24",
+                               "2026-06-25", "2026-06-26")
+
+    def _fresh_data(self, tmp_path, date):
+        self._write(tmp_path, "market_snapshot.json",
+                    {"date": date, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 200}})
+        self._fresh_dossier(tmp_path, date)
+
+    def _rebalance_stamp(self, tmp_path, date, executed=True, tickers=None):
+        from market_calendar import iso_week_of
+        self._write(tmp_path, "last_rebalance.json", {
+            "iso_week": iso_week_of(date), "date": date, "run_id": "r1",
+            "execution_started_at": "2026-06-24T13:50:00Z",
+            "executed_at": "2026-06-24T13:55:00Z" if executed else None,
+            "tickers": tickers or ["JPM"]})
+
+    def test_monday_routes_to_risk_watch(self, tmp_path):
+        self._fresh_data(tmp_path, self.MON)
+        assert self._run(tmp_path, date_override=self.MON) == 30
+
+    def test_tuesday_routes_to_risk_watch(self, tmp_path):
+        self._fresh_data(tmp_path, self.TUE)
+        assert self._run(tmp_path, date_override=self.TUE) == 30
+
+    def test_risk_watch_needs_no_snapshot_or_dossier(self, tmp_path):
+        """The daily SELL-only safety net uses live MCP data — a late GitHub
+        Actions cron must NEVER disable it (P1-7)."""
+        assert self._run(tmp_path, date_override=self.MON) == 30  # empty dir
+
+    def test_wednesday_rebalances(self, tmp_path):
+        self._fresh_data(tmp_path, self.WED)
+        assert self._run(tmp_path, date_override=self.WED) == 0
+
+    def test_thursday_after_wed_rebalance_routes_to_risk_watch(self, tmp_path):
+        self._fresh_data(tmp_path, self.THU)
+        self._rebalance_stamp(tmp_path, self.WED)
+        assert self._run(tmp_path, date_override=self.THU) == 30
+
+    def test_thursday_catchup_when_week_unrebalanced(self, tmp_path):
+        """§6.5.2: Wednesday missed (stale data all attempts / holiday) → Thursday
+        runs the weekly rebalance."""
+        self._fresh_data(tmp_path, self.THU)
+        assert self._run(tmp_path, date_override=self.THU) == 0
+
+    def test_friday_catchup_when_week_unrebalanced(self, tmp_path):
+        self._fresh_data(tmp_path, self.FRI)
+        assert self._run(tmp_path, date_override=self.FRI) == 0
+
+    def test_thursday_claim_only_disables_catchup(self, tmp_path):
+        """A Wednesday CLAIM without executed_at = crashed mid-execution — orders
+        may exist (Scenario B). Catch-up must NOT re-run the rebalance; the day
+        falls through to risk-watch. Fails toward missed trades, never duplicates."""
+        self._fresh_data(tmp_path, self.THU)
+        self._rebalance_stamp(tmp_path, self.WED, executed=False)
+        assert self._run(tmp_path, date_override=self.THU) == 30
+
+    def test_pending_envelope_fallback_locks_week(self, tmp_path):
+        """No last_rebalance.json (pre-mirror) — a rebalance-mode pending envelope
+        executed this ISO week still locks the week (fallback source)."""
+        self._fresh_data(tmp_path, self.THU)
+        self._write(tmp_path, "pending_decisions.json",
+                    {"date": self.WED, "mode": "rebalance", "run_id": "r1",
+                     "executed_at": "2026-06-24T13:55:00Z", "decisions": []})
+        assert self._run(tmp_path, date_override=self.THU) == 30
+
+    def test_legacy_envelope_without_mode_counts_as_rebalance(self, tmp_path):
+        """Daily-era envelopes carry no mode — treated as rebalance semantics."""
+        self._fresh_data(tmp_path, self.THU)
+        self._write(tmp_path, "pending_decisions.json",
+                    {"date": self.WED, "run_id": "r1",
+                     "executed_at": "2026-06-24T13:55:00Z", "decisions": []})
+        assert self._run(tmp_path, date_override=self.THU) == 30
+
+    def test_risk_watch_envelope_does_not_lock_week(self, tmp_path):
+        """Tuesday's executed risk_watch envelope must NOT satisfy the ISO-week
+        rebalance lock — Wednesday still rebalances."""
+        self._fresh_data(tmp_path, self.WED)
+        self._write(tmp_path, "pending_decisions.json",
+                    {"date": self.TUE, "mode": "risk_watch", "run_id": "r1",
+                     "executed_at": "2026-06-23T13:55:00Z", "decisions": []})
+        assert self._run(tmp_path, date_override=self.WED) == 0
+
+    def test_prior_week_stamp_does_not_lock_this_week(self, tmp_path):
+        self._fresh_data(tmp_path, self.WED)
+        self._rebalance_stamp(tmp_path, self.OPEN_DAY)   # Wed of the PRIOR week
+        assert self._run(tmp_path, date_override=self.WED) == 0
+
+    def test_executed_risk_watch_today_skips_done(self, tmp_path):
+        """Daily idempotency applies to risk_watch too: an executed envelope
+        dated today → 20 on the retry attempts."""
+        self._write(tmp_path, "pending_decisions.json",
+                    {"date": self.MON, "mode": "risk_watch", "run_id": "r1",
+                     "executed_at": "2026-06-22T13:55:00Z", "decisions": []})
+        assert self._run(tmp_path, date_override=self.MON) == 20
+
+    def test_wednesday_stale_data_skips_retry_not_risk_watch(self, tmp_path):
+        """On the rebalance day, stale data → 10 (retry / Thu catch-up), never a
+        silent fallback into risk-watch (mixing modes intra-day would defeat the
+        daily envelope idempotency)."""
+        self._write(tmp_path, "market_snapshot.json",
+                    {"date": "2020-01-01", "prices": {}, "history": {"AAPL": [{}] * 200}})
+        assert self._run(tmp_path, date_override=self.WED) == 10
+
+
+class TestJournalRebalanceStamp:
+    """journal._mirror_rebalance_stamp — the durable once-per-ISO-week lock (§6.5)."""
+
+    def _pending(self, tmp_path, mode="rebalance", date="2026-06-24", decisions=None):
+        obj = {"run_id": "r1", "date": date, "generated_at": "x",
+               "execution_started_at": None, "executed_at": None,
+               "decisions": decisions if decisions is not None else [
+                   {"ticker": "JPM", "action": "BUY", "target_weight": 0.08},
+                   {"ticker": "VRTX", "action": "SELL", "target_weight": 0.0},
+                   {"ticker": "MS", "action": "HOLD"}]}
+        if mode is not None:
+            obj["mode"] = mode
+        (tmp_path / "pending_decisions.json").write_text(json.dumps(obj))
+
+    def test_executed_rebalance_writes_week_stamp(self, tmp_path, monkeypatch):
+        import journal
+        monkeypatch.chdir(tmp_path)
+        self._pending(tmp_path)
+        journal.mark_pending_executed("r1")
+        lr = json.loads((tmp_path / "last_rebalance.json").read_text())
+        assert lr["iso_week"] == "2026-W26" and lr["date"] == "2026-06-24"
+        assert lr["executed_at"] and lr["run_id"] == "r1"
+        # HOLD is not a trade — only BUY/SELL tickers feed the SELL interlock
+        assert lr["tickers"] == ["JPM", "VRTX"]
+
+    def test_claim_alone_writes_week_stamp(self, tmp_path, monkeypatch):
+        """A crash after the claim must still lock the week (orders may exist)."""
+        import journal
+        monkeypatch.chdir(tmp_path)
+        self._pending(tmp_path)
+        journal.mark_execution_started("r1")
+        lr = json.loads((tmp_path / "last_rebalance.json").read_text())
+        assert lr["execution_started_at"] and lr["executed_at"] is None
+
+    def test_risk_watch_mode_never_touches_week_stamp(self, tmp_path, monkeypatch):
+        import journal
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "last_rebalance.json").write_text(json.dumps({"iso_week": "2026-W26",
+                                                                  "sentinel": True}))
+        self._pending(tmp_path, mode="risk_watch")
+        journal.mark_pending_executed("r1")
+        lr = json.loads((tmp_path / "last_rebalance.json").read_text())
+        assert lr.get("sentinel") is True   # untouched — risk_watch never mirrors
+
+    def test_legacy_envelope_without_mode_mirrors(self, tmp_path, monkeypatch):
+        import journal
+        monkeypatch.chdir(tmp_path)
+        self._pending(tmp_path, mode=None)
+        journal.mark_pending_executed("r1")
+        assert (tmp_path / "last_rebalance.json").is_file()
+
+
+class TestRiskWatchTriggers:
+    """§6.7 — the tight, mechanical, LLM-free trigger set. SELL-only is structural."""
+
+    def _pos(self, sym, avg, cur, qty=1.0, avail=None):
+        return {"symbol": sym, "qty": qty, "available_qty": avail if avail is not None else qty,
+                "avg_price": avg, "current_price": cur, "market_value": cur * qty}
+
+    def test_stop_fires_at_exactly_threshold(self):
+        from risk_watch import evaluate_triggers
+        port = {"positions": [self._pos("AAPL", 100.0, 75.0)]}      # exactly −25%
+        d, r = evaluate_triggers(port, "2026-06-22", stop_pct=0.25)
+        assert len(d) == 1 and d[0]["ticker"] == "AAPL" and d[0]["action"] == "SELL"
+        assert d[0]["risk_exit"] is True and d[0]["target_weight"] == 0.0
+
+    def test_stop_does_not_fire_above_threshold(self):
+        from risk_watch import evaluate_triggers
+        port = {"positions": [self._pos("AAPL", 100.0, 75.01)]}     # −24.99%
+        d, r = evaluate_triggers(port, "2026-06-22", stop_pct=0.25)
+        assert d == [] and r["fired"] == []
+
+    def test_never_emits_a_buy(self):
+        """Structural invariant: every constructible decision is a SELL."""
+        from risk_watch import evaluate_triggers
+        port = {"positions": [self._pos("A", 100, 50), self._pos("B", 100, 60),
+                              self._pos("C", 100, 200)]}
+        d, _ = evaluate_triggers(port, "2026-06-22")
+        assert d and all(x["action"] == "SELL" for x in d)
+
+    def test_interlocked_ticker_fires_but_is_not_sold(self):
+        """§6.5.3 cross-mode interlock: a name the rebalance traded this ISO week is
+        surfaced (DEGRADED health), never double-sold."""
+        from risk_watch import evaluate_triggers
+        port = {"positions": [self._pos("JPM", 100, 60)]}
+        d, r = evaluate_triggers(port, "2026-06-22", interlocked={"JPM"})
+        assert d == [] and r["interlocked"][0]["ticker"] == "JPM"
+
+    def test_blocked_ticker_never_sold(self):
+        from risk_watch import evaluate_triggers
+        port = {"positions": [self._pos("TSLA", 100, 50)]}
+        d, r = evaluate_triggers(port, "2026-06-22")
+        assert d == [] and r["blocked"][0]["ticker"] == "TSLA"
+
+    def test_no_cost_basis_skipped_and_surfaced(self):
+        """Never sell on unverifiable data — a missing avg_price/current_price is
+        surfaced for review, not silently sold or silently ignored."""
+        from risk_watch import evaluate_triggers
+        port = {"positions": [self._pos("AAPL", 0, 75.0)]}
+        d, r = evaluate_triggers(port, "2026-06-22")
+        assert d == [] and r["skipped_no_basis"] == ["AAPL"]
+
+    def test_qty_capped_to_available(self):
+        from risk_watch import evaluate_triggers
+        port = {"positions": [self._pos("AAPL", 100.0, 70.0, qty=5.0, avail=3.5)]}
+        d, _ = evaluate_triggers(port, "2026-06-22")
+        assert d[0]["qty"] == 3.5
+
+    def test_interlock_reader_matches_week(self, tmp_path, monkeypatch):
+        import risk_watch
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "last_rebalance.json").write_text(json.dumps(
+            {"iso_week": "2026-W26", "tickers": ["JPM", "VRTX"]}))
+        assert risk_watch._interlocked_tickers("2026-06-25") == {"JPM", "VRTX"}
+        assert risk_watch._interlocked_tickers("2026-06-29") == set()  # next week
+
+
+class TestRiskWatchEnvelope:
+    """run_risk_watch writes the SAME idempotency envelope the rebalance uses,
+    with mode=risk_watch, and never touches the ISO-week rebalance lock."""
+
+    def _setup(self, tmp_path, monkeypatch, positions):
+        import risk_watch
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo as _zi
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(risk_watch, "DRY_RUN", True)
+        monkeypatch.setattr(risk_watch, "_publish", lambda *a, **k: None)
+        now = _dt.now(_zi("America/New_York")).isoformat()
+        (tmp_path / "mcp_portfolio.json").write_text(json.dumps(
+            {"as_of": now, "cash": 100.0,
+             "total_value": 100.0 + sum(p["market_value"] for p in positions),
+             "positions": positions}))
+        return risk_watch
+
+    def test_envelope_written_with_mode_and_no_week_stamp(self, tmp_path, monkeypatch):
+        rw = self._setup(tmp_path, monkeypatch, [
+            {"symbol": "AAPL", "qty": 1.0, "available_qty": 1.0, "avg_price": 100.0,
+             "current_price": 70.0, "market_value": 70.0, "unrealized_pnl": -30.0}])
+        rw.run_risk_watch()
+        p = json.loads((tmp_path / "pending_decisions.json").read_text())
+        assert p["mode"] == "risk_watch"
+        assert len(p["decisions"]) == 1 and p["decisions"][0]["action"] == "SELL"
+        assert p["executed_at"] is None            # DRY_RUN never stamps
+        assert not (tmp_path / "last_rebalance.json").exists()
+        # speculative logs written for the routine's reconciler
+        txs = json.loads((tmp_path / "transactions.json").read_text())
+        assert txs[-1]["ticker"] == "AAPL" and txs[-1]["dry_run"] is True
+        h = json.loads((tmp_path / "system_health.json").read_text())
+        assert "risk_watch" in h["checks"]
+
+    def test_quiet_day_writes_empty_envelope(self, tmp_path, monkeypatch):
+        rw = self._setup(tmp_path, monkeypatch, [
+            {"symbol": "AAPL", "qty": 1.0, "available_qty": 1.0, "avg_price": 100.0,
+             "current_price": 99.0, "market_value": 99.0, "unrealized_pnl": -1.0}])
+        rw.run_risk_watch()
+        p = json.loads((tmp_path / "pending_decisions.json").read_text())
+        assert p["mode"] == "risk_watch" and p["decisions"] == []
+
+    def test_stale_portfolio_aborts_without_envelope(self, tmp_path, monkeypatch):
+        import risk_watch as rw
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(rw, "_publish", lambda *a, **k: None)
+        (tmp_path / "mcp_portfolio.json").write_text(json.dumps(
+            {"as_of": "2020-01-01T09:00:00-04:00", "cash": 1, "total_value": 1,
+             "positions": []}))
+        rw.run_risk_watch()
+        assert not (tmp_path / "pending_decisions.json").exists()
+        h = json.loads((tmp_path / "system_health.json").read_text())
+        assert h["checks"]["risk_watch"]["status"] == "ABORTED"
+
+
+class TestTaxAwareHold:
+    """IPS §7.5 — block a discretionary SELL of a gained lot near its 1-year
+    long-term boundary (~54% ST vs ~37% LT on the same gain)."""
+
+    def _buy(self, ticker, date, price, qty=1.0):
+        return {"ticker": ticker, "action": "BUY", "date": date, "qty": qty,
+                "price": price, "dry_run": False, "timestamp": f"{date}T14:00:00Z"}
+
+    def _sell(self, ticker="AAPL"):
+        return [{"ticker": ticker, "action": "SELL", "target_weight": 0.0}]
+
+    def test_gained_lot_near_boundary_blocked(self):
+        import guardrails as g
+        # acquired 340 calendar days ago (within 42 of 365), in gain → blocked
+        kept, rej = g.enforce_tax_aware_hold(
+            self._sell(), {"AAPL": {"close": 150.0}},
+            transactions=[self._buy("AAPL", "2025-07-30", 100.0)], today="2026-07-05")
+        assert kept == [] and "tax-aware hold" in rej[0]["rejected_reason"]
+
+    def test_gained_lot_far_from_boundary_allowed(self):
+        import guardrails as g
+        # 300 days held — outside the ~42-calendar-day window → allowed
+        kept, rej = g.enforce_tax_aware_hold(
+            self._sell(), {"AAPL": {"close": 150.0}},
+            transactions=[self._buy("AAPL", "2025-09-08", 100.0)], today="2026-07-05")
+        assert len(kept) == 1 and rej == []
+
+    def test_loss_lot_near_boundary_allowed(self):
+        import guardrails as g
+        # harvesting a short-term loss is tax-favorable — never blocked
+        kept, rej = g.enforce_tax_aware_hold(
+            self._sell(), {"AAPL": {"close": 80.0}},
+            transactions=[self._buy("AAPL", "2025-07-30", 100.0)], today="2026-07-05")
+        assert len(kept) == 1 and rej == []
+
+    def test_lot_past_one_year_allowed(self):
+        import guardrails as g
+        kept, rej = g.enforce_tax_aware_hold(
+            self._sell(), {"AAPL": {"close": 150.0}},
+            transactions=[self._buy("AAPL", "2025-06-01", 100.0)], today="2026-07-05")
+        assert len(kept) == 1 and rej == []
+
+    def test_risk_exit_exempt(self):
+        import guardrails as g
+        sell = [{"ticker": "AAPL", "action": "SELL", "target_weight": 0.0, "risk_exit": True}]
+        kept, rej = g.enforce_tax_aware_hold(
+            sell, {"AAPL": {"close": 150.0}},
+            transactions=[self._buy("AAPL", "2025-07-30", 100.0)], today="2026-07-05")
+        assert len(kept) == 1 and rej == []
+
+    def test_kill_active_exempt(self):
+        import guardrails as g
+        kept, rej = g.enforce_tax_aware_hold(
+            self._sell(), {"AAPL": {"close": 150.0}}, kill_active=True,
+            transactions=[self._buy("AAPL", "2025-07-30", 100.0)], today="2026-07-05")
+        assert len(kept) == 1 and rej == []
+
+    def test_buys_and_holds_pass_through(self):
+        import guardrails as g
+        ds = [{"ticker": "AAPL", "action": "BUY", "target_weight": 0.08},
+              {"ticker": "MS", "action": "HOLD"}]
+        kept, rej = g.enforce_tax_aware_hold(
+            ds, {"AAPL": {"close": 150.0}},
+            transactions=[self._buy("AAPL", "2025-07-30", 100.0)], today="2026-07-05")
+        assert len(kept) == 2 and rej == []
+
+
+class TestCrisisSafeMode:
+    """§18.5 — a market-wide index drop halts all new BUYs; SELLs stay allowed."""
+
+    def test_fires_at_exact_threshold(self):
+        import guardrails as g
+        active, reason = g.crisis_safe_mode_active(-7.0, threshold_pct=7)
+        assert active and "safe-mode" in reason
+
+    def test_does_not_fire_above_threshold(self):
+        import guardrails as g
+        assert g.crisis_safe_mode_active(-6.99, threshold_pct=7) == (False, "")
+
+    def test_none_spy_data_never_traps(self):
+        """No SPY data → safe-mode NOT active (a data outage must not silently
+        disable buying forever)."""
+        import guardrails as g
+        assert g.crisis_safe_mode_active(None) == (False, "")
+
+    def test_buys_dropped_sells_kept(self):
+        import guardrails as g
+        ds = [{"ticker": "A", "action": "BUY", "target_weight": 0.08},
+              {"ticker": "B", "action": "SELL", "target_weight": 0.0},
+              {"ticker": "C", "action": "HOLD"}]
+        kept, rejected, reason = g.enforce_safe_mode(ds, -8.0)
+        assert [d["ticker"] for d in kept] == ["B", "C"]
+        assert rejected[0]["ticker"] == "A" and reason
+
+    def test_noop_when_calm(self):
+        import guardrails as g
+        ds = [{"ticker": "A", "action": "BUY"}]
+        kept, rejected, reason = g.enforce_safe_mode(ds, 0.5)
+        assert kept == ds and rejected == [] and reason == ""
+
+
+class TestHeartbeatMissedWeek:
+    """§15.3 — Friday's heartbeat alerts when the whole ISO week had no rebalance
+    claim/execution (Wed + Thu/Fri catch-up all missed)."""
+
+    FRI, THU = "2026-06-26", "2026-06-25"
+
+    def test_friday_without_stamp_alerts(self, tmp_path):
+        from heartbeat_check import check_heartbeat
+        rep = check_heartbeat(as_of=self.FRI, root=str(tmp_path))
+        assert "weekly_rebalance" in rep["missing"]
+
+    def test_friday_with_this_week_stamp_ok(self, tmp_path):
+        from heartbeat_check import check_heartbeat
+        (tmp_path / "last_rebalance.json").write_text(json.dumps(
+            {"iso_week": "2026-W26", "date": "2026-06-24", "run_id": "r1",
+             "execution_started_at": "x", "executed_at": "y", "tickers": []}))
+        rep = check_heartbeat(as_of=self.FRI, root=str(tmp_path))
+        assert "weekly_rebalance" not in rep["missing"]
+
+    def test_friday_with_prior_week_stamp_alerts(self, tmp_path):
+        from heartbeat_check import check_heartbeat
+        (tmp_path / "last_rebalance.json").write_text(json.dumps(
+            {"iso_week": "2026-W25", "date": "2026-06-17", "run_id": "r0",
+             "execution_started_at": "x", "executed_at": "y", "tickers": []}))
+        rep = check_heartbeat(as_of=self.FRI, root=str(tmp_path))
+        assert "weekly_rebalance" in rep["missing"]
+
+    def test_thursday_never_runs_the_check(self, tmp_path):
+        from heartbeat_check import check_heartbeat
+        rep = check_heartbeat(as_of=self.THU, root=str(tmp_path))
+        assert all(c["name"] != "weekly_rebalance" for c in rep["checks"])
+
+
+class TestStageDStorageSplit:
+    """Stage D — snapshot slimming + per-ticker price vintage (P0-1)."""
+
+    def _snap(self, n_bars=210):
+        bar = {"date": 1, "open": 1, "high": 1, "low": 1, "close": 100.0, "volume": 1}
+        return {"date": "2026-07-06", "prices": {},
+                "history": {"AAPL": [dict(bar)] * n_bars,      # core
+                            "XYZ":  [dict(bar)] * n_bars,      # expansion
+                            "SPY":  [dict(bar)] * n_bars}}
+
+    def test_slim_keeps_full_for_core_and_tails_expansion(self):
+        from market_data import slim_snapshot_for_commit
+        snap = self._snap()
+        out = slim_snapshot_for_commit(snap, keep_full={"AAPL", "SPY"}, tail_bars=63)
+        assert len(out["history"]["AAPL"]) == 210
+        assert len(out["history"]["SPY"]) == 210
+        assert len(out["history"]["XYZ"]) == 63
+        assert out["history_tail_tickers"] == ["XYZ"]
+        assert len(snap["history"]["XYZ"]) == 210     # input not mutated
+
+    def test_slim_noop_for_short_history(self):
+        from market_data import slim_snapshot_for_commit
+        out = slim_snapshot_for_commit(self._snap(n_bars=40), keep_full=set(), tail_bars=63)
+        assert out["history_tail_tickers"] == []
+
+    def test_dossier_stamps_per_ticker_price_vintage(self):
+        """A carried-forward name's dossier record carries ITS OWN price_as_of —
+        the consumer re-quotes it live instead of sizing on the stale slice (P0-1)."""
+        from build_dossier import build_dossier
+        bar = {"date": 1, "open": 1, "high": 1, "low": 1, "close": 100.0, "volume": 1}
+        snapshot = {"date": "2026-07-06", "_data_date": "2026-07-06",
+                    "price_as_of_by_ticker": {"XYZ": "2026-07-02"},
+                    "prices": {"AAPL": {"close": 100.0, "change_pct": 0.0},
+                               "XYZ": {"close": 50.0, "change_pct": 0.0}},
+                    "history": {"AAPL": [dict(bar)] * 30, "XYZ": [dict(bar)] * 30},
+                    "fundamentals": {}}
+        d = build_dossier(snapshot, [], [], [])
+        assert d["tickers"]["AAPL"]["price_as_of"] == "2026-07-06"
+        assert d["tickers"]["XYZ"]["price_as_of"] == "2026-07-02"
+
+    def test_history_store_roundtrip(self, tmp_path, monkeypatch):
+        import market_data as md
+        monkeypatch.chdir(tmp_path)
+        md._save_history_store({"AAPL": {"date": "2026-07-06", "history": [1, 2]}})
+        assert md._load_history_store()["AAPL"]["history"] == [1, 2]
+
+    def test_main_depth_classification_ignores_intentional_tails(self):
+        """A 63-bar expansion tail must not page as degraded market data; a genuinely
+        shallow CORE name still must. (Mirrors main.py's deep-subset computation.)"""
+        history = {"AAPL": [{}] * 210, "XYZ": [{}] * 63}
+        tails = {"XYZ"}
+        deep = [len(h) for t, h in history.items() if t not in tails]
+        assert min(deep) == 210          # OK — tails excluded
+        deep_bad = [len(h) for t, h in {"AAPL": [{}] * 63}.items() if t not in tails]
+        assert min(deep_bad) == 63       # still DEGRADED for a shallow core name
+
+
+class TestDossierConsumer:
+    """Phase 5 Stage C — the dossier reaches the agents' prompts."""
+
+    def _rec(self):
+        return {"ticker": "AAPL", "persistence": {"composite_7d_mean": 71.2,
+                                                  "composite_7d_std": 2.3,
+                                                  "rank_chg_7d": 3},
+                "history_summary": {"ret_21d": 0.04, "ret_63d": 0.11,
+                                    "ret_126d": 0.19, "max_dd_126d": -0.14},
+                "fundamentals": {"gross_margin": 0.74, "_as_of_filing": "2026-05-15"},
+                "data_quality": {"fundamentals_age_days": 47, "fundamentals_stale": False},
+                "events": [{"date": "2026-06-30", "type": "rating_change",
+                            "summary": "PT raised"}],
+                "earnings": {"next_date": "2026-08-04", "days_until": 29, "imminent": False},
+                "last_decision": {"action": "BUY", "date": "2026-06-24",
+                                  "thesis": "multi-year hold", "confidence": 8},
+                "since_entry": {"entry_price": 100.0, "current_price": 104.0,
+                                "cum_return": 0.04, "days_since_entry": 12}}
+
+    def test_fmt_dossier_record_renders_key_signals(self):
+        from analysis import _fmt_dossier_record
+        block = _fmt_dossier_record(self._rec())
+        assert "71.2" in block and "rank_chg_7d=+3" in block
+        assert "rating_change" in block and "2026-08-04" in block
+        assert "47d old" in block
+
+    def test_fmt_dossier_record_empty_for_none(self):
+        from analysis import _fmt_dossier_record
+        assert _fmt_dossier_record(None) == ""
+        assert _fmt_dossier_record({}) == ""
+
+    def test_fmt_since_entry_anchor(self):
+        from analysis import _fmt_since_entry
+        block = _fmt_since_entry(self._rec())
+        assert "ENTRY ANCHOR" in block and "+4.0%" in block and "12d" in block
+
+    def test_dossier_block_reaches_research_prompt(self, monkeypatch):
+        import analysis
+        captured = {}
+        def fake_call(model, system, user_msg, **kw):
+            captured["user_msg"] = user_msg
+            return kw.get("default")
+        monkeypatch.setattr(analysis, "_safe_call", fake_call)
+        md = {"date": "2026-07-06", "prices": {"AAPL": {"close": 104.0, "change_pct": 0.5}},
+              "news": [], "ticker_news": {}}
+        analysis.run_research_analyst("AAPL", md, {}, dossier_rec=self._rec())
+        assert "RESEARCH DOSSIER" in captured["user_msg"]
+        assert "rank_chg_7d=+3" in captured["user_msg"]
+
+    def test_dossier_signals_reach_pm_prompt(self, monkeypatch):
+        import analysis
+        captured = {}
+        def fake_call(model, system, user_msg, **kw):
+            captured["user_msg"] = user_msg
+            return ([], {"parsed_ok": True}) if kw.get("return_meta") else kw.get("default")
+        monkeypatch.setattr(analysis, "_safe_call", fake_call)
+        dossier = {"tickers": {"AAPL": self._rec()}}
+        analysis.run_portfolio_manager(
+            {"regime": "NEUTRAL"}, {"AAPL": {"thesis": "t"}}, {"AAPL": {}}, {"AAPL": {}},
+            {}, {}, {"total_value": 500.0, "cash": 100.0, "positions": []},
+            [], date="2026-07-06", dossier=dossier)
+        assert "DOSSIER SIGNALS" in captured["user_msg"]
+        assert "persist_7d=71.2" in captured["user_msg"]
+        assert "TAX-AWARE HOLD" in captured["user_msg"]

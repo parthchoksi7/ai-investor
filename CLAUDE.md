@@ -58,7 +58,9 @@ Haiku runs for each of up to 20 candidates. Sonnet runs 3 times total. Prompt ca
 | `stage_c_readiness.py` | Read-only evidence-clock gate — is the scorecard tight enough to DECIDE Stage C (go/no-go)? `assess_readiness()`; surfaced weekly in `pipeline_digest`; **zero order code** |
 | `build_dossier.py` | Phase 4 Step 5 synthesis — collapses the raw layer into `research_dossier.json` (one denormalized per-ticker record, the Wednesday agent input); schema-validates; **zero order code** |
 | `event_digest.py` | Phase 4 Step 4 — Haiku news→`events.jsonl` digest (material per-ticker events, deduped, no look-ahead); runs in GH Actions; enrichment only (never gates); reuses `analysis._safe_call`; **zero order code** |
-| `preflight_gate.py` | STEP 0 gate the routine runs first each attempt — PROCEED / SKIP-RETRY / SKIP-DONE (see below) |
+| `preflight_gate.py` | STEP 0 gate the routine runs first each attempt — PROCEED-REBALANCE (0) / PROCEED-RISK-WATCH (30) / SKIP-RETRY (10) / SKIP-DONE (20) (see below) |
+| `risk_watch.py` | Phase 5 Stage B — daily SELL-only safety net (non-rebalance trading days): −25% stop from cost basis on live MCP prices, kill-switch check, cross-mode ISO-week SELL interlock; decisions flow through the SAME envelope/claim/stamp machinery as the rebalance; **zero LLM, structurally zero BUYs** |
+| `last_rebalance.json` | Durable once-per-ISO-week rebalance lock (§6.5) — mirrored by `journal.py` on the claim/executed stamps; read by the gate's Thu/Fri catch-up, risk_watch's interlock, and the heartbeat missed-week check. TRACKED (never gitignore) |
 | `ROUTINE_DAILY_CYCLE.md` | Canonical, version-controlled copy of the daily routine prompt (secrets redacted) |
 | `ROUTINE_EOD_CLOSE.md` | Canonical, version-controlled copy of the EOD close routine prompt (secrets redacted) |
 | `trades.csv` | Trade log (committed to GitHub after each run) |
@@ -88,32 +90,36 @@ Two scheduled routines run every weekday. Both use the **Robinhood Trading MCP c
 
 #### Pre-flight gate (run FIRST, every attempt) — `preflight_gate.py`
 
-The routine depends on a fresh `market_snapshot.json` from the `market_data.yml` GitHub Actions job. GitHub's scheduled crons can be delayed by hours or skipped, so the routine fires up to **4 times** across the morning and each attempt must gate itself. Running the pipeline against stale data does nothing useful (it just aborts at preflight and wastes tokens), so the routine **must not** run `main.py` unless the gate says PROCEED.
+**Phase 5 (weekly cadence, Jul 2026):** the cron still fires every weekday, but the gate routes the **MODE** — the full 7-agent rebalance runs **once per ISO week** (Wednesday, or Thu/Fri catch-up when the week has none); every other trading day runs the deterministic SELL-only `risk_watch.py` safety net (no LLM, no BUYs, live MCP prices).
 
 Protocol on **every** attempt:
 
 ```bash
 # OPERATE ON main first — the worktree may start on a claude/* branch. A bare
 # git push targets the CURRENT branch, so if you don't switch to main the gate
-# reads a stale pending_decisions.json (→ retry re-runs the pipeline = double-fill)
-# and system_health.json never reaches main (→ alert.yml fires nothing).
+# reads a stale pending_decisions.json / last_rebalance.json (→ retry re-runs
+# the pipeline = double-fill) and system_health.json never reaches main.
 git fetch origin main
-git checkout -B main origin/main   # canonical pending_decisions.json + pushes land on main
-python preflight_gate.py     # decide whether to run
+git checkout -B main origin/main   # canonical envelope + week lock + pushes land on main
+python preflight_gate.py     # decide whether AND HOW to run
 case $? in
-  0)  : run main.py + execute (continue with the normal protocol below) ;;
-  10) echo "stale data — skip this attempt; the next cron (+60 min) will retry"; exit 0 ;;
-  20) echo "already executed today — skip"; exit 0 ;;
+  0)  : REBALANCE — run main.py + execute (the full protocol below) ;;
+  30) : RISK-WATCH — run risk_watch.py + execute its (SELL-only) envelope ;;
+  10) echo "closed market / stale data|dossier / 529 — skip; next cron (+60 min) retries"; exit 0 ;;
+  20) echo "already executed or claimed today — skip"; exit 0 ;;
 esac
 ```
 
-- **Exit 0 (PROCEED):** fresh snapshot dated today (≥22 history bars) AND today's pipeline has not executed yet → run the full pipeline.
-- **Exit 10 (SKIP/RETRY):** `market_snapshot.json` is missing or not dated today → **do not run**. Stop cleanly; the next scheduled attempt re-checks. If all 4 attempts see stale data, the day is intentionally skipped (no trades — correct behavior).
-- **Exit 20 (SKIP/DONE):** `pending_decisions.json` shows today already executed, **or** today's `execution_started_at` is set without `executed_at` (a prior attempt crashed mid-execution — orders may exist; recover via Scenario B) → **do not run again**.
+- **Exit 0 (PROCEED/REBALANCE):** the rebalance weekday (policy `rebalance_weekday`, Wed) — or a Thu/Fri **catch-up** for an ISO week with no rebalance attempt — AND fresh snapshot (≥22 bars) AND fresh, valid `research_dossier.json` (`as_of` today, ≥2 `built_from_days`) AND API canary healthy AND no rebalance claimed/executed this ISO week → run `main.py`.
+- **Exit 30 (PROCEED/RISK-WATCH):** any other trading day → run `risk_watch.py` (−25% stop on live MCP prices). Deliberately requires **no snapshot/dossier** (a late GitHub cron must never disable the daily stop check, P1-7) and no API canary (zero LLM).
+- **Exit 10 (SKIP/RETRY):** market closed, or (rebalance day only) snapshot/dossier not fresh or Anthropic 529. If all Wednesday attempts fail, Thu/Fri catch up; if the whole week misses, Friday's heartbeat alerts (missed-week check).
+- **Exit 20 (SKIP/DONE):** today already executed, **or** today's `execution_started_at` is set without `executed_at` (crashed mid-execution — orders may exist; recover via Scenario B) → **do not run again**.
 
-This is why the schedule has four fire times rather than one: the gate + the existing `pending_decisions` idempotency envelope guarantee the pipeline runs **at most once per day**, on the first attempt that sees fresh data. On Jun 9 the market_data job didn't land until 12:14 PM ET — the 12:45 retry would have caught it.
+**The once-per-ISO-week lock:** rebalance claims/executions are mirrored by `journal.py` into `last_rebalance.json` (committed to main) — durable across risk_watch's daily overwrite of `pending_decisions.json`. A Wednesday claim-without-executed **disables** the Thu/Fri catch-up (fail toward a missed rebalance, never a duplicate). `reconcile.py --apply` keeps the mirror in sync when it stamps (ALL_FILLED) or clears (NONE_FILLED) a crashed claim.
 
-When the gate returns 0, the routine runs the **full Python pipeline** (`main.py`) with `DRY_RUN=false`, executes trades via the Robinhood MCP, then commits and pushes updated files to GitHub.
+**Fail-safe with an UNSYNCED routine prompt:** a pre-Phase-5 routine prompt only knows exits 0/10/20 — on exit 30 it stops cleanly ("only continue when 0"). Result: risk-watch days no-op, Wednesdays trade normally. Degrades safely, but sync the prompt to activate the daily stop-loss net.
+
+When the gate returns 0, the routine runs the **full Python pipeline** (`main.py`), executes via the Robinhood MCP, then commits and pushes. On 30, the same STEP 1/2/4/5 machinery wraps `risk_watch.py` instead (same envelope, same claim/stamp/reconcile protocol, plus GUARD 4: a risk_watch envelope containing a BUY is never executed).
 
 > 📄 The full, paste-ready routine prompt (with secrets redacted) is version-controlled at [`ROUTINE_DAILY_CYCLE.md`](ROUTINE_DAILY_CYCLE.md). Keep it in sync whenever you change the live routine. STEP 0 (gate) and the 4-fire schedule live there.
 
@@ -125,7 +131,7 @@ Portfolio data is injected via `mcp_portfolio.json` (written by the routine from
 ```
 git config user.name "AI Investor Bot"
 git config user.email "ai-investor-bot@users.noreply.github.com"
-git add portfolio_snapshot.json system_health.json pending_decisions.json agent_log.json trades.csv decision_journal.json transactions.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json decisions_ledger.jsonl decisions_scored.jsonl counterfactual.json
+git add portfolio_snapshot.json system_health.json pending_decisions.json last_rebalance.json agent_log.json trades.csv decision_journal.json transactions.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json decisions_ledger.jsonl decisions_scored.jsonl counterfactual.json
 git commit -m "chore: daily cycle"
 git push
 ```
@@ -186,7 +192,12 @@ DRY_RUN=true                # set false to actually execute
 - **Max position:** 10% of portfolio
 - **Max sector:** 25% of portfolio
 - **Cash target:** 0–10%
-- **Horizon:** 1–3 months primary, up to 6 months
+- **Horizon:** 9–12 months primary (IPS §7; policy v2.0 — was 1–3 months pre-Phase-5)
+- **Cadence:** decisions ONCE A WEEK (Wednesday rebalance; Thu/Fri catch-up); other days run only the SELL-only risk_watch safety net
+- **Min holding:** 30 trading days before a discretionary SELL (risk exits exempt)
+- **Tax-aware hold:** a gained lot within ~30 trading days of its 1-year LT-tax date is not sold discretionarily
+- **Single-name stop:** −25% from cost basis (daily close, no trailing) — the risk_watch catastrophe brake
+- **Crisis safe-mode:** SPY 1-day drop ≥ 7% halts all new BUYs (risk SELLs still allowed)
 - **Default action:** HOLD — only trade when it improves portfolio expected value
 - **Kill switch:** blocks new BUYs when portfolio drawdown exceeds 20% from peak
 
@@ -321,6 +332,26 @@ The pipeline aborts before running any agents if either condition is true:
 This prevents the silent all-50 quant score failure mode where agents run but produce no trades because they have no quantitative signal. When aborted, `system_health.json` is written immediately and the alert fires.
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
+
+## Changelog — Jul 4 2026 (Phase 5 Stages B+C+D — THE live-path change: weekly cadence)
+
+Owner-directed (Jul 4): build and go live with all remaining stages now, **overriding the
+`stage_c_readiness` evidence gate** (still ACCUMULATING — signals statistically noise at
+n_eff≈5). The monitor keeps running as measurement; the pre-registered §10.3 success/kill
+criteria are unchanged. **⚠ REQUIRES a live-routine sync** (`ROUTINE_DAILY_CYCLE.md`) —
+until synced, risk-watch days no-op safely (old prompt stops on the unknown exit 30) and
+Wednesdays trade normally.
+
+| Change | Why it mattered |
+|--------|-----------------|
+| `feat(policy)` **v2.0 `2.0-phase5-weekly`** — min-hold 5→**30** trading days (IPS §7.2); new `single_name_stop_pct 0.25`, `rebalance_weekday 2`, `tax_aware_hold_window_trading_days 30`, `safe_mode_index_drop_pct 7`. `_DEFAULTS` now tracks the OPERATIVE baseline (a yaml load failure can never roll back a governed migration). | §18.4 change-control: the weekly/9–12mo mandate becomes enforceable code, single-sourced. |
+| `feat(gate)` **mode routing** — exit **0 REBALANCE** (Wed or Thu/Fri catch-up; needs fresh snapshot AND fresh dossier AND API canary) / **30 RISK-WATCH** (all other trading days; deliberately needs NO snapshot — P1-7) / 10 / 20. Once-per-ISO-week lock via **`last_rebalance.json`** (mirrored by `journal.py` on claim/executed stamps; survives risk_watch's daily envelope overwrite; a claim-only Wednesday disables catch-up — Scenario B). `reconcile.py --apply` syncs the mirror. | The §6.5 cross-day double-rebalance vector is closed the same way the Jun-17 branch-vs-main one was: the lock lives on `main`, durable, and every consumer reads ONE source (`market_calendar.iso_week_of`). |
+| `feat(risk_watch)` **Stage B — `risk_watch.py`** — SELL-only decision generator on the EXISTING envelope (same claim → MCP orders → stamp → `mark_transactions_live`); triggers: −25% stop from broker cost basis on live MCP prices + daily kill-switch check; cross-mode SELL interlock; structural never-BUY (only SELLs are constructible) + routine GUARD 4. Quantitative `invalidates_if` triggers deliberately NOT wired (no structured `price_stop` field; regex-mining rejected Jun 13). | The book is reconstructed weekly but guarded daily. Zero new order code — the §6.4 capital-integrity invariant. |
+| `feat(consumer)` **Stage C — dossier consumer** — `main.py` validates the dossier vs the real ET date and **ABORTS on stale/invalid** (P1-5); agents 2/5/6 read its synthesis (persistence, deduped events, as-of fundamentals with honest vintage, `since_entry` entry anchors); PM prompt gains weekly-horizon + tax-aware-hold discipline. Envelope gains `mode` + per-decision `price_as_of`/`sizing_price`; the routine re-quotes stale-priced orders via live MCP (P0-1). New guards: `enforce_tax_aware_hold` (per-lot FIFO via `tax_lots`), `enforce_safe_mode` (§18.5). | The Wednesday agents finally read the research pipeline the last four phases built — and can never silently trade on yesterday's research. |
+| `feat(stageD)` **gated universe expansion** — crash-resumable `raw_history_store.json` (checkpoint each 25 tickers), ≤5-day carry-forward with `price_as_of_by_ticker` stamps, Polygon 429 backoff, dynamic universe (`UNIVERSE_EXPANDED` repo variable AND prior-day coverage ≥80%), committed-snapshot slimming (expansion names at 63-bar tails — interim §12.4, ~13→~6 MB/day), GH-plane `score_matured` (long-horizon forecasts on expansion names mature where full history lives; artifacts now committed by `market_data.yml`), 5:00 AM ET early cron. | **Zero behavior change until the operator sets the Actions variable** — the flip is a config change, not a deploy. |
+| `feat(heartbeat/digest)` **missed-week dead-man's switch** — Friday's heartbeat alerts when an ISO week has no rebalance claim/execution; the weekly digest reports the week's rebalance status. | A silently un-rebalanced week is the new silent-failure class the weekly cadence introduces; silence must page (§15.3). |
+
+> **QA:** full `pytest` green (**667**, +75 — gate mode routing incl. catch-up/claim-only/legacy-envelope/holiday edges, ISO-week stamp mirroring, risk_watch triggers + envelope + interlock, tax-aware hold, crisis safe-mode, heartbeat missed-week, Stage D slim/carry-forward/price-vintage, dossier→prompt injection; the policy-parity oracle now asserts the v2.0 OPERATIVE baseline). Multi-angle code review run with remediation (3 findings fixed pre-merge: GH-plane scorecard artifacts were not committed by `market_data.yml`; `reconcile.py --apply` bypassed the week-lock mirror; `git add last_rebalance.json` would fail pre-first-Wednesday → placeholder committed). A weekend dry-run of `main.py` is impossible before Monday (needs a fresh weekday snapshot + dossier); mitigated by the fail-safe gate ordering — the worst first-week failure is a SKIPPED day, never a bad trade. **Deferred:** the full §12.4 storage split (dossier-only commit + Supabase raw history) and Phase 6 (exit-logic prompt rewrite, invalidation-gated `recommended_action`).
 
 ## Changelog — Jul 3 2026 (Phase 4 inc 2/3 + Phase 5 Stage A + Stage-C readiness gate)
 

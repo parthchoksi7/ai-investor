@@ -15,6 +15,13 @@ load_dotenv()
 POLYGON_KEY = os.getenv("POLYGON_API_KEY")
 FUNDAMENTALS_CACHE = "fundamentals_cache.json"
 PROVIDER_CACHE = "provider_cache.json"   # provider enrichment (#1), alternate-day 50/50 cache
+# Stage D: rolling raw-history store (gitignored; persisted across GH Actions runs via
+# actions/cache). Doubles as (a) the crash-resume checkpoint — a fetch that dies at
+# ticker 250 resumes there on the next cron attempt instead of refetching 0–249 — and
+# (b) the ≤N-day carry-forward source for names whose fetch failed today (stamped
+# stale via price_as_of_by_ticker so nothing downstream mistakes them for fresh).
+RAW_HISTORY_STORE = "raw_history_store.json"
+CARRY_FORWARD_MAX_DAYS = 5   # a store entry older than this is dropped, not carried
 
 # The trading/scoring universe is owned by universe.py (single source of truth), so
 # the coverage gate + fetch cursor can reason about it without importing this module.
@@ -90,17 +97,30 @@ def get_extended_history(ticker: str, days: int = 210) -> list[dict]:
         # adjusted=true EXPLICITLY (not left to the API default): an unadjusted split
         # reads as a ~-50% one-day crash and poisons momentum/vol for that name (P0-3).
         params = {"apiKey": POLYGON_KEY, "sort": "asc", "limit": days, "adjusted": "true"}
-        try:
-            r = requests.get(url, params=params, timeout=10)
-            results = r.json().get("results", [])
-            if results:
-                return [
-                    {"date": res["t"], "open": res["o"], "high": res["h"],
-                     "low": res["l"], "close": res["c"], "volume": res["v"]}
-                    for res in results
-                ]
-        except Exception as e:
-            print(f"   ⚠ Polygon history failed for {ticker}: {e}")
+        # Stage D: back off + retry on a 429 instead of silently falling through to
+        # yfinance (which now 401s) — under an expanded universe a rate-limit burst
+        # mid-sweep must degrade to "slower", not "ticker silently missing".
+        for attempt in range(3):
+            try:
+                r = requests.get(url, params=params, timeout=10)
+                if r.status_code == 429:
+                    import time as _time
+                    wait = 15 * (attempt + 1)
+                    print(f"   ⏳ Polygon 429 for {ticker} — backing off {wait}s "
+                          f"(attempt {attempt + 1}/3)")
+                    _time.sleep(wait)
+                    continue
+                results = r.json().get("results", [])
+                if results:
+                    return [
+                        {"date": res["t"], "open": res["o"], "high": res["h"],
+                         "low": res["l"], "close": res["c"], "volume": res["v"]}
+                        for res in results
+                    ]
+                break
+            except Exception as e:
+                print(f"   ⚠ Polygon history failed for {ticker}: {e}")
+                break
 
     return _history_yfinance(ticker, days)
 
@@ -377,6 +397,93 @@ def _enrich_with_provider(all_tickers: list, fundamentals: dict, today=None):
     return earnings_calendar, data_quality
 
 
+# ── Stage D: expansion-aware universe + crash-resumable fetch store ───────────
+
+def _held_tickers() -> set[str]:
+    """Current position tickers — always fetched at FULL depth every day (§11.3:
+    'held names every day'). Union of the committed mcp_portfolio.json (yesterday's
+    broker truth in GH Actions) and the journal's open entries — either alone can
+    lag a same-week entry/exit."""
+    held: set[str] = set()
+    try:
+        if os.path.isfile("mcp_portfolio.json"):
+            with open("mcp_portfolio.json") as f:
+                for p in (json.load(f).get("positions") or []):
+                    if p.get("symbol"):
+                        held.add(p["symbol"])
+    except Exception:
+        pass
+    try:
+        if os.path.isfile("decision_journal.json"):
+            with open("decision_journal.json") as f:
+                journal = json.load(f)
+            if isinstance(journal, list):
+                held |= {e.get("ticker") for e in journal
+                         if e.get("status") == "open" and e.get("ticker")}
+    except Exception:
+        pass
+    return held
+
+
+def _prior_coverage_ok() -> bool:
+    """Yesterday's fundamental-coverage verdict, from the previously-committed
+    snapshot's data_quality block. The expansion gate (universe.get_active_universe)
+    needs a coverage signal BEFORE today's enrichment has run — the prior day's is
+    the honest available one. Missing/unreadable → False (expansion stays closed)."""
+    try:
+        with open("market_snapshot.json") as f:
+            return bool((json.load(f).get("data_quality") or {}).get("coverage_ok"))
+    except Exception:
+        return False
+
+
+def _load_history_store() -> dict:
+    try:
+        if os.path.isfile(RAW_HISTORY_STORE):
+            with open(RAW_HISTORY_STORE) as f:
+                d = json.load(f)
+            if isinstance(d, dict):
+                return d
+    except Exception:
+        pass
+    return {}
+
+
+def _save_history_store(store: dict) -> None:
+    tmp = RAW_HISTORY_STORE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(store, f)
+    os.replace(tmp, RAW_HISTORY_STORE)
+
+
+def slim_snapshot_for_commit(snapshot: dict, keep_full: set[str],
+                             tail_bars: int = 63) -> dict:
+    """Interim §12.4 storage split: shrink the COMMITTED snapshot when the universe
+    is expanded, keeping git bloat bounded.
+
+    Names in `keep_full` (core universe + held positions + benchmarks) keep their
+    full 210-bar history — the cloud pipeline's quant/correlation spine is
+    unchanged for them. Expansion names keep only the last `tail_bars` bars: enough
+    for the ≥22-bar gate, prices, and short momentum; their FULL-depth factors ride
+    in factor_history + the dossier (computed in GH Actions on the full in-memory
+    snapshot BEFORE this slim runs). `history_tail_tickers` tells the cloud which
+    depths are intentional so the health check doesn't flag them as degraded data.
+    Returns a new dict; the input is not mutated."""
+    out = dict(snapshot)
+    history = snapshot.get("history") or {}
+    tails: list[str] = []
+    new_hist: dict = {}
+    for t, bars in history.items():
+        if t in keep_full or len(bars) <= tail_bars:
+            new_hist[t] = bars
+        else:
+            new_hist[t] = bars[-tail_bars:]
+            tails.append(t)
+    out["history"] = new_hist
+    out["history_tail_tickers"] = sorted(tails)
+    return out
+
+
 def get_market_snapshot(force: bool = False) -> dict:
     """
     Full market snapshot:
@@ -422,19 +529,62 @@ def get_market_snapshot(force: bool = False) -> dict:
         except Exception:
             pass  # fall through to Polygon fetch
 
-    # Fetch news FIRST to guarantee it gets a fresh rate-limit budget (free tier: 5 calls/min).
-    # The history loop burns the Polygon budget immediately via 429s; fetching news afterward
-    # risks missing the reset window. News + 4 ticker-specific calls = 5 total Polygon calls.
+    # Fetch news FIRST to guarantee it gets a fresh rate-limit budget window.
+    # News + 4 ticker-specific calls ride ahead of the (much longer) history sweep.
     articles = get_news_summary()  # 1 Polygon call
 
-    all_tickers = list(set(WATCHLIST) | set(SP500_HOLDINGS.keys()))
+    # Stage D: the active universe is DYNAMIC — core (~100) always; the ~400-name
+    # expansion only when the operator flag is set AND yesterday's fundamental
+    # coverage cleared the IPS 80% floor (universe.get_active_universe). Held
+    # positions are always fetched at full depth regardless of universe membership.
+    from universe import get_active_universe, CORE_UNIVERSE
+    held = _held_tickers()
+    active = get_active_universe(coverage_ok=_prior_coverage_ok())
+    expanded = len(active) > len(CORE_UNIVERSE)
+    all_tickers = sorted(set(active) | set(SP500_HOLDINGS.keys()) | held)
+    if expanded:
+        print(f"   🌐 EXPANDED universe active: {len(all_tickers)} tickers "
+              f"(core {len(CORE_UNIVERSE)}, held {len(held)})")
+
     prices:  dict = {}
     history: dict = {}
+    price_as_of_by_ticker: dict = {}
 
-    for ticker in all_tickers:
-        hist = get_extended_history(ticker, days=210)
-        if not hist:
+    # Crash-resumable sweep over the rolling store: entries already fetched TODAY
+    # are skipped (a mid-sweep crash resumes, never refetches); a name whose fetch
+    # fails today carries forward from the store for ≤ CARRY_FORWARD_MAX_DAYS with
+    # its true price_as_of stamped (P0-1) — beyond that it drops out and counts
+    # against the §15.2 universe-fetched floor rather than going silently stale.
+    store = _load_history_store() if force else {}
+    fetched = failed = carried = 0
+    for i, ticker in enumerate(all_tickers):
+        entry = store.get(ticker)
+        if not (isinstance(entry, dict) and entry.get("date") == today_str
+                and entry.get("history")):
+            hist = get_extended_history(ticker, days=210)
+            if hist:
+                store[ticker] = {"date": today_str, "history": hist}
+                fetched += 1
+            else:
+                failed += 1
+            if force and fetched and fetched % 25 == 0:
+                _save_history_store(store)   # checkpoint — crash resumes here
+
+        entry = store.get(ticker)
+        if not (isinstance(entry, dict) and entry.get("history")):
             continue
+        entry_date = str(entry.get("date") or "")
+        if entry_date != today_str:
+            try:
+                age = (date.fromisoformat(today_str) - date.fromisoformat(entry_date)).days
+            except ValueError:
+                continue
+            if age > CARRY_FORWARD_MAX_DAYS:
+                continue                      # too stale to carry — let the floor catch it
+            price_as_of_by_ticker[ticker] = entry_date
+            carried += 1
+
+        hist = entry["history"]
         history[ticker] = hist
         curr = hist[-1]
         prev = hist[-2] if len(hist) >= 2 else None
@@ -451,6 +601,11 @@ def get_market_snapshot(force: bool = False) -> dict:
             "volume":     curr["volume"],
             "change_pct": change_pct,
         }
+    if force:
+        _save_history_store(store)
+    if failed or carried:
+        print(f"   ⚠ history sweep: {fetched} fetched, {failed} failed, "
+              f"{carried} carried forward (≤{CARRY_FORWARD_MAX_DAYS}d, price_as_of stamped)")
 
     fundamentals = get_all_fundamentals(all_tickers)
 
@@ -538,6 +693,11 @@ def get_market_snapshot(force: bool = False) -> dict:
         "fetched_at":       datetime.now(timezone.utc).isoformat(),
         "_source":          source,
         "_data_date":       data_date,
+        # Stage D: per-ticker price vintage for carried-forward names (P0-1). Empty
+        # when every price is from today's sweep. build_dossier stamps these onto
+        # the per-ticker records; the routine re-quotes any stale-priced order.
+        "price_as_of_by_ticker": price_as_of_by_ticker,
+        "universe_expanded": expanded,
         "prices":           prices,
         "history":          history,
         "fundamentals":     fundamentals,

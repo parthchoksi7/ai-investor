@@ -291,6 +291,18 @@ def _apply_safe_remediation(report: dict, pending: dict, pending_path: str) -> b
         return False
     with open(pending_path, "w") as f:
         json.dump(pending, f, indent=2)
+    # Phase 5: keep the once-per-ISO-week rebalance lock (last_rebalance.json) in
+    # sync with the remediated envelope. ALL_FILLED → the mirror gains executed_at
+    # (the week is genuinely done); NONE_FILLED → the mirror's claim clears too, so
+    # the same-day retry / Thu-Fri catch-up can re-run the rebalance — reconcile
+    # PROVED via live broker positions that zero orders landed, which is exactly
+    # the one case where re-running is safe. risk_watch envelopes are ignored by
+    # the mirror. Best-effort: a mirror failure must never undo the remediation.
+    try:
+        from journal import _mirror_rebalance_stamp
+        _mirror_rebalance_stamp(pending)
+    except Exception as e:
+        print(f"   ⚠ last_rebalance.json mirror sync failed (non-fatal): {e}")
     return True
 
 

@@ -54,3 +54,12 @@ def is_trading_day(d: "str | date | datetime") -> bool:
 def today_et() -> date:
     """Today's date in US/Eastern — the market-day date the pipeline keys on."""
     return datetime.now(ET).date()
+
+
+def iso_week_of(d: "str | date | datetime") -> str:
+    """ISO week key ('2026-W28') for a date. The once-per-ISO-week rebalance lock
+    (Phase 5, §6.5) keys on this — the gate, journal stamp, risk_watch interlock,
+    and heartbeat missed-week check must all derive the week from ONE function or
+    they can disagree at a year boundary (ISO week 1 can start in December)."""
+    iso = _to_date(d).isocalendar()
+    return f"{iso[0]}-W{iso[1]:02d}"

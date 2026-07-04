@@ -466,6 +466,73 @@ def _fmt_recently_exited(recently_exited: dict | None) -> str:
     return "\n".join(lines)
 
 
+def _fmt_dossier_record(rec: dict | None) -> str:
+    """Compact research-dossier block for the per-ticker agents (Phase 5 Stage C).
+
+    The dossier is the single synthesis point (§11.3) — persistence, deduped
+    material events, as-of-dated fundamentals with honest vintage. Feed the
+    DERIVED digest, never raw bars (§13.2: raw history to an LLM is net-negative)."""
+    if not rec:
+        return ""
+    lines = ["RESEARCH DOSSIER (as-of-dated synthesis; events are leads, not verified facts):"]
+    p = rec.get("persistence") or {}
+    if p.get("composite_7d_mean") is not None:
+        rank = p.get("rank_chg_7d")
+        rank_s = f" | rank_chg_7d={rank:+d}" if isinstance(rank, int) else ""
+        lines.append(f"  Factor persistence: composite 7d mean={p.get('composite_7d_mean')} "
+                     f"±{p.get('composite_7d_std')}{rank_s}")
+    h = rec.get("history_summary") or {}
+    if any(v is not None for v in h.values()):
+        def _pct(v):
+            return f"{v:+.1%}" if isinstance(v, (int, float)) else "?"
+        lines.append(f"  Returns: 21d={_pct(h.get('ret_21d'))} 63d={_pct(h.get('ret_63d'))} "
+                     f"126d={_pct(h.get('ret_126d'))} | max_dd_126d={_pct(h.get('max_dd_126d'))}")
+    f = rec.get("fundamentals") or {}
+    dq = rec.get("data_quality") or {}
+    if f:
+        age = dq.get("fundamentals_age_days")
+        age_s = (f"{age}d old" if isinstance(age, (int, float)) else "vintage unknown")
+        stale_s = " ⚠ STALE" if dq.get("fundamentals_stale") else ""
+        vals = ", ".join(f"{k}={v}" for k, v in f.items()
+                         if not k.startswith("_") and isinstance(v, (int, float)))
+        if vals:
+            lines.append(f"  Fundamentals ({age_s}{stale_s}): {vals}")
+    ev = rec.get("events") or []
+    if ev:
+        lines.append("  Material events (deduped, most recent first):")
+        for e in ev[:4]:
+            lines.append(f"    - [{e.get('date', '?')}] {e.get('type', '?')}: "
+                         f"{(e.get('summary') or '')[:140]}")
+    earn = rec.get("earnings") or {}
+    if earn.get("next_date"):
+        imm = " ⚠ IMMINENT" if earn.get("imminent") else ""
+        lines.append(f"  Next earnings: {earn['next_date']} "
+                     f"({earn.get('days_until', '?')}d away){imm}")
+    return "\n".join(lines) if len(lines) > 1 else ""
+
+
+def _fmt_since_entry(rec: dict | None) -> str:
+    """Entry-anchor block for the Position Review agent (§13.3): the sell question
+    is ALWAYS entry-vs-now, never last-week-vs-now."""
+    if not rec:
+        return ""
+    ld, se = rec.get("last_decision"), rec.get("since_entry")
+    if not ld and not se:
+        return ""
+    lines = ["ENTRY ANCHOR (dossier — judge the position against THIS, not last week):"]
+    if ld:
+        lines.append(f"  Last decision: {ld.get('action', '?')} on {ld.get('date', '?')} "
+                     f"(confidence {ld.get('confidence', '?')}/10)")
+        if ld.get("thesis"):
+            lines.append(f"  Entry thesis: {str(ld['thesis'])[:160]}")
+    if se:
+        cum = se.get("cum_return")
+        cum_s = f"{cum:+.1%}" if isinstance(cum, (int, float)) else "?"
+        lines.append(f"  Since entry: {cum_s} over {se.get('days_since_entry', '?')}d "
+                     f"(entry ${se.get('entry_price', '?')} → now ${se.get('current_price', '?')})")
+    return "\n".join(lines)
+
+
 def _ticker_news(ticker: str, market_data: dict, limit: int = 5) -> str:
     """Return formatted news for a ticker: per-ticker feed first, global feed as fallback."""
     specific = market_data.get("ticker_news", {}).get(ticker, [])
@@ -553,18 +620,20 @@ Output JSON:
 # ── Agent 2: Research Analyst ─────────────────────────────────────────────────
 
 def run_research_analyst(ticker: str, market_data: dict, quant_scores: dict,
-                         ticker_history: list[dict] | None = None) -> dict:
+                         ticker_history: list[dict] | None = None,
+                         dossier_rec: dict | None = None) -> dict:
     data   = market_data["prices"].get(ticker) or market_data.get("news_discovered", {}).get(ticker, {})
     scores = quant_scores.get(ticker, {})
     news = _ticker_news(ticker, market_data)
     history_block = _fmt_ticker_history(ticker_history)
+    dossier_block = _fmt_dossier_record(dossier_rec)
 
     user_msg = f"""\
 TICKER: {ticker}
 Price: ${data.get('close', 'N/A')} ({data.get('change_pct', 0):+.2f}%)
 
 QUANT: {_fmt_scores(scores)}
-
+{(chr(10) + dossier_block) if dossier_block else ''}
 NEWS:
 {news}
 {(chr(10) + history_block) if history_block else ''}
@@ -742,6 +811,7 @@ def run_position_review_analyst(
     quant_scores: dict,
     research: dict | None,
     prior_journal_entry: dict | None = None,
+    dossier_rec: dict | None = None,
 ) -> dict:
     ticker = holding["symbol"]
     scores = quant_scores.get(ticker, {})
@@ -765,6 +835,10 @@ def run_position_review_analyst(
             + "\n".join(f"    - {c}" for c in invalidates)
         )
 
+    # Entry anchor + dossier synthesis (§13.3): the review question is entry-vs-now.
+    anchor_block  = _fmt_since_entry(dossier_rec)
+    dossier_block = _fmt_dossier_record(dossier_rec)
+
     user_msg = f"""\
 POSITION: {ticker}
   Shares: {holding['qty']} @ avg ${holding['avg_price']:.2f} | Current: ${data.get('close', '?')} | P&L: {pnl_pct:+.1f}%
@@ -772,7 +846,8 @@ POSITION: {ticker}
 QUANT: {_fmt_scores(scores)}
 {thesis_block}
 {prior_block}
-
+{(chr(10) + anchor_block) if anchor_block else ''}
+{(chr(10) + dossier_block) if dossier_block else ''}
 NEWS:
 {_ticker_news(ticker, market_data, limit=3)}
 
@@ -807,6 +882,7 @@ def run_portfolio_manager(
     trade_history: list | None,
     date: str = "",
     recently_exited: dict | None = None,
+    dossier: dict | None = None,
 ) -> tuple[list[dict], dict]:
     total = portfolio["total_value"]
     cash  = portfolio["cash"]
@@ -875,6 +951,24 @@ def run_portfolio_manager(
 
     reentry_block = _fmt_recently_exited(recently_exited)
 
+    # Dossier persistence signals for the researched names (Phase 5 Stage C) — a
+    # stable composite over the week is a different animal from a one-day pop.
+    dossier_lines = []
+    for t in research_map:
+        rec = (dossier or {}).get("tickers", {}).get(t) or {}
+        p = rec.get("persistence") or {}
+        if p.get("composite_7d_mean") is None:
+            continue
+        rank = p.get("rank_chg_7d")
+        rank_s = f" rank_chg_7d={rank:+d}" if isinstance(rank, int) else ""
+        ev_n = len(rec.get("events") or [])
+        dossier_lines.append(f"  {t}: persist_7d={p.get('composite_7d_mean')}"
+                             f"±{p.get('composite_7d_std')}{rank_s}"
+                             f"{f' events={ev_n}' if ev_n else ''}")
+    dossier_block = ("DOSSIER SIGNALS (7-day factor persistence — prefer stable "
+                     "signals over one-day pops):\n" + "\n".join(dossier_lines)
+                     ) if dossier_lines else ""
+
     user_msg = f"""\
 Date: {date}
 
@@ -888,7 +982,7 @@ CURRENT PORTFOLIO:
 
 QUANT SCORES (top candidates):
 {chr(10).join(quant_lines)}
-
+{(dossier_block + chr(10)) if dossier_block else ''}
 RESEARCH & DEVIL'S ADVOCATE:
 {''.join(research_lines)}
 
@@ -904,6 +998,12 @@ SECTOR ALLOCATION (25% hard cap per sector — enforced by risk controls):
 CONSTRAINTS:
   Holdings target: 8–15 | Max position: 10% | Max sector: 25% | Cash: 0–10%
   Hard-blocked (NEVER propose): TSLA
+  HORIZON DISCIPLINE (weekly cadence, 9–12 month horizon): you decide ONCE A WEEK.
+  Default is HOLD — a SELL needs a broken thesis or a real measured change, never
+  a one-day re-rank. A discretionary SELL of a name held < 30 trading days will be
+  REJECTED by the turnover guard. TAX-AWARE HOLD: a gained position within ~30
+  trading days of its 1-year date is taxed ~54% if sold now vs ~37% after — prefer
+  HOLD across the boundary (a guard enforces this; risk exits are exempt).
 
 OUTPUT FORMAT — CRITICAL FOR PARSING:
 Return ONLY a JSON array — no prose, no reasoning, no markdown, nothing before or
@@ -920,9 +1020,9 @@ verbose rationale loses the whole trade list. Each element:
   "expected_return": 0.05,
   "rationale": "max 10 words"
 }}
-expected_return = honest, conservative GROSS return estimate over the 1–3 month
-horizon as a decimal (0.05 = +5%); a downstream gate rejects BUYs not worth it
-after ~54% CA short-term tax + trading cost."""
+expected_return = honest, conservative GROSS return estimate over the 3–12 month
+holding horizon as a decimal (0.05 = +5%); a downstream gate rejects BUYs not
+worth it after ~54% CA short-term tax + trading cost."""
 
     return _safe_call(
         MODEL_SMART, _PM_SYSTEM, user_msg,
@@ -1043,6 +1143,7 @@ def get_trade_decisions(
     prior_journal: dict | None = None,
     ticker_history: dict | None = None,
     recently_exited: dict | None = None,
+    dossier: dict | None = None,
 ) -> tuple[list[dict], dict]:
     """
     Run the full 7-agent pipeline.
@@ -1051,10 +1152,15 @@ def get_trade_decisions(
         new/re-entered thesis sees how prior calls on that name resolved.
     recently_exited: {ticker: closed entry} fed to the Portfolio Manager as a
         re-entry warning (churn guard).
+    dossier: research_dossier.json (Phase 5 Stage C — the §11.3 synthesis). Its
+        per-ticker records enrich the Research / Position Review / PM prompts
+        (persistence, events, as-of-dated fundamentals, entry anchors). None →
+        agents run on quant + news alone (pre-Stage-C behavior, kept for tests).
     Returns (decisions, pipeline_state) where pipeline_state is the full paper trail
     of every agent's output for this run.
     """
     market_data_date = market_data.get("date", "")
+    dossier_recs = (dossier or {}).get("tickers", {}) or {}
 
     # ── 1. Market Regime ──────────────────────────────────────────────────────
     print("   [1/7] Market Regime Strategist...")
@@ -1073,7 +1179,8 @@ def get_trade_decisions(
     earnings_map: dict = {}
     with ThreadPoolExecutor(max_workers=_WORKERS * 2) as _pool:
         r_futs = {_pool.submit(run_research_analyst, t, market_data, quant_scores,
-                               (ticker_history or {}).get(t)): t for t in candidates}
+                               (ticker_history or {}).get(t),
+                               dossier_recs.get(t)): t for t in candidates}
         e_futs = {_pool.submit(run_earnings_catalyst_analyst, t, market_data): t for t in candidates}
         for fut in as_completed(list(r_futs) + list(e_futs)):
             if fut in r_futs:
@@ -1105,6 +1212,7 @@ def get_trade_decisions(
                     h, market_data, quant_scores,
                     research_map.get(h["symbol"]),
                     (prior_journal or {}).get(h["symbol"]),
+                    dossier_recs.get(h["symbol"]),
                 ): h["symbol"]
                 for h in holdings
             }
@@ -1124,6 +1232,7 @@ def get_trade_decisions(
         position_reviews, quant_scores, portfolio, trade_history,
         date=market_data_date,
         recently_exited=recently_exited,
+        dossier=dossier,
     )
     # Surface whether an empty decision list is a GENUINE no-trade or a parse
     # failure (see _safe_call return_meta). Logged into agent_log + used by the

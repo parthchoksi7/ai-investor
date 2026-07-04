@@ -118,6 +118,23 @@ def render_markdown(d: dict) -> str:
         lines.append("## ✅ No degraded/aborted data-quality days this window")
     lines.append("")
 
+    # Weekly rebalance status (Phase 5, §6.5) — did this ISO week get its rebalance?
+    try:
+        from market_calendar import iso_week_of
+        lr = json.loads(Path("last_rebalance.json").read_text())
+        this_week = iso_week_of(d["as_of"])
+        if lr.get("iso_week") == this_week and (lr.get("executed_at") or lr.get("execution_started_at")):
+            state = "✅ executed" if lr.get("executed_at") else "⚠ CLAIMED but never stamped (Scenario B?)"
+            lines.append(f"## Weekly rebalance ({this_week}): {state} "
+                         f"on {lr.get('date')} — {len(lr.get('tickers', []))} ticker(s) traded")
+        else:
+            lines.append(f"## 🚨 Weekly rebalance ({this_week}): NONE recorded "
+                         f"(last: {lr.get('iso_week')} on {lr.get('date')}) — "
+                         "the heartbeat's Friday check should have alerted")
+        lines.append("")
+    except Exception:
+        pass  # pre-Phase-5 history or no rebalance yet — nothing to report
+
     # Stage C readiness — is the evidence clock decidable yet? (surfaced so the go/no-go
     # is watched passively, not by eyeballing agent_scorecards.json.)
     try:

@@ -1,25 +1,30 @@
 # policy.yaml — operative single source of truth for the deterministic guards.
 #
 # Machine mirror of IPS.md Appendix A, in CODE-NATIVE units (fractions / ints /
-# USD). Loaded by policy.py; consumed by guardrails.py + execute.py. This is the
-# ONLY place a deterministic limit is defined — code reads it here, not hard-coded.
+# USD). Loaded by policy.py; consumed by guardrails.py + execute.py + preflight_gate
+# + risk_watch. This is the ONLY place a deterministic limit is defined — code reads
+# it here, not hard-coded.
 #
 # ─────────────────────────────────────────────────────────────────────────────
 # IMPORTANT — policy.yaml is the CURRENTLY-DEPLOYED policy; IPS.md Appendix A is
 # the TARGET mandate. Where they differ, the delta is a tracked migration applied
-# in a later rollout phase via §18.4 change-control (each bumps policy_version).
-# The Phase 0 values below are the historical guardrails.py / execute.py constants
-# verbatim — ZERO behavior change. Parity is asserted by TestPolicyParity.
+# via §18.4 change-control (each bumps policy_version).
 #
-# PENDING IPS MIGRATIONS (do NOT apply in Phase 0 — tracked in IMPLEMENTATION_PLAN.md):
-#   min_holding_trading_days : 5  → 30    (IPS §7.2; apply Phase 6, exit logic)
-#   single_name_stop_pct     : —  → 0.25  (IPS §7.6/§9; ADD in Phase 5, risk_watch)
-#   universe size            : 100 → 400  (IPS §5; apply Phase 2, gated on coverage)
+# v2.0 (Phase 5 — weekly cadence + risk_watch, applied 2026-07-04, owner-directed):
+#   min_holding_trading_days : 5  → 30    (IPS §7.2 — 9–12mo horizon; risk exits exempt)
+#   single_name_stop_pct     : —  → 0.25  (IPS §7.6/§9 — catastrophe brake, from entry,
+#                                          daily close, no trailing; risk_watch trigger)
+#   rebalance_weekday        : —  → 2     (IPS trading.rebalance_weekday — Wednesday;
+#                                          Thu/Fri catch-up in preflight_gate)
+#   tax_aware_hold_window_trading_days: — → 30 (IPS §7.5 — prefer HOLD on a gained
+#                                          position near its 1-year LT-tax boundary)
+#   safe_mode_index_drop_pct : —  → 7     (IPS §9 / plan §18.5 — market-wide crisis
+#                                          safe-mode: halt BUYs on an index drop ≥ 7%)
+#   NOTE: universe size 100 → 400 remains gated on UNIVERSE_EXPANDED + coverage
+#   (universe.get_active_universe) — the flag, not this file, is the switch.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# v1.1 (Phase 2): + data_quality.price_outlier_pct (detection-only; NO guardrail
-# behavior change — all guardrail values remain the Phase 0 parity baseline).
-policy_version: "1.1-phase2-dataquality"
+policy_version: "2.0-phase5-weekly"
 
 guardrails:
   max_target_weight:        0.10   # IPS max_position_pct (10%) — clamp + qty recompute
@@ -27,15 +32,26 @@ guardrails:
   min_order_notional:       5.00   # USD floor — kills sub-$5 broker rejects / churn
   gfv_window_trading_days:  2      # good-faith-violation guard (cash account)
   max_sector_weight:        0.25   # IPS max_sector_pct (25%)
-  min_holding_trading_days: 5      # CURRENT (IPS target 30 — Phase 6 migration)
+  min_holding_trading_days: 30     # IPS §7.2 (v2.0 migration; was 5) — risk exits exempt
   wash_sale_reentry_days:   30     # IPS §7.3 — no re-BUY of a name sold < 30 calendar days
   min_net_edge:             0.0    # USD — a BUY's expected edge must clear cost + CA ST tax
+  tax_aware_hold_window_trading_days: 30  # IPS §7.5 — gained lot within ~30 trading days
+                                          # of its 1-year date: block discretionary SELL
+
+trading:
+  rebalance_weekday: 2             # 0=Mon … 2=Wed … 4=Fri; Thu/Fri catch-up (§6.5)
+
+risk:
+  single_name_stop_pct: 0.25       # −25% from entry (cost basis), daily close, no
+                                   # trailing — the risk_watch catastrophe brake (§6.7)
+  safe_mode_index_drop_pct: 7      # PERCENT — SPY 1-day drop ≥ this → halt all new BUYs
+                                   # (risk SELLs still allowed); plan §18.5
 
 universe:
   blocked_tickers: ["TSLA"]        # IPS §5 exclusions — never bought or sold
 
 data_quality:
   # >N% 1-day move with no known corporate action = suspect print (unhandled split
-  # or bad data) that corrupts momentum/vol. Detection-only in Phase 2 (flagged in
+  # or bad data) that corrupts momentum/vol. Detection-only (flagged in
   # data_quality); IPS Appendix A resilience.price_outlier_quarantine_pct.
   price_outlier_pct: 35
