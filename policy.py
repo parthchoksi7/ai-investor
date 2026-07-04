@@ -23,19 +23,27 @@ from __future__ import annotations
 
 import os
 
-# _DEFAULTS — the historical guardrails.py / execute.py constants, verbatim. These
-# are the PARITY BASELINE: if policy.yaml cannot be loaded, the system behaves
-# exactly as it did before Phase 0.
+# _DEFAULTS — the OPERATIVE policy values (v2.0 Phase-5 baseline). If policy.yaml
+# cannot be loaded, the system behaves per the deployed policy — a YAML load failure
+# must never silently ROLL BACK a governed migration (e.g. revert the 30-day
+# min-hold to 5, or lose the rebalance weekday). Phase 0 seeded these with the
+# historical constants; each §18.4 migration updates BOTH policy.yaml and this
+# baseline together (TestPolicyParity asserts they stay identical).
 _DEFAULTS: dict = {
-    "policy_version":           "0.0-builtin-defaults",
+    "policy_version":           "2.0-builtin-defaults",
     "max_target_weight":        0.10,
     "max_buy_notional_pct":     0.12,
     "min_order_notional":       5.00,
     "gfv_window_trading_days":  2,
     "max_sector_weight":        0.25,
-    "min_holding_trading_days": 5,
+    "min_holding_trading_days": 30,     # v2.0 migration (was 5) — IPS §7.2
     "wash_sale_reentry_days":   30,
     "min_net_edge":             0.0,
+    # v2.0 (Phase 5) additions — weekly cadence + risk_watch + tax-aware hold:
+    "tax_aware_hold_window_trading_days": 30,   # IPS §7.5
+    "rebalance_weekday":        2,              # Wednesday (0=Mon); Thu/Fri catch-up
+    "single_name_stop_pct":     0.25,           # −25% from cost basis (risk_watch, §6.7)
+    "safe_mode_index_drop_pct": 7,              # PERCENT — SPY 1-day drop halts BUYs (§18.5)
     "blocked_tickers":          ["TSLA"],
     # data-quality: 1-day move > this PERCENT with no corporate action = suspect print
     "price_outlier_pct":        35,
@@ -58,6 +66,9 @@ _VALIDATORS = {
     "max_target_weight":        lambda v: _is_num(v) and 0 < v <= 1,
     "max_buy_notional_pct":     lambda v: _is_num(v) and 0 < v <= 1,
     "max_sector_weight":        lambda v: _is_num(v) and 0 < v <= 1,
+    # stop-loss depth — a FRACTION of entry price in (0, 1); `single_name_stop_pct: 25`
+    # (the IPS percent form) must be rejected, not read as a 2500% stop that never fires
+    "single_name_stop_pct":     lambda v: _is_num(v) and 0 < v < 1,
     # USD floors — non-negative
     "min_order_notional":       lambda v: _is_num(v) and v >= 0,
     "min_net_edge":             lambda v: _is_num(v) and v >= 0,
@@ -65,10 +76,22 @@ _VALIDATORS = {
     "gfv_window_trading_days":  lambda v: _is_int(v) and v >= 0,
     "min_holding_trading_days": lambda v: _is_int(v) and v >= 0,
     "wash_sale_reentry_days":   lambda v: _is_int(v) and v >= 0,
-    # PERCENT (1..100) — a fraction typo (0.35) or an absurd value is rejected
+    "tax_aware_hold_window_trading_days": lambda v: _is_int(v) and v >= 0,
+    # weekday index — Mon..Fri only (a weekend rebalance day would silently never fire)
+    "rebalance_weekday":        lambda v: _is_int(v) and 0 <= v <= 4,
+    # PERCENT (1..100) — a fraction typo (0.35 / 0.07) or an absurd value is rejected
     "price_outlier_pct":        lambda v: _is_num(v) and 1 <= v <= 100,
+    "safe_mode_index_drop_pct": lambda v: _is_num(v) and 1 <= v <= 50,
 }
 _GUARDRAIL_KEYS = tuple(k for k in _VALIDATORS if k != "price_outlier_pct")
+
+# v2.0 keys that live under their own policy.yaml sections (not guardrails:).
+# Section is where the operator writes them; the loader flattens into VALUES.
+_SECTION_KEYS = {
+    "rebalance_weekday":        "trading",
+    "single_name_stop_pct":     "risk",
+    "safe_mode_index_drop_pct": "risk",
+}
 
 _POLICY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "policy.yaml")
 
@@ -90,8 +113,11 @@ def _load(path: str | None = None) -> dict:
         universe = raw.get("universe", {}) or {}
         data_quality = raw.get("data_quality", {}) or {}
         for k in _GUARDRAIL_KEYS:
-            if k in guardrails and guardrails[k] is not None:
-                v = guardrails[k]
+            # v2.0 sectioned keys (trading:/risk:) read from their section first,
+            # falling back to guardrails: so a misplaced-but-valid setting still loads.
+            section = (raw.get(_SECTION_KEYS[k], {}) or {}) if k in _SECTION_KEYS else guardrails
+            v = section.get(k, guardrails.get(k))
+            if v is not None:
                 if _VALIDATORS[k](v):
                     merged[k] = v
                 else:

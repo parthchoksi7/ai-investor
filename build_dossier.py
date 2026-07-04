@@ -221,6 +221,9 @@ def build_dossier(snapshot: dict, factor_rows: list[dict], journal: list[dict],
         # dossier with as_of=None that the freshness gate can't reason about.
         raise ValueError("build_dossier: snapshot has no _data_date/date — cannot set as_of")
     price_as_of = snapshot.get("_data_date") or snapshot.get("date")
+    # Stage D (P0-1): carried-forward names have an older per-ticker vintage — the
+    # consumer must re-quote them live rather than size on the stale slice price.
+    price_as_of_map = snapshot.get("price_as_of_by_ticker") or {}
     holdings = holdings or set()
     prices = snapshot.get("prices") or {}
     history = snapshot.get("history") or {}
@@ -251,7 +254,8 @@ def build_dossier(snapshot: dict, factor_rows: list[dict], journal: list[dict],
         fund_block, fund_age = _fundamentals_block(fundamentals.get(t), as_of)
         coverage = list(latest.get("factors_used", []))
         rec = {
-            "ticker": t, "as_of": as_of, "price_as_of": price_as_of,
+            "ticker": t, "as_of": as_of,
+            "price_as_of": price_as_of_map.get(t, price_as_of),
             "price": {"close": p.get("close"), "change_pct": p.get("change_pct")},
             "factors": {
                 "momentum": latest.get("momentum_score"),

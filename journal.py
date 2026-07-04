@@ -16,6 +16,14 @@ PEAK_FILE = "portfolio_peak.json"
 AGENT_LOG_FILE = "agent_log.json"
 TRANSACTIONS_FILE = "transactions.json"
 PENDING_FILE = "pending_decisions.json"
+# Durable once-per-ISO-week rebalance stamp (Phase 5, §6.5). pending_decisions.json
+# alone cannot carry the week lock: the daily risk_watch envelope OVERWRITES it the
+# next morning, which would erase Wednesday's executed_at and let a Thu/Fri catch-up
+# re-run the whole rebalance (the §6.5 double-execution vector, cross-day variant).
+# So the claim/executed stamps mirror rebalance-mode runs here; the preflight gate
+# reads BOTH (pending first, this as the durable fallback). Committed to main by the
+# routine like every other envelope artifact.
+LAST_REBALANCE_FILE = "last_rebalance.json"
 KILL_DRAWDOWN_THRESHOLD = 0.20
 
 
@@ -340,6 +348,38 @@ def mark_transactions_live(run_id: str, fills: dict | None = None,
             append_check("reconciliation", OK, filled=sorted(fills))
 
 
+def _mirror_rebalance_stamp(pending: dict) -> None:
+    """Mirror a REBALANCE-mode envelope's claim/executed stamps into
+    last_rebalance.json — the durable once-per-ISO-week lock (§6.5).
+
+    Only rebalance runs are mirrored (a missing `mode` = a legacy/daily-era
+    envelope = rebalance semantics). risk_watch envelopes never touch this file,
+    so the week lock survives their daily overwrite of pending_decisions.json.
+    `tickers` feeds the cross-mode SELL interlock: risk_watch must not SELL a
+    name the rebalance already traded this ISO week (§6.5.3).
+
+    A claim WITHOUT executed_at still counts as "rebalance attempted this week"
+    — orders may exist (Scenario B), so a Thu/Fri catch-up must not re-run.
+    """
+    if pending.get("mode", "rebalance") != "rebalance":
+        return
+    from market_calendar import iso_week_of
+    try:
+        week = iso_week_of(pending.get("date"))
+    except Exception:
+        return  # undateable envelope — cannot key a week lock; gate falls back to pending
+    _save(LAST_REBALANCE_FILE, {
+        "iso_week":             week,
+        "date":                 pending.get("date"),
+        "run_id":               pending.get("run_id"),
+        "execution_started_at": pending.get("execution_started_at"),
+        "executed_at":          pending.get("executed_at"),
+        "tickers": sorted({d.get("ticker") for d in pending.get("decisions", [])
+                           if isinstance(d, dict) and d.get("ticker")
+                           and str(d.get("action", "")).upper() in ("BUY", "SELL")}),
+    })
+
+
 def mark_execution_started(run_id: str) -> None:
     """Stamp pending_decisions.json BEFORE the first order is placed.
 
@@ -351,6 +391,9 @@ def mark_execution_started(run_id: str) -> None:
     preflight_gate and the routine's guards treat a non-null
     execution_started_at dated today exactly like executed_at: STOP — recovery
     goes through the Scenario B runbook (position diff), never blind re-execution.
+
+    Rebalance-mode claims are mirrored to last_rebalance.json so a Wednesday
+    crash-mid-execution also disables the Thu/Fri catch-up (orders may exist).
 
     Fails toward missed trades, never duplicate trades.
     """
@@ -366,11 +409,15 @@ def mark_execution_started(run_id: str) -> None:
         return  # already claimed — preserve the original claim timestamp
     pending["execution_started_at"] = datetime.now(timezone.utc).isoformat()
     _save(PENDING_FILE, pending)
+    _mirror_rebalance_stamp(pending)
     print(f"   🚩 Execution claim set (run_id={run_id}) — placing orders next")
 
 
 def mark_pending_executed(run_id: str) -> None:
-    """Stamp pending_decisions.json as executed to prevent double-execution on retry."""
+    """Stamp pending_decisions.json as executed to prevent double-execution on retry.
+
+    Rebalance-mode stamps are mirrored to last_rebalance.json — the durable
+    once-per-ISO-week lock the gate's Thu/Fri catch-up reads (§6.5)."""
     if not os.path.isfile(PENDING_FILE):
         return
     with open(PENDING_FILE) as f:
@@ -383,6 +430,7 @@ def mark_pending_executed(run_id: str) -> None:
         return  # already stamped — preserve original execution timestamp
     pending["executed_at"] = datetime.now(timezone.utc).isoformat()
     _save(PENDING_FILE, pending)
+    _mirror_rebalance_stamp(pending)
     print(f"   🔒 Execution lock set (run_id={run_id})")
 
 

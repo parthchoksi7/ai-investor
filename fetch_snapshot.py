@@ -103,6 +103,20 @@ try:
 except Exception as e:
     print(f"WARNING: event_digest failed (non-fatal, events are enrichment) — {e}")
 
+# GH-plane forecast maturation (Stage D): score matured forecasts HERE too, where the
+# full-depth history for the whole (possibly expanded) universe is in memory. The cloud
+# runs the same call, but its committed snapshot carries only 63-bar tails for expansion
+# names — long-horizon (126/189/252d) forecasts on those names can only mature on this
+# plane. score_matured is idempotent per (forecast_id, horizon), so both planes calling
+# it is safe. Observational — never fails the fetch.
+try:
+    from calibration import score_matured, agent_scorecard
+    _n = score_matured(snapshot)
+    agent_scorecard()
+    print(f"calibration: {_n} matured forecast(s) scored on the GH plane")
+except Exception as e:
+    print(f"WARNING: GH-plane forecast scoring failed — {e}")
+
 # Step 5 (§11.3) — build the per-ticker research dossier: the single synthesis point
 # that collapses the raw layer (snapshot + factor_history + fundamentals + events +
 # journal) into the small denormalized record the Wednesday agents will read. Research
@@ -113,6 +127,25 @@ try:
     print(f"build_dossier exit={rc}")
 except Exception as e:
     print(f"WARNING: build_dossier failed — {e}")
+
+# Step 6 (Stage D, interim §12.4 storage split) — slim the COMMITTED snapshot when the
+# universe is expanded: expansion names keep a 63-bar tail (enough for the ≥22-bar gate
+# + short momentum); core + held + benchmarks keep full depth. Everything above (factor
+# scoring, dossier, maturation) already ran on the FULL in-memory snapshot, and the
+# full copy still goes to Supabase below — only the git-committed file shrinks
+# (~13 MB/day → ~6 MB/day at 400 names).
+try:
+    if snapshot.get("universe_expanded"):
+        from market_data import slim_snapshot_for_commit, _held_tickers
+        from universe import CORE_UNIVERSE
+        keep_full = set(CORE_UNIVERSE) | _held_tickers() | {"SPY", "QQQ"}
+        slim = slim_snapshot_for_commit(snapshot, keep_full)
+        with open("market_snapshot.json", "w") as f:
+            json.dump(slim, f)
+        print(f"Slimmed committed snapshot: {len(slim.get('history_tail_tickers', []))} "
+              f"expansion name(s) at 63-bar tails; core+held at full depth")
+except Exception as e:
+    print(f"WARNING: snapshot slim failed (committing full snapshot) — {e}")
 
 # Also upload to Supabase for website and health_check.yml use.
 supabase_url = os.getenv("SUPABASE_URL")

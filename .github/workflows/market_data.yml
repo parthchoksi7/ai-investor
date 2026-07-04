@@ -2,10 +2,12 @@ name: Market Data Fetch
 
 on:
   schedule:
-    # Three staggered triggers (EDT = UTC-4) — GitHub silently skips scheduled runs under load;
+    # Four staggered triggers (EDT = UTC-4) — GitHub silently skips scheduled runs under load;
     # redundant entries ensure at least one fires well before the 9:45 AM ET trading routine.
-    # In winter (EST = UTC-5): update all three to '0 12', '30 12', '0 13'
-    - cron: '0 11 * * 1-5'   # 7:00 AM EDT — earliest attempt
+    # The 5:00 AM head start (Stage D) gives the expanded ~400-name sweep + enrichment room.
+    # In winter (EST = UTC-5): update to '0 10', '0 12', '0 13', '30 13'
+    - cron: '0 9  * * 1-5'   # 5:00 AM EDT — Stage D early crawl
+    - cron: '0 11 * * 1-5'   # 7:00 AM EDT — second attempt
     - cron: '0 12 * * 1-5'   # 8:00 AM EDT — primary
     - cron: '30 12 * * 1-5'  # 8:30 AM EDT — fallback
   workflow_dispatch:
@@ -34,12 +36,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Restore fundamentals + provider cache
+      - name: Restore fundamentals + provider + raw-history cache
         uses: actions/cache@v5
         with:
           path: |
             fundamentals_cache.json
             provider_cache.json
+            raw_history_store.json
+            fetch_progress.json
           key: fundamentals-v2-${{ runner.os }}-${{ github.run_number }}
           restore-keys: |
             fundamentals-v2-${{ runner.os }}-
@@ -54,6 +58,11 @@ jobs:
           # plane that can reach the Anthropic API). If unset, the digest self-skips.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           FULL_REFRESH: ${{ inputs.full_refresh || 'false' }}
+          # Stage D switch — set the repo Actions VARIABLE `UNIVERSE_EXPANDED=true`
+          # (Settings → Secrets and variables → Actions → Variables) to admit the
+          # ~400-name expansion. Also gated in code on fundamental coverage ≥ 80%
+          # (universe.get_active_universe) — the flag alone is not sufficient.
+          UNIVERSE_EXPANDED: ${{ vars.UNIVERSE_EXPANDED || 'false' }}
         run: python fetch_snapshot.py
 
       - name: Commit market_snapshot.json to repo

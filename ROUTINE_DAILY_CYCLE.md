@@ -7,12 +7,18 @@ file in sync when you change it.
 - **Schedule (cron):** `45 13,14,15,16 * * 1-5` — 9:45 / 10:45 / 11:45 / 12:45 AM **EDT**, Mon–Fri
   (initial attempt + 3 hourly retries to survive GitHub Actions scheduled-cron delay).
   - **Winter (EST, set in November):** `45 14,15,16,17 * * 1-5`. Revert in March.
+- **Phase 5 (weekly cadence):** the cron still fires every weekday, but the STEP 0 gate
+  routes the MODE: **REBALANCE** (exit 0 — Wednesdays, or Thu/Fri catch-up) runs the full
+  7-agent pipeline; **RISK-WATCH** (exit 30 — every other trading day) runs the
+  deterministic SELL-only safety net (`risk_watch.py`, no LLM, no BUYs). Both modes
+  execute through the SAME envelope/claim/stamp machinery below.
 - **No API secrets belong in this prompt.** The cloud plane can't reach Polygon or Supabase
   (both 403), so `POLYGON_API_KEY` / `SUPABASE_*` are unused here (STEP 2 explains why). The
   real Supabase write runs in GitHub Actions with the GitHub secret store. Keep the routine
   prompt secret-free; the only broker access is the Robinhood MCP connector (no creds stored).
-- The `STEP 0` gate + the `pending_decisions.json` idempotency envelope together guarantee the
-  pipeline executes **at most once per day**, only on the first attempt that sees fresh data.
+- The `STEP 0` gate + the `pending_decisions.json` idempotency envelope together guarantee
+  **at most one execution per day** and **at most one rebalance per ISO week** (the
+  `last_rebalance.json` mirror survives risk-watch's daily envelope overwrite).
   See `preflight_gate.py` and the "Daily Trading Cycle" section of `CLAUDE.md`.
 
 ---
@@ -25,16 +31,15 @@ STEP 0 — Pre-flight gate (run FIRST, on EVERY attempt)
 ═══════════════════════════════════════════════
 
 This routine fires up to 4 times each morning (9:45 / 10:45 / 11:45 / 12:45 ET) to survive
-GitHub Actions scheduled-cron delays. This gate decides whether THIS attempt should run at all.
-Running the pipeline against stale data is pointless — main.py would just abort at preflight and
-waste agent tokens. The gate is idempotent across the 4 attempts.
+GitHub Actions scheduled-cron delays. The gate decides whether THIS attempt runs at all, and
+in WHICH MODE. The gate is idempotent across the 4 attempts.
 
 OPERATE ON `main` — this is mandatory and must be the FIRST thing you do.
 This routine runs in a fresh worktree that may start on an arbitrary branch
 (e.g. `claude/…`). A bare `git push` pushes to the CURRENT branch, so if you do
 not switch to `main` first:
-  • the gate reads a STALE `pending_decisions.json` (main's, not this branch's) —
-    on a retry it sees "not executed today" and RE-RUNS the whole pipeline,
+  • the gate reads a STALE `pending_decisions.json` / `last_rebalance.json` (main's,
+    not this branch's) — on a retry it sees "not executed" and RE-RUNS the pipeline,
     which with real trades is a DOUBLE-FILL (the idempotency envelope is defeated);
   • `system_health.json` / `portfolio_snapshot.json` never reach `main`, so
     `alert.yml` (main-scoped) fires NO alert and the canonical state diverges.
@@ -49,21 +54,25 @@ python preflight_gate.py
 GATE_EXIT=$?
 
 Branch on GATE_EXIT — do not skip this:
-  • 0  (PROCEED)    → Fresh market_snapshot.json for today is present AND today's pipeline has
-                      not executed yet. Continue to STEP 1.
-  • 10 (SKIP/RETRY) → market_snapshot.json is missing or not dated today. The GitHub Actions
-                      market_data job hasn't landed fresh data yet. STOP now — do NOT fetch the
-                      portfolio, run main.py, or place any orders. The next scheduled attempt
-                      (+60 min) will re-check. If all 4 attempts see stale data, the day is
-                      intentionally skipped (no trades — correct behavior).
-  • 20 (SKIP/DONE)  → Today's pipeline already executed. STOP now — re-running would risk
-                      double-execution.
+  • 0  (PROCEED/REBALANCE)  → Wednesday (or Thu/Fri catch-up for a missed week), fresh
+                              market_snapshot.json AND fresh research_dossier.json, no
+                              rebalance attempted this ISO week. Set MODE=rebalance and
+                              continue to STEP 1.
+  • 30 (PROCEED/RISK-WATCH) → any other trading day. Set MODE=risk_watch and continue to
+                              STEP 1. You will run risk_watch.py (SELL-only, zero LLM) in
+                              STEP 3 — NEVER main.py in this mode.
+  • 10 (SKIP/RETRY)         → market closed, or (on a rebalance day) snapshot/dossier not
+                              fresh or API overloaded. STOP now — do NOT fetch the
+                              portfolio, run any pipeline, or place any orders. The next
+                              scheduled attempt (+60 min) re-checks.
+  • 20 (SKIP/DONE)          → Today's pipeline (either mode) already executed or claimed.
+                              STOP now — re-running would risk double-execution.
 
-Only continue past this step when GATE_EXIT == 0.
+Only continue past this step when GATE_EXIT == 0 or GATE_EXIT == 30.
 (preflight_gate.py uses only the Python standard library, so it runs before pip install.)
 
 ═══════════════════════════════════════════════
-STEP 1 — Fetch portfolio via Robinhood MCP
+STEP 1 — Fetch portfolio via Robinhood MCP  (both modes)
 ═══════════════════════════════════════════════
 
 Call in order:
@@ -74,7 +83,7 @@ Call in order:
 
 Write mcp_portfolio.json with this exact structure:
 {
-  "as_of": "<ISO-8601 timestamp, US/Eastern, e.g. 2026-06-12T09:46:00-04:00>",
+  "as_of": "<ISO-8601 timestamp, US/Eastern, e.g. 2026-07-06T09:46:00-04:00>",
   "cash": <float>,
   "total_value": <float>,
   "positions": [
@@ -92,15 +101,16 @@ Write mcp_portfolio.json with this exact structure:
 
 as_of MUST be the current timestamp (ET) at which you fetched this portfolio. execute.py
 get_portfolio_summary() raises StalePortfolioError if as_of is missing or not dated today (ET),
-and main.py then aborts before sizing any orders — every order is sized from this file, so a
+and the pipeline then aborts before sizing any orders — every order is sized from this file, so a
 stale copy would size today's trades against a prior day's cash/positions. Write it fresh every run.
 
 available_qty = shares_available_for_sells from get_equity_positions (falls back to qty if the
-field is absent). execute.py:_compute_qty caps SELL orders to available_qty to prevent oversell
-when shares are held for options events or pending transfers.
+field is absent). SELL orders are capped to available_qty to prevent oversell. In RISK-WATCH mode
+avg_price and current_price are ALSO load-bearing: the −25% stop-loss trigger is evaluated as
+current_price vs avg_price (cost basis) — write both accurately for every position.
 
 ═══════════════════════════════════════════════
-STEP 2 — Set up environment
+STEP 2 — Set up environment  (both modes)
 ═══════════════════════════════════════════════
 
 (Code was already pulled in STEP 0 — do not pull again.)
@@ -118,43 +128,43 @@ plane cannot reach Polygon or Supabase (both 403), so:
     The committed portfolio_snapshot.json push triggers publish.yml in GitHub Actions, which
     does the REAL Supabase write using the GitHub Actions secret store. Secrets live there,
     not in this prompt.
-Keeping secrets out of the routine prompt avoids exposing them somewhere that gets pasted or
-logged. (If a future increment ever genuinely needs a cloud-side secret, use the routine env
-injection — the same mechanism that provides the Anthropic OAuth token — not an inline value.)
 
 IMPORTANT: DRY_RUN=true is correct and intentional. robin_stocks (the Python Robinhood library)
-is blocked in this cloud environment. Setting DRY_RUN=true prevents main.py from calling it and
-from prematurely stamping executed_at. Real orders are placed via Robinhood MCP in STEP 4.
+is blocked in this cloud environment. Setting DRY_RUN=true prevents the pipeline from calling it
+and from prematurely stamping executed_at. Real orders are placed via Robinhood MCP in STEP 4.
 
 Install dependencies:
 pip install -r requirements.txt -q
 
 ═══════════════════════════════════════════════
-STEP 3 — Run the full pipeline
+STEP 3 — Run the pipeline for this MODE
 ═══════════════════════════════════════════════
 
-Run the pipeline and CAPTURE its exit code — do NOT discard it:
-python main.py; MAIN_EXIT=$?
+If MODE == rebalance:   python main.py; MAIN_EXIT=$?
+If MODE == risk_watch:  python risk_watch.py; MAIN_EXIT=$?
 
-This runs the 7-agent pipeline (Regime → Research → Earnings → Devil's Advocate →
-Position Review → Portfolio Manager → Chief Risk Officer), pre-computes fractional qty
-for each decision, writes pending_decisions.json, logs to trades.csv / decision_journal.json /
-agent_log.json / transactions.json, and publishes a snapshot to Supabase.
+  • main.py (Wednesdays / catch-up) runs the 7-agent pipeline (Regime → Research → Earnings →
+    Devil's Advocate → Position Review → Portfolio Manager → CRO) reading the committed
+    research_dossier.json, pre-computes fractional qty, and writes pending_decisions.json
+    with mode="rebalance".
+  • risk_watch.py (all other trading days) evaluates the deterministic SELL-only trigger set
+    (−25% stop from cost basis on live MCP prices; kill-switch health; cross-mode interlock)
+    and writes pending_decisions.json with mode="risk_watch". It NEVER emits a BUY and NEVER
+    calls an LLM. Most days its decision list is [] — that is the expected outcome.
 
-ALWAYS PUSH HEALTH FIRST — before validating anything, regardless of how main.py exited.
-system_health.json is the ONLY trigger for alert.yml. main.py writes it on its abort paths
-(stale data, zero-value portfolio) AND on success; if you stop the routine WITHOUT pushing it,
-an ABORTED/FAILED day fires NO alert and fails silently. (A mid-pipeline crash may leave the
-file stale because main.py never reached its own health-write — push whatever exists so the
-last-known state + any partial agent_log reach the monitor.)
+ALWAYS PUSH HEALTH FIRST — before validating anything, regardless of how the pipeline exited.
+system_health.json is the ONLY trigger for alert.yml. Both pipelines write it on their abort
+paths AND on success; if you stop the routine WITHOUT pushing it, an ABORTED/FAILED day fires
+NO alert and fails silently. (A mid-pipeline crash may leave the file stale — push whatever
+exists so the last-known state + any partial agent_log reach the monitor.)
 git config user.email 'ai-investor-bot@users.noreply.github.com'
 git config user.name 'AI Investor Bot'
 git add system_health.json agent_log.json
 git diff --staged --quiet || (git commit -m 'chore: health' && (git push || (git pull --rebase && git push)))
 
-CRASH GUARD — if main.py did not exit cleanly, STOP the routine here. Do NOT run STEP 4:
+CRASH GUARD — if the pipeline did not exit cleanly, STOP the routine here. Do NOT run STEP 4:
 if [ "$MAIN_EXIT" -ne 0 ]; then
-  echo "main.py exited $MAIN_EXIT — pipeline crashed mid-run. Health pushed (alert will fire). Not executing."
+  echo "pipeline exited $MAIN_EXIT — crashed mid-run. Health pushed (alert will fire). Not executing."
   # STOP NOW. pending_decisions.json may be absent or partial; proceeding would size or place
   # orders against an incomplete plan. Do not continue to STEP 4 under any circumstances.
   exit 0
@@ -167,7 +177,7 @@ import json, os, sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 if not os.path.exists('pending_decisions.json'):
-    print("ERROR: pending_decisions.json was never written — main.py produced no plan.")
+    print("ERROR: pending_decisions.json was never written — the pipeline produced no plan.")
     sys.exit(1)
 try:
     p = json.load(open('pending_decisions.json'))
@@ -177,16 +187,22 @@ except (OSError, json.JSONDecodeError) as e:
 today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
 if p.get('date') != today:
     print(f"ERROR: pending_decisions.json is dated {p.get('date')!r}, expected {today!r}")
-    print("main.py exited early — market snapshot for today was not available.")
+    print("The pipeline exited early — today's data was not available.")
     sys.exit(1)
-print(f"Pipeline OK: {len(p['decisions'])} decision(s) for {today}")
+mode = p.get('mode', 'rebalance')
+if mode == 'risk_watch':
+    bad = [d for d in p['decisions'] if str(d.get('action','')).upper() != 'SELL']
+    if bad:
+        print(f"ERROR: risk_watch envelope contains NON-SELL decisions: {bad} — refusing to execute.")
+        sys.exit(1)
+print(f"Pipeline OK: mode={mode}, {len(p['decisions'])} decision(s) for {today}")
 PY
 
 If this check fails, STOP. Do not attempt order execution. (Health was already pushed above,
 so the abort is visible to alert.yml.)
 
 ═══════════════════════════════════════════════
-STEP 4 — Execute trades via Robinhood MCP
+STEP 4 — Execute trades via Robinhood MCP  (both modes — same machinery)
 ═══════════════════════════════════════════════
 
 Read pending_decisions.json. It is a JSON envelope object — not a bare list.
@@ -210,6 +226,11 @@ GUARD 3 — Execution claim (cross-attempt partial-fill protection):
   or clears the stale claim (NONE_FILLED). Only fall back to the manual position diff
   / emergency stamp (DEPLOYMENT.md §9.4) if it returns MANUAL_REQUIRED.
 
+GUARD 4 — Mode integrity (risk_watch only):
+  If pending_decisions["mode"] == "risk_watch" and ANY decision has action ≠ "SELL",
+  STOP — the SELL-only safety net must never place a BUY. (STEP 3 already validated
+  this; this is defense in depth at the order boundary.)
+
 Read decisions from pending_decisions["decisions"] (the nested array, not the root object).
 
 TSLA HARD BLOCK: NEVER place any order for TSLA under any circumstances. Skip it entirely.
@@ -226,9 +247,12 @@ mark_execution_started(p['run_id'])
 PY
 git config user.email 'ai-investor-bot@users.noreply.github.com'
 git config user.name 'AI Investor Bot'
-git add pending_decisions.json system_health.json trades.csv decision_journal.json agent_log.json transactions.json mcp_portfolio.json portfolio_snapshot.json fundamentals_cache.json portfolio_peak.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json decisions_ledger.jsonl decisions_scored.jsonl counterfactual.json
+git add pending_decisions.json last_rebalance.json system_health.json trades.csv decision_journal.json agent_log.json transactions.json mcp_portfolio.json portfolio_snapshot.json fundamentals_cache.json portfolio_peak.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json decisions_ledger.jsonl decisions_scored.jsonl counterfactual.json
 git commit -m 'chore: execution claim'
 git push || (git pull --rebase && git push)
+
+(last_rebalance.json is the durable once-per-ISO-week rebalance lock — it MUST reach main
+with the claim, or a Thu/Fri catch-up could re-run a crashed Wednesday rebalance.)
 
 If the push fails even after the rebase retry, STOP — do NOT place any orders.
 Without a durable claim, a crash mid-execution re-opens the double-fill window.
@@ -242,11 +266,13 @@ Maintain a fills accumulator as you place orders — a dict you will write to fi
 For each decision where action is BUY or SELL:
 
   1. QUANTITY — read decision["qty"] directly.
-     This is the pre-computed fractional share count written by main.py (e.g., 0.648382).
+     This is the pre-computed fractional share count (e.g., 0.648382).
      DO NOT recompute it. DO NOT round it to a whole number.
-     Fallback (only if decision["qty"] is missing or null):
-       fetch current price via get_equity_quotes, then compute:
-       round(decision["target_weight"] × mcp_portfolio["total_value"] ÷ current_price, 6)
+     STALE-PRICE RE-QUOTE (P0-1): if decision["price_as_of"] is present and ≠ today,
+     the qty was sized on a stale slice price — fetch the live quote via
+     get_equity_quotes and recompute:
+       round(decision["target_weight"] × mcp_portfolio["total_value"] ÷ live_price, 6)
+     Fallback (only if decision["qty"] is missing or null): same live-quote computation.
 
   2. SKIP CONDITION — skip this decision only if qty <= 0.
      qty = 0.648 is a valid fractional order. Place it.
@@ -286,9 +312,9 @@ Write the accumulator to fills.json so the stamp step can read it:
   Write fills.json = the fills dict you built above (e.g. {"BAC": {"order_id": "...", "price": 55.52}, ...}).
 
 AFTER ALL ORDERS ARE PLACED (or if decisions was empty), stamp the execution —
-BUT only if the CRO made a genuine decision. If the CRO itself failed due to API
-error (api_failed=True in system_health.json), do NOT stamp: the next retry should
-get a fresh run when the API recovers.
+BUT (rebalance mode only) only if the CRO made a genuine decision. If the CRO itself
+failed due to API error (api_failed=True in system_health.json), do NOT stamp: the next
+retry should get a fresh run when the API recovers. (risk_watch has no CRO — always stamp.)
 
 python - <<'PY'
 import json, os
@@ -297,7 +323,7 @@ p = json.load(open('pending_decisions.json'))
 h = json.load(open('system_health.json')) if os.path.exists('system_health.json') else {}
 fills = json.load(open('fills.json')) if os.path.exists('fills.json') else {}
 cro_api_failed = h.get('checks', {}).get('agent_7_cro', {}).get('api_failed', False)
-if p['decisions'] or not cro_api_failed:
+if p.get('mode', 'rebalance') == 'risk_watch' or p['decisions'] or not cro_api_failed:
     mark_pending_executed(p['run_id'])
     # Reconcile ALL logs (transactions.json, trades.csv, decision_journal.json)
     # against broker fills: ONLY accepted orders go live; rejections stay
@@ -306,26 +332,27 @@ if p['decisions'] or not cro_api_failed:
     # "price": float|None}. If decisions existed but fills is empty, the
     # reconciler records reconciliation=FAILED on system_health.json (paging).
     # NOTE: never call mark_transactions_live(run_id) with no fills arg — it
-    # now RAISES (a bare flip-all silently re-created the phantom-fill bug).
+    # RAISES (a bare flip-all silently re-created the phantom-fill bug).
     mark_transactions_live(p['run_id'], fills)
-    print(f"Execution stamped: run_id={p['run_id']} ({len(fills)} fill(s) reconciled)")
+    print(f"Execution stamped: run_id={p['run_id']} mode={p.get('mode')} ({len(fills)} fill(s) reconciled)")
 else:
     print("Skipping execution stamp — CRO blocked trades due to API error, not a risk decision. Next retry will re-run.")
 PY
 
 ═══════════════════════════════════════════════
-STEP 5 — Commit artifacts
+STEP 5 — Commit artifacts  (both modes)
 ═══════════════════════════════════════════════
 
 git config user.email 'ai-investor-bot@users.noreply.github.com'
 git config user.name 'AI Investor Bot'
-git add portfolio_snapshot.json system_health.json mcp_portfolio.json trades.csv decision_journal.json fundamentals_cache.json portfolio_peak.json pending_decisions.json agent_log.json transactions.json fills.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json decisions_ledger.jsonl decisions_scored.jsonl counterfactual.json
+git add portfolio_snapshot.json system_health.json mcp_portfolio.json trades.csv decision_journal.json fundamentals_cache.json portfolio_peak.json pending_decisions.json last_rebalance.json agent_log.json transactions.json fills.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json decisions_ledger.jsonl decisions_scored.jsonl counterfactual.json
 git diff --staged --quiet || git commit -m 'chore: daily cycle'
 
 # Push WITH a rebase retry. Orders are already LIVE — this push carries the executed_at stamp,
-# the reconciled logs, fills.json, and the post-trade snapshot that triggers publish.yml. A
-# silent failure here means the website never updates AND today's durable fill record never
-# reaches the remote while real orders exist. (STEP 4's claim push retries; STEP 5 must too.)
+# the ISO-week rebalance lock, the reconciled logs, fills.json, and the post-trade snapshot that
+# triggers publish.yml. A silent failure here means the website never updates AND today's durable
+# fill record never reaches the remote while real orders exist. (STEP 4's claim push retries;
+# STEP 5 must too.)
 if git push || (git pull --rebase && git push); then
   echo "Artifacts pushed — executed_at + fills + snapshot are durable; publish.yml will update Supabase."
 else
@@ -345,84 +372,34 @@ fi
 
 ---
 
-## What changed — Jun 10 2026 (commits `7652b9d`, `8f0b2e9`)
+## What changed — Jul 4 2026 (Phase 5: weekly cadence + risk_watch — REQUIRES live-routine sync)
 
-1. **STEP 1 — `available_qty` field added** to `mcp_portfolio.json`. Write
-   `shares_available_for_sells` from `get_equity_positions` as `available_qty` alongside `qty`.
-   `execute.py:_compute_qty` now caps SELL orders to `available_qty` to prevent oversell when
-   shares are held for options events or pending transfers.
-2. **STEP 3 validation** now reads `system_health.json` and reports any FAILED/DEGRADED agent
-   checks as informational warnings (not hard stops). Identifies 529 API overload failures vs.
-   genuine data problems.
-3. **Code changes in `analysis.py`** (pulled automatically via `git pull` in STEP 0):
-   - All 7 agents now retry up to 2× on failure (3 total attempts).
-   - 529/overloaded errors use 30s/60s backoff instead of 1s/2s.
-   - CRO default adds `api_failed: True` flag; health records DEGRADED (not OK) when CRO API fails.
-4. **Code changes in `main.py`** (pulled automatically):
-   - Circuit breaker: halts execution if SELL notional > 50% of portfolio value.
-   - All `date` stamps now use `America/New_York` explicitly (was UTC).
-5. **Code changes in `journal.py`** (pulled automatically):
-   - All JSON writes are now atomic (`.tmp` + `os.replace()`).
-   - `agent_log.json` capped at 90 entries.
+The entire prompt gained MODE routing. Summary of the deltas vs the daily-cycle prompt:
 
-## What changed vs. the previous prompt (Jun 9 2026)
-
-1. **Added STEP 0 pre-flight gate** + moved `git pull --ff-only` to STEP 0 (was in STEP 2). The
-   routine now no-ops cheaply on stale-data or already-run attempts instead of running the full
-   pipeline and aborting.
-2. **Schedule → 4 fire times** (`45 13,14,15,16 * * 1-5`) so a delayed/ skipped 8 AM
-   `market_data.yml` run is caught by a later retry.
-3. **Fixed STEP 3 validation bugs**: replaced `python -c "…"` (which had a `{p.get("date")}`
-   nested-double-quote shell bug) with a `python - <<'PY'` heredoc, and switched `date.today()`
-   (UTC in cloud) → US/Eastern to match the gate and `pending_decisions["date"]`.
-4. **STEP 4 stamp** also converted to a heredoc for paste-safety.
-
-## What changed — Jun 12 2026 evening (remediation batch)
-
-1. **STEP 4 — stamp-first execution claim** (closes the cross-attempt double-fill window that
-   was previously documented here as an unresolved caveat): `execution_started_at` is stamped,
-   committed, and pushed BEFORE the first order is placed. GUARD 3 + the STEP 0 gate treat a
-   non-null claim dated today as SKIP/DONE. If the claim push fails after one rebase retry, the
-   attempt STOPS without placing orders — the system now fails toward missed trades, never
-   duplicate trades. Crash-mid-execution recovery is Scenario B (position diff), never re-run.
-
-## What changed — Jun 15 2026
-
-1. **GUARD 3 recovery pointer → automated reconciler.** Now that A7 shipped
-   `reconcile.py`, GUARD 3 points at the automated crash-state recovery (DEPLOYMENT.md
-   §9.3: `reconcile.py` / `--apply`) as the first step, with the manual position-diff /
-   emergency stamp (§9.4) reserved for the `MANUAL_REQUIRED` case. Cosmetic doc-sync —
-   GUARD 3's functional job is unchanged (STOP on a non-null `execution_started_at`).
+1. **STEP 0** — the gate now returns **four** codes; `30` (PROCEED/RISK-WATCH) is new.
+   Set a MODE variable and branch. `0` now also requires a **fresh `research_dossier.json`**
+   and fires only on Wednesday (or Thu/Fri catch-up for a rebalance-less ISO week).
+2. **STEP 3** — runs `main.py` (rebalance) **or** `risk_watch.py` (risk-watch). The
+   validation heredoc gained the mode line + a **SELL-only assertion** for risk_watch
+   envelopes.
+3. **STEP 4** — new **GUARD 4** (mode integrity: a risk_watch envelope with a BUY is never
+   executed); the claim commit and STEP 5 both `git add last_rebalance.json` (the durable
+   once-per-ISO-week rebalance lock); the qty step gained the **P0-1 stale-price re-quote**
+   (re-size via `get_equity_quotes` when `decision["price_as_of"] ≠ today`); the stamp
+   heredoc always stamps risk_watch envelopes (no CRO in that mode).
+4. **STEP 1** — unchanged structurally, but `avg_price` / `current_price` are now
+   load-bearing (the −25% stop trigger); the note says so.
 
 ## What changed — Jun 16 2026 (observability + crash-handling hardening)
 
-Closes the gaps where a failure was invisible or could cascade into bad execution.
-All four are prompt-only (no code change). Verified against `main.py`'s actual control
-flow (`run_daily_cycle()` has no top-level try/except, and its abort paths `return`
-rather than `sys.exit`, so the routine — not main.py — owns making failure observable).
-
 1. **STEP 3 — always push `system_health.json` before validating.** `alert.yml` fires
-   ONLY on a `system_health.json` push. Previously the routine reached the STEP 5 push
-   only on the happy path, so an ABORTED/FAILED day stopped before STEP 5 and the health
-   record never left the box — a silent no-trade day with no alert. Health is now pushed
-   immediately after `main.py`, on every path.
-2. **STEP 3 — capture `main.py`'s exit code + CRASH GUARD.** `python main.py; MAIN_EXIT=$?`;
-   on a non-zero exit the routine pushes health and STOPS — it does NOT proceed to STEP 4.
-   Prevents sizing/placing orders against a partial or missing `pending_decisions.json`
-   after an unhandled mid-pipeline exception.
-3. **STEP 3 — validation heredoc guards a missing/unreadable file** (first-ever run, or a
-   crash before the plan is written) instead of throwing `FileNotFoundError`.
-4. **STEP 5 — push with a rebase retry + escalation.** Was `git push || echo WARNING`
-   (orders live, push silently lost → no Supabase update, no durable fill record). Now
-   retries via `git pull --rebase`, and on a persistent failure writes an `artifact_push`
-   FAILED health check and best-effort pushes that so `alert.yml` pages.
+   ONLY on a `system_health.json` push; an ABORTED/FAILED day must not stop silently.
+2. **STEP 3 — capture the pipeline exit code + CRASH GUARD** (no STEP 4 on a non-zero exit).
+3. **STEP 3 — validation heredoc guards a missing/unreadable file.**
+4. **STEP 5 — push with a rebase retry + `artifact_push` FAILED escalation.**
 
-> **Known follow-ups (code changes, tracked separately — NOT fixed by this prompt edit):**
-> (a) `preflight_gate._check_api_health()` calls bare `anthropic.Anthropic()` when
-> `ANTHROPIC_API_KEY` is unset, but the cloud authenticates via
-> `CLAUDE_SESSION_INGRESS_TOKEN_FILE` (`auth_token=`), as `analysis.py:_get_client()` does
-> — so the 529 canary cannot authenticate in the cloud and silently returns "healthy",
-> disabling the overload protection on the live path. (b) STEP 4 records an order as filled
-> on broker ACCEPTANCE without polling `get_equity_orders` to confirm the fill or capture
-> the real fill price — an accepted-then-rejected market order (halt, unsettled cash on the
-> cash account) is logged as a fill at the decision-time quote.
+## What changed — Jun 12 2026 evening (remediation batch)
+
+1. **STEP 4 — stamp-first execution claim**: `execution_started_at` is stamped, committed,
+   and pushed BEFORE the first order is placed; a claim-push failure STOPS the attempt
+   without placing orders (fail toward missed trades, never duplicates).

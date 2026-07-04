@@ -25,10 +25,10 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
-from market_calendar import is_trading_day, today_et
+from market_calendar import is_trading_day, today_et, iso_week_of
 
 REPORT_FILE = "heartbeat_report.json"
 
@@ -152,6 +152,32 @@ def check_heartbeat(as_of: "str | date | None" = None, root: str = ".") -> dict:
         if found != as_of_iso:
             warnings.append({"name": name, "path": path, "artifact_date": found,
                              "note": "stale/missing (informational — a 0-candidate day writes none)"})
+
+    # Missed-ISO-week rebalance check (§15.3 / §6.5.2) — evaluated only on FRIDAY,
+    # after the last catch-up window has passed (Wed → Thu → Fri all had 4 attempts).
+    # A whole week with no rebalance CLAIM or EXECUTION is the silent failure the
+    # weekly cadence must never absorb: either every attempt saw stale data (fix the
+    # producer) or the routine never fired (fix the routine). last_rebalance.json is
+    # the durable stamp journal.py mirrors on the claim/executed stamps.
+    as_of_date = datetime.strptime(as_of_iso, "%Y-%m-%d").date()
+    if as_of_date.weekday() == 4:  # Friday
+        lr = None
+        try:
+            lr = json.loads((Path(root) / "last_rebalance.json").read_text())
+        except Exception:
+            pass
+        attempted = (isinstance(lr, dict)
+                     and lr.get("iso_week") == iso_week_of(as_of_date)
+                     and (lr.get("executed_at") or lr.get("execution_started_at")))
+        checks.append({"name": "weekly_rebalance", "tier": "compute",
+                       "path": "last_rebalance.json",
+                       "artifact_date": (lr or {}).get("date") if isinstance(lr, dict) else None,
+                       "fresh": bool(attempted),
+                       "status": "OK" if attempted else
+                                 "MISSING (no rebalance claim/execution in ISO week "
+                                 f"{iso_week_of(as_of_date)} — Wed + Thu/Fri catch-up all missed)"})
+        if not attempted:
+            required_failed.append(checks[-1])
 
     return {
         "ok":       not required_failed,

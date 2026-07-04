@@ -29,7 +29,8 @@ from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, StalePortfolioError, DRY_RUN
 from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions, close_position, get_ticker_history, recently_exited, consecutive_cash_above, _load_list, TRANSACTIONS_FILE
-from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, flag_wash_sale_presale
+from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, enforce_tax_aware_hold, enforce_safe_mode, flag_wash_sale_presale
+from build_dossier import load_dossier, validate_dossier
 from policy       import policy_version as _policy_version
 from publish      import publish_to_supabase
 from health       import HealthTracker, OK, DEGRADED, FAILED, ABORTED
@@ -201,22 +202,28 @@ def run_daily_cycle():
         print("=" * 60 + "\n")
         return
 
-    # Data is fresh — record quality level
-    if min_depth >= 126:
+    # Data is fresh — record quality level. Stage D: expansion names carry an
+    # INTENTIONAL 63-bar tail in the committed snapshot (their full-depth factors
+    # ride in the dossier), so the depth classification is computed over the deep
+    # (core + held) subset — a deliberate tail must not page as degraded data.
+    _tails = set(market_data.get("history_tail_tickers") or [])
+    deep_depths = [len(h) for t, h in history.items() if t not in _tails] or history_depths
+    deep_min = min(deep_depths) if deep_depths else 0
+    if deep_min >= 126:
         health.record("market_data", OK,
                       source=source, data_date=data_date,
-                      tickers=len(prices),
-                      history_min_bars=min_depth, history_avg_bars=avg_depth)
-    elif min_depth >= 63:
+                      tickers=len(prices), tail_tickers=len(_tails),
+                      history_min_bars=deep_min, history_avg_bars=avg_depth)
+    elif deep_min >= 63:
         health.record("market_data", DEGRADED,
-                      message=f"History depth {min_depth} bars — 6M momentum unavailable (need 127+)",
+                      message=f"History depth {deep_min} bars — 6M momentum unavailable (need 127+)",
                       source=source, data_date=data_date,
-                      history_min_bars=min_depth)
+                      history_min_bars=deep_min)
     else:
         health.record("market_data", DEGRADED,
-                      message=f"History depth {min_depth} bars — only 1M momentum available (need 64+ for 3M)",
+                      message=f"History depth {deep_min} bars — only 1M momentum available (need 64+ for 3M)",
                       source=source, data_date=data_date,
-                      history_min_bars=min_depth)
+                      history_min_bars=deep_min)
 
     # ── Data-quality gate (§15.2) — prefer the report committed by GH Actions
     # (fetch_snapshot classified the full-universe fetch); classify the in-memory
@@ -243,6 +250,36 @@ def run_daily_cycle():
         health.save()
         print("=" * 60 + "\n")
         return
+
+    # ── Research dossier (Phase 5 Stage C — the Wednesday agent input, §11.3) ──
+    # The agents read the dossier's synthesized research (persistence, events,
+    # as-of-dated fundamentals, since_entry anchors). A stale or schema-invalid
+    # dossier ABORTS the rebalance (P1-5) — trading on yesterday's research as if
+    # it were today's is exactly the silent failure the gate + this check prevent.
+    # Belt-and-suspenders with preflight_gate._dossier_fresh (same rule, full
+    # schema validation here).
+    dossier = load_dossier()
+    _d_ok, _d_errors = validate_dossier(dossier, as_of=today)
+    if not _d_ok:
+        msg = "; ".join(_d_errors[:5])
+        print(f"\n   🚨 PIPELINE ABORTED: research dossier invalid/stale — {msg}")
+        print("   The rebalance must not run against a stale dossier. The gate should "
+              "have SKIP/RETRYed; re-dispatch market_data.yml (Runbook Scenario E).")
+        health.record("research_dossier", FAILED, message=msg[:300],
+                      dossier_as_of=dossier.get("as_of"),
+                      n_tickers=dossier.get("n_tickers"))
+        health.record("pipeline", ABORTED,
+                      message=f"Aborted before agents ran — dossier not ready. {msg}")
+        health.save()
+        print(f"\n   📋 system_health.json written (overall={health.overall_status})")
+        print("=" * 60 + "\n")
+        return
+    health.record("research_dossier", OK,
+                  dossier_as_of=dossier.get("as_of"),
+                  n_tickers=dossier.get("n_tickers"),
+                  built_from_days=len(dossier.get("built_from_days", [])))
+    print(f"   📚 Research dossier: {dossier.get('n_tickers')} tickers, "
+          f"as_of={dossier.get('as_of')}, valid")
 
     # ── Step 4: Quant scores ──────────────────────────────────────────────────
     print("\n🔢  Step 4: Computing quant scores...")
@@ -293,6 +330,7 @@ def run_daily_cycle():
     decisions, pipeline_state = get_trade_decisions(
         portfolio, market_data, quant_scores, trade_history, prior_journal,
         ticker_history=ticker_history, recently_exited=exited_map,
+        dossier=dossier,
     )
 
     # ── PM backstop: auto-exit when 3 signals agree ──────────────────────────
@@ -319,15 +357,33 @@ def run_daily_cycle():
         pipeline_state.get("candidates", []), kill_active, transactions=_txs,
     )
 
+    # Market-wide crisis safe-mode (§18.5) — per-name stops don't cover a market
+    # crash. On a SPY 1-day drop ≥ the policy threshold, ALL new BUYs are halted
+    # (SELLs / risk exits stay allowed) and the owner is alerted via the DEGRADED
+    # health record. Runs FIRST among the post-validation guards: nothing below
+    # may re-admit a BUY during a crisis.
+    _spy_chg = market_data["prices"].get("SPY", {}).get("change_pct")
+    decisions, safemode_rejected, _safe_reason = enforce_safe_mode(decisions, _spy_chg)
+    if _safe_reason:
+        health.record("crisis_safe_mode", DEGRADED,
+                      message=_safe_reason, spy_change_pct=_spy_chg,
+                      buys_halted=len(safemode_rejected))
+    else:
+        health.record("crisis_safe_mode", OK, spy_change_pct=_spy_chg)
+
     # Turnover / tax discipline (CA top-bracket taxable account). Every sale is a
     # short-term gain (~54%), so cut round-trip churn: block SELLs of names bought
-    # < 5 trading days ago, and BUYs of names sold < 30 calendar days ago
-    # (wash-sale + anti-churn). Risk exits are exempt via kill_active. These run
-    # BEFORE the sector cap so the cap projects against the SELL set that will
-    # actually execute — otherwise a SELL dropped here after the cap freed its
-    # sector budget could let a same-sector BUY breach the 25% limit.
+    # < 30 trading days ago (policy v2.0, IPS §7.2), and BUYs of names sold < 30
+    # calendar days ago (wash-sale + anti-churn). Risk exits are exempt via
+    # kill_active. These run BEFORE the sector cap so the cap projects against the
+    # SELL set that will actually execute — otherwise a SELL dropped here after
+    # the cap freed its sector budget could let a same-sector BUY breach the 25%
+    # limit. The tax-aware hold (IPS §7.5) blocks a discretionary SELL of a gained
+    # lot within ~30 trading days of its 1-year long-term-tax date — nearly half
+    # the tax on the same gain for waiting weeks; risk exits exempt.
     decisions, holding_rejected = enforce_min_holding_period(decisions, portfolio, transactions=_txs, kill_active=kill_active)
     decisions, reentry_rejected = enforce_wash_sale_reentry(decisions, transactions=_txs)
+    decisions, taxhold_rejected = enforce_tax_aware_hold(decisions, market_data["prices"], transactions=_txs, kill_active=kill_active)
 
     # Sector cap (25%) — a code-level control (the limit otherwise lives only in
     # the PM prompt). Runs after turnover filtering so it sees the post-turnover set.
@@ -356,7 +412,8 @@ def run_daily_cycle():
     except Exception as _e:
         print(f"   ⚠ wash-sale pre-sale flag skipped: {_e}")
 
-    for r in holding_rejected + reentry_rejected + sector_rejected + netedge_rejected:
+    for r in (safemode_rejected + holding_rejected + reentry_rejected
+              + taxhold_rejected + sector_rejected + netedge_rejected):
         validation_report["rejected"].append(
             {"ticker": r.get("ticker", "?"), "action": r.get("action", "?"),
              "reason": r.get("rejected_reason", "turnover/sector/net-edge guard")})
@@ -560,10 +617,22 @@ def run_daily_cycle():
     except Exception as _e:
         print(f"   ⚠ reproducibility manifest skipped: {_e}")
 
+    # P0-1: stamp the sizing price's vintage on every decision. qty was computed
+    # from the snapshot slice price; the routine re-quotes via live MCP when this
+    # date is not today (a stale-slice price under Stage D's rotating fetch must
+    # never silently size an order).
+    for _d in decisions:
+        if _d.get("action", "").upper() in ("BUY", "SELL"):
+            _t = _d.get("ticker", "")
+            _d["price_as_of"] = (dossier.get("tickers", {}).get(_t, {}).get("price_as_of")
+                                 or data_date)
+            _d["sizing_price"] = market_data["prices"].get(_t, {}).get("close")
+
     with open("pending_decisions.json", "w") as _f:
         _json.dump({
             "run_id":               run_id,
             "date":                 today,
+            "mode":                 "rebalance",         # Phase 5: risk_watch envelopes carry mode="risk_watch"; the ISO-week lock mirrors only this mode
             "generated_at":         run_start,
             "policy_version":       _policy_version(),   # change-control provenance (§18.4)
             "data_quality":         dq_provenance,       # §15.1 covariate — harness partitions the year-end verdict by this

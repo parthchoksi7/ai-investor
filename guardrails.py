@@ -63,9 +63,11 @@ MAX_SECTOR_WEIGHT        = _POLICY["max_sector_weight"]   # hard cap on projecte
 # 13.3% CA), so the dominant after-tax lever is simply trading LESS. These two
 # controls are deliberately stronger than the GFV guard above: they exist to cut
 # the documented weekly momentum-rotation churn, not to manage settlement.
-MIN_HOLDING_TRADING_DAYS = _POLICY["min_holding_trading_days"]  # don't SELL a name bought < N trading days ago (risk exits exempt)
+MIN_HOLDING_TRADING_DAYS = _POLICY["min_holding_trading_days"]  # don't SELL a name bought < N trading days ago (risk exits exempt) — 30 since policy v2.0 (IPS §7.2)
 WASH_SALE_REENTRY_DAYS   = _POLICY["wash_sale_reentry_days"]    # don't BUY a name SOLD within N calendar days (wash-sale + anti-churn)
 MIN_NET_EDGE             = _POLICY["min_net_edge"]              # $ floor: a BUY's expected edge must clear cost + CA ST tax (#6; tunable)
+TAX_AWARE_HOLD_WINDOW    = _POLICY["tax_aware_hold_window_trading_days"]  # block discretionary SELL of a gained lot near its 1-year LT date (IPS §7.5)
+SAFE_MODE_INDEX_DROP_PCT = _POLICY["safe_mode_index_drop_pct"]  # PERCENT — SPY 1-day drop ≥ this halts all new BUYs (§18.5 crisis safe-mode)
 
 
 # Static ticker → sector map for the current universe. The data layer carries
@@ -347,6 +349,115 @@ def enforce_wash_sale_reentry(
         else:
             kept.append(d)
     return kept, rejected
+
+
+def enforce_tax_aware_hold(
+    decisions: list[dict],
+    prices: dict,
+    transactions: list | None = None,
+    kill_active: bool = False,
+    window_trading_days: int = TAX_AWARE_HOLD_WINDOW,
+    today: str | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """Reject a DISCRETIONARY SELL of a position holding a GAINED lot within
+    ~`window_trading_days` of its 1-year long-term-tax date (IPS §7.5).
+
+    The 9–12mo horizon sits right on the short-term (~54%) / long-term (~37%)
+    boundary: a winner sold at month 11 pays ~54% tax; held three more weeks past
+    one year, ~37% — nearly HALF the tax on the same gain. When a gained lot is
+    that close to crossing, the after-tax expected value of waiting almost always
+    beats a discretionary trim, so the trim is blocked and re-proposed post-boundary.
+
+    Per-lot FIFO dates via tax_lots.open_lots (P0-4 — multiple lots have multiple
+    1-year dates; any qualifying lot blocks, since a FIFO sale consumes the oldest
+    lot first, which is exactly the near-boundary one).
+
+    Exemptions (risk exits always outrank tax timing):
+      - kill_active → untouched;
+      - a decision carrying risk_exit=True (risk_watch stop-loss) → untouched;
+      - lots at a LOSS → not blocked (harvesting a short-term loss is favorable);
+      - lots already past 1 year → not blocked (already long-term).
+
+    The window is TRADING days in policy; lots measure CALENDAR days — converted
+    at 7/5 (≈42 calendar days). Returns (kept, rejected) like the other guards.
+    """
+    if kill_active:
+        return list(decisions), []
+    if transactions is None:
+        transactions = _load_list(TRANSACTIONS_FILE)
+    today = today or datetime.now(_ET).strftime("%Y-%m-%d")
+    window_calendar_days = round(window_trading_days * 7 / 5)
+    from tax_lots import open_lots, holding_days
+
+    kept, rejected = [], []
+    for d in decisions:
+        if str(d.get("action", "")).upper() != "SELL" or d.get("risk_exit"):
+            kept.append(d)
+            continue
+        ticker  = d.get("ticker", "")
+        sell_px = (prices.get(ticker) or {}).get("close")
+        near_boundary = None
+        if sell_px:
+            for lot in open_lots(transactions, ticker):
+                held  = holding_days(lot.get("acquired"), today)
+                basis = lot.get("cost_basis", 0) or 0
+                if (held is not None and basis
+                        and float(sell_px) > basis                       # lot in GAIN
+                        and 365 - window_calendar_days <= held < 365):   # near the LT boundary
+                    near_boundary = {**lot, "held_days": held,
+                                     "days_to_long_term": 365 - held}
+                    break
+        if near_boundary:
+            reason = (f"tax-aware hold: gained lot acquired {near_boundary.get('acquired')} "
+                      f"is {near_boundary['days_to_long_term']}d from its 1-year "
+                      f"long-term date (~54% ST vs ~37% LT on the same gain) — "
+                      f"discretionary SELL deferred past the boundary (IPS §7.5)")
+            rejected.append({**d, "rejected_reason": reason})
+            print(f"   🚫 TAX-HOLD REJECT: SELL {ticker} — {reason}")
+        else:
+            kept.append(d)
+    return kept, rejected
+
+
+def crisis_safe_mode_active(
+    spy_change_pct: float | None,
+    threshold_pct: float = SAFE_MODE_INDEX_DROP_PCT,
+) -> tuple[bool, str]:
+    """(active, reason) — is the §18.5 market-wide crisis safe-mode tripped?
+
+    Pure function on the SPY 1-day move (percent, negative = down). Per-name stops
+    don't cover a market-wide event; on an index drop ≥ threshold the system must
+    halt ALL new BUYs (risk-driven SELLs stay allowed) and alert the owner. None
+    (no SPY data) → NOT active: the safe-mode is an extra brake on a known crash,
+    never a data-outage trap that silently disables buying forever.
+    """
+    if not isinstance(spy_change_pct, (int, float)):
+        return False, ""
+    if spy_change_pct <= -abs(threshold_pct):
+        return True, (f"SPY {spy_change_pct:+.1f}% breaches the -{abs(threshold_pct):.0f}% "
+                      f"crisis safe-mode threshold — all new BUYs halted (§18.5)")
+    return False, ""
+
+
+def enforce_safe_mode(
+    decisions: list[dict],
+    spy_change_pct: float | None,
+    threshold_pct: float = SAFE_MODE_INDEX_DROP_PCT,
+) -> tuple[list[dict], list[dict], str]:
+    """Drop every BUY when crisis safe-mode is active; SELLs/HOLDs pass untouched.
+
+    Returns (kept, rejected, reason). reason is '' when safe-mode is not active."""
+    active, reason = crisis_safe_mode_active(spy_change_pct, threshold_pct)
+    if not active:
+        return list(decisions), [], ""
+    kept, rejected = [], []
+    for d in decisions:
+        if str(d.get("action", "")).upper() == "BUY":
+            rejected.append({**d, "rejected_reason": f"crisis safe-mode: {reason}"})
+            print(f"   🚨 SAFE-MODE REJECT: BUY {d.get('ticker', '?')} — {reason}")
+        else:
+            kept.append(d)
+    return kept, rejected, reason
 
 
 def flag_wash_sale_presale(
