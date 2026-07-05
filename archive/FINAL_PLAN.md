@@ -1,5 +1,12 @@
 # Final Plan + Expert Pre-Mortem
 
+> **⚠ ARCHIVED (2026-07-05).** This Jun-13 roadmap (P0–P6) predates and is superseded
+> by [`../STRATEGY_REDESIGN_PLAN.md`](../STRATEGY_REDESIGN_PLAN.md) +
+> [`../IMPLEMENTATION_PLAN.md`](../IMPLEMENTATION_PLAN.md) (2026-06-27), which is what
+> actually got built (Phases 0–5, live since 2026-07-04). Kept for historical record
+> of the tax-recalibration reasoning and pre-mortem; not a current source of truth.
+> For live status see `../CLAUDE.md` (Changelog) and `../MANUAL_TODO.md`.
+
 Consolidated, decision-ready plan for the six edge-upgrade improvements, the tax
 recalibration for a **California top-bracket taxable account**, and a full
 Shreyas-Doshi-style pre-mortem by the twelve-expert panel.

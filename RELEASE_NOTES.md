@@ -13,6 +13,21 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Docs — repo documentation audit + archival (2026-07-05)
+
+Fixed misleading build-status headers on `STRATEGY_REDESIGN_PLAN.md` and
+`IMPLEMENTATION_PLAN.md` (both still said "not yet implemented" / "ready to build" —
+Phases 0–5 have since shipped and gone live). Added a status legend + at-a-glance
+table to `MANUAL_TODO.md` and fixed two items that were stale relative to what's
+already shipped (item 8: dossier consumer wiring shipped as Stage C; item 7: the
+heartbeat/digest workflows' first runs are evidenced by real artifact content).
+Created `archive/` and moved four superseded/factually-outdated docs there
+(`FINAL_PLAN.md`, `SOLUTION_PLANS.md`, `IMPROVEMENTS_SPEC.md` — all fully
+superseded by the Jun-27 redesign pod; `ARCHITECTURE_DIAGRAMS.md` — diagrams
+predate the gate's 4th exit code and `risk_watch.py`, actively wrong about current
+behavior), each with an `⚠ ARCHIVED` banner pointing to what replaced it. No code
+behavior changed; one docstring path reference updated (`backtest/__init__.py`).
+
 ### Fixed — Phase 1 post-Phase-5 hardening: alerting noise · missed-week edge · evidence-clock integrity (2026-07-05)
 
 Four offline / observability fixes found in the multi-persona review of the live Phase 5
