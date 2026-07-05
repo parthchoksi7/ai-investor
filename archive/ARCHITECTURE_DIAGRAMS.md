@@ -1,9 +1,17 @@
 # AI Investor — Flow Diagrams
 
+> **⚠ ARCHIVED (2026-07-05) — DIAGRAMS ARE FACTUALLY OUT OF DATE, not just old.**
+> Drawn 2026-06-14, before Phase 4/5 shipped. The gate diagram below shows only 3
+> exit codes (0/10/20) — the live gate has a 4th (**30 PROCEED/RISK-WATCH**) and
+> branches to `risk_watch.py` on non-rebalance days, which isn't shown at all; there
+> is no dossier, no Stage A–D. Do not use this to understand current system
+> behavior. No replacement diagram exists yet — treat this as a starting reference
+> for what the OLD daily-only pipeline looked like, not the current one.
+
 Two views of the same system: a **high-level** map of the daily lifecycle, and a
 **detailed** end-to-end diagram of the pipeline, the 7-agent stack, guardrails,
 idempotency, and health/alerting. Both are rendered from the actual orchestration
-in [main.py](main.py) and [analysis.py](analysis.py).
+in [../main.py](../main.py) and [../analysis.py](../analysis.py).
 
 ---
 

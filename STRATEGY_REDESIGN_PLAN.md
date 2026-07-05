@@ -7,9 +7,16 @@
 > harness** — plus the sequencing for the **shift off momentum to a medium/long-term
 > strategy**.
 >
-> Status: DESIGN / NOT YET IMPLEMENTED. All code changes are behind the
-> DEPLOYMENT §7.0 gates (RELEASE_NOTES update + expert `/code-review` + tests +
-> weekend dry-run). Nothing in here has touched the live trade path.
+> **Status (updated 2026-07-05): BUILT AND DEPLOYED.** Phases 0–5 described below —
+> including the live-path weekly cadence and `risk_watch.py` (§6, §11–14) — shipped
+> 2026-06-27 through 2026-07-04; a post-go-live hardening batch followed 2026-07-05.
+> This document is kept as the **design rationale record** (why each decision was
+> made, what was rejected and why) — it is NOT the current build-status tracker.
+> For live status, always check (newest first): `CLAUDE.md`'s dated Changelog
+> sections, `MANUAL_TODO.md`'s roadmap table + go-live observation window, and
+> `RELEASE_NOTES.md`. Phase 6 (exit-logic rewrite) is the only phase below still
+> unbuilt. All code changes shipped behind the DEPLOYMENT §7.0 gates (RELEASE_NOTES
+> update + expert `/code-review` + tests + weekend dry-run where applicable).
 >
 > **Rev 2 (Jun 26 2026)** — revised after a four-lens critical review (senior
 > backend / ML-AI / security / quant-PM). Material changes: (1) **cadence is a

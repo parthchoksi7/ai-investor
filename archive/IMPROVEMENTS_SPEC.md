@@ -1,5 +1,10 @@
 # AI Investor — Implementation Brief
 
+> **⚠ ARCHIVED (2026-07-05).** This Jun-14 work order was critically evaluated in the
+> Jun 13 2026 batch (see `../CLAUDE.md`'s "IMPROVEMENTS_SPEC evaluation batch"
+> changelog): 3 of 9 phases were rejected on inspection, 6 were implemented. Fully
+> processed — nothing here is still actionable. Kept for historical record only.
+>
 > **For Claude Code.** This is a phased work order. Tax-awareness is intentionally
 > out of scope. Work the phases in order — Phase 0 is money-safety and ships first.
 >

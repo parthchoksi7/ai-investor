@@ -4099,13 +4099,175 @@ class TestCalibrationLedger:
         scored, card = str(tmp_path / "s.jsonl"), str(tmp_path / "card.json")
         with open(scored, "w") as f:
             for i in range(5):
+                # formula_version = CURRENT so this rows to the PLAIN key (matches
+                # real post-Phase-1 ledger data) — see TestCalibrationFormulaVersion
+                # for the version-partition behavior itself.
                 f.write(json.dumps({"run_id": f"r{i}", "agent": "quant", "field": "composite_score",
-                                    "ticker": "AAPL", "value": float(i), "realized_return": i / 100}) + "\n")
-        out = calibration.agent_scorecard(scored_path=scored, out_path=card, shrink_k=50)
+                                    "ticker": "AAPL", "value": float(i), "realized_return": i / 100,
+                                    "date": f"2026-0{i+1}-01",
+                                    "formula_version": calibration._CURRENT_QUANT_FORMULA}) + "\n")
+        out = calibration.agent_scorecard(scored_path=scored, out_path=card, shrink_k=50,
+                                  factor_history_path=str(tmp_path / "no_fh.jsonl"))
         k = "quant.composite_score@21d"   # grouped by horizon; rows w/o horizon_days default to 21
         assert out[k]["n"] == 5 and out[k]["ic"] == 1.0
         assert out[k]["ic_shrunk"] == round(5 / 55, 3)        # shrunk far below the raw IC
         assert out[k]["ic_shrunk"] < out[k]["ic"]
+
+
+class TestCalibrationFormulaVersionAndVariance:
+    """Phase 1 (2026-07-05): agent_scorecard must not silently pool a legacy quant
+    formula's forecasts with the current one, and must drop degenerate
+    zero-cross-sectional-variance days (e.g. the Jun 8-10 outage defaults)."""
+
+    def _row(self, agent, field, value, date, ticker="AAPL", realized_return=0.01,
+            formula_version=None, horizon_days=21):
+        return {"run_id": f"{ticker}-{date}", "agent": agent, "field": field,
+                "ticker": ticker, "value": value, "realized_return": realized_return,
+                "date": date, "horizon_days": horizon_days, "formula_version": formula_version}
+
+    def test_current_formula_keys_plain_metric(self, tmp_path):
+        import calibration, json
+        scored, card = str(tmp_path / "s.jsonl"), str(tmp_path / "card.json")
+        rows = [self._row("quant", "composite_score", float(i), f"2026-0{i+1}-01",
+                          realized_return=i / 100,
+                          formula_version=calibration._CURRENT_QUANT_FORMULA)
+                for i in range(1, 6)]
+        with open(scored, "w") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+        out = calibration.agent_scorecard(scored_path=scored, out_path=card,
+                                  factor_history_path=str(tmp_path / "no_fh.jsonl"))
+        assert "quant.composite_score@21d" in out
+        assert out["quant.composite_score@21d"]["formula_version"] == calibration._CURRENT_QUANT_FORMULA
+
+    def test_untagged_formula_unresolved_keys_suffixed_metric(self, tmp_path):
+        """Rows with NO formula_version tag AND no matching factor_history.jsonl
+        row (the join can't recover their true vintage) must NOT land on the
+        plain key stage_c_readiness.py reads — they're genuinely unknown vintage."""
+        import calibration, json
+        scored, card = str(tmp_path / "s.jsonl"), str(tmp_path / "card.json")
+        rows = [self._row("quant", "composite_score", float(i), f"2026-0{i+1}-01",
+                          realized_return=i / 100, formula_version=None)
+                for i in range(1, 6)]
+        with open(scored, "w") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+        out = calibration.agent_scorecard(scored_path=scored, out_path=card,
+                                  factor_history_path=str(tmp_path / "no_fh.jsonl"))
+        assert "quant.composite_score@21d" not in out
+        assert "quant.composite_score@21d~unknown" in out
+
+    def test_untagged_formula_resolved_via_factor_history_join(self, tmp_path):
+        """A row with NO formula_version tag but a MATCHING factor_history.jsonl
+        entry for the same (date, ticker) must be correctly resolved — recovering
+        pre-fix rows' true vintage via a read-only join rather than dumping them
+        all into one undifferentiated 'unknown' bucket, and WITHOUT rewriting the
+        historical forecasts_scored.jsonl ledger itself."""
+        import calibration, json
+        scored = str(tmp_path / "s.jsonl")
+        fh = str(tmp_path / "fh.jsonl")
+        card = str(tmp_path / "card.json")
+        rows = [self._row("quant", "composite_score", float(i), f"2026-0{i+1}-01",
+                          realized_return=i / 100, formula_version=None)
+                for i in range(1, 6)]
+        with open(scored, "w") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+        with open(fh, "w") as f:
+            for r in rows:
+                # factor_history has the SAME (date, ticker) tagged with the
+                # CURRENT formula — this is what the join should recover.
+                f.write(json.dumps({"date": r["date"], "ticker": r["ticker"],
+                                    "formula_version": calibration._CURRENT_QUANT_FORMULA}) + "\n")
+        out = calibration.agent_scorecard(scored_path=scored, out_path=card,
+                                          factor_history_path=fh)
+        # Resolved via the join -> lands on the PLAIN (current-formula) key, not
+        # a suffixed one, even though the scored row itself carried no tag.
+        assert "quant.composite_score@21d" in out
+        assert out["quant.composite_score@21d"]["n"] == 5
+        assert not any(k.startswith("quant.composite_score@21d~") for k in out)
+        # The scored ledger file on disk must be untouched (read-only join).
+        with open(scored) as f:
+            on_disk = [json.loads(l) for l in f]
+        assert all(r.get("formula_version") is None for r in on_disk)
+
+    def test_old_and_new_formula_never_pooled(self, tmp_path):
+        """A mix of legacy-tagged and current-tagged quant rows must produce TWO
+        separate scorecard entries, never one pooled IC."""
+        import calibration, json
+        scored, card = str(tmp_path / "s.jsonl"), str(tmp_path / "card.json")
+        old_rows = [self._row("quant", "composite_score", float(i), f"2026-0{i+1}-01",
+                              realized_return=-i / 100, formula_version="1.0-old")
+                    for i in range(1, 6)]
+        new_rows = [self._row("quant", "composite_score", float(i), f"2026-0{i+1}-10",
+                              realized_return=i / 100,
+                              formula_version=calibration._CURRENT_QUANT_FORMULA)
+                    for i in range(1, 6)]
+        with open(scored, "w") as f:
+            for r in old_rows + new_rows:
+                f.write(json.dumps(r) + "\n")
+        out = calibration.agent_scorecard(scored_path=scored, out_path=card,
+                                  factor_history_path=str(tmp_path / "no_fh.jsonl"))
+        assert out["quant.composite_score@21d"]["n"] == 5          # current only
+        assert out["quant.composite_score@21d~1.0-old"]["n"] == 5  # legacy segregated
+        # Orientations differ (old_rows correlate negatively, new positively) —
+        # pooling them would average toward zero and hide both signals.
+        assert out["quant.composite_score@21d"]["ic"] == 1.0
+        assert out["quant.composite_score@21d~1.0-old"]["ic"] == -1.0
+
+    def test_non_quant_agent_unaffected_by_versioning(self, tmp_path):
+        """research/earnings/etc. have no formula_version concept — always plain key."""
+        import calibration, json
+        scored, card = str(tmp_path / "s.jsonl"), str(tmp_path / "card.json")
+        rows = [self._row("research", "confidence", float(i), f"2026-0{i+1}-01",
+                          realized_return=i / 100, formula_version=None)
+                for i in range(1, 6)]
+        with open(scored, "w") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+        out = calibration.agent_scorecard(scored_path=scored, out_path=card,
+                                  factor_history_path=str(tmp_path / "no_fh.jsonl"))
+        assert "research.confidence@21d" in out
+        assert not any(k.startswith("research.confidence@21d~") for k in out)
+
+    def test_zero_variance_day_dropped(self, tmp_path):
+        """A run-date where every value in the pool is IDENTICAL (an outage-default
+        emission) must be excluded — it carries no rank information and dilutes
+        genuine signal from other days."""
+        import calibration, json
+        scored, card = str(tmp_path / "s.jsonl"), str(tmp_path / "card.json")
+        # Degenerate day: 20 identical-value rows, all agent defaults during an outage.
+        degenerate = [self._row("research", "confidence", 5.0, "2026-06-08", ticker=f"T{i}",
+                                realized_return=(i - 10) / 100,
+                                formula_version=None)
+                     for i in range(20)]
+        # Real signal days: value truly correlates with realized_return.
+        real = [self._row("research", "confidence", float(i), f"2026-0{i}-15", ticker="AAPL",
+                          realized_return=i / 100, formula_version=None)
+                for i in range(1, 6)]
+        with open(scored, "w") as f:
+            for r in degenerate + real:
+                f.write(json.dumps(r) + "\n")
+        out = calibration.agent_scorecard(scored_path=scored, out_path=card,
+                                  factor_history_path=str(tmp_path / "no_fh.jsonl"))
+        # Only the 5 real rows should count — the 20 degenerate rows are dropped.
+        assert out["research.confidence@21d"]["n"] == 5
+        assert out["research.confidence@21d"]["ic"] == 1.0
+
+    def test_mixed_variance_day_not_dropped(self, tmp_path):
+        """A day with genuinely varying values must NOT be filtered — only exact
+        zero cross-sectional variance is degenerate."""
+        import calibration, json
+        scored, card = str(tmp_path / "s.jsonl"), str(tmp_path / "card.json")
+        rows = [self._row("research", "confidence", float(v), "2026-06-08", ticker=f"T{i}",
+                          realized_return=v / 100, formula_version=None)
+                for i, v in enumerate([1, 2, 3, 4, 5])]
+        with open(scored, "w") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+        out = calibration.agent_scorecard(scored_path=scored, out_path=card,
+                                  factor_history_path=str(tmp_path / "no_fh.jsonl"))
+        assert out["research.confidence@21d"]["n"] == 5
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -4894,6 +5056,49 @@ class TestSupabaseHealthClassification:
         _record_supabase_health(h, Exception("401 Invalid API key"))
         assert h.checks["supabase_publish"]["status"] == FAILED
 
+    # ── Phase 1 (2026-07-05): cloud-plane detection is now the PRIMARY signal —
+    # a reworded/unrecognized egress-proxy error must still classify OK when we
+    # are structurally in the cloud plane (no ANTHROPIC_API_KEY, OAuth token file
+    # present), since ANY publish exception there is the expected block. ──
+
+    def test_cloud_plane_any_message_recorded_ok(self, tmp_path, monkeypatch):
+        from main import _record_supabase_health
+        from health import OK
+        token_file = tmp_path / "token"
+        token_file.write_text("fake-oauth-token")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", str(token_file))
+        h = self._tracker()
+        # A completely unrecognized error shape (proxy reworded its message) —
+        # must still be OK because we're in the cloud plane, not because the
+        # string happens to match.
+        _record_supabase_health(h, Exception("connection reset by peer"))
+        assert h.checks["supabase_publish"]["status"] == OK
+
+    def test_cloud_plane_detection_requires_no_api_key(self, tmp_path, monkeypatch):
+        from main import _record_supabase_health
+        from health import FAILED
+        token_file = tmp_path / "token"
+        token_file.write_text("fake-oauth-token")
+        # ANTHROPIC_API_KEY present -> NOT the cloud plane (local/CI with a real
+        # key), even if a stale token file happens to exist -> falls through to
+        # the message heuristic, which does not match -> FAILED.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
+        monkeypatch.setenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", str(token_file))
+        h = self._tracker()
+        _record_supabase_health(h, Exception("connection reset by peer"))
+        assert h.checks["supabase_publish"]["status"] == FAILED
+
+    def test_cloud_plane_detection_requires_real_token_file(self, monkeypatch):
+        from main import _record_supabase_health
+        from health import FAILED
+        # Token file env var points to a nonexistent path -> not cloud plane.
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", "/nonexistent/path")
+        h = self._tracker()
+        _record_supabase_health(h, Exception("connection reset by peer"))
+        assert h.checks["supabase_publish"]["status"] == FAILED
+
 
 class TestSafeCallMeta:
     """_safe_call(return_meta=True) must distinguish a GENUINE default value (PM
@@ -5487,23 +5692,28 @@ class TestCounterfactual:
         assert flag("pm_selected", "CCC") == 1.0 and flag("pm_selected", "AAA") == 0.0
 
     def test_counterfactual_adds_value(self, tmp_path):
-        # da_reject: flagged (rejected) names underperform → gap>0 → ADDS_VALUE once n clears.
+        # da_reject: flagged (rejected) names underperform → gap>0 → ADDS_VALUE once
+        # n clears AND the gap is statistically real (Phase 1: not just n >= min_n).
+        # Returns vary WITHIN each group (not a bit-identical constant) — real
+        # realized returns never land on the exact same float across different
+        # tickers/dates, and a literally-constant group is untestable by design
+        # (see test_welch_p_constant_sample_is_none).
         import calibration, json, datetime
         scored, out = str(tmp_path / "ds.jsonl"), str(tmp_path / "cf.json")
         with open(scored, "w") as f:
             for i in range(12):                          # spaced dates so block-sample keeps all
                 d = (datetime.date(2026, 1, 1) + datetime.timedelta(days=40 * i)).isoformat()
                 f.write(json.dumps({"run_id": f"r{i}", "agent": "da_reject", "field": "flag",
-                    "ticker": f"F{i}", "value": 1.0, "realized_return": -0.05,
+                    "ticker": f"F{i}", "value": 1.0, "realized_return": -0.05 + (i % 3) * 0.001,
                     "horizon_days": 21, "date": d}) + "\n")
                 f.write(json.dumps({"run_id": f"r{i}", "agent": "da_reject", "field": "flag",
-                    "ticker": f"K{i}", "value": 0.0, "realized_return": 0.05,
+                    "ticker": f"K{i}", "value": 0.0, "realized_return": 0.05 - (i % 3) * 0.001,
                     "horizon_days": 21, "date": d}) + "\n")
         rep = calibration.counterfactual_report(scored_path=scored, out_path=out, min_n=10)
         k = "da_reject@21d"
-        assert rep[k]["mean_return_flagged"] == -0.05 and rep[k]["mean_return_kept"] == 0.05
-        assert rep[k]["gap_kept_minus_flagged"] == 0.1
+        assert rep[k]["gap_kept_minus_flagged"] > 0.09     # ~0.10, small within-group jitter
         assert rep[k]["adds_value"] is True and rep[k]["verdict"] == "ADDS_VALUE"
+        assert rep[k]["p_value"] is not None and rep[k]["p_value"] < 0.05
 
     def test_counterfactual_not_significant_small_n(self, tmp_path):
         import calibration, json
@@ -5517,6 +5727,43 @@ class TestCounterfactual:
                 "horizon_days": 21, "date": "2026-01-01"}) + "\n")
         rep = calibration.counterfactual_report(scored_path=scored, out_path=out, min_n=10)
         assert rep["cro_veto@21d"]["verdict"] == "NOT_SIGNIFICANT"
+        assert rep["cro_veto@21d"]["n_floor_met"] is False
+
+    def test_counterfactual_large_n_but_no_real_gap_not_significant(self, tmp_path):
+        """Phase 1: n >= min_n on both sides is NOT sufficient by itself — the old
+        heuristic would have called this ADDS_VALUE/significant purely on sample
+        size. Both groups draw from the IDENTICAL multiset of noisy returns (same
+        mean, same variance, by construction — no seed/luck involved), so the
+        Welch test must correctly find no significant difference despite each
+        side individually having real (non-constant) variance."""
+        import calibration, json, datetime
+        noisy_returns = [-0.04, -0.03, -0.02, -0.01, 0.0, 0.01, 0.02, 0.03, 0.04,
+                         0.05, -0.05, 0.045, -0.045, 0.015, -0.015]
+        scored, out = str(tmp_path / "ds.jsonl"), str(tmp_path / "cf.json")
+        with open(scored, "w") as f:
+            for i, ret in enumerate(noisy_returns):
+                d = (datetime.date(2026, 1, 1) + datetime.timedelta(days=40 * i)).isoformat()
+                f.write(json.dumps({"run_id": f"r{i}", "agent": "pm_selected", "field": "flag",
+                    "ticker": f"F{i}", "value": 1.0, "realized_return": ret,
+                    "horizon_days": 21, "date": d}) + "\n")
+                f.write(json.dumps({"run_id": f"r{i}", "agent": "pm_selected", "field": "flag",
+                    "ticker": f"K{i}", "value": 0.0, "realized_return": ret,
+                    "horizon_days": 21, "date": d}) + "\n")
+        rep = calibration.counterfactual_report(scored_path=scored, out_path=out, min_n=10)
+        k = "pm_selected@21d"
+        assert rep[k]["n_floor_met"] is True          # sample-size floor alone WOULD pass
+        assert rep[k]["verdict"] == "NOT_SIGNIFICANT"  # but the real test correctly rejects it
+        assert rep[k]["gap_kept_minus_flagged"] == 0.0
+
+    def test_welch_p_constant_sample_is_none(self):
+        """A bit-identical sample (zero real variance) must return None, not a
+        floating-point-noise-driven near-zero p-value (the bug this guard fixes:
+        summing many copies of the same float can leave ~1e-35 residual variance,
+        which an `== 0` check misses but which produces a nonsensical p≈0)."""
+        import calibration
+        assert calibration._welch_p([-0.05] * 12, [0.05] * 12) is None
+        assert calibration._welch_p([1.0], [2.0, 3.0]) is None     # n < 2 on one side
+        assert calibration._welch_p([1.0, 1.0], [2.0, 2.0]) is None  # both constant
 
 
 # ── Phase 1 §7.6: measurement rigor (TWR, risk-adjusted, breadth ceiling) ────────
@@ -5734,9 +5981,16 @@ class TestHeartbeat:
         _wl("forecasts.jsonl", forecast_date)
 
     def test_all_fresh_is_ok(self, tmp_path):
+        # 2026-07-02 (Thu) is the LAST TRADING DAY of ISO week 2026-W27 (2026-07-03
+        # is an NYSE holiday) — the weekly_rebalance check now correctly evaluates
+        # here, so stamp the week as rebalanced; this test is about data-artifact
+        # freshness, not the weekly-rebalance signal.
         from heartbeat_check import check_heartbeat
         d = "2026-07-02"
         self._seed(str(tmp_path), d, d, d, d, d)
+        (tmp_path / "last_rebalance.json").write_text(json.dumps(
+            {"iso_week": "2026-W27", "date": d, "run_id": "r",
+             "execution_started_at": "x", "executed_at": "y", "tickers": []}))
         r = check_heartbeat(as_of=d, root=str(tmp_path))
         assert r["ok"] is True and r["missing"] == []
 
@@ -5779,9 +6033,14 @@ class TestHeartbeat:
     def test_forecast_freeze_is_warning_not_failure(self, tmp_path):
         # Jun 18 dead feed: everything ran but forecasts stopped appending. A
         # 0-candidate day legitimately writes none, so this is a WARNING, not a fail.
+        # (2026-07-02 is the last trading day of its ISO week — see test_all_fresh_is_ok;
+        # stamp the week so this test's failure mode stays isolated to forecasts.)
         from heartbeat_check import check_heartbeat
         d, old = "2026-07-02", "2026-06-01"
         self._seed(str(tmp_path), d, d, d, d, old)
+        (tmp_path / "last_rebalance.json").write_text(json.dumps(
+            {"iso_week": "2026-W27", "date": d, "run_id": "r",
+             "execution_started_at": "x", "executed_at": "y", "tickers": []}))
         r = check_heartbeat(as_of=d, root=str(tmp_path))
         assert r["ok"] is True
         assert any(w["name"] == "forecasts" for w in r["warnings"])
@@ -6851,6 +7110,78 @@ class TestCrisisSafeMode:
         assert kept == ds and rejected == [] and reason == ""
 
 
+class TestIsLastTradingDayOfISOWeek:
+    """Phase 1 (2026-07-05): direct unit coverage of the pure helper the
+    missed-week heartbeat now gates on (replacing literal weekday==4)."""
+
+    def test_normal_friday_is_last(self):
+        from heartbeat_check import _is_last_trading_day_of_iso_week
+        from datetime import date
+        assert _is_last_trading_day_of_iso_week(date(2026, 6, 26)) is True   # ordinary Fri
+
+    def test_normal_thursday_is_not_last(self):
+        from heartbeat_check import _is_last_trading_day_of_iso_week
+        from datetime import date
+        assert _is_last_trading_day_of_iso_week(date(2026, 6, 25)) is False  # Fri still trades
+
+    def test_thursday_before_holiday_friday_is_last(self):
+        from heartbeat_check import _is_last_trading_day_of_iso_week
+        from datetime import date
+        # 2026-12-25 (Fri) is a holiday → 2026-12-24 (Thu) is the week's last trading day.
+        assert _is_last_trading_day_of_iso_week(date(2026, 12, 24)) is True
+
+    def test_holiday_friday_itself_is_last(self):
+        from heartbeat_check import _is_last_trading_day_of_iso_week
+        from datetime import date
+        # 12-25 is a holiday and the rest of its ISO week (Sat/Sun) never trades →
+        # vacuously the "last trading day" too. (The heartbeat's outer gate skips
+        # this day anyway; this just documents the helper is total, not partial.)
+        assert _is_last_trading_day_of_iso_week(date(2026, 12, 25)) is True
+
+    def test_year_boundary_w53_thursday_is_last(self):
+        from heartbeat_check import _is_last_trading_day_of_iso_week
+        from datetime import date
+        # 2026-12-31 (Thu, ISO 2026-W53); 2027-01-01 (Fri) is a holiday → Thu is last.
+        assert _is_last_trading_day_of_iso_week(date(2026, 12, 31)) is True
+
+    def test_monday_is_not_last(self):
+        from heartbeat_check import _is_last_trading_day_of_iso_week
+        from datetime import date
+        assert _is_last_trading_day_of_iso_week(date(2026, 6, 22)) is False   # Mon
+
+
+class TestDropZeroVarianceDays:
+    """Phase 1 (2026-07-05): direct unit coverage of the degenerate-day filter."""
+
+    def test_constant_day_dropped(self):
+        from calibration import _drop_zero_variance_days
+        rows = [{"date": "2026-06-08", "value": 5.0} for _ in range(10)]
+        assert _drop_zero_variance_days(rows) == []
+
+    def test_varying_day_kept(self):
+        from calibration import _drop_zero_variance_days
+        rows = [{"date": "2026-06-08", "value": float(i)} for i in range(5)]
+        assert len(_drop_zero_variance_days(rows)) == 5
+
+    def test_only_degenerate_days_dropped_mixed(self):
+        from calibration import _drop_zero_variance_days
+        degenerate = [{"date": "2026-06-08", "value": 5.0} for _ in range(4)]
+        real = [{"date": "2026-06-09", "value": float(i)} for i in range(4)]
+        out = _drop_zero_variance_days(degenerate + real)
+        assert len(out) == 4 and all(r["date"] == "2026-06-09" for r in out)
+
+    def test_single_row_day_passes_through(self):
+        # < 2 values can't be judged degenerate — a legitimate 1-name day survives.
+        from calibration import _drop_zero_variance_days
+        rows = [{"date": "2026-06-08", "value": 5.0}]
+        assert len(_drop_zero_variance_days(rows)) == 1
+
+    def test_unparseable_or_missing_date_passes_through(self):
+        from calibration import _drop_zero_variance_days
+        rows = [{"value": 5.0}, {"value": 5.0}]   # no date key
+        assert len(_drop_zero_variance_days(rows)) == 2
+
+
 class TestHeartbeatMissedWeek:
     """§15.3 — Friday's heartbeat alerts when the whole ISO week had no rebalance
     claim/execution (Wed + Thu/Fri catch-up all missed)."""
@@ -6882,6 +7213,45 @@ class TestHeartbeatMissedWeek:
         from heartbeat_check import check_heartbeat
         rep = check_heartbeat(as_of=self.THU, root=str(tmp_path))
         assert all(c["name"] != "weekly_rebalance" for c in rep["checks"])
+
+    # ── Phase 1 (2026-07-05): a Friday that is itself an NYSE holiday must not
+    # silently swallow the missed-week check for that whole ISO week. The check
+    # must run on the week's actual LAST TRADING DAY instead. ──
+
+    def test_holiday_friday_itself_skips_heartbeat_entirely(self, tmp_path):
+        """2026-12-25 (Christmas, observed Friday) is a non-trading day — the
+        heartbeat's outer gate skips outright, same as any weekend."""
+        from heartbeat_check import check_heartbeat
+        rep = check_heartbeat(as_of="2026-12-25", root=str(tmp_path))
+        assert rep["skipped"] is not None
+
+    def test_thursday_before_holiday_friday_runs_the_check(self, tmp_path):
+        """2026-12-24 (Thursday) is the LAST TRADING DAY of ISO week 2026-W52
+        because 12-25 is a holiday — the missed-week check must run HERE, not
+        wait for a Friday that never comes as a trading day. Before this fix,
+        the check was gated on literal weekday==4 and would never fire for
+        this entire week."""
+        from heartbeat_check import check_heartbeat
+        rep = check_heartbeat(as_of="2026-12-24", root=str(tmp_path))
+        assert any(c["name"] == "weekly_rebalance" for c in rep["checks"])
+        assert "weekly_rebalance" in rep["missing"]  # no stamp written -> alerts
+
+    def test_thursday_before_holiday_friday_ok_with_stamp(self, tmp_path):
+        from heartbeat_check import check_heartbeat
+        (tmp_path / "last_rebalance.json").write_text(json.dumps(
+            {"iso_week": "2026-W52", "date": "2026-12-23", "run_id": "r2",
+             "execution_started_at": "x", "executed_at": "y", "tickers": []}))
+        rep = check_heartbeat(as_of="2026-12-24", root=str(tmp_path))
+        assert "weekly_rebalance" not in rep["missing"]
+
+    def test_new_years_holiday_friday_week_boundary(self, tmp_path):
+        """2027-01-01 (New Year's, Friday) is a holiday; 2026-12-31 (Thursday)
+        is the last trading day of that ISO week (2026-W53) and must run the
+        check — exercises the year-boundary ISO week (W53) case too."""
+        from heartbeat_check import check_heartbeat
+        rep = check_heartbeat(as_of="2026-12-31", root=str(tmp_path))
+        assert any(c["name"] == "weekly_rebalance" for c in rep["checks"])
+        assert "weekly_rebalance" in rep["missing"]
 
 
 class TestStageDStorageSplit:

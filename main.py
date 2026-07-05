@@ -14,6 +14,7 @@ Pipeline:
 """
 
 import json as _json
+import os
 import uuid as _uuid
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -44,20 +45,44 @@ def cash_discipline_status(cash_pct: float, net_buy: float,
     return DEGRADED if (cash_pct > threshold and net_buy <= 0) else OK
 
 
+def _is_cloud_plane() -> bool:
+    """True when running as the Anthropic-hosted scheduled routine: OAuth token
+    injected via CLAUDE_SESSION_INGRESS_TOKEN_FILE and no ANTHROPIC_API_KEY. This
+    is the plane that structurally cannot reach Supabase (egress allowlist) —
+    mirrors the auth detection in analysis._get_client() / preflight_gate's canary,
+    so all three stay consistent about what "cloud" means."""
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return False
+    token_file = os.getenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", "")
+    return bool(token_file and os.path.isfile(token_file))
+
+
 def _record_supabase_health(health, exc: Exception) -> None:
     """Record the supabase_publish health check, distinguishing the EXPECTED cloud
     egress block from a real publish failure.
 
     In Anthropic's cloud the Supabase host is not on the egress allowlist, so the
-    in-process publish ALWAYS raises a 403 ("Host not in allowlist"). That is not a
-    failure — the routine commits portfolio_snapshot.json and GitHub Actions
-    (publish.yml) performs the real publish with Supabase access. Recording it as
-    FAILED forced overall_status=FAILED on every clean cloud run, which (a) made the
-    health signal pure noise and (b) prevented alert.yml from ever auto-closing a
+    in-process publish ALWAYS raises on any attempt — the request never reaches
+    Supabase far enough to produce an application-level error, so ANY exception
+    while _is_cloud_plane() is true is the expected block, regardless of its exact
+    wording (the egress proxy's error message is not a contract we control and has
+    already changed once). That is not a failure — the routine commits
+    portfolio_snapshot.json and GitHub Actions (publish.yml) performs the real
+    publish with Supabase access. Recording it as FAILED forced
+    overall_status=FAILED on every clean cloud run, which (a) made the health
+    signal pure noise and (b) prevented alert.yml from ever auto-closing a
     recovered health-alert issue (status never returned to OK). The downstream
-    health_check.yml job verifies the Supabase row actually landed, so marking this
-    OK here does not reduce coverage. A genuine publish error (bad key, schema
-    drift) does NOT contain the allowlist marker and is still recorded FAILED."""
+    health_check.yml job verifies the Supabase row actually landed, so marking
+    this OK here does not reduce coverage.
+
+    Outside the cloud plane (local / CI), fall back to the original message-
+    substring heuristic as a secondary signal — a genuine publish error (bad key,
+    schema drift) there is still recorded FAILED."""
+    if _is_cloud_plane():
+        health.record("supabase_publish", OK,
+                      message=f"Supabase unreachable from the cloud plane (expected) "
+                              f"— publish deferred to GitHub Actions. ({str(exc)[:120]})")
+        return
     msg = str(exc)
     if "not in allowlist" in msg or "egress" in msg.lower():
         health.record("supabase_publish", OK,

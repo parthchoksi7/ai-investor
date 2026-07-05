@@ -1,5 +1,12 @@
 # Edge-Upgrade Solution Plans — Expert Panel
 
+> **⚠ ARCHIVED (2026-07-05).** Jun-13 per-improvement designs, superseded by
+> [`../STRATEGY_REDESIGN_PLAN.md`](../STRATEGY_REDESIGN_PLAN.md) (2026-06-27), the
+> later and more rigorous design that was actually built (Phases 0–5, live since
+> 2026-07-04). Kept for historical record of the per-improvement reasoning; not a
+> current source of truth. For live status see `../CLAUDE.md` (Changelog) and
+> `../MANUAL_TODO.md`.
+
 Planning doc for six improvements (#1, #2, #3, #5, #6, #9) from the critical
 review. Each is planned by **two external expert archetypes** with a deliberate
 point of tension, then resolved into a concrete plan grounded in the actual
