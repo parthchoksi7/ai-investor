@@ -48,9 +48,18 @@ import math
 import os
 from datetime import datetime, date, timedelta, timezone
 
-LEDGER    = "forecasts.jsonl"
-SCORED    = "forecasts_scored.jsonl"
-SCORECARD = "agent_scorecards.json"
+# The CURRENT operative quant formula (e.g. "2.0-quality-tilt"). Rows tagged with
+# an OLDER formula_version are a different scoring regime — pooling their IC with
+# the current formula's would silently blend two composites into one number
+# (Phase 1, 2026-07-05: the evidence clock must measure the strategy that is
+# actually live, not an average of it and its predecessor). Deferred import
+# avoided here since quant_engine has no heavy/circular dependency on this module.
+from quant_engine import FORMULA_VERSION as _CURRENT_QUANT_FORMULA
+
+LEDGER         = "forecasts.jsonl"
+SCORED         = "forecasts_scored.jsonl"
+SCORECARD      = "agent_scorecards.json"
+FACTOR_HISTORY = "factor_history.jsonl"  # (date, ticker) -> formula_version join source
 
 # §7.5 counterfactual decision ledger — binary flags (reject / veto / select) whose
 # forward return tests whether the rejecting/vetoing models actually reduce risk.
@@ -142,6 +151,12 @@ def log_forecasts(run_id: str, date_str: str, pipeline_state: dict,
     `provenance` (§15.1) — the run's data-quality stamp (score/status/hash) merged into
     every row, so the harness can PARTITION the year-end IC comparison by data quality
     and exclude below-floor runs instead of silently averaging a starved run in.
+
+    `formula_version` is stamped from the source entry when present (only
+    quant_scores carries it — see quant_engine.score_all_tickers) so agent_scorecard
+    can partition the quant metric by scoring regime instead of pooling forecasts
+    from a re-weighted composite with its predecessor (P0-2, same rule build_dossier
+    already applies to persistence). Non-quant agents simply carry `None`.
     """
     prov = provenance or {}
     rows = []
@@ -150,14 +165,16 @@ def log_forecasts(run_id: str, date_str: str, pipeline_state: dict,
         if not signal_close:
             continue
         for agent, (key, field, _sign) in _FORECASTS.items():
-            v = (pipeline_state.get(key, {}).get(ticker) or {}).get(field)
+            entry = pipeline_state.get(key, {}).get(ticker) or {}
+            v = entry.get(field)
             if isinstance(v, (int, float)):
+                fv = entry.get("formula_version")
                 for h in horizons:
                     rows.append({
                         "run_id": run_id, "date": date_str, "agent": agent, "field": field,
                         "ticker": ticker, "value": float(v),
                         "signal_close": float(signal_close), "horizon_days": int(h),
-                        "schema": SCHEMA_VERSION, **prov,
+                        "schema": SCHEMA_VERSION, "formula_version": fv, **prov,
                     })
     if rows:
         _append_jsonl(path, rows)
@@ -363,6 +380,30 @@ def _norm_sf(z: float) -> float:
     return math.erfc(abs(z) / math.sqrt(2))
 
 
+def _welch_p(a: list, b: list):
+    """Two-sided p-value for H0: mean(a) == mean(b), via Welch's z-approximation
+    (unequal variances, no scipy). None if either sample has < 2 observations or
+    is CONSTANT (a single distinct value — checked via set(), not `variance == 0`:
+    summing many copies of the same float accumulates rounding noise, so a truly
+    constant sample can compute a variance of ~1e-35 instead of exact 0 — small
+    enough to be meaningless but large enough to pass an `== 0` check, producing
+    an astronomically tiny standard error and a spurious p≈0 "extreme
+    significance" out of pure floating-point dust rather than real signal)."""
+    na, nb = len(a), len(b)
+    if na < 2 or nb < 2:
+        return None
+    if len(set(a)) <= 1 or len(set(b)) <= 1:
+        return None  # a constant sample has no variance to test against
+    ma, mb = sum(a) / na, sum(b) / nb
+    va = sum((x - ma) ** 2 for x in a) / (na - 1)
+    vb = sum((x - mb) ** 2 for x in b) / (nb - 1)
+    se = math.sqrt(va / na + vb / nb)
+    if se == 0:
+        return None
+    z = (mb - ma) / se
+    return round(min(1.0, _norm_sf(z)), 4)
+
+
 def _ic_pvalue(ic, n: int):
     """Approximate two-sided p-value for a rank-IC under H0: IC=0.
 
@@ -402,6 +443,26 @@ def _block_sample(rows: list, horizon: int) -> list:
     return kept
 
 
+def _drop_zero_variance_days(rows: list) -> list:
+    """Exclude forecast rows from a run-date whose cross-sectional values are ALL
+    IDENTICAL — a degenerate default-value emission (e.g. the Jun 8-10 outage,
+    where every Haiku agent returned its fallback score for the whole universe),
+    not a real forecast. Spearman rank-IC has no discriminative signal to measure
+    on a constant; keeping these rows in the pool dilutes genuine observations
+    with noise from a day the agent produced no real output. Rows with < 2 values
+    or an unparseable date can't be judged degenerate and pass through unfiltered."""
+    by_date: dict = {}
+    for r in rows:
+        by_date.setdefault(r.get("date"), []).append(r)
+    kept = []
+    for d, rs in by_date.items():
+        vals = [x["value"] for x in rs if isinstance(x.get("value"), (int, float))]
+        if d is not None and len(vals) >= 2 and len(set(vals)) == 1:
+            continue  # zero cross-sectional variance this day -> drop the whole day
+        kept.extend(rs)
+    return kept
+
+
 def _ic_hit(rows: list, sign: int):
     """(ic, hit_rate, n) over rows carrying numeric value + realized_return."""
     vals = [x["value"] for x in rows if isinstance(x.get("value"), (int, float))]
@@ -416,8 +477,27 @@ def _ic_hit(rows: list, sign: int):
     return ic, round(hits / n, 3), n
 
 
+def _formula_version_lookup(path: str = FACTOR_HISTORY) -> dict:
+    """(date, ticker) -> formula_version, read from the factor-history ledger.
+
+    A READ-ONLY join used to recover the true historical formula_version for
+    quant forecast rows logged BEFORE log_forecasts started stamping it directly
+    (this fix's rollout day). Rewriting the append-only forecasts/forecasts_scored
+    ledgers in place to backfill the field would violate the same append-only
+    invariant journal.py and the other ledgers in this codebase deliberately
+    preserve for audit; factor_history.jsonl already carries formula_version per
+    (date, ticker) from day one (P0-2), so joining at scorecard-BUILD time gets
+    the same correctness without ever mutating a historical record."""
+    lut: dict = {}
+    for r in _iter_jsonl(path):
+        d, t, fv = r.get("date"), r.get("ticker"), r.get("formula_version")
+        if d is not None and t is not None and fv is not None:
+            lut[(d, t)] = fv
+    return lut
+
+
 def agent_scorecard(scored_path: str = SCORED, out_path: str = SCORECARD,
-                    shrink_k: int = 50) -> dict:
+                    shrink_k: int = 50, factor_history_path: str = FACTOR_HISTORY) -> dict:
     """Per (agent.field): raw + block-sampled IC, hit-rate, shrunk IC, effective-N
     CI, and a Benjamini-Hochberg-adjusted p-value. Plus a `_meta` block naming the
     pre-registered primary metric.
@@ -427,18 +507,46 @@ def agent_scorecard(scored_path: str = SCORED, out_path: str = SCORECARD,
     (A2/A3): the raw `ic` over overlapping daily windows overstates precision.
     Nothing consumes this to size trades yet — it is a scoreboard, gated behind
     sample size (future work).
+
+    Formula-version partition (Phase 1, 2026-07-05): the `quant` agent's rows carry
+    `formula_version` (stamped by log_forecasts from quant_scores going forward).
+    A row tagged with the CURRENT operative formula (quant_engine.FORMULA_VERSION)
+    keys the PLAIN metric name (`quant.composite_score@21d`) so existing consumers
+    (stage_c_readiness.py) keep reading the live regime's evidence unchanged. Rows
+    tagged with an older formula_version key a SUFFIXED name instead
+    (`~<version>`) — visible for audit, never silently blended into the number
+    that gates a go/no-go decision. A row with NO tag at all (logged before this
+    fix shipped) is resolved via a READ-ONLY join against factor_history.jsonl
+    (see _formula_version_lookup) — that ledger has carried formula_version per
+    (date, ticker) since Phase 4 (P0-2), so pre-fix rows recover their TRUE
+    historical version instead of all collapsing into one undifferentiated
+    "legacy" bucket; a row with no match in either place keys `~unknown`. Non-quant
+    agents have no version concept at all (formula_version is always None for
+    them) and are unaffected.
+
+    Zero-variance days (§ same date) are dropped before scoring (see
+    _drop_zero_variance_days) — a day where every forecast in the pool is
+    identical (e.g. the Jun 8-10 outage: every Haiku agent returned its default)
+    is a degenerate emission, not a real forecast, and dilutes genuine signal.
     """
-    # Group by (agent, field, HORIZON) so each horizon gets its own IC — the IC curve
-    # across horizons is the whole point of multi-horizon (§7.3.2). Pooling horizons
-    # would average incomparable return windows.
+    fv_lookup = _formula_version_lookup(factor_history_path)
+
+    # Group by (agent, field, HORIZON, formula_version) so each horizon AND each
+    # scoring regime gets its own IC — the IC curve across horizons is the whole
+    # point of multi-horizon (§7.3.2), and pooling across a formula re-weight
+    # would silently average two different composites into one number (P0-2).
     groups: dict = {}
     for r in _iter_jsonl(scored_path):
         h = int(r["horizon_days"]) if isinstance(r.get("horizon_days"), (int, float)) else DEFAULT_HORIZON
-        groups.setdefault((r.get("agent"), r.get("field"), h), []).append(r)
+        fv = r.get("formula_version")
+        if fv is None and r.get("agent") == "quant":
+            fv = fv_lookup.get((r.get("date"), r.get("ticker")))
+        groups.setdefault((r.get("agent"), r.get("field"), h, fv), []).append(r)
 
     orient = {agent: sign for agent, (_k, _f, sign) in _FORECASTS.items()}
     card: dict = {}
-    for (agent, field, horizon), rows in groups.items():
+    for (agent, field, horizon, fv), rows in groups.items():
+        rows = _drop_zero_variance_days(rows)
         sgn = orient.get(agent, +1)
 
         ic, hit, n = _ic_hit(rows, sgn)                       # raw (overlapping)
@@ -448,7 +556,22 @@ def agent_scorecard(scored_path: str = SCORED, out_path: str = SCORECARD,
         ic_b, hit_b, n_b = _ic_hit(block, sgn)
         n_eff = max(1, round(n / horizon)) if horizon else n  # quick scalar effective N
 
-        card[f"{agent}.{field}@{horizon}d"] = {
+        # Only the "quant" agent has a versioned formula; every other agent's
+        # forecast has no such concept (fv is always None) and always keys plain.
+        # fv is None here only when BOTH the row's own tag AND the
+        # factor_history join above failed to resolve it — a genuinely unknown
+        # vintage (e.g. no matching factor_history row that day), not merely
+        # "pre-fix" (the join already recovers those).
+        if agent == "quant":
+            is_current = fv == _CURRENT_QUANT_FORMULA
+            version_tag = fv if fv is not None else "unknown"
+        else:
+            is_current = True
+            version_tag = None
+        base_key = f"{agent}.{field}@{horizon}d"
+        key = base_key if is_current else f"{base_key}~{version_tag}"
+
+        card[key] = {
             "n": n,
             "n_effective":  n_b,           # non-overlapping block count (use THIS)
             "n_eff_approx": n_eff,         # n/horizon sanity scalar
@@ -461,7 +584,9 @@ def agent_scorecard(scored_path: str = SCORED, out_path: str = SCORECARD,
             "p_value":      _ic_pvalue(ic_b, n_b),            # block IC, effective N
             "orientation":  sgn,
             "horizon_days": horizon,
-            "is_primary":   (agent, field) == PRIMARY_METRIC and horizon == PRIMARY_HORIZON,
+            "formula_version": fv,
+            "is_primary":   (is_current and (agent, field) == PRIMARY_METRIC
+                             and horizon == PRIMARY_HORIZON),
         }
 
     # A3: Benjamini-Hochberg across all metrics that produced a p-value.
@@ -507,8 +632,17 @@ def counterfactual_report(scored_path: str = DECISIONS_SCORED,
     For da_reject / cro_veto the model adds value when flagged names UNDERPERFORM
     (gap = mean_kept − mean_flagged > 0); for pm_selected when selected names OUTPERFORM
     (gap < 0). Uses the block-sampled effective sample (A2) so overlapping windows don't
-    inflate the count, and reports NOT_SIGNIFICANT until each side clears `min_n` — at
-    ~weekly cadence this stays NOT_SIGNIFICANT for months (plan §7.4), by design.
+    inflate the count.
+
+    `significant` requires BOTH `min_n` on each side AND a real two-sample test
+    (Welch's z-approximation, `_welch_p`) clearing BH_ALPHA — matching the rigor
+    agent_scorecard applies to the forecast metrics next to it (Phase 1, 2026-07-05).
+    Before this fix, `significant` was `n_flagged >= min_n and n_kept >= min_n` alone
+    — a sample-size floor with no actual significance test — which could label a
+    result "ADDS_VALUE, significant: true" on a difference indistinguishable from
+    noise. At ~weekly cadence this stays NOT_SIGNIFICANT for months (plan §7.4), by
+    design; `p_value` is still reported once both sides reach `min_n`, so the read
+    is honest about HOW insignificant, not just a boolean.
     """
     groups: dict = {}
     for r in _iter_jsonl(scored_path):
@@ -528,11 +662,14 @@ def counterfactual_report(scored_path: str = DECISIONS_SCORED,
         gap = round(mk - mf, 5)                      # kept minus flagged
         direction = _CF_SIGNALS.get(agent, "underperform")
         adds_value = (gap > 0) if direction == "underperform" else (gap < 0)
-        significant = len(flagged) >= min_n and len(kept) >= min_n
+        n_floor_met = len(flagged) >= min_n and len(kept) >= min_n
+        p_value = _welch_p(flagged, kept)
+        significant = n_floor_met and p_value is not None and p_value < BH_ALPHA
         report[f"{agent}@{horizon}d"] = {
             "n_flagged": len(flagged), "n_kept": len(kept),
             "mean_return_flagged": round(mf, 5), "mean_return_kept": round(mk, 5),
             "gap_kept_minus_flagged": gap, "expected_direction": direction,
+            "p_value": p_value, "n_floor_met": bool(n_floor_met),
             "adds_value": bool(adds_value), "significant": bool(significant),
             "verdict": ("NOT_SIGNIFICANT" if not significant
                         else ("ADDS_VALUE" if adds_value else "NO_VALUE")),
@@ -540,8 +677,13 @@ def counterfactual_report(scored_path: str = DECISIONS_SCORED,
     report["_meta"] = {
         "note": ("Counterfactual: does each model's reject/veto/select decision predict "
                  "the right forward-return direction? gap = mean_kept − mean_flagged. "
-                 "Block-sampled effective N; NOT_SIGNIFICANT until both sides >= "
-                 f"{min_n} (months at this cadence — §7.4)."),
+                 "Block-sampled effective N. `significant` requires BOTH sides >= "
+                 f"{min_n} AND a Welch's-z two-sample p-value < {BH_ALPHA} (matches "
+                 "agent_scorecard's rigor — a sample-size floor alone is not a "
+                 "significance test). At ~weekly cadence this stays NOT_SIGNIFICANT "
+                 "for months (§7.4), by design."),
+        "min_n": min_n,
+        "alpha": BH_ALPHA,
         "signals": _CF_SIGNALS,
     }
     with open(out_path, "w") as f:

@@ -128,6 +128,22 @@ _Last refreshed: 2026-07-04 (Phases 0–5 ALL STAGES deployed; go-live Monday 20
   `_PERSISTENCE_WINDOW` / `_FUNDAMENTALS_STALE_DAYS` (and `market_data.FUNDAMENTAL_COVERAGE_FLOOR_PCT`)
   should migrate into `policy.yaml` for the single-source-of-truth invariant.
 
+### [ ] 11. `since_entry` dossier anchor is structurally always `None` (found 2026-07-05, Phase 1 dry-verify)
+- The dossier's **entry anchor** (`_fmt_since_entry` → the "judge the position against entry,
+  not last week" block the Stage C Position-Review agent reads, STRATEGY_REDESIGN_PLAN §13.3)
+  renders `last_decision` fine but **never** the `since_entry` cumulative-return line — verified
+  against both held names with open BUYs (AXP, EBAY): both show `since_entry=None`.
+- **Root cause:** `build_dossier._last_decision` computes `since_entry` from
+  `last.get("entry_price") or last.get("price")`, but `journal.record_trade()` has **no
+  `entry_price`/`price` parameter at all** — every journal entry is written with those fields
+  absent, so the guard `isinstance(entry_px, (int,float))` is always False. The feature has
+  been inert since it shipped.
+- **Fix (execution-adjacent — next batch, not Phase 1):** thread the executed/decision price
+  into `record_trade()` at both call sites (`main.py`, `risk_watch.py`) — or, better, populate
+  it from the broker fill during `mark_transactions_live` reconciliation so it reflects the
+  REAL entry, not the decision-time quote. Touches the trade-journal write path → `/code-review
+  high` + tests. Quietly defeats a headline Phase 5 Stage C mechanism until fixed.
+
 ### [ ] 9. Known live DATA issue surfaced by the dossier — split-unadjusted history (P0-3)
 - The dossier's `history_summary` shows e.g. ORCL `ret_21d ≈ −0.43` — a real artifact of
   **split-unadjusted OHLCV** in the snapshot (`corporate_actions.detect_price_outliers` already

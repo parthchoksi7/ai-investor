@@ -13,6 +13,47 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — Phase 1 post-Phase-5 hardening: alerting noise · missed-week edge · evidence-clock integrity (2026-07-05)
+
+Four offline / observability fixes found in the multi-persona review of the live Phase 5
+system. **No live-order-path code changed** — all four touch health classification,
+the heartbeat, or the measurement layer (`calibration.py`), never order/qty/idempotency.
+Full `pytest` green (**694**, +27); expert `/code-review high` run with no surviving
+correctness findings.
+
+- **`fix(health)` Supabase classifier is now plane-aware** (`main._is_cloud_plane` +
+  `_record_supabase_health`). The expected cloud egress block was recognized only by
+  matching the error-message substrings `not in allowlist` / `egress`; the cloud proxy's
+  wording changed and the 2026-07-02 run was marked `supabase_publish=FAILED` (→
+  `overall_status=FAILED` on a clean run, which also blocks `alert.yml` auto-close). Now
+  any in-process publish exception while structurally in the cloud plane (OAuth token file
+  present, no `ANTHROPIC_API_KEY` — the same detection `analysis`/`preflight_gate` use) is
+  classified OK/deferred, message-agnostic. Under weekly cadence this would otherwise fire
+  ~4× a week. `risk_watch._publish` inherits the fix (it imports the same function).
+- **`fix(heartbeat)` missed-week check runs on the ISO week's LAST TRADING DAY**, not literal
+  `weekday==4` (`_is_last_trading_day_of_iso_week`). A Friday that is itself an NYSE holiday
+  (**2026-12-25**, **2027-01-01** — both Friday holidays) made the heartbeat skip that day
+  entirely, so a genuinely missed rebalance in that week alerted no one. Now keyed to the
+  calendar via `market_calendar.is_trading_day`, so the check shifts to Thursday (or earlier)
+  when the week's tail is closed.
+- **`fix(calibration)` formula-version partition + pre-fix backfill join.** `log_forecasts`
+  now stamps `formula_version` on quant rows; `agent_scorecard` groups by it so a re-weighted
+  composite's IC is never silently pooled with its predecessor's (P0-2). Current-formula rows
+  key the plain metric name (`quant.composite_score@21d`) consumers already read; older/unknown
+  vintages key a suffixed name. Pre-fix untagged rows recover their true version via a
+  READ-ONLY join against `factor_history.jsonl` (no ledger rewrite — the append-only audit
+  invariant is preserved). **Honest side effect:** until post-2026-07-02 forecasts mature
+  (~early Aug), the primary quant key shows "not scored yet" rather than a mixed-vintage IC —
+  `stage_c_readiness` / `breadth_ceiling` / `pipeline_digest` all degrade gracefully.
+- **`fix(calibration)` degenerate-day exclusion + real counterfactual significance test.**
+  `agent_scorecard` drops any run-date whose cross-sectional forecasts are all identical
+  (the Jun 8–10 outage emitted constant defaults — rank-IC on a constant is meaningless and
+  dilutes real signal). `counterfactual_report` now gates `significant` on a Welch's two-sample
+  test (`_welch_p`) clearing `BH_ALPHA`, not a sample-size floor alone — the old code could
+  label a noise-level difference "ADDS_VALUE, significant: true". Fixed a float-precision trap
+  in `_welch_p` (a truly-constant sample computes ~1e-35 variance, not exact 0 — guarded via
+  `set()`, not `== 0`).
+
 ### Added — Phase 5 Stages B + C + D: weekly cadence · risk_watch · dossier consumer · gated universe expansion
 
 **THE live-path change** (owner-directed 2026-07-04, overriding the evidence gate — see note below).

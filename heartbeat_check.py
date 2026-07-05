@@ -25,10 +25,30 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from market_calendar import is_trading_day, today_et, iso_week_of
+
+
+def _is_last_trading_day_of_iso_week(d: date) -> bool:
+    """True if no later date in d's ISO week is a trading day — i.e. d is that
+    week's LAST trading day. Normally Friday, but shifts earlier when Thu/Fri (or
+    both) are NYSE holidays (e.g. Thanksgiving week, or a Friday-observed New
+    Year's/Christmas holiday). Gating the missed-week check on literal weekday==4
+    (Friday) means a week whose Friday is itself a holiday never runs the check at
+    all (the heartbeat skips outright on a non-trading day) — a missed rebalance
+    in that week would alert nobody. Checking "last trading day" instead keys the
+    same underlying question (has this ISO week's window closed?) to the calendar
+    module every other consumer already uses (market_calendar.is_trading_day)."""
+    this_week = iso_week_of(d)
+    for offset in range(1, 8):
+        nxt = d + timedelta(days=offset)
+        if iso_week_of(nxt) != this_week:
+            break
+        if is_trading_day(nxt):
+            return False
+    return True
 
 REPORT_FILE = "heartbeat_report.json"
 
@@ -153,14 +173,20 @@ def check_heartbeat(as_of: "str | date | None" = None, root: str = ".") -> dict:
             warnings.append({"name": name, "path": path, "artifact_date": found,
                              "note": "stale/missing (informational — a 0-candidate day writes none)"})
 
-    # Missed-ISO-week rebalance check (§15.3 / §6.5.2) — evaluated only on FRIDAY,
-    # after the last catch-up window has passed (Wed → Thu → Fri all had 4 attempts).
-    # A whole week with no rebalance CLAIM or EXECUTION is the silent failure the
-    # weekly cadence must never absorb: either every attempt saw stale data (fix the
-    # producer) or the routine never fired (fix the routine). last_rebalance.json is
-    # the durable stamp journal.py mirrors on the claim/executed stamps.
+    # Missed-ISO-week rebalance check (§15.3 / §6.5.2) — evaluated on the ISO
+    # week's LAST TRADING DAY (normally Friday, earlier when Thu/Fri are holidays),
+    # after the last catch-up window has passed. A whole week with no rebalance
+    # CLAIM or EXECUTION is the silent failure the weekly cadence must never
+    # absorb: either every attempt saw stale data (fix the producer) or the
+    # routine never fired (fix the routine). last_rebalance.json is the durable
+    # stamp journal.py mirrors on the claim/executed stamps.
+    #
+    # NOT literal weekday==4 (Friday): a Friday that is itself an NYSE holiday
+    # (e.g. 2026-12-25, 2027-01-01) makes the heartbeat skip outright that day
+    # (is_trading_day gate above returns early) — the check would never run for
+    # that week, and a genuinely missed rebalance would alert nobody.
     as_of_date = datetime.strptime(as_of_iso, "%Y-%m-%d").date()
-    if as_of_date.weekday() == 4:  # Friday
+    if _is_last_trading_day_of_iso_week(as_of_date):
         lr = None
         try:
             lr = json.loads((Path(root) / "last_rebalance.json").read_text())
