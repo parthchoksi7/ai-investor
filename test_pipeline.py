@@ -658,6 +658,13 @@ class TestKillSwitches:
 # ── journal.mark_pending_executed ─────────────────────────────────────────────
 
 class TestMarkPendingExecuted:
+    """NOTE: every test here isolates BOTH PENDING_FILE and LAST_REBALANCE_FILE.
+    mark_pending_executed mirrors a rebalance-mode stamp into last_rebalance.json
+    (Phase 5, §6.5) — leaving that constant un-monkeypatched would make these
+    tests write real fixture data into the REAL repo's last_rebalance.json (a
+    bare relative path), corrupting the once-per-ISO-week rebalance lock the
+    live gate depends on. This bit us once already: see git history."""
+
     def _write(self, path, run_id, executed_at=None):
         path.write_text(json.dumps({
             "run_id":       run_id,
@@ -667,8 +674,13 @@ class TestMarkPendingExecuted:
             "decisions":    [],
         }))
 
+    def _isolate_rebalance_file(self, tmp_path, monkeypatch):
+        import journal
+        monkeypatch.setattr(journal, "LAST_REBALANCE_FILE", str(tmp_path / "last_rebalance.json"))
+
     def test_stamps_execution_timestamp(self, tmp_path, monkeypatch):
         import journal
+        self._isolate_rebalance_file(tmp_path, monkeypatch)
         pending = tmp_path / "pending.json"
         self._write(pending, "run-001")
         monkeypatch.setattr(journal, "PENDING_FILE", str(pending))
@@ -679,6 +691,7 @@ class TestMarkPendingExecuted:
 
     def test_second_call_preserves_original_timestamp(self, tmp_path, monkeypatch):
         import journal
+        self._isolate_rebalance_file(tmp_path, monkeypatch)
         pending = tmp_path / "pending.json"
         self._write(pending, "run-001")
         monkeypatch.setattr(journal, "PENDING_FILE", str(pending))
@@ -691,6 +704,7 @@ class TestMarkPendingExecuted:
 
     def test_no_stamp_on_run_id_mismatch(self, tmp_path, monkeypatch):
         import journal
+        self._isolate_rebalance_file(tmp_path, monkeypatch)
         pending = tmp_path / "pending.json"
         self._write(pending, "run-001")
         monkeypatch.setattr(journal, "PENDING_FILE", str(pending))
@@ -701,6 +715,7 @@ class TestMarkPendingExecuted:
 
     def test_already_stamped_file_not_overwritten(self, tmp_path, monkeypatch):
         import journal
+        self._isolate_rebalance_file(tmp_path, monkeypatch)
         pending = tmp_path / "pending.json"
         original_ts = "2026-06-09T14:00:00+00:00"
         self._write(pending, "run-001", executed_at=original_ts)
@@ -712,6 +727,7 @@ class TestMarkPendingExecuted:
 
     def test_no_error_when_file_missing(self, tmp_path, monkeypatch):
         import journal
+        self._isolate_rebalance_file(tmp_path, monkeypatch)
         monkeypatch.setattr(journal, "PENDING_FILE", str(tmp_path / "nonexistent.json"))
         from journal import mark_pending_executed
         mark_pending_executed("run-001")  # must not raise
@@ -1990,7 +2006,13 @@ class TestMarkExecutionStarted:
     """The claim is stamped (and pushed by the routine) BEFORE the first order,
     so an attempt that crashes mid-execution leaves a durable marker. The gate
     treats started-but-not-executed as SKIP/DONE: failure direction is missed
-    trades (Scenario B recovery), never duplicate trades."""
+    trades (Scenario B recovery), never duplicate trades.
+
+    NOTE: _setup isolates BOTH PENDING_FILE and LAST_REBALANCE_FILE. Without the
+    latter, mark_execution_started's rebalance-mode mirror (Phase 5, §6.5) would
+    write this class's "r1"/"BAC"/2026-06-12 fixture straight into the REAL
+    repo's last_rebalance.json (a bare relative path) — corrupting the live
+    once-per-ISO-week rebalance lock. This bit us once already: see git history."""
 
     def _pending(self, **overrides):
         base = {"run_id": "r1", "date": "2026-06-12",
@@ -2004,6 +2026,7 @@ class TestMarkExecutionStarted:
         f = tmp_path / "pending_decisions.json"
         f.write_text(json.dumps(pending))
         monkeypatch.setattr(journal, "PENDING_FILE", str(f))
+        monkeypatch.setattr(journal, "LAST_REBALANCE_FILE", str(tmp_path / "last_rebalance.json"))
         return journal, f
 
     def test_stamps_claim(self, tmp_path, monkeypatch):
@@ -2028,6 +2051,7 @@ class TestMarkExecutionStarted:
     def test_missing_file_is_safe(self, tmp_path, monkeypatch):
         import journal
         monkeypatch.setattr(journal, "PENDING_FILE", str(tmp_path / "nope.json"))
+        monkeypatch.setattr(journal, "LAST_REBALANCE_FILE", str(tmp_path / "last_rebalance.json"))
         journal.mark_execution_started("r1")  # must not raise
 
     def test_old_envelope_without_field_gains_it(self, tmp_path, monkeypatch):
