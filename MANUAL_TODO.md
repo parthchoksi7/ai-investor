@@ -4,22 +4,20 @@ Actions that **cannot be done from the repo by Claude** — they require the liv
 routines UI, real secrets (redacted from this repo), or an owner merge/deploy decision.
 Newest concern first. Check items off as you do them.
 
-_Last refreshed: 2026-07-04 (Phases 0–5 ALL STAGES deployed; go-live Monday 2026-07-06 pending the routine sync below)._
+_Last refreshed: 2026-07-05 (Phase 1 hardening batch committed on `fix/phase1-hardening-evidence-clock`,
+not yet merged; daily routine sync CONFIRMED synced — see item 0 below; go-live observation window
+open through 2026-07-10)._
 
 ---
 
-## 🔴 ACTION REQUIRED BEFORE MONDAY 9:45 AM ET — sync the DAILY routine prompt
+## ✅ DONE (2026-07-05) — daily routine prompt sync
 
-### [ ] 0. Paste the new `ROUTINE_DAILY_CYCLE.md` into the live daily routine (`YOUR_ROUTINE_ID_DAILY`)
-- **What changed:** STEP 0 now branches on FOUR gate exits (new: `30` = risk-watch mode);
-  STEP 3 runs `main.py` OR `risk_watch.py` by mode (+ SELL-only assertion); STEP 4 gains
-  GUARD 4 (mode integrity), `git add last_rebalance.json` in the claim commit, and the
-  P0-1 stale-price re-quote; STEP 5 `git add` gains `last_rebalance.json`.
-- **Substitute** the account number (search `YOUR_ACCOUNT_NUMBER`) as before. No secrets.
-- **If you DON'T sync in time:** safe degradation — the old prompt stops cleanly on the
-  unknown exit 30 (risk-watch days no-op, no stop-loss net) and **Wednesday still trades
-  correctly** (exit 0 semantics are compatible). Sync activates the daily safety net.
-- The EOD routine is **unchanged** — no sync needed.
+### [x] 0. Paste the new `ROUTINE_DAILY_CYCLE.md` into the live daily routine (`YOUR_ROUTINE_ID_DAILY`)
+- **Verified via `RemoteTrigger(action="list")`**: the live prompt is byte-for-byte identical to
+  `ROUTINE_DAILY_CYCLE.md` (account number substituted; only diff was a trailing newline). Contains
+  the exit-30 branch, GUARD 4 (mode integrity), and the P0-1 stale-price re-quote. `updated_at`
+  2026-07-05T13:30:44Z; `next_run_at` 2026-07-06T13:45:00Z (Monday 9:45 AM EDT) — the first-ever
+  risk-watch day. The EOD routine is unchanged (no sync needed there).
 
 ### [ ] 0b. (Later, your call) Flip `UNIVERSE_EXPANDED` for the ~400-name universe
 - Set the GitHub Actions **variable** (Settings → Secrets and variables → Actions →
@@ -41,6 +39,100 @@ _Last refreshed: 2026-07-04 (Phases 0–5 ALL STAGES deployed; go-live Monday 20
 | **Stage D** — expansion-ready fetch + interim §12.4 storage split | ✅ code deployed, **operator-gated** — flips with the `UNIVERSE_EXPANDED` variable (item 0b) |
 | Phase 6 — exit-logic prompt rewrite (invalidation-gated exits) | ⏭ next build phase (forward-tested, `/code-review ultra`) |
 | Full §12.4 storage split (dossier-only commit, Supabase raw) | ⏭ deferred until the expanded snapshot hits the §12.6 triggers |
+| **Post-go-live hardening batch 1** (Supabase plane detection, heartbeat holiday-Friday fix, evidence-clock formula-version partition + significance test) | ✅ **committed** on `fix/phase1-hardening-evidence-clock`, **not yet merged** — see item 12 below |
+
+---
+
+## 🟣 Go-live observation window (2026-07-06 → 2026-07-10) — from the post-Phase-5 critical review
+
+This is the review-and-remediation plan from the Jul 4–5 multi-persona critical review, tracked
+here (NOT numbered as a redesign "Phase" — that term is reserved for the Phase 0–6 rows in the
+table above; this is a short-lived verification + hardening sequence layered on top of the
+already-deployed Phase 5). Nothing below blocks Monday — it is what to WATCH and what to BUILD
+next, in order.
+
+### [ ] 12. Merge `fix/phase1-hardening-evidence-clock` to `main`
+- Batch 1 of the remediation (committed 2026-07-05, not pushed/merged): plane-aware Supabase
+  health classification, the heartbeat holiday-Friday missed-week fix, and the calibration
+  evidence-clock integrity fixes (formula-version partition + read-only `factor_history.jsonl`
+  join + zero-variance-day exclusion + real counterfactual significance test). 694 tests green,
+  `/code-review high` clean. **No live-order-path code changed** — safe to merge any day, not
+  just a non-trading day, but do it BEFORE Monday if possible so the plane-aware Supabase fix is
+  live for the first-ever risk-watch run.
+- **Expected visible side effect post-merge:** `agent_scorecards.json`'s primary
+  `quant.composite_score@21d` key will read "not scored yet" (ACCUMULATING) instead of a mixed-
+  vintage IC, until enough post-2026-07-02-formula forecasts mature (~early August). This is the
+  intended, honest consequence — not a regression. `stage_c_readiness.py` / `pipeline_digest.md`
+  will visibly show less evidence for a few weeks.
+
+### [ ] 13. Watch these specific checkpoints during the observation window (no action unless something looks wrong)
+| Day | What to verify |
+|-----|-----------------|
+| **Mon Jul 6** (first-ever risk-watch day) | Gate exits 30; `risk_watch` health row written; `pending_decisions.json` has `mode: "risk_watch"`; zero BUYs; the envelope's `policy_version` stamps `2.0-phase5-weekly` |
+| **Wed Jul 8** (first-ever Phase-5 weekly rebalance) | Gate exits 0; `research_dossier` health check OK; `last_rebalance.json` written for this ISO week; a stale-priced decision triggers the P0-1 re-quote; guardrail rejections look sane |
+| **Thu Jul 9** | Gate exits 30, citing "rebalance already attempted this ISO week" from the `last_rebalance.json` mirror — the FIRST live test of the once-per-week lock |
+| **Fri Jul 10** | `pipeline_digest.md` reports the week's rebalance status; heartbeat's `weekly_rebalance` check is OK; no `health-alert` issue stuck open |
+
+Anything that deviates from this table is a finding, not automatically a bug — bring it back for
+a look before assuming something is broken.
+
+### [ ] 14. (Ready to build once the observation window closes, not urgent) Narrow the risk_watch cross-mode interlock
+- Currently `_mirror_rebalance_stamp` (journal.py) records ALL rebalance-traded tickers — BUYs
+  AND SELLs — and `risk_watch._interlocked_tickers` refuses to stop-loss-sell ANY of them for the
+  rest of the ISO week. The interlock only needs to protect against double-selling a name the
+  rebalance already SOLD; a name the rebalance just BOUGHT should still be protected by the daily
+  −25% stop if it craters days later. **Fix:** key the mirror/interlock off rebalance SELLs only.
+  This is a change to `risk_watch.py`'s decision set → real order-path code → `/code-review ultra`
+  + a weekend dry-run before merging, per DEPLOYMENT.md §7.0. Not urgent (DEGRADED health still
+  pages you if a fired-but-interlocked stop is ever hit); do this in the first quiet week.
+
+### [ ] 15. (Ready to build once the observation window closes) Crash-evidence preservation in risk_watch
+- If a Wednesday rebalance crashes after claiming but before stamping `executed_at`, Thursday's
+  `risk_watch.py` overwrites `pending_decisions.json` — destroying the exact envelope
+  `reconcile.py`/Scenario B need to diff intended-vs-actual orders. Fix: `risk_watch.py` archives
+  a claimed-but-unstamped prior envelope (e.g. to `pending_decisions.crashed.json`) before writing
+  its own, and `reconcile.py` prefers the archived file when present. Small, testable, no change
+  to risk_watch's own decision logic — but touches the same file the order path depends on, so
+  still `/code-review high` minimum.
+
+### [ ] 16. (Ready to build, no urgency) Score the Portfolio Manager's `expected_return` in calibration.py
+- `guardrails.enforce_net_edge` gates every BUY on the PM's own self-reported `expected_return` —
+  nothing currently measures whether that number is calibrated (over- or under-confident) against
+  realized returns. Add `pm.expected_return` as a first-class forecast in `calibration.log_forecasts`
+  / `agent_scorecard` (same machinery already used for `quant`/`research`/etc.), so the net-edge
+  gate's only input eventually earns (or loses) trust from real evidence instead of running on
+  faith. Prerequisite to ever tightening or loosening `MIN_NET_EDGE` with confidence.
+
+### [ ] 17. (Ready to build, needs a routine-prompt sync after) Prompt-drift automation
+- The recurring "requires a live-routine sync" failure class (this repo's most common operational
+  incident — see the Jun 16/17 branch-execution and STEP-3/5 drift entries) has no automated
+  detection: the only way to know the live prompt matches `ROUTINE_DAILY_CYCLE.md` is to manually
+  diff it (as done for item 0 above). Fix: have the routine echo a short prompt-version string
+  (e.g. a hash of the canonical .md, or a manually-bumped version line) into `system_health.json`;
+  the heartbeat compares it against the current `ROUTINE_DAILY_CYCLE.md`'s stamped version and
+  alerts on mismatch. Code is buildable now; taking effect requires pasting the updated prompt
+  into the live routine same as any other prompt change.
+
+### [ ] 18. Owner decision — the deployment mandate (no code fix; a policy choice)
+- Every guardrail in the system is a BRAKE (min-hold, wash-sale, tax-hold, sector cap, safe-mode,
+  net-edge, kill-switch, stop-loss); nothing converts idle cash into positions except the weekly
+  PM's own disposition. At weekly cadence (~52 decisions/year) and with SELLs locking capital
+  behind a 30-day wash-sale re-entry window, the system structurally drifts toward under-
+  deployment. Options: **(a)** ratify defensive cash explicitly in the IPS with a review trigger
+  (recommended for now, until the partitioned evidence clock has something to say); **(b)** a
+  bounded mechanical re-deployment rule (e.g. cash > threshold for N consecutive weeks relaxes the
+  net-edge floor for index-diversified adds, still inside every hard cap) — a real order-path
+  change, `/code-review ultra`; **(c)** accept the risk and do nothing. This is a decision only
+  you can make; Claude can implement whichever you pick.
+
+### [ ] 19. Owner decision — reconcile the stop-loss IPS text with its actual implementation
+- IPS/policy describe the −25% single-name stop as evaluated "at daily close, no trailing"; the
+  live `risk_watch.py` implementation evaluates it on a MORNING intraday MCP quote (9:45–12:45 ET),
+  not the actual 4 PM close (the EOD routine deliberately places no orders, so a true daily-close
+  evaluation isn't currently wired). Pick one: **(a)** amend the IPS/policy text to describe the
+  mechanism as implemented ("morning evaluation," recommended — cheapest, no behavior change), or
+  **(b)** build a true close-based evaluation (bigger change: would need the EOD routine or a
+  same-day-later check to place orders, which it currently structurally cannot do).
 
 ---
 
@@ -152,6 +244,12 @@ _Last refreshed: 2026-07-04 (Phases 0–5 ALL STAGES deployed; go-live Monday 20
   `adjusted=true`, so confirm why ORCL slipped through) + the delisting/M&A handler for held
   names. **Not a dossier bug — a data-source correctness item to run down before the dossier
   drives trades.**
+- **Follow-up refinement (from the Jul 4-5 review):** `corporate_actions.detect_price_outliers`
+  currently only FLAGS an outlier into `data_quality` — `quant_engine.score_all_tickers` still
+  consumes the corrupted series for momentum/vol either way. Once the source fix above lands,
+  consider whether a flagged ticker should also be QUARANTINED from scoring (its composite
+  reported N/A rather than a number computed on a known-bad series) as defense-in-depth, not
+  just visible-but-unactioned in the data-quality report.
 
 ---
 
