@@ -11,7 +11,7 @@
 > | | |
 > |---|---|
 > | **Version** | 1.0 (2026-06-27) |
-> | **Status** | READY TO BUILD — all design decisions closed |
+> | **Status** | **Phases 0–5 BUILT AND DEPLOYED (2026-06-27 → 2026-07-04); Phase 6 not yet started.** (Updated 2026-07-05 — see §1 status column below. For day-to-day status, prefer `CLAUDE.md`'s Changelog + `MANUAL_TODO.md`'s roadmap table over this doc.) |
 > | **Owner lenses** | backend · quant · ml_ai · devops · PM (the five review personas) |
 
 ---
@@ -36,16 +36,16 @@
 
 ## 1. Phase overview
 
-| Phase | Theme | Touches live trade path? | Risk | Gate |
-|-------|-------|--------------------------|------|------|
-| **0** | Single-source the limits (`policy.yaml`) | No (parity refactor) | Low | high + parity tests |
-| **1** | Measurement foundation (harness + attribution) | No (offline) | Low | high |
-| **2** | Data layer: coverage fix, composite re-weight, universe | No (offline/backtest) | Low–Med | high |
-| **3** | Observability & alerting (the safety net) | No | Low | high + chaos suite |
-| **4** | Research pipeline: dossier, memory, analyst split | No (GH Actions writes artifacts only) | Med | high |
-| **5** | **Live path: weekly cadence + `risk_watch.py`** | **YES** | **High** | **ultra + dry-run + routine sync** |
-| **6** | Exit logic & the momentum→fundamental shift | **YES** | High | ultra + forward-test |
-| **7** | Governance operationalization (ongoing) | No | Low | high |
+| Phase | Theme | Touches live trade path? | Risk | Gate | Status (2026-07-05) |
+|-------|-------|--------------------------|------|------|----------------------|
+| **0** | Single-source the limits (`policy.yaml`) | No (parity refactor) | Low | high + parity tests | ✅ Built |
+| **1** | Measurement foundation (harness + attribution) | No (offline) | Low | high | ✅ Built |
+| **2** | Data layer: coverage fix, composite re-weight, universe | No (offline/backtest) | Low–Med | high | ✅ Built |
+| **3** | Observability & alerting (the safety net) | No | Low | high + chaos suite | ✅ Built |
+| **4** | Research pipeline: dossier, memory, analyst split | No (GH Actions writes artifacts only) | Med | high | ✅ Built (3 increments) |
+| **5** | **Live path: weekly cadence + `risk_watch.py`** | **YES** | **High** | **ultra + dry-run + routine sync** | ✅ **Built + LIVE** (Stages A–D, 2026-07-04); +hardening batch 2026-07-05 |
+| **6** | Exit logic & the momentum→fundamental shift | **YES** | High | ultra + forward-test | ⬜ Not started |
+| **7** | Governance operationalization (ongoing) | No | Low | high | 🔁 Ongoing (by design) |
 
 ---
 
