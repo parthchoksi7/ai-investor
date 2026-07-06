@@ -23,7 +23,6 @@ reading the body. "Verified" means checked against a real artifact/API in this r
 | 0 | Daily routine prompt sync | ✅ **DONE** — verified byte-for-byte |
 | 0b | Flip `UNIVERSE_EXPANDED` | ⬜ pending (your call — both gating conditions now met as of 2026-07-05) |
 | 3 | PyYAML in cloud routine | 🟡 **strong indirect evidence, not yet directly confirmed** — resolves automatically with item 13's Monday check |
-| 5 | Parked IPS open questions | ⬜ pending (optional — defaults already applied) |
 | 6 | `UNIVERSE_EXPANDED` cursor wiring | ✅ **DONE** — both gating conditions met, safe to flip via item 0b |
 | 7 | Heartbeat/digest first scheduled runs | 🟢 **substantially confirmed** — real artifact content exists; can't fully rule out a dispatch vs. cron firing |
 | 8 | Dossier consumer wiring | ✅ **DONE** — shipped as Stage C (2026-07-04); sub-items below still open |
@@ -317,9 +316,6 @@ a look before assuming something is broken.
 ---
 
 ## 🟢 Merges / decisions (Claude CAN do these — just say so)
-
-### [ ] 5. Settle the two parked IPS open questions — **PENDING, optional** (defaults already applied; only revisit if you disagree)
-- Both already have sensible defaults applied; only revisit if you disagree with them.
 
 ### [ ] 10. The Devil's-Advocate-on-holdings nudge (`feat/pm-devil-tension`) — **PENDING, parked** (your call)
 - A June-17 review branch surfaces the DA verdict on PM holdings lines. You deliberately held it
