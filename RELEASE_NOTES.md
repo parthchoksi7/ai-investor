@@ -13,6 +13,20 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — `DRY_RUN` now suppresses live Supabase publishing (2026-07-05)
+
+`publish.publish_to_supabase` now returns early (after writing `portfolio_snapshot.json`,
+before any Supabase network call) when `DRY_RUN=true`. Previously `DRY_RUN` gated only order
+placement, not Supabase — so a local dry run of `main.py`/`risk_watch.py` with live Supabase
+creds would write its (possibly synthetic) portfolio straight to the production database behind
+the live website. Found the hard way during Monday go-live prep: a `risk_watch.py` dry run
+against a synthetic stop-firing portfolio published a fake $300 / −40% book + wrong holdings to
+production. The `portfolio_snapshot.json` file write is preserved (it's the trigger for the
+GitHub Actions `publish.yml`, which does the real write with no `DRY_RUN` set — `.env` is
+gitignored, so GH Actions is never gated), and in the Anthropic cloud (`DRY_RUN=true`,
+Supabase egress-blocked) this now returns cleanly instead of raising a 403 that batch 1 had to
+reclassify. 4 new tests (`TestPublishDryRunGuard`).
+
 ### Added — batch 2: PM calibration, expansion fetch cursor, two governance decisions (2026-07-05)
 
 Four MANUAL_TODO items actioned same-day following the doc audit above. **No live-order-path

@@ -5381,6 +5381,80 @@ class TestPublishRegimePriority:
         assert self._written_regime(tmp_path) == "NEUTRAL"
 
 
+class TestPublishDryRunGuard:
+    """Found 2026-07-05: a local risk_watch dry run (DRY_RUN=true) published a
+    synthetic portfolio to the PRODUCTION Supabase behind the live website —
+    DRY_RUN gated order placement but not Supabase publishing. The guard must
+    still write portfolio_snapshot.json (the GitHub Actions publish.yml trigger)
+    but never perform a live Supabase network write."""
+
+    def _setup(self, tmp_path, monkeypatch):
+        import importlib, publish
+        importlib.reload(publish)
+        monkeypatch.chdir(tmp_path)
+        # Real-LOOKING creds present so the test proves the guard skips BEFORE using
+        # them (not merely because Supabase is unconfigured).
+        monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
+        monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-key")
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        return publish
+
+    def test_dry_run_writes_file_but_skips_supabase(self, tmp_path, monkeypatch):
+        publish = self._setup(tmp_path, monkeypatch)
+        monkeypatch.setenv("DRY_RUN", "true")
+        import supabase
+        monkeypatch.setattr(supabase, "create_client", lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("create_client called — DRY_RUN guard did not fire")))
+        publish.publish_to_supabase({"cash": 100, "total_value": 500, "positions": []})
+        # The snapshot FILE must still be written — it's the trigger for publish.yml.
+        snap = tmp_path / "portfolio_snapshot.json"
+        assert snap.exists()
+        assert json.loads(snap.read_text())["portfolio"]["total_value"] == 500
+
+    def test_dry_run_case_insensitive(self, tmp_path, monkeypatch):
+        publish = self._setup(tmp_path, monkeypatch)
+        monkeypatch.setenv("DRY_RUN", "TRUE")   # matches execute.py's .lower() semantics
+        import supabase
+        monkeypatch.setattr(supabase, "create_client", lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("create_client called on DRY_RUN=TRUE")))
+        publish.publish_to_supabase({"cash": 100, "total_value": 500, "positions": []})
+        assert (tmp_path / "portfolio_snapshot.json").exists()
+
+    def test_dry_run_false_reaches_supabase_block(self, tmp_path, monkeypatch):
+        # DRY_RUN=false with creds present → publish proceeds to create_client,
+        # proving the guard is specific to DRY_RUN, not a blanket skip that would
+        # break the real GitHub-Actions publish path (which runs with no DRY_RUN).
+        publish = self._setup(tmp_path, monkeypatch)
+        monkeypatch.setenv("DRY_RUN", "false")
+        reached = {"create_client": False}
+        import supabase
+        def marker(*a, **k):
+            reached["create_client"] = True
+            raise RuntimeError("stop — only proving we reached the Supabase block")
+        monkeypatch.setattr(supabase, "create_client", marker)
+        try:
+            publish.publish_to_supabase({"cash": 100, "total_value": 500, "positions": []})
+        except RuntimeError:
+            pass
+        assert reached["create_client"] is True
+
+    def test_dry_run_unset_reaches_supabase_block(self, tmp_path, monkeypatch):
+        # No DRY_RUN at all (GitHub Actions publish.yml has none) → not gated.
+        publish = self._setup(tmp_path, monkeypatch)
+        monkeypatch.delenv("DRY_RUN", raising=False)
+        reached = {"create_client": False}
+        import supabase
+        def marker(*a, **k):
+            reached["create_client"] = True
+            raise RuntimeError("stop")
+        monkeypatch.setattr(supabase, "create_client", marker)
+        try:
+            publish.publish_to_supabase({"cash": 100, "total_value": 500, "positions": []})
+        except RuntimeError:
+            pass
+        assert reached["create_client"] is True
+
+
 # ── CascadeProvider tests ──────────────────────────────────────────────────────
 
 class TestCascadeProvider:

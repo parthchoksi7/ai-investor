@@ -333,6 +333,23 @@ This prevents the silent all-50 quant score failure mode where agents run but pr
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
 
+## Changelog — Jul 5 2026 (batch 3 — DRY_RUN Supabase guard, found during go-live prep)
+
+`fix(publish)` **`DRY_RUN=true` now suppresses live Supabase publishing.** `publish_to_supabase`
+returns early — after writing `portfolio_snapshot.json`, before any Supabase network call — when
+`DRY_RUN=true`. **Found the hard way:** a Monday-go-live-prep dry run of `risk_watch.py` against a
+synthetic stop-firing portfolio published a fake **$300 / −40%** book (and deleted the real
+holdings from the `positions` table) to the **production Supabase behind the live website**,
+because `DRY_RUN` had only ever gated order placement, not publishing. The file write is preserved
+(it's the trigger for the GH-Actions `publish.yml`, which does the real write with no `DRY_RUN` —
+`.env` is gitignored, so GH Actions is never gated); in the Anthropic cloud (`DRY_RUN=true`,
+Supabase egress-blocked) this now returns cleanly instead of raising a 403. **QA:** `pytest`
+**710** (+4, `TestPublishDryRunGuard`). ⚠ The production Supabase rows the dry run corrupted were
+repaired separately by the owner (auto-mode correctly blocks Claude from writing production DB
+state); `close_value` history was never touched. **Lesson: a "dry" run is only dry for the side
+effects you've actually gated — enumerate ALL external writes (orders AND publishing) before
+calling something a dry run.**
+
 ## Changelog — Jul 5 2026 (batch 2 — PM calibration · expansion fetch cursor · two governance decisions)
 
 Four MANUAL_TODO items actioned the same day as the Phase 1 hardening batch below, in a single

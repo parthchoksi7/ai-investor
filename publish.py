@@ -246,6 +246,22 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
         except Exception as _e:
             print(f"   ⚠️  Could not write {SNAPSHOT_FILE}: {_e}")
 
+    # ── DRY_RUN never performs live Supabase writes ──────────────────────────────
+    # A local dry run (main.py or risk_watch.py with DRY_RUN=true) must not touch the
+    # production website's data. Placed AFTER the portfolio_snapshot.json write above
+    # (that file is the trigger for the GitHub Actions publish.yml, which does the
+    # REAL write with no DRY_RUN set — .env is gitignored, so GH Actions has no
+    # DRY_RUN) and BEFORE any Supabase network call, so the cloud publish flow is
+    # unaffected — only the in-process network write is suppressed. In the Anthropic
+    # cloud (DRY_RUN=true, Supabase egress-blocked) this now returns cleanly instead
+    # of raising a 403 that has to be reclassified downstream.
+    # Found 2026-07-05: a local DRY_RUN risk_watch dry run published a synthetic
+    # portfolio ($300 / -40%) to the live production Supabase.
+    if os.getenv("DRY_RUN", "false").lower() == "true":
+        print("   DRY_RUN — skipping live Supabase write "
+              "(portfolio_snapshot.json written; GitHub Actions publish.yml does the real write).")
+        return
+
     # ── Supabase connection ────────────────────────────────────────────────────
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
