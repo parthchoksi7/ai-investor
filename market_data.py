@@ -23,6 +23,16 @@ PROVIDER_CACHE = "provider_cache.json"   # provider enrichment (#1), alternate-d
 RAW_HISTORY_STORE = "raw_history_store.json"
 CARRY_FORWARD_MAX_DAYS = 5   # a store entry older than this is dropped, not carried
 
+# MANUAL_TODO #6b: expansion-only names are swept in batches via universe.next_batch/
+# save_batch (fetch_progress.json, also cached across GH Actions runs) — ~300
+# expansion-only tickers at Polygon's 5-calls/min would take ~60 min in one run, on
+# top of fundamentals/news/event-digest/dossier steps in the same job. 75 tickers/run
+# is ~15 min at 5/min, leaving headroom in the ~105-min window before the 9:45 AM
+# cloud routine, and sweeps the full expansion set in ~4 runs (about one day at the
+# 4 daily triggers). Tunable; not policy.yaml-sourced (matches CARRY_FORWARD_MAX_DAYS
+# above — GH-Actions-only fetch tuning, not an IPS-governed trading limit).
+EXPANSION_BATCH_SIZE = 75
+
 # The trading/scoring universe is owned by universe.py (single source of truth), so
 # the coverage gate + fetch cursor can reason about it without importing this module.
 # WATCHLIST is the always-active CORE (100 names); the gated ~400-name expansion
@@ -425,6 +435,42 @@ def _held_tickers() -> set[str]:
     return held
 
 
+def select_fetch_batch(active: list[str], core: list[str], sp500_keys, held: set[str],
+                       expanded: bool, batch_size: int = None,
+                       progress_path: str = None) -> tuple[list[str], list[str], list[str], int]:
+    """Pure ticker-selection for the Stage D batched expansion sweep (MANUAL_TODO #6b).
+
+    Core + held + SP500 + benchmarks are NEVER batched — they need full daily
+    freshness for live decisions regardless of expansion state. Only the
+    EXPANSION-ONLY remainder (`active` minus that always-fetch set) is swept a
+    batch at a time via the cross-run cursor (universe.next_batch), so a ~300-name
+    expansion sweep completes over several runs instead of one very long (or
+    rate-limited) single run. When `expanded` is False, `expansion_only` and
+    `batch` are always empty, so `all_tickers == always_fetch` exactly — the same
+    set fetched before this feature existed (zero behavior change until an
+    operator flips UNIVERSE_EXPANDED).
+
+    Read-only against the cursor file — advancing it after a successful sweep is
+    the caller's job (universe.save_batch), same fail-toward-retry contract as
+    the raw-history-store checkpoint (a crash before the caller's save_batch call
+    leaves the cursor untouched, so the next run retries the same batch).
+
+    Returns (all_tickers_to_fetch, expansion_only, this_run's_batch, cursor).
+    """
+    from universe import next_batch, FETCH_PROGRESS
+    if batch_size is None:
+        batch_size = EXPANSION_BATCH_SIZE
+    if progress_path is None:
+        progress_path = FETCH_PROGRESS
+    always_fetch = sorted(set(core) | set(sp500_keys) | set(held))
+    expansion_only = sorted(set(active) - set(always_fetch))
+    batch, cursor = ([], 0)
+    if expanded and expansion_only:
+        batch, cursor = next_batch(expansion_only, batch_size, progress_path)
+    all_tickers = sorted(set(always_fetch) | set(batch))
+    return all_tickers, expansion_only, batch, cursor
+
+
 def _prior_coverage_ok() -> bool:
     """Yesterday's fundamental-coverage verdict, from the previously-committed
     snapshot's data_quality block. The expansion gate (universe.get_active_universe)
@@ -537,14 +583,17 @@ def get_market_snapshot(force: bool = False) -> dict:
     # expansion only when the operator flag is set AND yesterday's fundamental
     # coverage cleared the IPS 80% floor (universe.get_active_universe). Held
     # positions are always fetched at full depth regardless of universe membership.
-    from universe import get_active_universe, CORE_UNIVERSE
+    from universe import get_active_universe, CORE_UNIVERSE, save_batch
     held = _held_tickers()
     active = get_active_universe(coverage_ok=_prior_coverage_ok())
     expanded = len(active) > len(CORE_UNIVERSE)
-    all_tickers = sorted(set(active) | set(SP500_HOLDINGS.keys()) | held)
+    all_tickers, expansion_only, batch, batch_cursor = select_fetch_batch(
+        active, CORE_UNIVERSE, SP500_HOLDINGS.keys(), held, expanded)
     if expanded:
-        print(f"   🌐 EXPANDED universe active: {len(all_tickers)} tickers "
-              f"(core {len(CORE_UNIVERSE)}, held {len(held)})")
+        print(f"   🌐 EXPANDED universe active: {len(active)} total | "
+              f"{len(all_tickers) - len(batch)} always-fetch (core+held+SP500+benchmarks) | "
+              f"batch {len(batch)}/{len(expansion_only)} expansion name(s) this run "
+              f"(cursor={batch_cursor})")
 
     prices:  dict = {}
     history: dict = {}
@@ -603,6 +652,14 @@ def get_market_snapshot(force: bool = False) -> dict:
         }
     if force:
         _save_history_store(store)
+        # Advance the expansion cursor only after the sweep completes (never mid-loop) —
+        # a crash before this line leaves the cursor untouched, so the next run retries
+        # the SAME batch rather than skipping it (same fail-toward-resume contract as
+        # the history-store checkpoint above). Per-ticker fetch failures within the
+        # batch don't block the advance — they're covered separately by carry-forward.
+        if expanded and expansion_only:
+            new_cursor = save_batch(expansion_only, EXPANSION_BATCH_SIZE, batch_cursor)
+            print(f"   🌐 expansion batch cursor advanced to {new_cursor}/{len(expansion_only)}")
     if failed or carried:
         print(f"   ⚠ history sweep: {fetched} fetched, {failed} failed, "
               f"{carried} carried forward (≤{CARRY_FORWARD_MAX_DAYS}d, price_as_of stamped)")

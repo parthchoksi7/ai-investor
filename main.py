@@ -586,7 +586,7 @@ def run_daily_cycle():
     # calibration. OBSERVATIONAL: logging only, never affects a decision, and
     # never raises into the pipeline.
     try:
-        from calibration import log_forecasts, log_decisions, log_dossier_signals
+        from calibration import log_forecasts, log_decisions, log_dossier_signals, log_pm_forecasts
         _n_fc = log_forecasts(run_id, today, pipeline_state,
                               pipeline_state.get("candidates", []), market_data["prices"],
                               provenance=dq_provenance)
@@ -599,8 +599,13 @@ def run_daily_cycle():
         # Full dossier universe (not just candidates) → unbiased signal IC (see docstring).
         _n_ds = log_dossier_signals(run_id, today, load_dossier(),
                                     market_data["prices"], provenance=dq_provenance)
-        if _n_fc or _n_dec or _n_ds:
-            print(f"   🧮 Logged {_n_fc} forecast(s) + {_n_dec} decision flag(s) + {_n_ds} dossier-signal(s)")
+        # MANUAL_TODO #16: score the PM's own expected_return against realized returns
+        # — the net-edge gate's only input has never had a calibration check before.
+        _n_pm = log_pm_forecasts(run_id, today, pipeline_state,
+                                 market_data["prices"], provenance=dq_provenance)
+        if _n_fc or _n_dec or _n_ds or _n_pm:
+            print(f"   🧮 Logged {_n_fc} forecast(s) + {_n_dec} decision flag(s) + "
+                  f"{_n_ds} dossier-signal(s) + {_n_pm} PM forecast(s)")
     except Exception as _e:
         print(f"   ⚠ forecast logging skipped: {_e}")
 

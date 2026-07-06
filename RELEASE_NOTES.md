@@ -13,6 +13,39 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — batch 2: PM calibration, expansion fetch cursor, two governance decisions (2026-07-05)
+
+Four MANUAL_TODO items actioned same-day following the doc audit above. **No live-order-path
+code changed** — one change (`risk_watch.py`) is a rationale-string-only fix with zero logic
+impact; everything else is GH-Actions data-plane, calibration, or documentation. Full `pytest`
+green (**706**, +12 over batch 1).
+
+- **`feat(calibration)` PM `expected_return` scoring (#16).** New `calibration.log_pm_forecasts`
+  scores the Portfolio Manager's self-reported `expected_return` — the sole input
+  `guardrails.enforce_net_edge` gates every BUY on — against realized returns, the same way
+  quant/research/earnings/etc. are already scored. Scored from the PM's RAW proposal (before
+  CRO veto/guardrails) to avoid survivorship bias in the calibration read. Wired into `main.py`.
+- **`feat(data)` expansion fetch-cursor wiring (#6b).** New `market_data.select_fetch_batch`
+  wires the already-built `universe.next_batch`/`save_batch` cursor into the fetch loop:
+  core/held/SP500/benchmarks are fetched in full every run (zero behavior change today);
+  expansion-only names are swept in batches of `EXPANSION_BATCH_SIZE=75`/run (~15 min at
+  Polygon's 5-calls/min), completing a ~300-name sweep in about a day. `UNIVERSE_EXPANDED` is
+  now safe to flip — both gating conditions (coverage ≥80%, cursor wiring) are met.
+- **`fix(docs)` corrected a misdiagnosed "bug" (#9).** MANUAL_TODO's P0-3 "ORCL split-unadjusted
+  history" claim was investigated and retracted: independently verified against a live market
+  data query, ORCL's `ret_21d ≈ -0.43` reflects a genuine, gradual ~43% decline (late May → early
+  Jul 2026), unrelated to a separate, real, correctly-flagged 2025-09-10 earnings-driven rally.
+  No code was broken; the "quarantine flagged tickers from scoring" idea from the earlier review
+  is retracted along with it — it would have discarded real signal.
+- **`docs(ips)` two governance decisions ratified (#18, #19).** (a) Defensive cash posture
+  explicitly ratified in `IPS.md` §6 as an intentional, time-bound exception with a two-part
+  review trigger (first current-formula scorecard reading + `stage_c_readiness` DECIDABLE, Q1
+  2027 hard backstop) — logged in §11 and Appendix B. (b) The single-name stop-loss's
+  "daily-close" description corrected to match the as-implemented mechanism (morning evaluation
+  via `risk_watch.py` on a live MCP quote) everywhere it appeared: `IPS.md`, `policy.yaml`,
+  `CLAUDE.md`, and — the actual bug this caught — a self-contradictory runtime rationale string
+  in `risk_watch.py` itself ("daily close, live MCP quote" in the same breath).
+
 ### Docs — repo documentation audit + archival (2026-07-05)
 
 Fixed misleading build-status headers on `STRATEGY_REDESIGN_PLAN.md` and

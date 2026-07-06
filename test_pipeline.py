@@ -3721,6 +3721,82 @@ class TestUniverse:
         assert universe.save_batch([], 4, 0, path) == 0
 
 
+class TestSelectFetchBatch:
+    """MANUAL_TODO #6b (2026-07-05): wiring the resumable cursor into the fetch loop
+    — core/held/SP500/benchmarks always fetched; only expansion-only names batched."""
+
+    CORE = ["AAPL", "MSFT", "GOOGL"]
+    SP500_KEYS = ["AAPL", "SPY"]     # AAPL overlaps CORE on purpose (dedup check)
+
+    def test_not_expanded_matches_pre_feature_behavior_exactly(self, tmp_path):
+        # When NOT expanded, active == CORE, so expansion_only must be empty and
+        # all_tickers must equal the OLD set (core | sp500 | held) — zero behavior
+        # change until an operator flips UNIVERSE_EXPANDED.
+        import market_data
+        held = {"NVDA"}
+        active = list(self.CORE)     # get_active_universe returns CORE when not expanded
+        all_t, exp_only, batch, cursor = market_data.select_fetch_batch(
+            active, self.CORE, self.SP500_KEYS, held, expanded=False,
+            progress_path=str(tmp_path / "fp.json"))
+        old_all_tickers = sorted(set(active) | set(self.SP500_KEYS) | held)
+        assert all_t == old_all_tickers
+        assert exp_only == [] and batch == [] and cursor == 0
+
+    def test_expanded_batches_only_the_expansion_remainder(self, tmp_path):
+        import market_data
+        held = {"NVDA"}
+        expansion_names = [f"EXP{i}" for i in range(10)]
+        active = self.CORE + expansion_names
+        all_t, exp_only, batch, cursor = market_data.select_fetch_batch(
+            active, self.CORE, self.SP500_KEYS, held, expanded=True, batch_size=4,
+            progress_path=str(tmp_path / "fp.json"))
+        assert exp_only == sorted(expansion_names)          # core/sp500/held excluded
+        assert len(batch) == 4 and cursor == 0
+        always_fetch = set(self.CORE) | set(self.SP500_KEYS) | held
+        # every always-fetch name is present, PLUS this run's expansion batch, nothing more
+        assert set(all_t) == always_fetch | set(batch)
+
+    def test_always_fetch_set_never_batched_even_when_expanded(self, tmp_path):
+        # Core/held/SP500 must appear in all_tickers on EVERY run, never subject to
+        # the cursor, regardless of expansion state or batch size.
+        import market_data
+        held = {"NVDA"}
+        expansion_names = [f"EXP{i}" for i in range(20)]
+        active = self.CORE + expansion_names
+        all_t, _, _, _ = market_data.select_fetch_batch(
+            active, self.CORE, self.SP500_KEYS, held, expanded=True, batch_size=3,
+            progress_path=str(tmp_path / "fp.json"))
+        always_fetch = set(self.CORE) | set(self.SP500_KEYS) | held
+        assert always_fetch <= set(all_t)
+
+    def test_successive_calls_advance_through_expansion_names_after_save(self, tmp_path):
+        # Mirrors how get_market_snapshot uses this: caller must call save_batch
+        # after a successful sweep for the cursor to move; without it, the same
+        # batch is returned again (crash-safe retry).
+        import market_data, universe
+        path = str(tmp_path / "fp.json")
+        expansion_names = [f"EXP{i}" for i in range(9)]
+        active = self.CORE + expansion_names
+        all_t1, exp_only, batch1, c1 = market_data.select_fetch_batch(
+            active, self.CORE, [], set(), expanded=True, batch_size=4, progress_path=path)
+        assert batch1 == sorted(expansion_names)[0:4]
+        universe.save_batch(exp_only, 4, c1, path)          # caller advances the cursor
+        _, _, batch2, c2 = market_data.select_fetch_batch(
+            active, self.CORE, [], set(), expanded=True, batch_size=4, progress_path=path)
+        assert batch2 == sorted(expansion_names)[4:8] and c2 == 4
+
+    def test_no_expansion_names_left_over_is_safe(self, tmp_path):
+        # active == core exactly even though expanded=True is passed (edge case,
+        # e.g. a coverage-gate flip mid-computation) — must not crash on an empty
+        # expansion_only set.
+        import market_data
+        all_t, exp_only, batch, cursor = market_data.select_fetch_batch(
+            self.CORE, self.CORE, [], set(), expanded=True,
+            progress_path=str(tmp_path / "fp.json"))
+        assert exp_only == [] and batch == [] and cursor == 0
+        assert all_t == sorted(self.CORE)
+
+
 class TestCorporateActions:
     """P0-3: split/print-outlier detection + delisted-holding detection (offline)."""
 
@@ -4112,6 +4188,87 @@ class TestCalibrationLedger:
         assert out[k]["n"] == 5 and out[k]["ic"] == 1.0
         assert out[k]["ic_shrunk"] == round(5 / 55, 3)        # shrunk far below the raw IC
         assert out[k]["ic_shrunk"] < out[k]["ic"]
+
+
+class TestPMForecastScoring:
+    """MANUAL_TODO #16 (2026-07-05): score the PM's own expected_return so the
+    net-edge gate's only input eventually earns/loses trust from real evidence."""
+
+    def _pstate(self, decisions):
+        return {"portfolio_manager_proposed": decisions}
+
+    def test_logs_only_buy_with_numeric_expected_return(self, tmp_path):
+        import calibration, json
+        path = str(tmp_path / "f.jsonl")
+        decisions = [
+            {"ticker": "AAPL", "action": "BUY", "expected_return": 0.08},
+            {"ticker": "MSFT", "action": "SELL", "expected_return": 0.0},   # SELL -> excluded
+            {"ticker": "GOOGL", "action": "BUY", "expected_return": None},  # no estimate -> excluded
+            {"ticker": "AMZN", "action": "BUY"},                            # missing field -> excluded
+        ]
+        prices = {"AAPL": {"close": 200}, "MSFT": {"close": 100},
+                 "GOOGL": {"close": 150}, "AMZN": {"close": 180}}
+        n = calibration.log_pm_forecasts("r1", "2026-07-08", self._pstate(decisions), prices, path=path)
+        H = len(calibration.HORIZONS)
+        assert n == 1 * H
+        rows = [json.loads(l) for l in open(path)]
+        assert {r["ticker"] for r in rows} == {"AAPL"}
+        assert all(r["agent"] == "pm" and r["field"] == "expected_return" for r in rows)
+        assert rows[0]["value"] == 0.08
+
+    def test_skips_missing_price(self, tmp_path):
+        import calibration
+        decisions = [{"ticker": "AAPL", "action": "BUY", "expected_return": 0.05}]
+        n = calibration.log_pm_forecasts("r1", "2026-07-08", self._pstate(decisions),
+                                         {"AAPL": {}}, path=str(tmp_path / "f.jsonl"))
+        assert n == 0
+
+    def test_string_expected_return_coerced(self, tmp_path):
+        # enforce_net_edge tolerates a stringified expected_return; the calibration
+        # ledger should score the same decisions it gates, not silently drop them.
+        import calibration, json
+        path = str(tmp_path / "f.jsonl")
+        decisions = [{"ticker": "AAPL", "action": "BUY", "expected_return": "0.05"}]
+        n = calibration.log_pm_forecasts("r1", "2026-07-08", self._pstate(decisions),
+                                         {"AAPL": {"close": 200}}, path=path)
+        assert n == len(calibration.HORIZONS)
+        rows = [json.loads(l) for l in open(path)]
+        assert rows[0]["value"] == 0.05
+
+    def test_garbage_expected_return_dropped(self, tmp_path):
+        import calibration
+        decisions = [{"ticker": "AAPL", "action": "BUY", "expected_return": "abc"}]
+        n = calibration.log_pm_forecasts("r1", "2026-07-08", self._pstate(decisions),
+                                         {"AAPL": {"close": 200}}, path=str(tmp_path / "f.jsonl"))
+        assert n == 0
+
+    def test_empty_proposed_list_safe(self, tmp_path):
+        import calibration
+        n = calibration.log_pm_forecasts("r1", "2026-07-08", {"portfolio_manager_proposed": []},
+                                         {}, path=str(tmp_path / "f.jsonl"))
+        assert n == 0
+
+    def test_missing_key_safe(self, tmp_path):
+        import calibration
+        n = calibration.log_pm_forecasts("r1", "2026-07-08", {}, {}, path=str(tmp_path / "f.jsonl"))
+        assert n == 0
+
+    def test_scored_by_agent_scorecard_under_pm_key(self, tmp_path):
+        # End-to-end: log -> matches agent_scorecard's grouping under the plain "pm.expected_return@21d" key
+        import calibration, json
+        scored, card = str(tmp_path / "s.jsonl"), str(tmp_path / "card.json")
+        with open(scored, "w") as f:
+            for i in range(1, 6):
+                f.write(json.dumps({"run_id": f"r{i}", "agent": "pm", "field": "expected_return",
+                                    "ticker": "AAPL", "value": float(i) / 100,
+                                    "realized_return": float(i) / 100,
+                                    "date": f"2026-0{i}-15", "horizon_days": 21}) + "\n")
+        out = calibration.agent_scorecard(scored_path=scored, out_path=card,
+                                          factor_history_path=str(tmp_path / "no_fh.jsonl"))
+        assert "pm.expected_return@21d" in out
+        assert out["pm.expected_return@21d"]["n"] == 5
+        assert out["pm.expected_return@21d"]["orientation"] == 1   # default +1, higher predicts higher
+        assert not any(k.startswith("pm.expected_return@21d~") for k in out)  # no version concept for pm
 
 
 class TestCalibrationFormulaVersionAndVariance:

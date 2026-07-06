@@ -94,6 +94,13 @@ PREREGISTRATION_URL = "https://aspredicted.org/zm7a2p.pdf"  # AsPredicted #29663
 # agent -> (pipeline_state key, field, orientation). orientation = +1 when a
 # HIGHER value should predict a HIGHER forward return, -1 when higher predicts
 # lower (a risk score). Used to orient the sign-hit-rate.
+#
+# NOTE: "pm" (the Portfolio Manager's expected_return) is deliberately NOT here — it
+# doesn't fit this per-ticker-dict shape (portfolio_manager_proposed is a LIST of
+# decisions, and only BUYs carry the field). It is scored by the separate
+# log_pm_forecasts() emitter below, which reuses the same forecast-row schema.
+# agent_scorecard's orientation lookup already defaults unlisted agents to +1, which
+# is the correct sign for "pm" too, so no entry is needed here for that either.
 _FORECASTS = {
     "quant":           ("quant_scores",     "composite_score",   +1),
     "research":        ("research",          "confidence",        +1),
@@ -258,6 +265,57 @@ def log_dossier_signals(run_id: str, date_str: str, dossier: dict, prices: dict,
                     "ticker": t, "value": float(val), "signal_close": float(signal_close),
                     "horizon_days": int(h), "schema": SCHEMA_VERSION, **prov,
                 })
+    if rows:
+        _append_jsonl(path, rows)
+    return len(rows)
+
+
+def log_pm_forecasts(run_id: str, date_str: str, pipeline_state: dict, prices: dict,
+                     horizons: tuple = HORIZONS, path: str = LEDGER,
+                     provenance: dict | None = None) -> int:
+    """Log the Portfolio Manager's own `expected_return` estimate as a first-class
+    forecast (Phase 1 batch, MANUAL_TODO #16). `guardrails.enforce_net_edge` gates
+    every BUY on this self-reported number, but nothing has ever measured whether the
+    PM's estimate is CALIBRATED against realized returns — this closes that loop the
+    same way log_forecasts closes it for quant/research/earnings/devils_advocate/
+    position_review, so the net-edge floor can eventually be tuned on evidence instead
+    of faith.
+
+    Scored from `portfolio_manager_proposed` (the PM's RAW proposal, BEFORE the CRO
+    veto or any guardrail) rather than `final_decisions` — scoring only guard-survived
+    decisions would introduce a selection bias (only ever measuring predictions that
+    already cleared the net-edge floor, never the over-confident ones that got
+    rejected or vetoed). Only BUY decisions carry an expected_return (SELLs/HOLDs
+    don't — same convention as `enforce_net_edge`), so this necessarily scores a
+    smaller, PM-selected subset of tickers each run, not the full candidate universe.
+    Reuses the forecast-row schema unchanged so score_matured/agent_scorecard score it
+    exactly like every other agent (orientation defaults to +1: a higher expected
+    return should predict a higher realized one). Logging only; never raises into the
+    caller's critical path (wrap the call, same as log_forecasts).
+    """
+    decisions = pipeline_state.get("portfolio_manager_proposed") or []
+    prov = provenance or {}
+    rows = []
+    for d in decisions:
+        if not isinstance(d, dict) or str(d.get("action", "")).upper() != "BUY":
+            continue
+        ticker = d.get("ticker")
+        if not ticker:
+            continue
+        try:
+            er = float(d.get("expected_return"))
+        except (TypeError, ValueError):
+            continue
+        signal_close = (prices.get(ticker) or {}).get("close")
+        if not signal_close:
+            continue
+        for h in horizons:
+            rows.append({
+                "run_id": run_id, "date": date_str, "agent": "pm", "field": "expected_return",
+                "ticker": ticker, "value": er,
+                "signal_close": float(signal_close), "horizon_days": int(h),
+                "schema": SCHEMA_VERSION, **prov,
+            })
     if rows:
         _append_jsonl(path, rows)
     return len(rows)

@@ -123,7 +123,7 @@ def evaluate_triggers(portfolio: dict, today: str,
             "risk_exit":         True,                         # exempt from min-hold (§6.7)
             "expected_return":   0.0,
             "rationale": (f"risk exit: {drawdown:.1%} from ${avg:.2f} cost basis breaches "
-                          f"the -{stop_pct:.0%} hard stop (daily close, live MCP quote)"),
+                          f"the -{stop_pct:.0%} hard stop (morning evaluation, live MCP quote)"),
         })
 
     return decisions, report

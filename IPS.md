@@ -160,7 +160,7 @@ the system holds (no new BUYs) rather than continuing to trade against its own v
 |-----------|--------|
 | **Time horizon** | 9–12 months primary holding horizon; positions underwritten on a 9–12 month fundamental thesis |
 | **Drawdown tolerance** | Hard kill switch at **−20% portfolio drawdown from peak** → blocks all new BUYs (SELLs still permitted). Graduated de-risking optional (§7.6) |
-| **Single-name loss limit** | Hard stop-loss at **−25% from entry** (cost basis, daily-close, no trailing) — a catastrophe brake, not a thesis tool |
+| **Single-name loss limit** | Hard stop-loss at **−25% from entry** (cost basis, evaluated each trading-day morning via `risk_watch.py` on a live Robinhood MCP quote — not the 4 PM close, since the EOD routine places no orders — no trailing) — a catastrophe brake, not a thesis tool |
 | **Volatility** | No explicit vol target; risk is controlled via position/sector caps and the kill switch. Risk *contribution* is monitored and reported (§7.5) even though not hard-enforced |
 | **Liquidity** | Universe restricted to liquid names (Appendix A admission floor); the book must be fully liquidatable within one trading day at negligible impact |
 | **Tax sensitivity** | **CA top-bracket taxable account** — short-term gains taxed ~54%, long-term ~37%. After-tax return is the only return that counts; turnover is treated as a primary risk |
@@ -189,6 +189,23 @@ the system holds (no new BUYs) rather than continuing to trade against its own v
 | **Max sector** | **25%** of portfolio | `enforce_sector_limits` (SELLs applied before BUYs) |
 | **Cash target** | **0–10%** (discipline flag > 15% idle) | Observability only — cash is a position; never force deployment |
 | **Concentration** | Correlation-aware — five correlated names is one bet; CRO receives the return-correlation matrix | CRO review |
+
+> **⚠ Ratified interim exception — cash target (owner-approved 2026-07-05).** The book has
+> run persistently above the 0–10% target (observed ~63% cash / 4 holdings, 26+ consecutive
+> `cash_discipline` DEGRADED health runs as of early July 2026). **This is a ratified,
+> intentional deviation, not an unaddressed defect:** every guardrail in the system (min-hold,
+> wash-sale, tax-hold, sector cap, net-edge) is deliberately a brake, and none should be
+> relaxed on faith to force deployment before the evidence clock has something to say — the
+> entry signal has no demonstrated after-tax edge yet (quant-only backtest: **−9.0% after-tax
+> alpha vs SPY** under formula `2.0-quality-tilt`). **Review trigger:** revisit no later than
+> the first Quarterly Investment Review (§11) *after* the newly formula-version-partitioned
+> `quant.composite_score@21d` primary metric (calibration.py, fixed 2026-07-05) produces its
+> first scored reading on the current formula (expected ~early August 2026) — and again once
+> `stage_c_readiness.py` reports the primary metric **DECIDABLE** (not ACCUMULATING), at which
+> point this exception should be formally closed one way or the other: either a bounded
+> mechanical re-deployment rule is adopted, or the defensive posture is made permanent policy.
+> Hard backstop regardless of evidence-clock progress: **no later than the Q1 2027 quarterly
+> review.** See MANUAL_TODO.md #18 for the options considered.
 
 ---
 
@@ -281,7 +298,8 @@ introducing a task-specific regression. The living inventory is
 - **Weekly** pipeline-integrity digest.
 - **Quarterly** investment review: realized after-tax vs benchmarks, attribution,
   thesis-correct rate, counterfactual (rejected-name) performance, model-register status,
-  and any IPS exceptions.
+  and any IPS exceptions — **currently one open exception: the ratified cash-target
+  deviation (§6), due for review per its stated trigger.**
 - **Reconciliation:** broker fills reconciled against intended orders every run; drift
   detected and corrected before it compounds. **Tax/P&L reconciliation** to the broker's
   realized gains / 1099 quarterly and at year-end (§8 — the broker is authoritative).
@@ -347,7 +365,8 @@ trading:
 
 risk:
   kill_switch_drawdown_pct: 20
-  single_name_stop_pct: 25       # from entry, daily-close, no trailing
+  single_name_stop_pct: 25       # from entry, evaluated each trading-day morning via
+                                  # risk_watch.py (live MCP quote), no trailing
   safe_mode_index_intraday_drop_pct: 7     # market-wide circuit breaker (tunable)
   safe_mode_vix_level: 40                   # tunable
 
@@ -396,3 +415,5 @@ tax:
 | Version | Date | Change | Rationale | Approver |
 |---------|------|--------|-----------|----------|
 | 1.0 | 2026-06-27 | Initial adoption | Codify the Rev 3 strategy redesign decisions into a single governed mandate | Owner |
+| 1.1 | 2026-07-05 | Ratified the cash-target exception (§6) as an intentional, time-bound deviation with a review trigger, rather than an unaddressed gap | The book had drifted to ~63% cash / 4 holdings against the 0–10%/8–15 target; owner directed ratifying the defensive posture until the evidence clock (post formula-version-partition fix) has a real reading, rather than relaxing a guardrail on faith | Owner |
+| 1.1 | 2026-07-05 | Corrected §4/Appendix A single-name stop-loss description from "daily-close" to the mechanism as implemented (morning evaluation via `risk_watch.py` on a live MCP quote) | The stop was described as evaluated at the 4 PM close, but the EOD routine places no orders — the live implementation evaluates each trading morning instead. Doc corrected to match code rather than code changed to match doc | Owner |

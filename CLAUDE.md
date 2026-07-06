@@ -196,7 +196,7 @@ DRY_RUN=true                # set false to actually execute
 - **Cadence:** decisions ONCE A WEEK (Wednesday rebalance; Thu/Fri catch-up); other days run only the SELL-only risk_watch safety net
 - **Min holding:** 30 trading days before a discretionary SELL (risk exits exempt)
 - **Tax-aware hold:** a gained lot within ~30 trading days of its 1-year LT-tax date is not sold discretionarily
-- **Single-name stop:** −25% from cost basis (daily close, no trailing) — the risk_watch catastrophe brake
+- **Single-name stop:** −25% from cost basis, evaluated each trading-day morning by `risk_watch.py` on a live MCP quote — not the 4 PM close (the EOD routine places no orders) — no trailing; the risk_watch catastrophe brake
 - **Crisis safe-mode:** SPY 1-day drop ≥ 7% halts all new BUYs (risk SELLs still allowed)
 - **Default action:** HOLD — only trade when it improves portfolio expected value
 - **Kill switch:** blocks new BUYs when portfolio drawdown exceeds 20% from peak
@@ -332,6 +332,23 @@ The pipeline aborts before running any agents if either condition is true:
 This prevents the silent all-50 quant score failure mode where agents run but produce no trades because they have no quantitative signal. When aborted, `system_health.json` is written immediately and the alert fires.
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
+
+## Changelog — Jul 5 2026 (batch 2 — PM calibration · expansion fetch cursor · two governance decisions)
+
+Four MANUAL_TODO items actioned the same day as the Phase 1 hardening batch below, in a single
+sitting at the owner's direction. **No live-order-path code changed** (one file touched,
+`risk_watch.py`, is a rationale-string fix with zero logic impact). Full `pytest` green (**706**,
++12). Newest first.
+
+| Change | Why it mattered |
+|--------|-----------------|
+| `docs(ips)` **stop-loss text corrected everywhere** (#19, owner-decided option a) — `IPS.md` §4/Appendix A, `policy.yaml` (two spots), `CLAUDE.md`'s Investment Rules, and the actual `risk_watch.py` rationale string (was self-contradictory: "daily close, live MCP quote" in one breath) all corrected from "daily-close" to "evaluated each trading-day morning via `risk_watch.py` on a live MCP quote." | The stop was documented as a 4 PM close evaluation; the EOD routine places no orders, so the real mechanism is a morning check. Doc corrected to match code, per owner decision, rather than building a new EOD order path. |
+| `docs(ips)` **defensive cash posture ratified** (#18, owner-decided option a) — `IPS.md` §6 gets a formal "Ratified interim exception" note: the book's persistent ~63% cash / 4-holding state is now an intentional, documented deviation (not a silent gap), with a two-part review trigger (first current-formula scorecard reading, ~early Aug 2026; `stage_c_readiness` DECIDABLE) and a Q1 2027 hard backstop. Logged in §11 and Appendix B (v1.1). | Every guardrail in the system is a brake; nothing forces deployment. Rather than relax a control on faith, the owner chose to formally own the deviation until the (newly-partitioned) evidence clock has something to say. |
+| `feat(data)` **expansion fetch-cursor wiring** (#6b) — new `market_data.select_fetch_batch` wires the already-built `universe.next_batch`/`save_batch` cursor into the fetch loop. Core/held/SP500/benchmarks fetch in full every run (zero behavior change today); expansion-only names sweep in `EXPANSION_BATCH_SIZE=75`/run batches (~15 min at Polygon's 5-calls/min), completing a ~300-name sweep in about a day. | This was the last blocker on `UNIVERSE_EXPANDED` — both gating conditions (≥80% coverage, cursor wiring) are now met; the operator can flip the flag whenever they choose. |
+| `feat(calibration)` **PM `expected_return` scoring** (#16) — new `calibration.log_pm_forecasts` scores the Portfolio Manager's self-reported `expected_return` against realized returns, the same way every other agent is scored. Scored from the RAW pre-CRO/pre-guardrail proposal to avoid survivorship bias. | `guardrails.enforce_net_edge` gates every BUY on this number, but nothing measured whether it was calibrated. Prerequisite to ever tuning `MIN_NET_EDGE` on evidence instead of faith. |
+| `fix(docs)` **retracted a misdiagnosed "bug"** (#9, P0-3) — MANUAL_TODO's "ORCL split-unadjusted history" claim was investigated and found false: independently verified against a live market-data query, ORCL's `ret_21d ≈ -0.43` reflects a genuine ~43% decline (late May → early Jul 2026), unrelated to a separate, real, correctly-flagged 2025-09-10 earnings rally ten months earlier in the same history window. No code was broken. | The earlier review's "quarantine flagged tickers from scoring" follow-up is retracted with it — it would have discarded real momentum signal to "fix" a bug that never existed. A reminder that a scary-looking number deserves verification before a fix, not just a plausible-sounding theory. |
+
+> **QA:** full `pytest` green (**706**, +12: `TestPMForecastScoring`, `TestSelectFetchBatch`). No `/code-review` re-run needed beyond the batch-1 review already covering `calibration.py`/`main.py`'s shape — reviewed the new `market_data.py`/`risk_watch.py` diff manually (pure ticker-selection helper is disjoint-by-construction, verified; the one behavior-changing addition, `select_fetch_batch`, is zero-impact until `UNIVERSE_EXPANDED` flips, backed by an explicit regression test asserting exact old-behavior parity when not expanded).
 
 ## Changelog — Jul 5 2026 (Phase 1 post-Phase-5 hardening — alerting · missed-week edge · evidence-clock integrity)
 

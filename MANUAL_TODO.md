@@ -4,9 +4,13 @@ Actions that **cannot be done from the repo by Claude** — they require the liv
 routines UI, real secrets (redacted from this repo), or an owner merge/deploy decision.
 Newest concern first. Check items off as you do them.
 
-_Last refreshed: 2026-07-05 (Phase 1 hardening batch committed on `fix/phase1-hardening-evidence-clock`,
-not yet merged; daily routine sync CONFIRMED synced — see item 0 below; go-live observation window
-open through 2026-07-10)._
+_Last refreshed: 2026-07-05 (Phase 1 hardening batch MERGED via PR #27; both owner decisions (#18
+cash mandate, #19 stop-loss text) made and shipped; PM `expected_return` scoring (#16) and the
+expansion fetch-cursor wiring (#6) both shipped — `UNIVERSE_EXPANDED` is now safe to flip whenever
+you choose (#0b); the ORCL "P0-3" item (#9) was investigated and found to be a misdiagnosis, not a
+bug, and closed. Daily routine sync CONFIRMED synced — see item 0. Remaining open work is all
+either genuinely time-gated (item 13's Monday–Friday observation window) or deliberately deferred
+past it (items 14/15/17)._
 
 **Status legend:** `[x]` = done and verified · `[ ]` = not yet done · **DONE**, **PARTIAL**,
 **PENDING**, **AWAITING DECISION** tags after each item title give the one-line state without
@@ -17,23 +21,23 @@ reading the body. "Verified" means checked against a real artifact/API in this r
 | # | Item | Status |
 |---|------|--------|
 | 0 | Daily routine prompt sync | ✅ **DONE** — verified byte-for-byte |
-| 0b | Flip `UNIVERSE_EXPANDED` | ⬜ pending (your call, later) |
+| 0b | Flip `UNIVERSE_EXPANDED` | ⬜ pending (your call — both gating conditions now met as of 2026-07-05) |
 | 3 | PyYAML in cloud routine | 🟡 **strong indirect evidence, not yet directly confirmed** — resolves automatically with item 13's Monday check |
 | 5 | Parked IPS open questions | ⬜ pending (optional — defaults already applied) |
-| 6 | `UNIVERSE_EXPANDED` cursor wiring | 🟡 **PARTIAL** — coverage gate met, cursor wiring not built |
+| 6 | `UNIVERSE_EXPANDED` cursor wiring | ✅ **DONE** — both gating conditions met, safe to flip via item 0b |
 | 7 | Heartbeat/digest first scheduled runs | 🟢 **substantially confirmed** — real artifact content exists; can't fully rule out a dispatch vs. cron firing |
 | 8 | Dossier consumer wiring | ✅ **DONE** — shipped as Stage C (2026-07-04); sub-items below still open |
-| 9 | ORCL split-unadjusted history (P0-3) | ⬜ **PENDING** — not fixed |
+| 9 | ORCL "split-unadjusted history" (P0-3) | ✅ **RESOLVED** — was a misdiagnosis; real price action, verified live, no bug |
 | 10 | DA-on-holdings nudge | ⬜ pending (parked, your call) |
 | 11 | `since_entry` always `None` | ⬜ **PENDING** — found, not fixed |
-| 12 | Merge Phase 1 hardening branch | ⬜ **PENDING** — committed, not merged |
+| 12 | Merge Phase 1 hardening branch | ✅ **DONE** — merged via PR #27 |
 | 13 | Go-live observation checklist | ⬜ **PENDING** — window opens Monday 2026-07-06 |
 | 14 | Narrow risk_watch interlock | ⬜ **PENDING** — not built |
 | 15 | Crash-evidence preservation | ⬜ **PENDING** — not built |
-| 16 | Score PM `expected_return` | ⬜ **PENDING** — not built |
+| 16 | Score PM `expected_return` | ✅ **DONE** |
 | 17 | Prompt-drift automation | ⬜ **PENDING** — not built |
-| 18 | Deployment mandate | ⏳ **AWAITING DECISION** |
-| 19 | Stop-loss IPS text reconciliation | ⏳ **AWAITING DECISION** |
+| 18 | Deployment mandate | ✅ **DECIDED** — ratified defensive cash in IPS.md §6 with a review trigger |
+| 19 | Stop-loss IPS text reconciliation | ✅ **DECIDED** — IPS/policy/CLAUDE.md text corrected to match implementation |
 
 ---
 
@@ -78,14 +82,13 @@ table above; this is a short-lived verification + hardening sequence layered on 
 already-deployed Phase 5). Nothing below blocks Monday — it is what to WATCH and what to BUILD
 next, in order.
 
-### [ ] 12. Merge `fix/phase1-hardening-evidence-clock` to `main` — **PENDING**
-- Batch 1 of the remediation (committed 2026-07-05, not pushed/merged): plane-aware Supabase
-  health classification, the heartbeat holiday-Friday missed-week fix, and the calibration
-  evidence-clock integrity fixes (formula-version partition + read-only `factor_history.jsonl`
-  join + zero-variance-day exclusion + real counterfactual significance test). 694 tests green,
-  `/code-review high` clean. **No live-order-path code changed** — safe to merge any day, not
-  just a non-trading day, but do it BEFORE Monday if possible so the plane-aware Supabase fix is
-  live for the first-ever risk-watch run.
+### [x] 12. Merge `fix/phase1-hardening-evidence-clock` to `main` — ✅ **DONE (2026-07-05, PR #27)**
+- Batch 1 of the remediation: plane-aware Supabase health classification, the heartbeat
+  holiday-Friday missed-week fix, and the calibration evidence-clock integrity fixes
+  (formula-version partition + read-only `factor_history.jsonl` join + zero-variance-day
+  exclusion + real counterfactual significance test). Pushed, PR'd, and merged (squash-free
+  merge commit, matching this repo's convention) before Monday — the plane-aware Supabase fix
+  is live for Monday's first-ever risk-watch run.
 - **Expected visible side effect post-merge:** `agent_scorecards.json`'s primary
   `quant.composite_score@21d` key will read "not scored yet" (ACCUMULATING) instead of a mixed-
   vintage IC, until enough post-2026-07-02-formula forecasts mature (~early August). This is the
@@ -122,13 +125,19 @@ a look before assuming something is broken.
   to risk_watch's own decision logic — but touches the same file the order path depends on, so
   still `/code-review high` minimum.
 
-### [ ] 16. Score the Portfolio Manager's `expected_return` in calibration.py — **PENDING, not built** (ready to build, no urgency)
+### [x] 16. Score the Portfolio Manager's `expected_return` in calibration.py — ✅ **DONE (2026-07-05)**
 - `guardrails.enforce_net_edge` gates every BUY on the PM's own self-reported `expected_return` —
-  nothing currently measures whether that number is calibrated (over- or under-confident) against
-  realized returns. Add `pm.expected_return` as a first-class forecast in `calibration.log_forecasts`
-  / `agent_scorecard` (same machinery already used for `quant`/`research`/etc.), so the net-edge
-  gate's only input eventually earns (or loses) trust from real evidence instead of running on
-  faith. Prerequisite to ever tightening or loosening `MIN_NET_EDGE` with confidence.
+  nothing measured whether that number was calibrated (over- or under-confident) against realized
+  returns. **Shipped:** `calibration.log_pm_forecasts` — a new emitter (not folded into
+  `log_forecasts`, since `portfolio_manager_proposed` is a LIST of decisions, not a per-ticker
+  dict like every other agent) scores `pm.expected_return` from the PM's RAW proposal (before the
+  CRO veto or any guardrail — scoring only guard-survived decisions would bias the sample toward
+  predictions that already cleared the floor). Only BUYs carry the field, matching
+  `enforce_net_edge`'s own convention (including its exact `float()` coercion, so the same
+  decisions that get gated are the ones scored). Wired into `main.py`'s existing forecast-logging
+  block. 7 new tests (`TestPMForecastScoring`); orientation defaults to +1 (no `_FORECASTS` entry
+  needed — see the code comment). Prerequisite to ever tuning `MIN_NET_EDGE` with evidence instead
+  of faith.
 
 ### [ ] 17. Prompt-drift automation — **PENDING, not built** (ready to build; needs a routine-prompt sync after)
 - The recurring "requires a live-routine sync" failure class (this repo's most common operational
@@ -140,26 +149,25 @@ a look before assuming something is broken.
   alerts on mismatch. Code is buildable now; taking effect requires pasting the updated prompt
   into the live routine same as any other prompt change.
 
-### [ ] 18. Owner decision — the deployment mandate — **AWAITING YOUR DECISION** (no code fix; a policy choice)
-- Every guardrail in the system is a BRAKE (min-hold, wash-sale, tax-hold, sector cap, safe-mode,
-  net-edge, kill-switch, stop-loss); nothing converts idle cash into positions except the weekly
-  PM's own disposition. At weekly cadence (~52 decisions/year) and with SELLs locking capital
-  behind a 30-day wash-sale re-entry window, the system structurally drifts toward under-
-  deployment. Options: **(a)** ratify defensive cash explicitly in the IPS with a review trigger
-  (recommended for now, until the partitioned evidence clock has something to say); **(b)** a
-  bounded mechanical re-deployment rule (e.g. cash > threshold for N consecutive weeks relaxes the
-  net-edge floor for index-diversified adds, still inside every hard cap) — a real order-path
-  change, `/code-review ultra`; **(c)** accept the risk and do nothing. This is a decision only
-  you can make; Claude can implement whichever you pick.
+### [x] 18. Owner decision — the deployment mandate — ✅ **DECIDED (2026-07-05): option (a)**
+- **Decision:** ratify defensive cash explicitly in the IPS with a review trigger, rather than
+  (b) a bounded mechanical re-deployment rule or (c) doing nothing silently. **Shipped:** IPS.md
+  §6 now carries a formal "Ratified interim exception" note (the ~63% cash / 4-holding state,
+  why every guardrail stays a brake rather than being relaxed on faith, and a two-part review
+  trigger — the first scored current-formula quant reading (~early Aug 2026) and
+  `stage_c_readiness.py` DECIDABLE, with a Q1 2027 hard backstop regardless). Logged in §11
+  (Monitoring & Review) and Appendix B (Amendment log, v1.1). Options (b)/(c) remain available
+  to revisit at the review trigger.
 
-### [ ] 19. Owner decision — reconcile the stop-loss IPS text with its actual implementation — **AWAITING YOUR DECISION**
-- IPS/policy describe the −25% single-name stop as evaluated "at daily close, no trailing"; the
-  live `risk_watch.py` implementation evaluates it on a MORNING intraday MCP quote (9:45–12:45 ET),
-  not the actual 4 PM close (the EOD routine deliberately places no orders, so a true daily-close
-  evaluation isn't currently wired). Pick one: **(a)** amend the IPS/policy text to describe the
-  mechanism as implemented ("morning evaluation," recommended — cheapest, no behavior change), or
-  **(b)** build a true close-based evaluation (bigger change: would need the EOD routine or a
-  same-day-later check to place orders, which it currently structurally cannot do).
+### [x] 19. Owner decision — reconcile the stop-loss IPS text with its actual implementation — ✅ **DECIDED (2026-07-05): option (a)**
+- **Decision:** amend the IPS/policy text to describe the mechanism as implemented, rather than
+  (b) building a true close-based evaluation. **Shipped:** corrected the "daily-close" claim
+  everywhere it appeared — `IPS.md` §4 table + Appendix A comment, `policy.yaml` (both the v2.0
+  migration-note comment and the `risk.single_name_stop_pct` comment), `CLAUDE.md`'s Investment
+  Rules summary, AND the actual runtime rationale string in `risk_watch.py` (was
+  self-contradictory: "daily close, live MCP quote" in the same breath) — now consistently
+  "evaluated each trading-day morning via `risk_watch.py` on a live MCP quote, not the 4 PM
+  close." Appendix B v1.1 entry added. Zero test dependency on the old string; full suite green.
 
 ---
 
@@ -185,16 +193,23 @@ a look before assuming something is broken.
   resolves automatically the moment item 13's Monday check reads the new envelope's
   `policy_version`; no separate action needed, just watch that field Monday.
 
-### [ ] 6. `UNIVERSE_EXPANDED` — 🟡 **PARTIAL**: coverage gate MET; cursor wiring NOT built
-- **Status update (2026-07-02):** condition (a) is **satisfied** — GH Actions logs now show
-  **96% fundamental coverage, `data_quality.coverage_ok=true`** (the SEC User-Agent 403 fix).
-  Condition (b) is **NOT yet met**: the resumable fetch cursor (`universe.next_batch/
-  save_batch`) is built + tested but **still not wired into the fetch loop** (Phase 4 raw→
-  curated storage split, §12). Fetching ~400×210-day histories under Polygon's 5-calls/min
-  needs the batch-fetch + history carry-forward first.
-- **Do NOT set `UNIVERSE_EXPANDED=true` yet** — a run would fetch only a partial universe.
-  Flip it (in the `market_data.yml` env) only after the Phase 4 cursor wiring lands AND you've
-  seen coverage hold ≥80% over the *expanded* set.
+### [x] 6. `UNIVERSE_EXPANDED` — ✅ **BOTH conditions now met (2026-07-05)** — safe to flip when you choose
+- **Condition (a)** satisfied since 2026-07-02 — GH Actions logs show **96% fundamental coverage**,
+  `data_quality.coverage_ok=true` (the SEC User-Agent 403 fix).
+- **Condition (b) — SHIPPED 2026-07-05:** `market_data.select_fetch_batch` (new pure helper) wires
+  `universe.next_batch`/`save_batch` into the fetch loop. Core + held + SP500 + benchmarks are
+  fetched in full every run regardless of expansion state (zero behavior change today); only the
+  ~300 EXPANSION-ONLY names are swept a batch at a time (`EXPANSION_BATCH_SIZE = 75`/run, ~15 min
+  at Polygon's 5-calls/min, full sweep in ~4 runs / about one day at the 4 daily triggers). Cursor
+  persists via the EXISTING `actions/cache` step in `market_data.yml` (already declared
+  `fetch_progress.json` in its cache path before this fix — the workflow was ahead of the code).
+  5 new tests (`TestSelectFetchBatch`), including an explicit "matches pre-feature behavior
+  exactly when not expanded" regression test.
+- **You can now flip `UNIVERSE_EXPANDED=true`** (GitHub Actions variable, item 0b) whenever you
+  want the expansion to begin — both gating conditions are met. Expect the committed
+  `market_snapshot.json`'s expansion-name histories to fill in gradually over the first few days
+  (63-bar tails per Stage D's storage split) rather than all at once — that's the batching working
+  as designed, not a bug. Watch coverage stays ≥80% over the *expanded* set as it fills in.
 
 ---
 
@@ -277,20 +292,27 @@ a look before assuming something is broken.
   REAL entry, not the decision-time quote. Touches the trade-journal write path → `/code-review
   high` + tests. Quietly defeats a headline Phase 5 Stage C mechanism until fixed.
 
-### [ ] 9. Known live DATA issue surfaced by the dossier — split-unadjusted history (P0-3) — **PENDING, not fixed**
-- The dossier's `history_summary` shows e.g. ORCL `ret_21d ≈ −0.43` — a real artifact of
-  **split-unadjusted OHLCV** in the snapshot (`corporate_actions.detect_price_outliers` already
-  flags ORCL's ~36% one-day jump). Momentum/vol on such a series is corrupted. The Phase 4/§11.4
-  fix is to assert Polygon history is split/dividend-adjusted (the fetch already sends
-  `adjusted=true`, so confirm why ORCL slipped through) + the delisting/M&A handler for held
-  names. **Not a dossier bug — a data-source correctness item to run down before the dossier
-  drives trades.**
-- **Follow-up refinement (from the Jul 4-5 review):** `corporate_actions.detect_price_outliers`
-  currently only FLAGS an outlier into `data_quality` — `quant_engine.score_all_tickers` still
-  consumes the corrupted series for momentum/vol either way. Once the source fix above lands,
-  consider whether a flagged ticker should also be QUARANTINED from scoring (its composite
-  reported N/A rather than a number computed on a known-bad series) as defense-in-depth, not
-  just visible-but-unactioned in the data-quality report.
+### [x] 9. ORCL "split-unadjusted history" (P0-3) — ✅ **RESOLVED (2026-07-05): investigated, was a MISDIAGNOSIS, not a bug**
+- **Original claim (retracted):** ORCL's `ret_21d ≈ −0.43` in the dossier was assumed to be a
+  data-corruption artifact of split-unadjusted OHLCV, on the theory that
+  `corporate_actions.detect_price_outliers`'s flag on ORCL's ~36% one-day jump explained the
+  negative 21-day return.
+- **What investigation actually found:** the ~36% one-day jump the outlier detector flags is
+  **2025-09-10** — ten months before the dossier's `as_of` date, nowhere near the 21-day lookback
+  window — and is unrelated to `ret_21d`. `market_snapshot.json`'s actual daily closes for ORCL
+  show a **smooth, gradual, real decline from ~$248 (late May 2026) to ~$140 (early Jul 2026)** —
+  no single day exceeds the outlier threshold, and no bar-to-bar discontinuity resembles an
+  unhandled split (which would show one overnight halving/doubling, not a multi-week bleed).
+  **Independently verified against a live Massive/Polygon query** (not just the committed
+  snapshot) — the closes match exactly. This is genuine, if severe, price action: ORCL really
+  did decline ~43% over ~5–6 weeks. The dossier's `ret_21d ≈ −0.43` is CORRECT, not corrupted.
+- **Corrected conclusion:** `adjusted=true` (already set in `market_data.py`) was never broken;
+  `corporate_actions.detect_price_outliers`'s design (flag as a review signal, never auto-drop —
+  "a genuine crash should not be thrown away") was already right. **No code change needed.**
+  The **"QUARANTINE flagged tickers from scoring" follow-up idea from the Jul 4–5 review is
+  RETRACTED** — it was built on the false premise that a large move must mean bad data;
+  quarantining ORCL here would have discarded real, valuable momentum signal, not fixed a bug.
+  ORCL is not currently held, so this had no live portfolio impact either way.
 
 ---
 
