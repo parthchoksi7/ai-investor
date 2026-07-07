@@ -1,27 +1,27 @@
 {
-  "date": "2026-07-06",
-  "data_date": "2026-07-06",
-  "generated_at": "2026-07-06T16:36:32.518718+00:00",
+  "date": "2026-07-07",
+  "data_date": "2026-07-07",
+  "generated_at": "2026-07-07T12:32:46.471339+00:00",
   "status": "OK",
   "data_quality_score": 100,
   "strategy_shift_ok": true,
-  "expected_universe": 175,
-  "fetched_universe": 173,
+  "expected_universe": 168,
+  "fetched_universe": 167,
   "metrics": {
     "universe_fetched_pct": {
-      "value": 98.9,
+      "value": 99.4,
       "status": "OK",
       "degraded_below": 95.0,
       "abort_below": 80.0
     },
     "min_history_depth": {
-      "value": 88,
+      "value": 205,
       "status": "OK",
       "degraded_below": 60,
       "abort_below": 22
     },
     "fundamental_coverage_pct": {
-      "value": 95.4,
+      "value": 96.4,
       "status": "OK",
       "degraded_below": 80.0,
       "abort_below": null
@@ -33,7 +33,7 @@
       "abort_below": null
     },
     "valuation_coverage_pct": {
-      "value": 5.7,
+      "value": 12.5,
       "status": "OK",
       "degraded_below": null,
       "abort_below": null,
@@ -42,18 +42,18 @@
   },
   "breaches": [],
   "cik_map_ok": true,
-  "price_outlier_count": 2,
-  "hash": "d19ca9ec57690d46",
+  "price_outlier_count": 1,
+  "hash": "fd27b4fd41d538b1",
   "event_digest": {
     "chunks": 4,
     "chunks_ok": 4,
     "parse_success_rate": 1.0,
-    "raw_events": 19,
+    "raw_events": 26,
     "capped": false,
     "chunks_available": 4,
     "max_chunks": 15,
-    "as_of": "2026-07-06",
-    "events_written": 18,
+    "as_of": "2026-07-07",
+    "events_written": 26,
     "events_deduped": 0
   }
 }
