@@ -1,7 +1,7 @@
 {
   "run_id": "20260708-134929",
   "date": "2026-07-08",
-  "timestamp": "2026-07-08T13:51:55.654136+00:00",
+  "timestamp": "2026-07-08T13:53:17.657849+00:00",
   "overall_status": "DEGRADED",
   "checks": {
     "portfolio": {
@@ -142,6 +142,15 @@
       "status": "OK",
       "message": "",
       "ts": "2026-07-08T13:51:55.654110+00:00"
+    },
+    "reconciliation": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-07-08T13:53:17.657822+00:00",
+      "filled": [
+        "CB",
+        "CFG"
+      ]
     }
   },
   "alerts": [

@@ -595,7 +595,6 @@ def run_daily_cycle():
         # Stage A: OBSERVATIONAL-ONLY — read the (committed) dossier and log its
         # persistence + event-presence signals so their forward IC is measured BEFORE a
         # consumer trusts them. Never used for a decision here; fresh-dossier only.
-        from build_dossier import load_dossier
         # Full dossier universe (not just candidates) → unbiased signal IC (see docstring).
         _n_ds = log_dossier_signals(run_id, today, load_dossier(),
                                     market_data["prices"], provenance=dq_provenance)
