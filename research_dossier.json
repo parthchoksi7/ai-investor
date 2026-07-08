@@ -2,7 +2,7 @@
   "schema": "dossier-1.0",
   "as_of": "2026-07-08",
   "price_as_of": "2026-07-08",
-  "generated_at": "2026-07-08T12:49:56",
+  "generated_at": "2026-07-08T14:54:52",
   "built_from_days": [
     "2026-07-02",
     "2026-07-03",
@@ -11,7 +11,7 @@
     "2026-07-07",
     "2026-07-08"
   ],
-  "n_tickers": 171,
+  "n_tickers": 173,
   "formula_version": "2.0-quality-tilt",
   "tickers": {
     "A": {
@@ -1776,6 +1776,12 @@
       },
       "events": [
         {
+          "date": "2026-07-08",
+          "type": "other",
+          "summary": "Q1 2026 revenue $181.5B, 17% YoY growth; trading at 4.0x P/S ratio vs. competitor",
+          "url": null
+        },
+        {
           "date": "2026-06-10",
           "type": "m&a",
           "summary": "Amazon signed ~$6B multiyear deal with Corning for optical connectivity solutions for data centers",
@@ -2694,6 +2700,18 @@
           "date": "2026-07-08",
           "type": "product",
           "summary": "Announced new cross-border real-time payments product for P2P and B2C transfers",
+          "url": null
+        },
+        {
+          "date": "2026-07-08",
+          "type": "capital_return",
+          "summary": "Bank of America passed Federal Reserve 2026 stress tests, typically leading to dividend increases. Stock surged over 10% in June.",
+          "url": null
+        },
+        {
+          "date": "2026-07-08",
+          "type": "product",
+          "summary": "Bank of America launched new cross-border real-time payments product for P2P and B2C transfers.",
           "url": null
         }
       ],
@@ -3800,7 +3818,16 @@
           "quality",
           "volatility"
         ]
-      }
+      },
+      "last_decision": {
+        "date": "2026-07-08",
+        "action": "BUY",
+        "target_weight": 0.09,
+        "thesis": "Chubb is re-rating higher as structural insurance market tightening, elevated catastrophe losses, and superior underwriting discipline drive sustainable margin expansion that consensus has yet to fully price into earnings power.",
+        "status": "open",
+        "confidence": 7
+      },
+      "since_entry": null
     },
     "CBRE": {
       "ticker": "CBRE",
@@ -4265,7 +4292,16 @@
           "quality",
           "volatility"
         ]
-      }
+      },
+      "last_decision": {
+        "date": "2026-07-08",
+        "action": "BUY",
+        "target_weight": 0.09,
+        "thesis": "CFG is experiencing a cyclical earnings inflection driven by higher net interest margins and credit normalization, with the market underappreciating the structural improvement in its franchise value and capital return capacity relative to regional bank peers.",
+        "status": "open",
+        "confidence": 7
+      },
+      "since_entry": null
     },
     "CHD": {
       "ticker": "CHD",
@@ -6355,6 +6391,123 @@
         ]
       }
     },
+    "DLR": {
+      "ticker": "DLR",
+      "as_of": "2026-07-08",
+      "price_as_of": "2026-07-08",
+      "price": {
+        "close": 174.9,
+        "change_pct": 0.69
+      },
+      "factors": {
+        "momentum": 26.0,
+        "quality": 70.0,
+        "valuation": 50,
+        "volatility": 82.0,
+        "composite": 65.2,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "volatility"
+        ],
+        "formula_version": "2.0-quality-tilt"
+      },
+      "persistence": {
+        "composite_7d_mean": 65.22,
+        "composite_7d_std": 0.29,
+        "n": 4,
+        "formula_version": "2.0-quality-tilt",
+        "rank_chg_7d": null
+      },
+      "fundamentals": {
+        "operating_margin": 0.1077,
+        "debt_to_equity": 0.1282,
+        "_as_of_filing": "2026-02-13"
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0731,
+        "ret_63d": -0.039,
+        "ret_126d": 0.1282,
+        "vol_ann": 26.7,
+        "beta": 0.63,
+        "max_dd_126d": -0.1501
+      },
+      "data_quality": {
+        "fundamentals_age_days": 145,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "volatility"
+        ]
+      }
+    },
+    "DLTR": {
+      "ticker": "DLTR",
+      "as_of": "2026-07-08",
+      "price_as_of": "2026-07-08",
+      "price": {
+        "close": 122.65,
+        "change_pct": 0.98
+      },
+      "factors": {
+        "momentum": 86.7,
+        "quality": 56.7,
+        "valuation": 50,
+        "volatility": 38.3,
+        "composite": 56.6,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "volatility"
+        ],
+        "formula_version": "2.0-quality-tilt"
+      },
+      "persistence": {
+        "composite_7d_mean": 57.0,
+        "composite_7d_std": 0.5,
+        "n": 4,
+        "formula_version": "2.0-quality-tilt",
+        "rank_chg_7d": null
+      },
+      "fundamentals": {
+        "gross_margin": 0.3632,
+        "operating_margin": 0.0852,
+        "debt_to_equity": 0.6476,
+        "_as_of_filing": "2026-03-16"
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.1224,
+        "ret_63d": 0.1041,
+        "ret_126d": -0.0395,
+        "vol_ann": 55.1,
+        "beta": 0.48,
+        "max_dd_126d": -0.3853
+      },
+      "data_quality": {
+        "fundamentals_age_days": 114,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "volatility"
+        ]
+      }
+    },
     "EBAY": {
       "ticker": "EBAY",
       "as_of": "2026-07-08",
@@ -7215,6 +7368,12 @@
           "url": null
         },
         {
+          "date": "2026-07-06",
+          "type": "price_target",
+          "summary": "Analyst predicts Intel could reach $5T market cap, 625% upside from ~$690B valuation",
+          "url": null
+        },
+        {
           "date": "2026-06-09",
           "type": "other",
           "summary": "US semiconductor stocks including Intel rebounded strongly after sharp selloff; INTC among biggest gainers",
@@ -7342,6 +7501,12 @@
         "ev_ebitda": 20.2
       },
       "events": [
+        {
+          "date": "2026-07-08",
+          "type": "m&a",
+          "summary": "Kimberly-Clark acquiring Kenvue to diversify revenue; expected to unlock $2.1B value",
+          "url": null
+        },
         {
           "date": "2026-07-06",
           "type": "other",
@@ -7589,6 +7754,12 @@
         "_as_of_filing": "2026-02-12"
       },
       "events": [
+        {
+          "date": "2026-07-08",
+          "type": "product",
+          "summary": "Eli Lilly's oral obesity drug Foundayo combined with $27B manufacturing expansion and Medicare pricing deals expected to drive stock to $1,4",
+          "url": null
+        },
         {
           "date": "2026-07-07",
           "type": "product",
@@ -8300,9 +8471,9 @@
           "url": null
         },
         {
-          "date": "2026-07-01",
+          "date": "2026-07-06",
           "type": "other",
-          "summary": "Nvidia CEO Jensen Huang called Marvell next trillion-dollar company; article compares growth rates and valuations.",
+          "summary": "Marvell highlighted as promising AI chipmaker specializing in data center connectivity and DPUs for AI applications",
           "url": null
         }
       ],
@@ -8429,6 +8600,12 @@
           "date": "2026-07-08",
           "type": "product",
           "summary": "Quest Software's Identity Defense and Identity Recovery achieved FedRAMP High authorization for Microsoft Azure",
+          "url": null
+        },
+        {
+          "date": "2026-07-08",
+          "type": "product",
+          "summary": "Quest Software Identity Defense/Recovery achieved FedRAMP High authorization for Azure",
           "url": null
         }
       ],
@@ -8595,6 +8772,12 @@
           "url": null
         },
         {
+          "date": "2026-07-08",
+          "type": "other",
+          "summary": "Billionaire David Tepper holds Micron as 1 of 6 AI-focused stocks in concentrated portfolio",
+          "url": null
+        },
+        {
           "date": "2026-07-07",
           "type": "other",
           "summary": "Memory chip sector volatility wiped $137B from equities; institutional analysis suggests pullback as strategic entry point.",
@@ -8634,12 +8817,6 @@
           "date": "2026-07-06",
           "type": "price_target",
           "summary": "Wall Street analyst predicts $2,200 price target for Micron, implying 126% upside and $2.5T market cap",
-          "url": null
-        },
-        {
-          "date": "2026-07-06",
-          "type": "earnings",
-          "summary": "Micron's blockbuster earnings reveal exceptional memory chip demand with supply substantially below demand.",
           "url": null
         }
       ],
@@ -8835,6 +9012,12 @@
           "type": "other",
           "summary": "Cloudflare could benefit from AI-driven internet traffic via Pay Per Crawl model but faces valuation concerns",
           "url": null
+        },
+        {
+          "date": "2026-07-06",
+          "type": "other",
+          "summary": "Cloudflare could benefit from AI-driven internet traffic via 'Pay Per Crawl' model but faces valuation and competition concerns",
+          "url": null
         }
       ],
       "earnings": {
@@ -8915,6 +9098,12 @@
           "date": "2026-07-08",
           "type": "earnings",
           "summary": "July 16 earnings report critical; investors monitoring ad revenue progress toward $3B target and content cost stabilization",
+          "url": null
+        },
+        {
+          "date": "2026-07-08",
+          "type": "earnings",
+          "summary": "Netflix earnings report on July 16 will focus on ad revenue trajectory toward $3B target and content cost stabilization.",
           "url": null
         },
         {
@@ -9594,6 +9783,12 @@
           "url": null
         },
         {
+          "date": "2026-07-08",
+          "type": "other",
+          "summary": "Palantir stock declined nearly 40% from all-time high despite 85% YoY revenue growth and 53% net income margin.",
+          "url": null
+        },
+        {
           "date": "2026-07-07",
           "type": "executive",
           "summary": "Palantir insiders collectively sold over $15.6B in stock over past 3 years with virtually no insider buying.",
@@ -9633,12 +9828,6 @@
           "date": "2026-07-06",
           "type": "earnings",
           "summary": "Palantir reported strong Q1 2026 results with 85% revenue growth; President Trump reduced position in Q1 2026.",
-          "url": null
-        },
-        {
-          "date": "2026-07-03",
-          "type": "other",
-          "summary": "Stock down 37% from Nov 2025 peak despite strong fundamentals: 85% revenue growth, 130% commercial revenue surge.",
           "url": null
         }
       ],
@@ -10546,6 +10735,12 @@
       },
       "events": [
         {
+          "date": "2026-07-08",
+          "type": "earnings",
+          "summary": "Tesla Q2 deliveries: 480,126 units, beating expectations by 74,000 units with 25% YoY growth.",
+          "url": null
+        },
+        {
           "date": "2026-07-07",
           "type": "product",
           "summary": "Tesla launched Robotaxi service in Miami, expanding beyond Texas and California; EV deliveries grew in recent quarter.",
@@ -10597,12 +10792,6 @@
           "date": "2026-07-02",
           "type": "earnings",
           "summary": "Q2 2026 deliveries of 480,126 vehicles, 25% YoY increase, beat expectations of 406,024 units",
-          "url": null
-        },
-        {
-          "date": "2026-07-02",
-          "type": "earnings",
-          "summary": "Q2 2026 deliveries of 480,126 vehicles, 25% YoY increase, beating 406,024 expected",
           "url": null
         }
       ],
