@@ -1,17 +1,43 @@
 {
-  "as_of": "2026-07-07T16:00:00-04:00",
-  "cash": 325.91,
-  "total_value": 515.65906583,
-  "available_qty": {
-    "MS": 0.215357,
-    "VRTX": 0.101027,
-    "AXP": 0.119992,
-    "EBAY": 0.412280
-  },
+  "as_of": "2026-07-08T09:46:21-04:00",
+  "cash": 326.02,
+  "total_value": 513.04715302,
   "positions": [
-    {"symbol": "MS", "qty": 0.215357, "avg_price": 213.55, "current_price": 222.075, "market_value": 47.825106, "unrealized_pnl": 1.835619},
-    {"symbol": "VRTX", "qty": 0.101027, "avg_price": 464.73, "current_price": 522.11, "market_value": 52.747207, "unrealized_pnl": 5.796929},
-    {"symbol": "AXP", "qty": 0.119992, "avg_price": 339.61, "current_price": 349.67, "market_value": 41.957703, "unrealized_pnl": 1.207820},
-    {"symbol": "EBAY", "qty": 0.412280, "avg_price": 111.65, "current_price": 114.72, "market_value": 47.296762, "unrealized_pnl": 1.266700}
+    {
+      "symbol": "MS",
+      "qty": 0.215357,
+      "available_qty": 0.215357,
+      "avg_price": 213.55,
+      "current_price": 219.865,
+      "market_value": 47.349467,
+      "unrealized_pnl": 1.359979
+    },
+    {
+      "symbol": "VRTX",
+      "qty": 0.101027,
+      "available_qty": 0.101027,
+      "avg_price": 464.73,
+      "current_price": 520.1,
+      "market_value": 52.544143,
+      "unrealized_pnl": 5.593865
+    },
+    {
+      "symbol": "AXP",
+      "qty": 0.119992,
+      "available_qty": 0.119992,
+      "avg_price": 339.61,
+      "current_price": 338.97,
+      "market_value": 40.673688,
+      "unrealized_pnl": -0.076795
+    },
+    {
+      "symbol": "EBAY",
+      "qty": 0.41228,
+      "available_qty": 0.41228,
+      "avg_price": 111.65,
+      "current_price": 112.99,
+      "market_value": 46.583517,
+      "unrealized_pnl": 0.552455
+    }
   ]
 }

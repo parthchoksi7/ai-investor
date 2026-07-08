@@ -1,11 +1,38 @@
 {
-  "run_id": "20260707-134730",
-  "date": "2026-07-07",
-  "mode": "risk_watch",
-  "generated_at": "2026-07-07T13:47:30.823044+00:00",
+  "run_id": "20260708-134929",
+  "date": "2026-07-08",
+  "mode": "rebalance",
+  "generated_at": "2026-07-08T13:49:29.051103+00:00",
   "policy_version": "2.0-phase5-weekly",
-  "data_quality": null,
-  "execution_started_at": null,
-  "executed_at": "2026-07-07T13:48:06.052640+00:00",
-  "decisions": []
+  "data_quality": {
+    "data_quality_score": 100,
+    "data_quality_status": "OK",
+    "data_quality_hash": "7d50dcdbe3fc3730"
+  },
+  "execution_started_at": "2026-07-08T13:52:30.841770+00:00",
+  "executed_at": null,
+  "decisions": [
+    {
+      "ticker": "CB",
+      "action": "BUY",
+      "target_weight": 0.09,
+      "source_of_capital": "AXP",
+      "expected_return": 0.09,
+      "rationale": "reject=False, neg beta, quality insurer, stable persist",
+      "qty": 0.128512,
+      "price_as_of": "2026-07-08",
+      "sizing_price": 359.3
+    },
+    {
+      "ticker": "CFG",
+      "action": "BUY",
+      "target_weight": 0.09,
+      "source_of_capital": "MS",
+      "expected_return": 0.1,
+      "rationale": "reject=False, NIM inflection, persist=91, quant top",
+      "qty": 0.643275,
+      "price_as_of": "2026-07-08",
+      "sizing_price": 71.77999877929688
+    }
+  ]
 }

@@ -701,5 +701,63 @@
     "status": "open",
     "actual_return": null,
     "thesis_correct": null
+  },
+  {
+    "trade_id": "6085abe0-e8a1-4bab-945f-2bedcb39a0ee",
+    "run_id": "20260708-134929",
+    "date": "2026-07-08",
+    "ticker": "CB",
+    "action": "BUY",
+    "target_weight": 0.09,
+    "thesis": "Chubb is re-rating higher as structural insurance market tightening, elevated catastrophe losses, and superior underwriting discipline drive sustainable margin expansion that consensus has yet to fully price into earnings power.",
+    "anti_thesis": "At $359 and ~20x earnings, CB already trades at a significant premium to historical averages, meaning the 'structural repricing' narrative is substantially priced in before it has fully materialized in multi-year combined ratio data. A single major catastrophe season\u2014entirely plausible given climate volatility\u2014could push combined ratios back above 90 and collapse the re-rating thesis, leaving investors holding an expensive quality stock with no earnings upside. Meanwhile, the insurance hard market cycle has historically lasted 3-5 years maximum before capital inflows erode pricing power, and with AI-driven underwriting reducing barriers to entry, this cycle may be shorter.",
+    "catalysts": [
+      "Q4 and full-year 2024 earnings demonstrating written premium acceleration >7% with maintained/expanded underwriting margins despite catastrophe headwinds",
+      "Industry-wide rate increases slowing while Chubb maintains pricing discipline, widening the gap vs. peers\u2014visible in quarterly rate change metrics",
+      "Reinsurance renewals (Jan/Apr/July cycles) signaling sustained capacity constraints and rate hardness, validating Chubb's pricing leverage",
+      "M&A or significant deployment capital announcement (Chubb has fortress balance sheet, debt_to_equity=0.21) signaling confidence in market positioning",
+      "Analyst estimate revisions upward on margin sustainability as 3-5 years of data accumulates showing structural market shift"
+    ],
+    "confidence": 7,
+    "expected_return": 0.09,
+    "invalidates_if": [
+      "Combined ratio deteriorates to 92+ for two consecutive quarters, indicating margin thesis is cyclical not structural",
+      "Written premium growth decelerates below 3% YoY while retention erodes, signaling loss of pricing discipline",
+      "Catastrophe loss burden forces significant reserve strengthening or dividend/buyback suspension",
+      "Peer underwriting metrics (AIG, ACE, Arch, RLI) show consistent outperformance vs. Chubb, suggesting competitive advantage is fading",
+      "Technical breakdown below $325 on high volume reverses momentum trend"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "1796ea1b-f6e4-427c-8670-d18de4e26ca2",
+    "run_id": "20260708-134929",
+    "date": "2026-07-08",
+    "ticker": "CFG",
+    "action": "BUY",
+    "target_weight": 0.09,
+    "thesis": "CFG is experiencing a cyclical earnings inflection driven by higher net interest margins and credit normalization, with the market underappreciating the structural improvement in its franchise value and capital return capacity relative to regional bank peers.",
+    "anti_thesis": "CFG's NIM expansion thesis is highly rate-path dependent, and any Fed pivot toward aggressive cuts in 2025 collapses the 'higher for longer' repricing tailwind that underpins the entire earnings inflection narrative. Meanwhile, CFG's commercial real estate and middle-market loan book carries latent credit stress that hasn't fully surfaced in charge-offs yet, meaning the 'credit normalization' catalyst could reverse violently into elevated provisioning. The deposit franchise stickiness claim is unproven under sustained competition from money market funds and larger banks with superior digital infrastructure, leaving the NIM and ROE targets structurally vulnerable.",
+    "catalysts": [
+      "Net interest margin expansion re-acceleration in 2H 2024-2025 as CD maturity wall normalizes and short rates remain higher for longer",
+      "Q3/Q4 earnings beats driven by credit normalization (lower loan loss provisions) as charge-off rates stabilize below peer averages",
+      "Announcement of accelerated capital return program (share buybacks or dividend increase) if tangible book value growth exceeds consensus by >2-3%",
+      "Deposit market stabilization reducing deposit beta assumptions, allowing visibility into sustained mid-300bp+ NIM by late 2024",
+      "M&A activity or strategic partnerships leveraging CFG's wealth management platform as larger players seek scale in HNW channel"
+    ],
+    "confidence": 7,
+    "expected_return": 0.1,
+    "invalidates_if": [
+      "CFG reports NIM compression exceeding 15bp QoQ with no credible forward guidance for stabilization",
+      "Tangible book value per share declines >5% YoY due to unexpected credit or investment portfolio losses",
+      "Large deposit outflows (>3-5% quarterly) resume with management unable to articulate retention strategy",
+      "Consensus EPS estimates for 2024-2025 are cut >10% within a single quarter without corresponding multiple compression offsetting",
+      "Federal Reserve signals prolonged lower-for-longer rate environment forcing structural NIM reset expectations below 350bp"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
   }
 ]

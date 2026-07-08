@@ -1,17 +1,21 @@
 {
   "pm_selected@21d": {
-    "n_flagged": 11,
-    "n_kept": 28,
-    "mean_return_flagged": 0.01599,
-    "mean_return_kept": -0.01178,
-    "gap_kept_minus_flagged": -0.02776,
+    "n_flagged": 12,
+    "n_kept": 33,
+    "mean_return_flagged": 0.03891,
+    "mean_return_kept": -0.0157,
+    "gap_kept_minus_flagged": -0.0546,
     "expected_direction": "outperform",
+    "p_value": 0.1447,
+    "n_floor_met": true,
     "adds_value": true,
-    "significant": true,
-    "verdict": "ADDS_VALUE"
+    "significant": false,
+    "verdict": "NOT_SIGNIFICANT"
   },
   "_meta": {
-    "note": "Counterfactual: does each model's reject/veto/select decision predict the right forward-return direction? gap = mean_kept \u2212 mean_flagged. Block-sampled effective N; NOT_SIGNIFICANT until both sides >= 10 (months at this cadence \u2014 \u00a77.4).",
+    "note": "Counterfactual: does each model's reject/veto/select decision predict the right forward-return direction? gap = mean_kept \u2212 mean_flagged. Block-sampled effective N. `significant` requires BOTH sides >= 10 AND a Welch's-z two-sample p-value < 0.05 (matches agent_scorecard's rigor \u2014 a sample-size floor alone is not a significance test). At ~weekly cadence this stays NOT_SIGNIFICANT for months (\u00a77.4), by design.",
+    "min_n": 10,
+    "alpha": 0.05,
     "signals": {
       "da_reject": "underperform",
       "cro_veto": "underperform",
