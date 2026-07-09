@@ -207,6 +207,20 @@ the system holds (no new BUYs) rather than continuing to trade against its own v
 > Hard backstop regardless of evidence-clock progress: **no later than the Q1 2027 quarterly
 > review.** See MANUAL_TODO.md #18 for the options considered.
 
+> **⚠ Ratified interim exception — sector cap (owner-approved 2026-07-09).** The Jul 8 2026
+> rebalance left the book at **~35% financials** (MS + AXP + CFG + CB) against the 25% cap.
+> Cause (now fixed): `SECTOR_MAP` covered only the 100-name core universe, so the expansion-name
+> BUYs (CB, CFG) fell to an `UNKNOWN` bucket the cap could not see, and their funding SELLs
+> (AXP, MS) were correctly min-hold-rejected while the orphaned BUYs filled from cash. **Decision:
+> let it age out — do NOT force a taxable trim.** Selling now would realize short-term gains
+> (~54% CA) and violate the same 30-day min-hold this system just enforced; the fixed, fail-closed
+> sector cap blocks any *new* financial BUY immediately, and the book self-corrects as the
+> min-holds expire and the PM re-proposes its intended rotation (MS sellable ~2026-07-21, AXP
+> ~2026-08-04). **Review trigger:** if financials still exceeds 25% after ~2026-08-04 with no PM
+> trim proposed, investigate (MANUAL_TODO #21). This is a bounded, self-healing deviation, not a
+> relaxed control — the cap is now *stronger* (full-universe coverage + fail-closed) than before
+> the breach.
+
 ---
 
 ## 7. Trading & Rebalancing Policy
@@ -417,3 +431,4 @@ tax:
 | 1.0 | 2026-06-27 | Initial adoption | Codify the Rev 3 strategy redesign decisions into a single governed mandate | Owner |
 | 1.1 | 2026-07-05 | Ratified the cash-target exception (§6) as an intentional, time-bound deviation with a review trigger, rather than an unaddressed gap | The book had drifted to ~63% cash / 4 holdings against the 0–10%/8–15 target; owner directed ratifying the defensive posture until the evidence clock (post formula-version-partition fix) has a real reading, rather than relaxing a guardrail on faith | Owner |
 | 1.1 | 2026-07-05 | Corrected §4/Appendix A single-name stop-loss description from "daily-close" to the mechanism as implemented (morning evaluation via `risk_watch.py` on a live MCP quote) | The stop was described as evaluated at the 4 PM close, but the EOD routine places no orders — the live implementation evaluates each trading morning instead. Doc corrected to match code rather than code changed to match doc | Owner |
+| 1.2 | 2026-07-09 | Ratified the §6 sector-cap exception (~35% financials from the Jul 8 rebalance) as a bounded, self-healing deviation to age out, not force-trim | The SECTOR_MAP hole let orphaned expansion-name BUYs breach the 25% cap; the cap is now fixed (full-universe + fail-closed) and blocks new financial BUYs, so the book self-corrects as min-holds expire — a taxable trim would violate the anti-churn min-hold policy for no risk benefit | Owner |

@@ -133,12 +133,39 @@ IMPORTANT: DRY_RUN=true is correct and intentional. robin_stocks (the Python Rob
 is blocked in this cloud environment. Setting DRY_RUN=true prevents the pipeline from calling it
 and from prematurely stamping executed_at. Real orders are placed via Robinhood MCP in STEP 4.
 
-Install dependencies:
-pip install -r requirements.txt -q
+Install dependencies. The base image ships some Debian-managed packages (PyJWT,
+cryptography) that a bare `pip install` cannot uninstall — the install then ABORTS
+before reaching anthropic / robin_stocks, and the pipeline fails deep in STEP 3
+with `No module named 'anthropic'` (this happened live on Jul 8 2026). Install,
+then VERIFY the imports actually resolve; fall back to --ignore-installed; if the
+imports STILL fail, STOP cleanly (a skipped attempt is the designed failure
+direction — the next cron retries; a half-installed pipeline is not):
+
+pip install -r requirements.txt -q 2>&1 | tail -2 || true
+if ! python -c "import anthropic, robin_stocks, pyotp, dotenv, yaml" 2>/dev/null; then
+  echo "deps incomplete after first install — retrying with --ignore-installed"
+  pip install -r requirements.txt -q --ignore-installed 2>&1 | tail -2 || true
+fi
+python -c "import anthropic, robin_stocks, pyotp, dotenv, yaml" || {
+  echo "dependencies unavailable — STOP. Push nothing, place no orders. The next scheduled attempt (+60 min) retries."
+  exit 0
+}
 
 ═══════════════════════════════════════════════
 STEP 3 — Run the pipeline for this MODE
 ═══════════════════════════════════════════════
+
+⛔ NEVER edit, debug, or commit any .py source file — not to work around an
+import error, a crash, or a traceback, not under any time pressure. The routine
+executes the committed code; it does not author it. A source change committed
+here bypasses the mandatory `/code-review` + test gates (DEPLOYMENT §7.0) and
+lands unreviewed on the live order path (this happened on Jul 8 2026 — a routine
+hot-fixed main.py mid-run and committed it to main). If the pipeline crashes on
+a code bug, that is a MISSED rebalance — the designed, safe failure direction:
+push system_health.json (below) so alert.yml pages the owner, then STOP. The
+owner fixes the code through the normal review gates; Thu/Fri catch-up + Friday's
+missed-week heartbeat cover the week. Fixing code toward a completed trade is
+never worth an unreviewed change to the capital path.
 
 If MODE == rebalance:   python main.py; MAIN_EXIT=$?
 If MODE == risk_watch:  python risk_watch.py; MAIN_EXIT=$?
@@ -247,6 +274,9 @@ mark_execution_started(p['run_id'])
 PY
 git config user.email 'ai-investor-bot@users.noreply.github.com'
 git config user.name 'AI Investor Bot'
+# Stage ONLY these named data artifacts — NEVER a .py file (see STEP 3). If `git
+# status` shows a modified .py, do not stage it and do not commit it; that is a
+# code change that must go through review, not the routine.
 git add pending_decisions.json last_rebalance.json system_health.json trades.csv decision_journal.json agent_log.json transactions.json mcp_portfolio.json portfolio_snapshot.json fundamentals_cache.json portfolio_peak.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json decisions_ledger.jsonl decisions_scored.jsonl counterfactual.json
 git commit -m 'chore: execution claim'
 git push || (git pull --rebase && git push)

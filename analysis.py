@@ -194,7 +194,11 @@ Prioritize:
 SELL decisions are independent of BUY decisions.
 When a holding shows recommended_action=REDUCE or EXIT in the position review
 AND Devil's Advocate has recommend_reject=True for that same holding, you MUST
-propose a SELL (target_weight=0.0) even if you have no new BUYs to make.
+propose a SELL (target_weight=0.0) even if you have no new BUYs to make —
+UNLESS the holding is under min-hold (shown per holding as "min_hold: Nd left
+— NOT sellable"). A guard rejects those SELLs unconditionally, and it also
+drops any BUY funded by a rejected SELL — so propose neither leg; HOLD and
+revisit when the holding becomes sellable.
 Freeing capital from a deteriorating position is a valid primary action.
 Do not let lack of attractive BUY candidates prevent you from exiting a bad position.
 
@@ -888,18 +892,25 @@ def run_portfolio_manager(
     cash  = portfolio["cash"]
     cash_pct = (cash / total * 100) if total else 0
 
-    # Format current holdings + compute sector weights
-    from guardrails import sector_of
+    # Format current holdings + compute sector weights. Each line carries the
+    # holding's min-hold eligibility so the PM stops proposing discretionary
+    # SELLs the turnover guard is guaranteed to reject (Jul 8 2026: both SELL
+    # legs of a rotation rejected → DEGRADED health + orphaned BUYs).
+    from guardrails import sector_of, min_hold_days_remaining
+    from journal import _load_list, TRANSACTIONS_FILE
+    _txs = _load_list(TRANSACTIONS_FILE)
     holdings_lines = []
     sector_weights: dict[str, float] = {}
     for p in portfolio["positions"]:
         t = p["symbol"]
         weight = (p["market_value"] / total * 100) if total else 0
         review = position_reviews.get(t, {})
+        rem = min_hold_days_remaining(t, transactions=_txs)
+        hold_tag = "sellable" if not rem else f"min_hold: {rem}d left — NOT sellable"
         holdings_lines.append(
             f"  {t}: {p['qty']} sh @ ${p['avg_price']:.2f} = ${p['market_value']:,.0f} ({weight:.1f}%) "
             f"| hold={review.get('hold_score','?')}/10 alpha={review.get('remaining_alpha','?')} "
-            f"action={review.get('recommended_action','?')}"
+            f"action={review.get('recommended_action','?')} | {hold_tag}"
         )
         sec = sector_of(t)
         sector_weights[sec] = sector_weights.get(sec, 0.0) + weight
@@ -1001,7 +1012,9 @@ CONSTRAINTS:
   HORIZON DISCIPLINE (weekly cadence, 9–12 month horizon): you decide ONCE A WEEK.
   Default is HOLD — a SELL needs a broken thesis or a real measured change, never
   a one-day re-rank. A discretionary SELL of a name held < 30 trading days will be
-  REJECTED by the turnover guard. TAX-AWARE HOLD: a gained position within ~30
+  REJECTED by the turnover guard — each holding above is tagged "sellable" or
+  "min_hold: Nd left — NOT sellable"; never propose a SELL of a NOT-sellable
+  holding, nor a BUY whose source_of_capital is one (both legs get rejected). TAX-AWARE HOLD: a gained position within ~30
   trading days of its 1-year date is taxed ~54% if sold now vs ~37% after — prefer
   HOLD across the boundary (a guard enforces this; risk exits are exempt).
 
@@ -1274,6 +1287,21 @@ def get_trade_decisions(
             before = len(decisions)
             decisions = [d for d in decisions if d.get("ticker") not in rejected]
             print(f"   ⚠ CRO removed {before - len(decisions)} ticker(s): {rejected}")
+            # Capital dependency at the veto boundary: a CRO-vetoed SELL also
+            # takes down any BUY it was funding — the pair was approved as a
+            # rotation, and executing the BUY leg alone rebuilds the exact
+            # Jul 8 2026 failure (orphaned BUYs on a book the CRO never saw).
+            # Reuse the same guard main.py applies to turnover-rejected SELLs:
+            # feed it the vetoed SELL legs (from the PM's pre-veto proposal).
+            from guardrails import enforce_capital_dependency
+            vetoed_sell_legs = [{**d, "rejected_reason": "CRO veto"}
+                                for d in decisions_proposed
+                                if str(d.get("action", "")).upper() == "SELL"
+                                and d.get("ticker") in rejected]
+            decisions, cascaded = enforce_capital_dependency(decisions, vetoed_sell_legs)
+            if cascaded:
+                print(f"   ⚠ CRO veto cascaded to {len(cascaded)} dependent BUY(s): "
+                      f"{[d.get('ticker') for d in cascaded]} (funding SELL vetoed)")
 
     pipeline_state = {
         "date": market_data_date,

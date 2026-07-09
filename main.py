@@ -30,7 +30,7 @@ from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, StalePortfolioError, DRY_RUN
 from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions, close_position, get_ticker_history, recently_exited, consecutive_cash_above, _load_list, TRANSACTIONS_FILE
-from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, enforce_tax_aware_hold, enforce_safe_mode, flag_wash_sale_presale
+from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, enforce_tax_aware_hold, enforce_safe_mode, enforce_capital_dependency, flag_wash_sale_presale
 from build_dossier import load_dossier, validate_dossier
 from policy       import policy_version as _policy_version
 from publish      import publish_to_supabase
@@ -410,6 +410,17 @@ def run_daily_cycle():
     decisions, reentry_rejected = enforce_wash_sale_reentry(decisions, transactions=_txs)
     decisions, taxhold_rejected = enforce_tax_aware_hold(decisions, market_data["prices"], transactions=_txs, kill_active=kill_active)
 
+    # Capital dependency — a BUY funded by a rejected SELL must not execute
+    # alone (Jul 8 2026: orphaned CB/CFG BUYs filled from cash after their
+    # AXP/MS funding SELLs were min-hold-rejected, producing a book the CRO
+    # never reviewed). Runs after every SELL-rejecting guard above and BEFORE
+    # the sector cap, so the cap projects the BUY set that will actually
+    # execute. validation_report["rejected"] here holds only validate_decisions'
+    # own rejects (guard rejects are folded in later, below).
+    decisions, dependency_rejected = enforce_capital_dependency(
+        decisions,
+        validation_report["rejected"] + holding_rejected + taxhold_rejected)
+
     # Sector cap (25%) — a code-level control (the limit otherwise lives only in
     # the PM prompt). Runs after turnover filtering so it sees the post-turnover set.
     decisions, sector_rejected = enforce_sector_limits(decisions, portfolio)
@@ -438,7 +449,8 @@ def run_daily_cycle():
         print(f"   ⚠ wash-sale pre-sale flag skipped: {_e}")
 
     for r in (safemode_rejected + holding_rejected + reentry_rejected
-              + taxhold_rejected + sector_rejected + netedge_rejected):
+              + taxhold_rejected + dependency_rejected + sector_rejected
+              + netedge_rejected):
         validation_report["rejected"].append(
             {"ticker": r.get("ticker", "?"), "action": r.get("action", "?"),
              "reason": r.get("rejected_reason", "turnover/sector/net-edge guard")})

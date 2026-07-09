@@ -81,8 +81,18 @@ portfolio_snapshot.json (with is_close/close_value) and then, with no keys, prin
 push triggers publish.yml in GitHub Actions, which does the REAL Supabase write using the
 GitHub Actions secret store. POLYGON_API_KEY is likewise unused here. Keep the prompt secret-free.
 
-Install dependencies:
-pip install -r requirements.txt -q
+Install dependencies (the base image has Debian-managed packages a bare install
+cannot uninstall — verify the imports resolve, retry with --ignore-installed,
+else STOP; the EOD snapshot is skippable, a broken run is not):
+pip install -r requirements.txt -q 2>&1 | tail -2 || true
+python -c "import robin_stocks, pyotp, dotenv, requests" 2>/dev/null \
+  || pip install -r requirements.txt -q --ignore-installed 2>&1 | tail -2 || true
+python -c "import robin_stocks, pyotp, dotenv, requests" \
+  || { echo "deps unavailable — STOP; next EOD run retries."; exit 0; }
+
+⛔ NEVER edit or commit any .py source file (see the daily routine's STEP 3 rule).
+This routine runs committed code and commits data artifacts only; a code fix must
+go through the normal review gates, never the routine.
 
 STEP 3 — Publish closing snapshot to Supabase
 python publish.py --close

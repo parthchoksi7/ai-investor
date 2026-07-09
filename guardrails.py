@@ -77,9 +77,14 @@ SAFE_MODE_INDEX_DROP_PCT = _POLICY["safe_mode_index_drop_pct"]  # PERCENT — SP
 #
 # Reasonable GICS-style buckets; exactness is not required (a slightly-off
 # bucket only shifts which marginal BUY is rejected, never loses capital — a
-# rejected BUY forgoes a trade, it cannot lose money). Unknown tickers fall to
-# "UNKNOWN" and share one conservative bucket, so an unmapped name still counts
-# toward a cap rather than escaping it.
+# rejected BUY forgoes a trade, it cannot lose money). Unmapped tickers fall to
+# "UNKNOWN", and a BUY of an UNKNOWN-sector name is REJECTED outright
+# (fail-closed in enforce_sector_limits): the Jul 8 2026 rebalance proved the
+# old "UNKNOWN shares one bucket" design escapes the cap rather than enforcing
+# it — CB+CFG (unmapped financials) split the true Financials exposure across
+# two under-cap buckets and a 35%-financials book passed a 25% cap. The map
+# MUST cover universe.EXPANDED_UNIVERSE in full (TestSectorMapCompleteness
+# enforces this structurally).
 # TODO: source sectors from Polygon /v3/reference/tickers (sic_description /
 # sector) when a paid tier is available, and fall back to this map.
 SECTOR_MAP: dict[str, str] = {
@@ -134,6 +139,133 @@ SECTOR_MAP: dict[str, str] = {
     "NEE": "Utilities",
     # Benchmarks (never traded — excluded from candidates)
     "SPY": "ETF", "QQQ": "ETF",
+
+    # ── Expansion universe (Stage D, universe._EXPANSION) — GICS sectors ─────
+    # Post-2023-GICS-restructure assignments (payment processors → Financials;
+    # DG/DLTR → Consumer Staples; ADP/PAYX → Industrials Professional Services).
+    # Technology
+    "ACN": "Technology", "ADI": "Technology", "ADSK": "Technology",
+    "AKAM": "Technology", "ANET": "Technology", "ANSS": "Technology",
+    "APH": "Technology", "CDNS": "Technology", "CDW": "Technology",
+    "CSCO": "Technology", "DELL": "Technology", "DOCU": "Technology",
+    "ENPH": "Technology", "FICO": "Technology", "FSLR": "Technology",
+    "FTNT": "Technology", "GLW": "Technology", "GRMN": "Technology",
+    "HPE": "Technology", "HPQ": "Technology", "HUBS": "Technology",
+    "INTU": "Technology", "IT": "Technology", "JNPR": "Technology",
+    "KEYS": "Technology", "KLAC": "Technology", "LRCX": "Technology",
+    "MCHP": "Technology", "MPWR": "Technology", "MSI": "Technology",
+    "NXPI": "Technology", "OKTA": "Technology", "ON": "Technology",
+    "PTC": "Technology", "ROP": "Technology", "SNPS": "Technology",
+    "STX": "Technology", "SWKS": "Technology", "TDY": "Technology",
+    "TER": "Technology", "TTD": "Technology", "TWLO": "Technology",
+    "TYL": "Technology", "WDC": "Technology", "ZBRA": "Technology",
+    "ZM": "Technology",
+    # Communication Services
+    "CHTR": "Communication Services", "CMCSA": "Communication Services",
+    "DIS": "Communication Services", "EA": "Communication Services",
+    "FOXA": "Communication Services", "IPG": "Communication Services",
+    "OMC": "Communication Services", "PARA": "Communication Services",
+    "PINS": "Communication Services", "RBLX": "Communication Services",
+    "ROKU": "Communication Services", "SNAP": "Communication Services",
+    "T": "Communication Services", "TMUS": "Communication Services",
+    "TTWO": "Communication Services", "VZ": "Communication Services",
+    "WBD": "Communication Services",
+    # Financials (incl. exchanges, insurers, payment processing per GICS 2023)
+    "AFL": "Financials", "AIG": "Financials", "AJG": "Financials",
+    "ALL": "Financials", "AMP": "Financials", "AON": "Financials",
+    "BK": "Financials", "CB": "Financials", "CFG": "Financials",
+    "CME": "Financials", "COF": "Financials", "DFS": "Financials",
+    "FIS": "Financials", "FISV": "Financials", "FITB": "Financials",
+    "GPN": "Financials", "HBAN": "Financials", "ICE": "Financials",
+    "KEY": "Financials", "MCO": "Financials", "MET": "Financials",
+    "MMC": "Financials", "MSCI": "Financials", "MTB": "Financials",
+    "NDAQ": "Financials", "NTRS": "Financials", "PGR": "Financials",
+    "PNC": "Financials", "PRU": "Financials", "RF": "Financials",
+    "SCHW": "Financials", "SPGI": "Financials", "STT": "Financials",
+    "SYF": "Financials", "TFC": "Financials", "TROW": "Financials",
+    "TRV": "Financials", "USB": "Financials",
+    # Health Care
+    "A": "Health Care", "ABT": "Health Care", "ALGN": "Health Care",
+    "BAX": "Health Care", "BDX": "Health Care", "BIIB": "Health Care",
+    "BSX": "Health Care", "CAH": "Health Care", "CI": "Health Care",
+    "CNC": "Health Care", "COR": "Health Care", "CVS": "Health Care",
+    "DXCM": "Health Care", "ELV": "Health Care", "EW": "Health Care",
+    "GEHC": "Health Care", "HCA": "Health Care", "HOLX": "Health Care",
+    "HUM": "Health Care", "IDXX": "Health Care", "IQV": "Health Care",
+    "MCK": "Health Care", "MDT": "Health Care", "MRNA": "Health Care",
+    "MTD": "Health Care", "PODD": "Health Care", "RMD": "Health Care",
+    "STE": "Health Care", "SYK": "Health Care", "WST": "Health Care",
+    "ZBH": "Health Care", "ZTS": "Health Care",
+    # Consumer Staples (incl. DG/DLTR/WBA per GICS 2023 Staples Distribution)
+    "ADM": "Consumer Staples", "CAG": "Consumer Staples",
+    "CHD": "Consumer Staples", "CL": "Consumer Staples",
+    "CLX": "Consumer Staples", "CPB": "Consumer Staples",
+    "DG": "Consumer Staples", "DLTR": "Consumer Staples",
+    "GIS": "Consumer Staples", "HRL": "Consumer Staples",
+    "HSY": "Consumer Staples", "K": "Consumer Staples",
+    "KDP": "Consumer Staples", "KHC": "Consumer Staples",
+    "KMB": "Consumer Staples", "KO": "Consumer Staples",
+    "KR": "Consumer Staples", "MDLZ": "Consumer Staples",
+    "MKC": "Consumer Staples", "MNST": "Consumer Staples",
+    "MO": "Consumer Staples", "PEP": "Consumer Staples",
+    "PG": "Consumer Staples", "PM": "Consumer Staples",
+    "STZ": "Consumer Staples", "SYY": "Consumer Staples",
+    "TSN": "Consumer Staples", "WBA": "Consumer Staples",
+    # Consumer Discretionary
+    "APTV": "Consumer Discretionary", "AZO": "Consumer Discretionary",
+    "BBY": "Consumer Discretionary", "BWA": "Consumer Discretionary",
+    "CCL": "Consumer Discretionary", "DASH": "Consumer Discretionary",
+    "DHI": "Consumer Discretionary", "DRI": "Consumer Discretionary",
+    "EXPE": "Consumer Discretionary", "F": "Consumer Discretionary",
+    "GM": "Consumer Discretionary", "GPC": "Consumer Discretionary",
+    "HLT": "Consumer Discretionary", "LEN": "Consumer Discretionary",
+    "LVS": "Consumer Discretionary", "MAR": "Consumer Discretionary",
+    "MGM": "Consumer Discretionary", "NCLH": "Consumer Discretionary",
+    "NVR": "Consumer Discretionary", "ORLY": "Consumer Discretionary",
+    "PHM": "Consumer Discretionary", "POOL": "Consumer Discretionary",
+    "RCL": "Consumer Discretionary", "ROST": "Consumer Discretionary",
+    "TSCO": "Consumer Discretionary", "ULTA": "Consumer Discretionary",
+    "WYNN": "Consumer Discretionary", "YUM": "Consumer Discretionary",
+    # Industrials (incl. ADP/PAYX/VRSK/EFX Professional Services per GICS 2023)
+    "ADP": "Industrials", "AME": "Industrials", "CARR": "Industrials",
+    "CMI": "Industrials", "CSX": "Industrials", "CTAS": "Industrials",
+    "DOV": "Industrials", "EFX": "Industrials", "EMR": "Industrials",
+    "ETN": "Industrials", "FAST": "Industrials", "FDX": "Industrials",
+    "FTV": "Industrials", "GD": "Industrials", "IR": "Industrials",
+    "ITW": "Industrials", "JCI": "Industrials", "LHX": "Industrials",
+    "MMM": "Industrials", "NOC": "Industrials", "NSC": "Industrials",
+    "ODFL": "Industrials", "OTIS": "Industrials", "PAYX": "Industrials",
+    "PCAR": "Industrials", "PH": "Industrials", "PWR": "Industrials",
+    "ROK": "Industrials", "RSG": "Industrials", "SWK": "Industrials",
+    "TDG": "Industrials", "UNP": "Industrials", "URI": "Industrials",
+    "VRSK": "Industrials", "WAB": "Industrials", "WM": "Industrials",
+    "XYL": "Industrials",
+    # Energy
+    "BKR": "Energy", "DVN": "Energy", "FANG": "Energy", "HAL": "Energy",
+    "HES": "Energy", "KMI": "Energy", "MPC": "Energy", "OKE": "Energy",
+    "PSX": "Energy", "PXD": "Energy", "VLO": "Energy", "WMB": "Energy",
+    # Utilities
+    "AEE": "Utilities", "AEP": "Utilities", "CNP": "Utilities",
+    "D": "Utilities", "DTE": "Utilities", "DUK": "Utilities",
+    "ED": "Utilities", "EIX": "Utilities", "ES": "Utilities",
+    "EXC": "Utilities", "FE": "Utilities", "PCG": "Utilities",
+    "PEG": "Utilities", "PPL": "Utilities", "SO": "Utilities",
+    "SRE": "Utilities", "WEC": "Utilities", "XEL": "Utilities",
+    # Materials
+    "ALB": "Materials", "APD": "Materials", "AVY": "Materials",
+    "BALL": "Materials", "CE": "Materials", "CF": "Materials",
+    "CTVA": "Materials", "DD": "Materials", "DOW": "Materials",
+    "ECL": "Materials", "IFF": "Materials", "IP": "Materials",
+    "MLM": "Materials", "MOS": "Materials", "NUE": "Materials",
+    "PKG": "Materials", "PPG": "Materials", "SHW": "Materials",
+    "STLD": "Materials", "VMC": "Materials",
+    # Real Estate
+    "ARE": "Real Estate", "AVB": "Real Estate", "CBRE": "Real Estate",
+    "CCI": "Real Estate", "DLR": "Real Estate", "EQR": "Real Estate",
+    "EXR": "Real Estate", "INVH": "Real Estate", "IRM": "Real Estate",
+    "MAA": "Real Estate", "O": "Real Estate", "PSA": "Real Estate",
+    "SBAC": "Real Estate", "SPG": "Real Estate", "VICI": "Real Estate",
+    "VTR": "Real Estate", "WELL": "Real Estate",
 }
 
 
@@ -155,6 +287,12 @@ def enforce_sector_limits(
     not an increment); untouched holdings keep their current weight. SELLs are
     applied first so a same-sector exit frees budget for a later BUY — even when
     decisions arrive BUY-first. Decision order is otherwise preserved.
+
+    FAIL-CLOSED on unmapped tickers: a BUY whose sector resolves to "UNKNOWN"
+    is rejected outright — its concentration cannot be risk-checked, and the
+    Jul 8 2026 incident showed an UNKNOWN bucket lets the TRUE sector escape
+    the cap (CB+CFG passed at a realized 35% financials vs the 25% cap).
+    SELLs and HOLDs always pass (an exit must never be blocked by a map gap).
 
     Runs AFTER validate_decisions (so same-ticker BUY+SELL conflicts and
     weight-clamping are already resolved) and is recorded under the same
@@ -193,6 +331,12 @@ def enforce_sector_limits(
         ticker    = d.get("ticker", "")
         tw        = float(d.get("target_weight", 0) or 0)
         sec       = sec_of(ticker)
+        if sec == "UNKNOWN":
+            reason = ("sector unmapped — fail-closed (cannot risk-check "
+                      "concentration; add the ticker to SECTOR_MAP)")
+            rejected.append({**d, "rejected_reason": reason})
+            print(f"   🚫 SECTOR REJECT: BUY {ticker} — {reason}")
+            continue
         projected = sector_weight(sec, exclude=ticker) + tw
         if projected > max_sector_weight + 1e-9:
             reason = (f"{sec} sector would be {projected:.0%} > "
@@ -280,10 +424,12 @@ def enforce_min_holding_period(
         recent, and a long-held exit is exactly the trade we must allow.
       - BUY / HOLD pass through.
 
-    Caveat: blocking a SELL can strand a same-batch BUY that named it as
-    source_of_capital — that BUY may then fail at the broker for lack of cash.
-    Accepted: the whole point is fewer trades, and per-order execution isolation
-    already tolerates a single unfilled order.
+    Note: a rejected SELL also drops any same-batch BUY that named it as
+    source_of_capital — see enforce_capital_dependency. (The pre-Jul-2026
+    assumption that such a BUY would simply "fail at the broker for lack of
+    cash" was false on a high-cash book: on Jul 8 2026 the CB/CFG BUYs filled
+    from cash after their funding SELLs were rejected, turning a CRO-approved
+    rotation into an unreviewed net addition that breached the sector cap.)
     """
     if kill_active:
         return list(decisions), []     # risk regime: never block exits (skip the file read)
@@ -306,6 +452,75 @@ def enforce_min_holding_period(
         else:
             kept.append(d)
     return kept, rejected
+
+
+def enforce_capital_dependency(
+    decisions: list[dict],
+    rejected: list[dict],
+) -> tuple[list[dict], list[dict]]:
+    """Drop any BUY whose funding SELL was rejected by an earlier guard.
+
+    A PM rotation (SELL X → BUY Y with source_of_capital=X) is one decision,
+    approved by the CRO as a pair against a projected post-rotation book. If
+    the SELL leg is rejected (min-holding, tax-aware hold, validation), the BUY
+    leg must not execute alone: on Jul 8 2026 the orphaned CB/CFG BUYs filled
+    from cash after their AXP/MS funding SELLs were min-hold-rejected — the
+    realized book (financials-heavy, cash halved) was one the CRO never
+    reviewed. A rotation executes whole or not at all.
+
+    Pure function. `decisions` is the post-guard kept list; `rejected` is every
+    decision rejected so far this run. A BUY is dropped iff its
+    source_of_capital (case-insensitive) equals the ticker of a rejected SELL.
+    source_of_capital of "cash"/empty/None is exempt (no dependency). SELLs and
+    HOLDs always pass. Failure direction: a dropped BUY is a missed trade —
+    the safe direction — and the PM may re-propose it next rebalance.
+    """
+    rejected_sells = {
+        str(r.get("ticker", "")).upper():
+            r.get("rejected_reason") or r.get("reason") or "rejected"
+        for r in rejected
+        if str(r.get("action", "")).upper() == "SELL" and r.get("ticker")
+    }
+    if not rejected_sells:
+        return list(decisions), []
+
+    kept, newly_rejected = [], []
+    for d in decisions:
+        src = str(d.get("source_of_capital") or "").upper()
+        if (str(d.get("action", "")).upper() == "BUY"
+                and src in rejected_sells):
+            reason = (f"funding SELL {src} was rejected "
+                      f"({rejected_sells[src]}) — rotation executes whole or "
+                      f"not at all")
+            newly_rejected.append({**d, "rejected_reason": reason})
+            print(f"   🚫 DEPENDENCY REJECT: BUY {d.get('ticker','')} — {reason}")
+        else:
+            kept.append(d)
+    return kept, newly_rejected
+
+
+def min_hold_days_remaining(
+    ticker: str,
+    transactions: list | None = None,
+    today: str | None = None,
+    min_holding_days: int = MIN_HOLDING_TRADING_DAYS,
+) -> int | None:
+    """Trading days until `ticker` clears the min-holding guard, or None.
+
+    None means "no live BUY on record" — the position predates transaction
+    logging and is freely sellable (mirrors enforce_min_holding_period's
+    no-buy-date exemption). 0 means sellable now. Used to show the PM which
+    holdings are actually eligible for a discretionary SELL, so it stops
+    proposing rotations the guard is guaranteed to reject (Jul 8 2026: both
+    SELL legs rejected, DEGRADED health, orphaned BUYs).
+    """
+    if transactions is None:
+        transactions = _load_list(TRANSACTIONS_FILE)
+    buy_date = _last_live_buy_date(ticker, transactions)
+    if not buy_date:
+        return None
+    today = today or datetime.now(_ET).strftime("%Y-%m-%d")
+    return max(0, min_holding_days - _trading_days_since(buy_date, today))
 
 
 def enforce_wash_sale_reentry(

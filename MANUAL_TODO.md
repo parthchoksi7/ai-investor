@@ -20,6 +20,8 @@ reading the body. "Verified" means checked against a real artifact/API in this r
 
 | # | Item | Status |
 |---|------|--------|
+| 20 | **Re-sync BOTH routine prompts** (Jul 9 hardening: STEP 2 dep-verify, STEP 3 no-source-edit rule) | ⬜ **PENDING** — owner, routines UI (code merged; prompts inert until synced) |
+| 21 | **35%-financials breach — age-out watch** | ⬜ **MONITOR** — documented deviation; no action unless it persists past ~Aug 4 |
 | 0 | Daily routine prompt sync | ✅ **DONE** — verified byte-for-byte |
 | 0b | Flip `UNIVERSE_EXPANDED` | ⬜ pending (your call — both gating conditions now met as of 2026-07-05) |
 | 3 | PyYAML in cloud routine | 🟡 **strong indirect evidence, not yet directly confirmed** — resolves automatically with item 13's Monday check |
@@ -39,6 +41,32 @@ reading the body. "Verified" means checked against a real artifact/API in this r
 | 19 | Stop-loss IPS text reconciliation | ✅ **DECIDED** — IPS/policy/CLAUDE.md text corrected to match implementation |
 
 ---
+
+## 🆕 PENDING (2026-07-09) — Jul 8 rebalance post-mortem follow-ups
+
+### [ ] 20. Re-sync BOTH routine prompts (Jul 9 hardening) — **routines UI, owner-only**
+The Jul 9 remediation changed both `ROUTINE_DAILY_CYCLE.md` and `ROUTINE_EOD_CLOSE.md`:
+STEP 2 now **verifies the deps actually import** (retry `--ignore-installed`, else STOP) — Jul 8
+died with `No module named 'anthropic'` because a bare `pip install` aborted on Debian-managed
+PyJWT; and STEP 3 gains a hard **"never edit/commit a .py source file"** rule (Jul 8 the routine
+hot-fixed `main.py` mid-run and committed it to `main`, bypassing the §7.0 review gate). Paste
+both into the live routines (`YOUR_ROUTINE_ID_DAILY`, `YOUR_ROUTINE_ID_EOD`), substituting the
+account number. **Until synced the code fixes still take effect** (they're in the committed
+`main.py`/`guardrails.py`/`analysis.py`, pulled each run) — only the prompt-level dep-verify and
+no-source-edit guardrails are inert. Degrades safe.
+
+### [ ] 21. 35%-financials breach — age-out watch (owner-decided: let it age out)
+The Jul 8 rebalance left the live book at **~35% financials** (MS + AXP + CFG + CB) vs the 25%
+IPS cap, because the SECTOR_MAP hole let the orphaned CB/CFG BUYs through (now fixed +
+fail-closed). **Decision: age it out, do not force a taxable trim** (consistent with the §6 cash
+exception and the anti-churn min-hold policy). The fixed sector cap blocks any NEW financial BUY
+immediately. The book self-corrects as the min-holds expire and the PM re-proposes the
+AXP/MS rotation it wanted on Jul 8:
+- **MS** sellable ~**2026-07-21** (bought 06-08), **AXP** ~**2026-08-04** (bought 06-22),
+  **CB/CFG** ~**2026-08-19** (bought 07-08).
+- **No action needed** unless financials is still > 25% after ~2026-08-04 with the PM NOT
+  proposing a trim — then investigate why the rotation isn't re-proposed (PM prompt / candidate
+  set). Documented as an IPS deviation (IPS.md §6, mirroring the ratified cash posture).
 
 ## ✅ DONE (2026-07-05) — daily routine prompt sync
 

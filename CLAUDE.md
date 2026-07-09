@@ -333,6 +333,30 @@ This prevents the silent all-50 quant score failure mode where agents run but pr
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
 
+## Changelog — Jul 9 2026 (Jul 8 rebalance post-mortem — sector cap made real · atomic rotations · regression nets)
+
+Remediation of the **first live weekly rebalance** (`20260708-134929`, Wed Jul 8). The run
+"completed" but a post-mortem found it executed **2 orphaned BUYs** (CB, CFG) after their
+funding SELLs (AXP, MS) were min-hold-rejected, producing a **~35%-financials book vs the 25%
+IPS cap** — invisible to `enforce_sector_limits` because CB/CFG (and 291 other expansion names)
+were absent from `SECTOR_MAP` and fell to a diluting `UNKNOWN` bucket. The CRO had approved a
+rotation book (AXP/MS exited, 63.5% cash) that never materialized. **Live validation-path
+changes** (guard layer only — order placement/idempotency untouched); every fix resolves toward
+missed trades, never duplicates. Owner decisions: the standing 35%-financials breach **ages out**
+via min-hold expiries (~Jul 21 MS, ~Aug 4 AXP; the fixed map blocks new financial BUYs
+immediately — documented deviation, see MANUAL_TODO), and the cloud routine is **forbidden from
+editing source** (PR 2 routine-prompt sync).
+
+| Change | Why it mattered |
+|--------|-----------------|
+| `fix(guardrails)` **SECTOR_MAP completed to the full universe** (+293 GICS-2023 entries, 100→393) — every `universe.EXPANDED_UNIVERSE` name mapped; `TestSectorMapCompleteness` makes future universe growth fail the suite before it can reopen the hole. Also fixes the PM prompt's sector block (same `sector_of()`). | 6 of the 9 financial candidates on Jul 8 (CFG, CB, ALL, AIG, AMP, COF) were invisible to the sector cap — the control the changelog said "closed" the same-sector-breach vector could not see half the sector. |
+| `fix(guardrails)` **fail-closed sector gate** — a BUY resolving to `UNKNOWN` is rejected outright (SELLs/HOLDs always pass). | The old "UNKNOWN shares one conservative bucket" design *diluted* the true sector across two under-cap buckets instead of enforcing anything — the class of bug is now impossible, not just this instance. |
+| `feat(guardrails)` **`enforce_capital_dependency`** — a BUY whose `source_of_capital` SELL was rejected by ANY earlier guard (min-hold, tax-hold, validation) is dropped with a chained reason; wired in `main.py` after the SELL-rejecting guards and BEFORE the sector cap; the same cascade applies at the CRO veto boundary in `analysis.py`. The false caveat at the min-hold guard ("the BUY may fail at the broker for lack of cash") is rewritten. | A CRO-approved rotation must execute whole or not at all. On Jul 8 the orphaned BUY legs filled happily from a 63.5%-cash book — the realized portfolio was one no risk officer ever reviewed. |
+| `feat(analysis)` **PM min-hold awareness** — every holding in the PM user_msg is tagged `sellable` / `min_hold: Nd left — NOT sellable` (new `guardrails.min_hold_days_remaining`, reusing `_last_live_buy_date`/`_trading_days_since`); `_PM_SYSTEM`'s MUST-SELL mandate now defers to min-hold; the CONSTRAINTS block tells the PM not to propose either leg of a blocked rotation. | The PM knew the 30-day rule but had no per-holding buy dates, so it proposed guaranteed-rejected SELLs — every rebalance until ~Aug would have been DEGRADED noise. |
+| `feat(qa)` **two regression nets** — (1) ruff `F821/F823` lint gate (`TestLintGate` + Pre-Run QA step 3): proven to catch the Jul 8 `load_dossier` UnboundLocalError class, and it caught a real missing-import bug DURING this remediation; (2) **`TestRunDailyCycleSmoke`** — the first end-to-end test of `run_daily_cycle()` (network stubbed, `monkeypatch.chdir(tmp_path)` isolates every relative-path artifact, DRY_RUN forced at both `main` and `execute`), incl. an end-to-end orphaned-BUY regression through the real guard chain. | The Jul 8 crash shipped because no test ever called `run_daily_cycle()` — the bug was a compile-scope error that ANY full call would have hit. The cloud agent then hot-fixed source on `main` mid-run, bypassing §7.0 review (governance rule added in PR 2). |
+
+> **QA:** full `pytest` green (**741**, +31: `TestSectorMapCompleteness`, `TestSectorFailClosed` incl. the exact-Jul-8 book regression + its counterfactual, `TestCapitalDependency`, `TestCROVetoCascade`, `TestMinHoldDaysRemaining`, `TestPMMinHoldInjection`, `TestLintGate`, `TestRunDailyCycleSmoke` incl. full-pipeline sector-cap + fail-closed + orphaned-BUY regressions); ruff F-gate clean; workflow YAML parses. Real `DRY_RUN main.py` run post-close (§7.1, 9 PM ET) — correctly ABORTED on the stale dossier before agents/envelope, confirming the entry point + new imports resolve at runtime; run artifacts restored (tree clean, `pending_decisions.json` never touched). Expert `/code-review high` run pre-commit per §7.0 (1 missing-import bug fixed, CRO cascade refactored to reuse the tested guard, cascade coverage added).
+
 ## Changelog — Jul 5 2026 (batch 3 — DRY_RUN Supabase guard, found during go-live prep)
 
 `fix(publish)` **`DRY_RUN=true` now suppresses live Supabase publishing.** `publish_to_supabase`
@@ -676,7 +700,11 @@ python3 -c "import yaml,glob; [yaml.safe_load(open(f)) for f in glob.glob('.gith
 # 2. Unit tests pass (deterministic pipeline logic — no API keys needed)
 pytest test_pipeline.py -q
 
-# 3. Local pipeline dry run (requires .env with API keys; never places orders)
+# 3. Undefined-name / shadowed-import lint (catches the Jul 8 2026 load_dossier
+#    UnboundLocalError class before it reaches the cloud; also run by TestLintGate)
+python -m ruff check --select F821,F823 --isolated *.py backtest/*.py
+
+# 4. Local pipeline dry run (requires .env with API keys; never places orders)
 DRY_RUN=true python main.py
 ```
 

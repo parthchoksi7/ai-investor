@@ -13,6 +13,38 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+## [2026-07-09] — Jul 8 rebalance post-mortem: sector cap made real · atomic rotations · PM min-hold awareness · regression nets  ·  ~18:10 PT  ·  main
+
+### Fixed — Jul 8 rebalance post-mortem: sector cap made real, rotations atomic, PM min-hold awareness (2026-07-09)
+
+Remediation of the first live weekly rebalance (`20260708-134929`), which executed 2 orphaned
+BUYs (CB, CFG) after their funding SELLs (AXP, MS) were min-hold-rejected — producing a
+**~35%-financials book against the 25% IPS cap** that the sector guard could not see. Live
+validation-path changes; full `pytest` green (**741**, +31).
+
+- **`fix(guardrails)` SECTOR_MAP completed to the full universe (+293 entries).** The map
+  covered only the 100 CORE names; every Stage-D expansion name (incl. CB/CFG/ALL/AIG/AMP/COF —
+  6 of the 9 financials the PM could buy) fell to `UNKNOWN`, splitting true sector exposure
+  across under-cap buckets. GICS-2023 sectors; `TestSectorMapCompleteness` structurally forces
+  the map to cover `universe.EXPANDED_UNIVERSE` forever. Also fixes the PM's own sector view
+  (same `sector_of()`).
+- **`fix(guardrails)` fail-closed sector gate.** A BUY whose sector resolves to `UNKNOWN` is
+  now rejected outright (SELLs always pass) — an unmapped name can never escape concentration
+  risk-checking again.
+- **`feat(guardrails)` `enforce_capital_dependency` — rotations execute whole or not at all.**
+  A BUY whose `source_of_capital` SELL was rejected by any guard is dropped with a chained
+  reason; the same cascade applies at the CRO veto boundary in `analysis.py`. Failure direction:
+  missed trade, never an unreviewed book.
+- **`feat(analysis)` PM min-hold awareness.** Each holding in the PM prompt is tagged
+  `sellable` / `min_hold: Nd left — NOT sellable` (new `guardrails.min_hold_days_remaining`);
+  the `_PM_SYSTEM` MUST-SELL mandate now defers to min-hold. Stops guaranteed-rejected SELL
+  proposals (the Jul 8 DEGRADED source).
+- **`feat(qa)` two regression nets.** (1) ruff `F821/F823` lint gate (`TestLintGate`) — proven
+  to catch the Jul 8 `load_dossier` UnboundLocalError class (and it immediately caught a missing
+  import during this very remediation); (2) `TestRunDailyCycleSmoke` — first end-to-end stubbed
+  run of `run_daily_cycle()` (tmp-isolated, DRY_RUN-forced), incl. an end-to-end orphaned-BUY
+  regression through the full guard chain.
+
 ### Fixed — `DRY_RUN` now suppresses live Supabase publishing (2026-07-05)
 
 `publish.publish_to_supabase` now returns early (after writing `portfolio_snapshot.json`,

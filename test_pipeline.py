@@ -7606,3 +7606,541 @@ class TestDossierConsumer:
         assert "DOSSIER SIGNALS" in captured["user_msg"]
         assert "persist_7d=71.2" in captured["user_msg"]
         assert "TAX-AWARE HOLD" in captured["user_msg"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Jul 8 2026 remediation — sector-map completeness (fail-closed), capital
+# dependency, PM min-hold awareness, lint gate, and the run_daily_cycle smoke
+# test. See CLAUDE.md changelog "Jul 9 2026".
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSectorMapCompleteness:
+    """Structural guarantee: the sector cap can see EVERY name the system can
+    buy. Jul 8 2026: CB+CFG (expansion names absent from SECTOR_MAP) fell to
+    'UNKNOWN', splitting true Financials exposure across two under-cap buckets
+    — a realized 35%-financials book passed the 25% cap. Future universe
+    growth must fail THIS test before it can reopen that hole."""
+
+    KNOWN_SECTORS = {
+        "Technology", "Communication Services", "Consumer Discretionary",
+        "Consumer Staples", "Financials", "Health Care", "Industrials",
+        "Energy", "Materials", "Real Estate", "Utilities", "ETF",
+    }
+
+    def test_every_universe_ticker_is_mapped(self):
+        import universe
+        from guardrails import SECTOR_MAP
+        missing = [t for t in universe.EXPANDED_UNIVERSE if t not in SECTOR_MAP]
+        assert missing == [], (
+            f"{len(missing)} universe ticker(s) missing from SECTOR_MAP — the "
+            f"25% sector cap is blind to them (fail-closed will reject their "
+            f"BUYs): {missing}")
+
+    def test_every_label_is_a_known_sector(self):
+        from guardrails import SECTOR_MAP
+        bad = {t: s for t, s in SECTOR_MAP.items() if s not in self.KNOWN_SECTORS}
+        assert bad == {}, f"Unknown sector labels (typo splits a sector): {bad}"
+
+    def test_jul8_financials_are_mapped(self):
+        """The exact names the Jul 8 incident proved invisible."""
+        from guardrails import SECTOR_MAP
+        for t in ("CB", "CFG", "ALL", "AIG", "AMP", "COF"):
+            assert SECTOR_MAP.get(t) == "Financials", f"{t} must map to Financials"
+
+
+class TestSectorFailClosed:
+    """A BUY whose sector is unmapped is rejected outright — its concentration
+    cannot be risk-checked. SELLs always pass (an exit must never be blocked
+    by a map gap)."""
+
+    def _portfolio(self):
+        return {"total_value": 1000.0, "cash": 1000.0, "positions": []}
+
+    def test_unmapped_buy_rejected(self):
+        from guardrails import enforce_sector_limits
+        kept, rejected = enforce_sector_limits(
+            [{"ticker": "ZZZZ", "action": "BUY", "target_weight": 0.05}],
+            self._portfolio())
+        assert kept == []
+        assert len(rejected) == 1
+        assert "unmapped" in rejected[0]["rejected_reason"]
+
+    def test_unmapped_sell_passes(self):
+        from guardrails import enforce_sector_limits
+        kept, rejected = enforce_sector_limits(
+            [{"ticker": "ZZZZ", "action": "SELL", "target_weight": 0.0}],
+            self._portfolio())
+        assert [d["ticker"] for d in kept] == ["ZZZZ"]
+        assert rejected == []
+
+    def test_mapped_buy_still_passes(self):
+        from guardrails import enforce_sector_limits
+        kept, rejected = enforce_sector_limits(
+            [{"ticker": "MSFT", "action": "BUY", "target_weight": 0.05}],
+            self._portfolio())
+        assert [d["ticker"] for d in kept] == ["MSFT"]
+        assert rejected == []
+
+    def test_jul8_regression_cb_cfg_rejected_at_cap(self):
+        """The exact Jul 8 book: MS+AXP (Financials ≈17.2%) held; BUY CB 9% +
+        BUY CFG 9% must now reject at the 25% Financials cap instead of
+        slipping through an UNKNOWN bucket."""
+        from guardrails import enforce_sector_limits
+        portfolio = {"total_value": 513.05, "positions": [
+            {"symbol": "MS",   "market_value": 47.35},
+            {"symbol": "VRTX", "market_value": 52.54},
+            {"symbol": "AXP",  "market_value": 40.67},
+            {"symbol": "EBAY", "market_value": 46.58},
+        ]}
+        decisions = [
+            {"ticker": "CB",  "action": "BUY", "target_weight": 0.09,
+             "source_of_capital": "AXP"},
+            {"ticker": "CFG", "action": "BUY", "target_weight": 0.09,
+             "source_of_capital": "MS"},
+        ]
+        kept, rejected = enforce_sector_limits(decisions, portfolio)
+        assert kept == []
+        assert {r["ticker"] for r in rejected} == {"CB", "CFG"}
+        assert all("Financials" in r["rejected_reason"] for r in rejected)
+
+    def test_jul8_with_sells_kept_would_have_passed(self):
+        """Counterfactual: had the SELL legs survived, the rotation fits under
+        the cap — proving the cap rejects the orphaned-BUY book specifically,
+        not the intended rotation."""
+        from guardrails import enforce_sector_limits
+        portfolio = {"total_value": 513.05, "positions": [
+            {"symbol": "MS",   "market_value": 47.35},
+            {"symbol": "VRTX", "market_value": 52.54},
+            {"symbol": "AXP",  "market_value": 40.67},
+            {"symbol": "EBAY", "market_value": 46.58},
+        ]}
+        decisions = [
+            {"ticker": "AXP", "action": "SELL", "target_weight": 0.0},
+            {"ticker": "MS",  "action": "SELL", "target_weight": 0.0},
+            {"ticker": "CB",  "action": "BUY", "target_weight": 0.09},
+            {"ticker": "CFG", "action": "BUY", "target_weight": 0.09},
+        ]
+        kept, rejected = enforce_sector_limits(decisions, portfolio)
+        assert rejected == []
+        assert len(kept) == 4
+
+
+class TestCapitalDependency:
+    """A BUY funded by a rejected SELL must not execute alone (Jul 8 2026:
+    orphaned CB/CFG BUYs filled from cash after their AXP/MS funding SELLs
+    were min-hold-rejected — the realized book was one the CRO never saw)."""
+
+    def test_dependent_buy_dropped(self):
+        from guardrails import enforce_capital_dependency
+        kept, dropped = enforce_capital_dependency(
+            [{"ticker": "CB", "action": "BUY", "target_weight": 0.09,
+              "source_of_capital": "AXP"}],
+            [{"ticker": "AXP", "action": "SELL",
+              "rejected_reason": "min-holding: bought 2026-06-22"}])
+        assert kept == []
+        assert len(dropped) == 1
+        assert "AXP" in dropped[0]["rejected_reason"]
+        assert "min-holding" in dropped[0]["rejected_reason"]
+
+    def test_cash_funded_buy_unaffected(self):
+        from guardrails import enforce_capital_dependency
+        kept, dropped = enforce_capital_dependency(
+            [{"ticker": "CB", "action": "BUY", "source_of_capital": "cash"}],
+            [{"ticker": "AXP", "action": "SELL", "rejected_reason": "x"}])
+        assert len(kept) == 1 and dropped == []
+
+    def test_missing_source_unaffected(self):
+        from guardrails import enforce_capital_dependency
+        kept, dropped = enforce_capital_dependency(
+            [{"ticker": "CB", "action": "BUY"}],
+            [{"ticker": "AXP", "action": "SELL", "rejected_reason": "x"}])
+        assert len(kept) == 1 and dropped == []
+
+    def test_multiple_buys_same_source_all_dropped(self):
+        from guardrails import enforce_capital_dependency
+        kept, dropped = enforce_capital_dependency(
+            [{"ticker": "CB",  "action": "BUY", "source_of_capital": "AXP"},
+             {"ticker": "CFG", "action": "BUY", "source_of_capital": "AXP"},
+             {"ticker": "LIN", "action": "BUY", "source_of_capital": "MS"}],
+            [{"ticker": "AXP", "action": "SELL", "rejected_reason": "x"}])
+        assert [d["ticker"] for d in kept] == ["LIN"]
+        assert {d["ticker"] for d in dropped} == {"CB", "CFG"}
+
+    def test_case_insensitive_match(self):
+        from guardrails import enforce_capital_dependency
+        kept, dropped = enforce_capital_dependency(
+            [{"ticker": "CB", "action": "BUY", "source_of_capital": "axp"}],
+            [{"ticker": "AXP", "action": "SELL", "rejected_reason": "x"}])
+        assert kept == [] and len(dropped) == 1
+
+    def test_rejected_buy_never_cascades(self):
+        """Only rejected SELLs create dependencies — a rejected BUY of X must
+        not take down another decision naming X."""
+        from guardrails import enforce_capital_dependency
+        kept, dropped = enforce_capital_dependency(
+            [{"ticker": "CB", "action": "BUY", "source_of_capital": "AXP"}],
+            [{"ticker": "AXP", "action": "BUY", "rejected_reason": "x"}])
+        assert len(kept) == 1 and dropped == []
+
+    def test_sells_and_holds_pass_through(self):
+        from guardrails import enforce_capital_dependency
+        decisions = [{"ticker": "AXP", "action": "SELL", "source_of_capital": "AXP"},
+                     {"ticker": "MS", "action": "HOLD", "source_of_capital": "MS"}]
+        kept, dropped = enforce_capital_dependency(
+            decisions,
+            [{"ticker": "MS", "action": "SELL", "rejected_reason": "x"}])
+        assert len(kept) == 2 and dropped == []
+
+    def test_empty_rejected_noop(self):
+        from guardrails import enforce_capital_dependency
+        decisions = [{"ticker": "CB", "action": "BUY", "source_of_capital": "AXP"}]
+        kept, dropped = enforce_capital_dependency(decisions, [])
+        assert kept == decisions and dropped == []
+
+    def test_reason_key_variant_accepted(self):
+        """validation_report['rejected'] entries carry 'reason', guard rejects
+        carry 'rejected_reason' — both shapes must chain into the message."""
+        from guardrails import enforce_capital_dependency
+        kept, dropped = enforce_capital_dependency(
+            [{"ticker": "CB", "action": "BUY", "source_of_capital": "AXP"}],
+            [{"ticker": "AXP", "action": "SELL", "reason": "not in candidates"}])
+        assert kept == []
+        assert "not in candidates" in dropped[0]["rejected_reason"]
+
+
+class TestCROVetoCascade:
+    """The CRO-veto boundary reuses enforce_capital_dependency: a vetoed SELL
+    also drops the BUY it was funding (Jul 8 2026 failure at a different layer
+    — main.py's guard can't see a SELL the CRO removed inside analysis.py)."""
+
+    def _stub(self, monkeypatch, proposed, rejected_tickers):
+        import analysis
+        monkeypatch.setattr(analysis, "run_market_regime_strategist",
+                            lambda *a, **k: {"regime": "NEUTRAL", "confidence": 60})
+        monkeypatch.setattr(analysis, "_select_candidates",
+                            lambda *a, **k: ["CB", "AXP"])
+        monkeypatch.setattr(analysis, "run_research_analyst",
+                            lambda *a, **k: {"thesis": "t", "confidence": 6})
+        monkeypatch.setattr(analysis, "run_earnings_catalyst_analyst",
+                            lambda *a, **k: {"earnings_alpha_score": 5})
+        monkeypatch.setattr(analysis, "run_devils_advocate",
+                            lambda *a, **k: {"bear_case": "b", "recommend_reject": False})
+        monkeypatch.setattr(analysis, "run_portfolio_manager",
+                            lambda *a, **k: (list(proposed), {"parsed_ok": True}))
+        monkeypatch.setattr(analysis, "run_chief_risk_officer",
+                            lambda *a, **k: {"approved": True,
+                                             "rejected_tickers": rejected_tickers,
+                                             "reasoning": "test"})
+        md = {"date": "2026-07-09", "prices": {}, "history": {}}
+        return analysis, md
+
+    def test_vetoed_sell_drops_dependent_buy(self, monkeypatch):
+        proposed = [
+            {"ticker": "AXP", "action": "SELL", "target_weight": 0.0,
+             "source_of_capital": "AXP"},
+            {"ticker": "CB", "action": "BUY", "target_weight": 0.09,
+             "source_of_capital": "AXP"},
+        ]
+        analysis, md = self._stub(monkeypatch, proposed, ["AXP"])
+        portfolio = {"total_value": 500.0, "cash": 100.0,
+                     "positions": [{"symbol": "AXP", "qty": 0.1, "avg_price": 300.0,
+                                    "market_value": 40.0}]}
+        decisions, _ = analysis.get_trade_decisions(portfolio, md, {})
+        # AXP SELL vetoed AND CB BUY cascaded out → nothing survives.
+        assert decisions == []
+
+    def test_cash_funded_buy_survives_unrelated_veto(self, monkeypatch):
+        proposed = [
+            {"ticker": "AXP", "action": "SELL", "target_weight": 0.0,
+             "source_of_capital": "AXP"},
+            {"ticker": "CB", "action": "BUY", "target_weight": 0.09,
+             "source_of_capital": "cash"},
+        ]
+        analysis, md = self._stub(monkeypatch, proposed, ["AXP"])
+        portfolio = {"total_value": 500.0, "cash": 100.0,
+                     "positions": [{"symbol": "AXP", "qty": 0.1, "avg_price": 300.0,
+                                    "market_value": 40.0}]}
+        decisions, _ = analysis.get_trade_decisions(portfolio, md, {})
+        assert [d["ticker"] for d in decisions] == ["CB"]
+
+
+class TestMinHoldDaysRemaining:
+    def test_counts_down_and_clamps_to_zero(self):
+        from guardrails import min_hold_days_remaining
+        txs = [{"ticker": "AXP", "action": "BUY", "date": "2026-06-22", "dry_run": False}]
+        rem = min_hold_days_remaining("AXP", transactions=txs,
+                                      today="2026-07-09", min_holding_days=30)
+        assert rem == 17  # 13 weekday-trading-days elapsed → 17 left
+        assert min_hold_days_remaining("AXP", transactions=txs,
+                                       today="2026-12-01", min_holding_days=30) == 0
+
+    def test_no_buy_record_returns_none(self):
+        from guardrails import min_hold_days_remaining
+        assert min_hold_days_remaining("VRTX", transactions=[],
+                                       today="2026-07-09") is None
+
+    def test_dry_run_buy_ignored(self):
+        from guardrails import min_hold_days_remaining
+        txs = [{"ticker": "AXP", "action": "BUY", "date": "2026-07-08", "dry_run": True}]
+        assert min_hold_days_remaining("AXP", transactions=txs,
+                                       today="2026-07-09") is None
+
+
+class TestPMMinHoldInjection:
+    """Acceptance: min-hold eligibility actually reaches the PM user_msg, so
+    the PM stops proposing rotations the guard is guaranteed to reject."""
+
+    def _capture(self, monkeypatch, tmp_path):
+        import json as _j
+        import analysis, journal
+        txs = [{"ticker": "AXP", "action": "BUY", "date": "2026-06-22", "dry_run": False}]
+        txf = tmp_path / "transactions.json"
+        txf.write_text(_j.dumps(txs))
+        monkeypatch.setattr(journal, "TRANSACTIONS_FILE", str(txf))
+        captured = {}
+        def fake_call(model, system, user_msg, **kw):
+            captured["user_msg"] = user_msg
+            return ([], {"parsed_ok": True}) if kw.get("return_meta") else kw.get("default")
+        monkeypatch.setattr(analysis, "_safe_call", fake_call)
+        return analysis, captured
+
+    def test_held_name_tagged_not_sellable(self, monkeypatch, tmp_path):
+        analysis, captured = self._capture(monkeypatch, tmp_path)
+        portfolio = {"total_value": 500.0, "cash": 100.0, "positions": [
+            {"symbol": "AXP", "qty": 0.12, "avg_price": 339.61, "market_value": 40.0},
+        ]}
+        analysis.run_portfolio_manager({}, {}, {}, {}, {}, {}, portfolio, [],
+                                       date="2026-07-09")
+        assert "min_hold:" in captured["user_msg"]
+        assert "NOT sellable" in captured["user_msg"]
+
+    def test_unrestricted_name_tagged_sellable(self, monkeypatch, tmp_path):
+        analysis, captured = self._capture(monkeypatch, tmp_path)
+        portfolio = {"total_value": 500.0, "cash": 100.0, "positions": [
+            {"symbol": "VRTX", "qty": 0.1, "avg_price": 464.73, "market_value": 52.0},
+        ]}
+        analysis.run_portfolio_manager({}, {}, {}, {}, {}, {}, portfolio, [],
+                                       date="2026-07-09")
+        assert "| sellable" in captured["user_msg"]
+
+    def test_system_prompt_carries_min_hold_exception(self):
+        from analysis import _PM_SYSTEM
+        assert "min_hold" in _PM_SYSTEM
+        assert "NOT sellable" in _PM_SYSTEM
+
+
+class TestLintGate:
+    """ruff F821/F823 catches the exact Jul 8 bug class (a function-local
+    re-import shadowing a module-level name → UnboundLocalError at runtime).
+    Cheap static net over every module on the live path."""
+
+    def test_repo_is_clean_of_undefined_name_bugs(self):
+        import glob
+        import shutil
+        import subprocess
+        import sys
+        if shutil.which("ruff") is None:
+            try:
+                import ruff  # noqa: F401  (pip package present without CLI on PATH)
+            except ImportError:
+                pytest.skip("ruff unavailable in this environment")
+        files = [f for f in glob.glob("*.py")] + [f for f in glob.glob("backtest/*.py")]
+        result = subprocess.run(
+            [sys.executable, "-m", "ruff", "check", "--select", "F821,F823",
+             "--isolated", *files],
+            capture_output=True, text=True)
+        assert result.returncode == 0, (
+            "ruff found undefined-name / shadowed-import bugs (the Jul 8 2026 "
+            f"UnboundLocalError class):\n{result.stdout}")
+
+
+class TestRunDailyCycleSmoke:
+    """End-to-end smoke of run_daily_cycle() with the network boundary stubbed
+    and EVERY file write redirected to tmp_path (all pipeline file constants
+    are relative paths, so monkeypatch.chdir isolates them). This is the net
+    that was missing on Jul 8 2026: the load_dossier UnboundLocalError was a
+    compile-scope bug inside run_daily_cycle that ANY full call would have hit
+    — including this one, stubs and all."""
+
+    TICKERS = ["MSFT", "JPM", "SPY"]
+
+    def _market_data(self, today, extra=()):
+        prices, history = {}, {}
+        for i, t in enumerate(list(self.TICKERS) + list(extra)):
+            px = 100.0 + 10 * i
+            prices[t] = {"ticker": t, "close": px, "open": px, "high": px * 1.01,
+                         "low": px * 0.99, "volume": 1_000_000, "change_pct": 0.5}
+            history[t] = _trend(px * 0.9, px, 63)
+        return {"_source": "test", "_data_date": today, "date": today,
+                "prices": prices, "history": history, "fundamentals": {},
+                "news": [], "ticker_news": {}}
+
+    def _dossier(self, today):
+        return {"as_of": today, "n_tickers": len(self.TICKERS),
+                "built_from_days": ["2026-01-01", "2026-01-02"], "tickers": {}}
+
+    def _pipeline_state(self, decisions):
+        # Candidates must cover every decision ticker or validate_decisions
+        # rejects it as "not analyzed" before the guards under test can run.
+        cands = list(dict.fromkeys(list(self.TICKERS)
+                                   + [d.get("ticker") for d in decisions]))
+        return {
+            "regime": {"regime": "NEUTRAL", "confidence": 60},
+            "candidates": cands,
+            "quant_scores": {},
+            "research": {"MSFT": {"thesis": "stub thesis", "confidence": 6}},
+            "earnings": {"MSFT": {"earnings_alpha_score": 6,
+                                  "key_catalysts_90d": ["stub"]}},
+            "devils_advocate": {"MSFT": {"bear_case": "stub bear",
+                                         "recommend_reject": False}},
+            "position_reviews": {"JPM": {"hold_score": 7, "remaining_alpha": "MED",
+                                         "recommended_action": "HOLD"}},
+            "portfolio_manager_proposed": list(decisions),
+            "portfolio_manager_parsed_ok": True,
+            "cro": {"approved": True, "rejected_tickers": []},
+            "final_decisions": list(decisions),
+        }
+
+    def _run(self, monkeypatch, tmp_path, decisions, portfolio=None):
+        import json as _j
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        import main, execute
+        today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+
+        monkeypatch.chdir(tmp_path)  # every relative-path artifact lands here
+        # A fresh OK data-quality report for today keeps classify() off the
+        # synthetic 3-ticker snapshot (whose coverage would breach real floors).
+        (tmp_path / "data_quality_report.json").write_text(_j.dumps({
+            "data_date": today, "status": "OK", "breaches": [],
+            "data_quality_score": 100, "strategy_shift_ok": True, "hash": "test"}))
+
+        if portfolio is None:
+            portfolio = {"cash": 400.0, "total_value": 500.0, "positions": [
+                {"symbol": "JPM", "qty": 0.5, "avg_price": 200.0,
+                 "available_qty": 0.5, "current_price": 200.0,
+                 "market_value": 100.0, "unrealized_pnl": 0.0}]}
+        # Any decision/holding ticker outside TICKERS needs a price for qty.
+        extra = ({d.get("ticker") for d in decisions}
+                 | {p["symbol"] for p in portfolio["positions"]}) - set(self.TICKERS)
+
+        monkeypatch.setattr(main, "get_portfolio_summary", lambda: portfolio)
+        monkeypatch.setattr(main, "check_kill_switches", lambda p: (False, ""))
+        monkeypatch.setattr(main, "get_market_snapshot",
+                            lambda: self._market_data(today, extra=sorted(extra)))
+        monkeypatch.setattr(main, "load_dossier", lambda: self._dossier(today))
+        monkeypatch.setattr(main, "validate_dossier",
+                            lambda d, as_of=None: (True, []))
+        monkeypatch.setattr(main, "get_trade_decisions",
+                            lambda *a, **k: (list(decisions),
+                                             self._pipeline_state(decisions)))
+        monkeypatch.setattr(main, "publish_to_supabase",
+                            lambda *a, **k: None)
+        # Belt-and-suspenders: never let the broker path go live in a test.
+        monkeypatch.setattr(main, "DRY_RUN", True)
+        monkeypatch.setattr(execute, "DRY_RUN", True)
+
+        main.run_daily_cycle()
+        return today
+
+    def test_full_cycle_with_a_buy_completes(self, monkeypatch, tmp_path):
+        import json as _j
+        decisions = [{"ticker": "MSFT", "action": "BUY", "target_weight": 0.05,
+                      "source_of_capital": "cash", "expected_return": 0.10,
+                      "rationale": "smoke"}]
+        today = self._run(monkeypatch, tmp_path, decisions)
+
+        pending = _j.loads((tmp_path / "pending_decisions.json").read_text())
+        assert pending["date"] == today
+        assert pending["mode"] == "rebalance"
+        assert pending["executed_at"] is None          # DRY_RUN never stamps
+        assert pending["execution_started_at"] is None  # DRY_RUN never claims
+        assert [d["ticker"] for d in pending["decisions"]] == ["MSFT"]
+        assert pending["decisions"][0]["qty"] > 0
+
+        health = _j.loads((tmp_path / "system_health.json").read_text())
+        assert health["overall_status"] in ("OK", "DEGRADED")
+        assert health["checks"]["market_data"]["status"] != "FAILED"
+
+    def test_no_trade_day_completes(self, monkeypatch, tmp_path):
+        import json as _j
+        today = self._run(monkeypatch, tmp_path, [])
+        pending = _j.loads((tmp_path / "pending_decisions.json").read_text())
+        assert pending["date"] == today and pending["decisions"] == []
+        assert (tmp_path / "system_health.json").exists()
+
+    def test_orphaned_buy_is_dropped_end_to_end(self, monkeypatch, tmp_path):
+        """Jul 8 2026 end-to-end regression through main's guard chain: a SELL
+        of a recently-bought holding is min-hold-rejected, and the BUY it was
+        funding must be dropped by enforce_capital_dependency — not executed
+        from cash."""
+        import json as _j
+        from datetime import datetime, timedelta
+        # A live BUY of JPM 5 weekdays ago → min-hold (30d) rejects its SELL.
+        recent = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        decisions = [
+            {"ticker": "JPM",  "action": "SELL", "target_weight": 0.0,
+             "source_of_capital": "JPM", "rationale": "smoke exit"},
+            {"ticker": "MSFT", "action": "BUY", "target_weight": 0.05,
+             "source_of_capital": "JPM", "rationale": "smoke rotation"},
+        ]
+        # Pre-seed transactions.json in tmp BEFORE the run.
+        import main  # noqa: F401  (ensure import side effects precede chdir)
+        (tmp_path / "transactions.json").write_text(_j.dumps([
+            {"ticker": "JPM", "action": "BUY", "date": recent, "dry_run": False}]))
+        today = self._run(monkeypatch, tmp_path, decisions)
+        pending = _j.loads((tmp_path / "pending_decisions.json").read_text())
+        assert pending["date"] == today
+        assert pending["decisions"] == []  # SELL min-hold-rejected, BUY cascaded
+        health = _j.loads((tmp_path / "system_health.json").read_text())
+        dv = health["checks"]["decision_validation"]
+        assert dv["status"] == "DEGRADED"
+        assert any("funding SELL JPM was rejected" in r.get("reason", "")
+                   for r in dv.get("rejected", []))
+
+    def test_sector_cap_breach_rejected_end_to_end(self, monkeypatch, tmp_path):
+        """Jul 8 2026 core regression through the FULL pipeline: a book already
+        heavy in Financials + a cash-funded Financials BUY that breaches 25% is
+        rejected in the envelope (not silently executed). Uses BAC — a name the
+        pre-fix SECTOR_MAP already knew — so this fails loudly if the sector cap
+        wiring regresses, independent of the map-completeness fix."""
+        import json as _j
+        # Portfolio: JPM $100 + GS $80 = $180/$500 = 36% Financials already.
+        portfolio = {"cash": 320.0, "total_value": 500.0, "positions": [
+            {"symbol": "JPM", "qty": 0.5, "avg_price": 200.0, "available_qty": 0.5,
+             "current_price": 200.0, "market_value": 100.0, "unrealized_pnl": 0.0},
+            {"symbol": "GS", "qty": 0.2, "avg_price": 400.0, "available_qty": 0.2,
+             "current_price": 400.0, "market_value": 80.0, "unrealized_pnl": 0.0}]}
+        decisions = [{"ticker": "BAC", "action": "BUY", "target_weight": 0.09,
+                      "source_of_capital": "cash", "expected_return": 0.10,
+                      "rationale": "would breach sector cap"}]
+        today = self._run(monkeypatch, tmp_path, decisions, portfolio=portfolio)
+        pending = _j.loads((tmp_path / "pending_decisions.json").read_text())
+        assert pending["date"] == today
+        assert pending["decisions"] == []  # BAC BUY rejected by the sector cap
+        dv = _j.loads((tmp_path / "system_health.json").read_text())["checks"]["decision_validation"]
+        assert dv["status"] == "DEGRADED"
+        assert any(r.get("ticker") == "BAC" and "Financials" in r.get("reason", "")
+                   for r in dv.get("rejected", []))
+
+    def test_unmapped_buy_fail_closed_end_to_end(self, monkeypatch, tmp_path):
+        """Fail-closed net through the full pipeline: a BUY of a ticker absent
+        from SECTOR_MAP is rejected outright rather than escaping the cap in an
+        UNKNOWN bucket — the structural fix for the Jul 8 class of bug."""
+        import json as _j
+        import guardrails
+        # A synthetic ticker guaranteed absent from SECTOR_MAP.
+        assert "ZZZZ" not in guardrails.SECTOR_MAP
+        portfolio = {"cash": 480.0, "total_value": 500.0, "positions": [
+            {"symbol": "ZZZZ", "qty": 0.2, "avg_price": 100.0, "available_qty": 0.2,
+             "current_price": 100.0, "market_value": 20.0, "unrealized_pnl": 0.0}]}
+        decisions = [{"ticker": "ZZZZ", "action": "BUY", "target_weight": 0.05,
+                      "source_of_capital": "cash", "expected_return": 0.10,
+                      "rationale": "unmapped — must fail closed"}]
+        today = self._run(monkeypatch, tmp_path, decisions, portfolio=portfolio)
+        pending = _j.loads((tmp_path / "pending_decisions.json").read_text())
+        assert pending["date"] == today
+        assert pending["decisions"] == []  # unmapped BUY rejected fail-closed
+        dv = _j.loads((tmp_path / "system_health.json").read_text())["checks"]["decision_validation"]
+        assert any(r.get("ticker") == "ZZZZ" and "unmapped" in r.get("reason", "")
+                   for r in dv.get("rejected", []))
