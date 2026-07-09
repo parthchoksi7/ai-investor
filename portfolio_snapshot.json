@@ -1,63 +1,71 @@
 {
-  "is_close": false,
+  "is_close": true,
   "portfolio": {
-    "as_of": "2026-07-09T09:46:27-04:00",
+    "as_of": "2026-07-09T16:04:00-04:00",
     "cash": 235.33,
-    "total_value": 511.63802313,
+    "total_value": 512.93925965,
+    "available_qty": {
+      "MS": 0.215357,
+      "VRTX": 0.101027,
+      "AXP": 0.119992,
+      "EBAY": 0.41228,
+      "CB": 0.128512,
+      "CFG": 0.643275
+    },
     "positions": [
       {
         "symbol": "MS",
         "qty": 0.215357,
         "available_qty": 0.215357,
         "avg_price": 213.55,
-        "current_price": 221.75,
-        "market_value": 47.75541475,
-        "unrealized_pnl": 1.7659274
+        "current_price": 222.15,
+        "market_value": 47.8417,
+        "unrealized_pnl": 1.8522
       },
       {
         "symbol": "VRTX",
         "qty": 0.101027,
         "available_qty": 0.101027,
         "avg_price": 464.73,
-        "current_price": 499.2,
-        "market_value": 50.4326784,
-        "unrealized_pnl": 3.48240069
+        "current_price": 496.38,
+        "market_value": 50.1476,
+        "unrealized_pnl": 3.1973
       },
       {
         "symbol": "AXP",
         "qty": 0.119992,
         "available_qty": 0.119992,
         "avg_price": 339.61,
-        "current_price": 338.11,
-        "market_value": 40.57049512,
-        "unrealized_pnl": -0.179988
+        "current_price": 346.755,
+        "market_value": 41.6078,
+        "unrealized_pnl": 0.8573
       },
       {
         "symbol": "EBAY",
         "qty": 0.41228,
         "available_qty": 0.41228,
         "avg_price": 111.65,
-        "current_price": 115.165,
-        "market_value": 47.4802262,
-        "unrealized_pnl": 1.4491642
+        "current_price": 117.34,
+        "market_value": 48.3769,
+        "unrealized_pnl": 2.3459
       },
       {
         "symbol": "CB",
         "qty": 0.128512,
         "available_qty": 0.128512,
         "avg_price": 356.78,
-        "current_price": 354.54,
-        "market_value": 45.56264448,
-        "unrealized_pnl": -0.28786688
+        "current_price": 347.8,
+        "market_value": 44.6965,
+        "unrealized_pnl": -1.154
       },
       {
         "symbol": "CFG",
         "qty": 0.643275,
         "available_qty": 0.643275,
         "avg_price": 69.71,
-        "current_price": 69.17,
-        "market_value": 44.49533175,
-        "unrealized_pnl": -0.3473685
+        "current_price": 69.855,
+        "market_value": 44.936,
+        "unrealized_pnl": 0.0933
       }
     ]
   },
@@ -4590,5 +4598,5 @@
     }
   },
   "regime": "NEUTRAL",
-  "written_at": "2026-07-09T13:47:49.199411+00:00"
+  "written_at": "2026-07-09T20:06:38.186497+00:00"
 }
