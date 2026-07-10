@@ -402,6 +402,36 @@ fi
 
 ---
 
+## What changed — Jul 9 2026 (Jul 8 rebalance post-mortem — dep-verify + no-source-edit rule — REQUIRES live-routine sync)
+
+The Jul 8 2026 rebalance survived only because the cloud agent improvised past two
+failures: a broken `pip install` (missing `anthropic`/`robin_stocks`) and a real code
+bug (`load_dossier` UnboundLocalError), the latter fixed by editing and committing
+`main.py` mid-run — an unreviewed change to the live order path. Both gaps are closed
+in the prompt itself, not just the code:
+
+1. **STEP 2 — dependency verification, not just `pip install -q`.** The base image
+   ships Debian-managed packages (PyJWT, cryptography) a bare install can't uninstall,
+   so the install silently aborts before reaching `anthropic`/`robin_stocks`. STEP 2 now
+   verifies the imports actually resolve, retries with `--ignore-installed`, and — if
+   still broken — **STOPs cleanly** (push nothing, place no orders; the next scheduled
+   attempt retries). A skipped attempt is the designed failure direction; a half-installed
+   pipeline is not.
+2. **STEP 3 — hard rule: never edit, debug, or commit a `.py` source file**, under any
+   circumstances, even to unblock a crash. The routine executes committed code; it does
+   not author it. A pipeline crash is a **missed rebalance** — push `system_health.json`
+   (below) so `alert.yml` pages the owner, then STOP. Thu/Fri catch-up + Friday's
+   missed-week heartbeat cover the week; the owner fixes the bug through the normal
+   `/code-review` + test gates (DEPLOYMENT §7.0), never via an unreviewed live-routine edit.
+3. **STEP 4/5 `git add` lists** now carry an explicit comment: stage only the named data
+   artifacts, never a `.py` file — if `git status` shows a modified source file, leave it
+   unstaged.
+
+(The underlying bug itself — the `main.py` shadowing import — and the sector-cap /
+capital-dependency guard fixes that made Jul 8's orphaned BUYs impossible are code-only
+changes; see CLAUDE.md's Jul 9 2026 changelog. This routine-prompt change is purely the
+process guardrail: verify deps, never patch source live.)
+
 ## What changed — Jul 4 2026 (Phase 5: weekly cadence + risk_watch — REQUIRES live-routine sync)
 
 The entire prompt gained MODE routing. Summary of the deltas vs the daily-cycle prompt:

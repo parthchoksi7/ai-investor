@@ -122,6 +122,18 @@ DST note: This routine runs at 20:00 UTC (4:00 PM EDT). In November when clocks 
 
 ---
 
+## What changed — Jul 9 2026 (dep-verify + no-source-edit rule — REQUIRES live-routine sync)
+
+Mirrors the daily routine's Jul 9 hardening (see `ROUTINE_DAILY_CYCLE.md`), lighter here
+since this routine places no orders and has no agent pipeline to crash mid-run:
+
+1. **STEP 2 — verify `robin_stocks`/`pyotp`/`dotenv`/`requests` actually import** after
+   install; retry `--ignore-installed`; STOP cleanly if still broken (skip this EOD
+   snapshot, next scheduled run retries) rather than proceeding on a broken environment.
+2. **New rule: never edit or commit a `.py` source file.** This routine runs committed
+   code and commits data artifacts only; a code fix goes through the normal review gates,
+   never a live-routine edit.
+
 ## What changed — Jun 12 2026
 
 1. **STEP 4 — stage `portfolio_snapshot.json`, not just `mcp_portfolio.json`.** The live routine
