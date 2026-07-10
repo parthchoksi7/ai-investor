@@ -4,13 +4,15 @@ Actions that **cannot be done from the repo by Claude** — they require the liv
 routines UI, real secrets (redacted from this repo), or an owner merge/deploy decision.
 Newest concern first. Check items off as you do them.
 
-_Last refreshed: 2026-07-05 (Phase 1 hardening batch MERGED via PR #27; both owner decisions (#18
-cash mandate, #19 stop-loss text) made and shipped; PM `expected_return` scoring (#16) and the
+_Last refreshed: 2026-07-10 (Jul 8 rebalance post-mortem remediation merged to main `d8418e9`;
+both routine prompts re-synced and CONFIRMED byte-for-byte — see item 20. Remaining open item
+from that batch is #21 (age-out watch, self-resolving, no action needed unless it persists past
+~Aug 4). Earlier: Phase 1 hardening batch MERGED via PR #27; both owner decisions (#18 cash
+mandate, #19 stop-loss text) made and shipped; PM `expected_return` scoring (#16) and the
 expansion fetch-cursor wiring (#6) both shipped — `UNIVERSE_EXPANDED` is now safe to flip whenever
 you choose (#0b); the ORCL "P0-3" item (#9) was investigated and found to be a misdiagnosis, not a
-bug, and closed. Daily routine sync CONFIRMED synced — see item 0. Remaining open work is all
-either genuinely time-gated (item 13's Monday–Friday observation window) or deliberately deferred
-past it (items 14/15/17)._
+bug, and closed. Remaining open work is all either genuinely time-gated (item 13's Monday–Friday
+observation window) or deliberately deferred past it (items 14/15/17)._
 
 **Status legend:** `[x]` = done and verified · `[ ]` = not yet done · **DONE**, **PARTIAL**,
 **PENDING**, **AWAITING DECISION** tags after each item title give the one-line state without
@@ -20,7 +22,7 @@ reading the body. "Verified" means checked against a real artifact/API in this r
 
 | # | Item | Status |
 |---|------|--------|
-| 20 | **Re-sync BOTH routine prompts** (Jul 9 hardening: STEP 2 dep-verify, STEP 3 no-source-edit rule) | ⬜ **PENDING** — owner, routines UI (code merged; prompts inert until synced) |
+| 20 | **Re-sync BOTH routine prompts** (Jul 9 hardening: STEP 2 dep-verify, STEP 3 no-source-edit rule) | ✅ **DONE** — verified byte-for-byte |
 | 21 | **35%-financials breach — age-out watch** | ⬜ **MONITOR** — documented deviation; no action unless it persists past ~Aug 4 |
 | 0 | Daily routine prompt sync | ✅ **DONE** — verified byte-for-byte |
 | 0b | Flip `UNIVERSE_EXPANDED` | ⬜ pending (your call — both gating conditions now met as of 2026-07-05) |
@@ -42,18 +44,20 @@ reading the body. "Verified" means checked against a real artifact/API in this r
 
 ---
 
-## 🆕 PENDING (2026-07-09) — Jul 8 rebalance post-mortem follow-ups
+## ✅ DONE (2026-07-10) — Jul 9 routine re-sync
 
-### [ ] 20. Re-sync BOTH routine prompts (Jul 9 hardening) — **routines UI, owner-only**
-The Jul 9 remediation changed both `ROUTINE_DAILY_CYCLE.md` and `ROUTINE_EOD_CLOSE.md`:
-STEP 2 now **verifies the deps actually import** (retry `--ignore-installed`, else STOP) — Jul 8
-died with `No module named 'anthropic'` because a bare `pip install` aborted on Debian-managed
-PyJWT; and STEP 3 gains a hard **"never edit/commit a .py source file"** rule (Jul 8 the routine
-hot-fixed `main.py` mid-run and committed it to `main`, bypassing the §7.0 review gate). Paste
-both into the live routines (`YOUR_ROUTINE_ID_DAILY`, `YOUR_ROUTINE_ID_EOD`), substituting the
-account number. **Until synced the code fixes still take effect** (they're in the committed
-`main.py`/`guardrails.py`/`analysis.py`, pulled each run) — only the prompt-level dep-verify and
-no-source-edit guardrails are inert. Degrades safe.
+### [x] 20. Re-sync BOTH routine prompts (Jul 9 hardening) — **routines UI, owner-only**
+**Verified via `RemoteTrigger(action="list")`**: both live prompts are byte-for-byte identical to
+`ROUTINE_DAILY_CYCLE.md` / `ROUTINE_EOD_CLOSE.md` (the only diffs are the expected
+`YOUR_ACCOUNT_NUMBER` → `994046696` substitutions). Both now carry the Jul 9 hardening: STEP 2
+verifies `anthropic`/`robin_stocks`/etc. actually import (retry `--ignore-installed`, else STOP)
+— Jul 8 died with `No module named 'anthropic'` because a bare `pip install` aborted on
+Debian-managed PyJWT; STEP 3 (daily) / the dep-install block (EOD) both carry the hard
+**"never edit/commit a .py source file"** rule (Jul 8 the routine hot-fixed `main.py` mid-run and
+committed it to `main`, bypassing the §7.0 review gate). `updated_at` 2026-07-10T02:5x; daily
+`next_run_at` 2026-07-10T13:45:00Z, EOD `next_run_at` 2026-07-10T20:04Z.
+
+## 🆕 PENDING (2026-07-09) — Jul 8 rebalance post-mortem follow-ups
 
 ### [ ] 21. 35%-financials breach — age-out watch (owner-decided: let it age out)
 The Jul 8 rebalance left the live book at **~35% financials** (MS + AXP + CFG + CB) vs the 25%
