@@ -1,65 +1,67 @@
 {
-  "is_close": false,
+  "is_close": true,
   "portfolio": {
-    "as_of": "2026-07-14T09:47:00-04:00",
+    "as_of": "2026-07-14T16:05:00-04:00",
     "cash": 235.33,
-    "total_value": 514.278809985,
+    "total_value": 511.31689685,
     "positions": [
       {
         "symbol": "MS",
         "qty": 0.215357,
-        "available_qty": 0.215357,
         "avg_price": 213.55,
-        "current_price": 228.955,
-        "market_value": 49.307,
-        "unrealized_pnl": 3.318
+        "current_price": 228.09,
+        "market_value": 49.120778,
+        "unrealized_pnl": 3.131291
       },
       {
         "symbol": "VRTX",
         "qty": 0.101027,
-        "available_qty": 0.101027,
         "avg_price": 464.73,
-        "current_price": 477.035,
-        "market_value": 48.193,
-        "unrealized_pnl": 1.243
+        "current_price": 476.31,
+        "market_value": 48.12017,
+        "unrealized_pnl": 1.169892
       },
       {
         "symbol": "AXP",
         "qty": 0.119992,
-        "available_qty": 0.119992,
         "avg_price": 339.61,
-        "current_price": 358.035,
-        "market_value": 42.961,
-        "unrealized_pnl": 2.21
+        "current_price": 355.15,
+        "market_value": 42.615159,
+        "unrealized_pnl": 1.864676
       },
       {
         "symbol": "EBAY",
         "qty": 0.41228,
-        "available_qty": 0.41228,
         "avg_price": 111.65,
-        "current_price": 114.425,
-        "market_value": 47.175,
-        "unrealized_pnl": 1.144
+        "current_price": 112.55,
+        "market_value": 46.402114,
+        "unrealized_pnl": 0.371052
       },
       {
         "symbol": "CB",
         "qty": 0.128512,
-        "available_qty": 0.128512,
         "avg_price": 356.78,
-        "current_price": 353.91,
-        "market_value": 45.482,
-        "unrealized_pnl": -0.368
+        "current_price": 346.21,
+        "market_value": 44.49214,
+        "unrealized_pnl": -1.358371
       },
       {
         "symbol": "CFG",
         "qty": 0.643275,
-        "available_qty": 0.643275,
         "avg_price": 69.71,
-        "current_price": 71.25,
-        "market_value": 45.833,
-        "unrealized_pnl": 0.99
+        "current_price": 70.3,
+        "market_value": 45.222233,
+        "unrealized_pnl": 0.379533
       }
-    ]
+    ],
+    "available_qty": {
+      "MS": 0.215357,
+      "VRTX": 0.101027,
+      "AXP": 0.119992,
+      "EBAY": 0.41228,
+      "CB": 0.128512,
+      "CFG": 0.643275
+    }
   },
   "quant_scores": {
     "A": {
@@ -4590,5 +4592,5 @@
     }
   },
   "regime": "NEUTRAL",
-  "written_at": "2026-07-14T13:48:43.506839+00:00"
+  "written_at": "2026-07-14T20:06:28.867363+00:00"
 }
