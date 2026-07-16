@@ -30,7 +30,7 @@ from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, StalePortfolioError, DRY_RUN
 from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions, close_position, get_ticker_history, recently_exited, consecutive_cash_above, _load_list, TRANSACTIONS_FILE
-from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, enforce_tax_aware_hold, enforce_safe_mode, enforce_capital_dependency, flag_wash_sale_presale, min_hold_days_remaining
+from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, enforce_tax_aware_hold, enforce_safe_mode, enforce_capital_dependency, flag_wash_sale_presale, min_hold_days_remaining, WASH_SALE_REENTRY_DAYS
 from build_dossier import load_dossier, validate_dossier
 from policy       import policy_version as _policy_version
 from publish      import publish_to_supabase
@@ -350,7 +350,10 @@ def run_daily_cycle():
     # exited names become a re-entry warning for the Portfolio Manager.
     seen_tickers   = {e.get("ticker") for e in recent_entries if e.get("ticker")}
     ticker_history = {t: get_ticker_history(t) for t in seen_tickers}
-    exited_map     = recently_exited()
+    # Window matches the enforced 30d wash-sale re-entry block — the default 10d
+    # left days 11–30 invisible to the PM, so it proposed guaranteed-rejected
+    # re-entries (JNJ on day 20, Jun 30 2026).
+    exited_map     = recently_exited(within_days=WASH_SALE_REENTRY_DAYS)
 
     decisions, pipeline_state = get_trade_decisions(
         portfolio, market_data, quant_scores, trade_history, prior_journal,

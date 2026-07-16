@@ -24,6 +24,7 @@ Honesty caveats (printed in the report header):
 """
 
 import json
+import math
 import os
 from collections import defaultdict, deque
 from datetime import datetime, timezone
@@ -163,6 +164,74 @@ def _avg_net_exposure(agent_log_path: str = AGENT_LOG) -> float | None:
         if tv and cash is not None and float(tv) > 0:
             exps.append(1.0 - float(cash) / float(tv))
     return round(sum(exps) / len(exps), 4) if exps else None
+
+
+def cash_drag_report(agent_log_path: str = AGENT_LOG,
+                     snapshot_path: str = SNAPSHOT,
+                     band_pct: float = 10.0) -> dict | None:
+    """Opportunity cost of cash held ABOVE the IPS 0–10% band, vs SPY.
+
+    For each consecutive pair of logged run-dates, the excess cash at the start
+    of the period (cash − band_pct%·total, floored at 0) is marked against SPY's
+    price return over the period: drag = Σ excess_cash_i × spy_ret_i. Positive
+    drag = return left on the table by the over-band cash stance; negative =
+    the cash protected capital while SPY fell. Reported so the year-end verdict
+    prices the persistent defensive posture (29 consecutive over-band runs
+    through Jul 15 2026) instead of silently ignoring it. Returns None when
+    fewer than 2 aligned observations exist.
+    """
+    if not os.path.isfile(agent_log_path):
+        return None
+    with open(agent_log_path) as f:
+        log = json.load(f)
+    if not isinstance(log, list):
+        return None
+    by_date: dict[str, tuple[float, float]] = {}
+    for run in log:
+        d    = run.get("date") or (run.get("timestamp") or "")[:10]
+        snap = run.get("portfolio_snapshot") or {}
+        tv, cash = snap.get("total_value"), snap.get("cash")
+        if d and tv and cash is not None and float(tv) > 0:
+            by_date[d] = (float(cash), float(tv))   # last run of the day wins
+    spy = _spy_curve(snapshot_path)
+    spy_dates = sorted(spy)
+    obs = []                     # (date, excess_cash_$, spy_close_as_of)
+    excess_pcts = []             # over the SAME aligned dates the drag covers
+    for d in sorted(by_date):
+        prior = [sd for sd in spy_dates if sd <= d]
+        if not prior:
+            continue
+        cash, tv = by_date[d]
+        excess = max(0.0, cash - band_pct / 100.0 * tv)
+        obs.append((d, excess, spy[prior[-1]]))
+        excess_pcts.append(max(0.0, cash / tv * 100 - band_pct))
+    if len(obs) < 2:
+        return None
+    total_drag = 0.0
+    periods = []
+    for (d0, excess, s0), (d1, _, s1) in zip(obs, obs[1:]):
+        # A non-finite or non-positive SPY close (NaN closes do occur in the
+        # snapshot — see the Jun 16 2026 quant NaN fix) must not poison the sum:
+        # `s0 <= 0` is False for NaN, so guard isfinite explicitly or drag → NaN.
+        if not (math.isfinite(s0) and math.isfinite(s1)) or s0 <= 0:
+            continue
+        ret  = s1 / s0 - 1.0
+        drag = excess * ret
+        total_drag += drag
+        periods.append({"from": d0, "to": d1, "excess_cash": round(excess, 2),
+                        "spy_return": round(ret, 4), "drag": round(drag, 2)})
+    avg_excess_pct = sum(excess_pcts) / len(excess_pcts)
+    return {
+        "band_pct": band_pct,
+        "cumulative_drag": round(total_drag, 2),
+        "avg_excess_cash_pct": round(avg_excess_pct, 2),
+        "n_periods": len(periods),
+        "periods": periods[-10:],   # tail only — full detail reproducible from logs
+        "note": ("Drag = Σ over-band cash × SPY price return per inter-run period. "
+                 "Positive = cost of the defensive stance; negative = cash was "
+                 "protective. SPY price-return basis (no dividend gross-up) — a "
+                 "mild UNDERSTATEMENT of the true drag."),
+    }
 
 
 def _beta(pv: list[float], sv: list[float]) -> float | None:
@@ -353,6 +422,7 @@ def build_report(agent_log_path: str = AGENT_LOG,
         "spy_total_return": spy_tr_m,     # total return (headline)
         "net_exposure":     net_exposure,
         "realized_beta":    beta,
+        "cash_drag":        cash_drag_report(agent_log_path, snapshot_path),
         "alpha_cumulative_return":           alpha_tr,   # vs SPY TOTAL return (headline)
         "alpha_cumulative_return_vs_price":  alpha_pr,   # vs price return (reference)
         "portfolio_curve": [{"date": d, "value": round(v, 2)} for d, v in zip(dates, pv)],

@@ -135,6 +135,21 @@ def render_markdown(d: dict) -> str:
     except Exception:
         pass  # pre-Phase-5 history or no rebalance yet — nothing to report
 
+    # Cash drag (§IPS 0–10% band) — prices the persistent over-band cash stance
+    # weekly so the defensive posture's cost/benefit is watched, not assumed.
+    try:
+        from performance import cash_drag_report
+        cd = cash_drag_report()
+        if cd:
+            sign = "cost" if cd["cumulative_drag"] >= 0 else "protected"
+            lines.append("## Cash drag vs SPY (over-band cash)")
+            lines.append(f"- **Cumulative: ${cd['cumulative_drag']:+,.2f}** "
+                         f"({sign}) · avg excess cash {cd['avg_excess_cash_pct']:.1f}% "
+                         f"above the {cd['band_pct']:.0f}% band · {cd['n_periods']} periods")
+            lines.append("")
+    except Exception:
+        pass  # performance inputs missing in this plane — never break the digest
+
     # Stage C readiness — is the evidence clock decidable yet? (surfaced so the go/no-go
     # is watched passively, not by eyeballing agent_scorecards.json.)
     try:

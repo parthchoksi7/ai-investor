@@ -523,6 +523,38 @@ def min_hold_days_remaining(
     return max(0, min_holding_days - _trading_days_since(buy_date, today))
 
 
+def wash_sale_days_remaining(
+    ticker: str,
+    transactions: list | None = None,
+    today: str | None = None,
+    window_days: int = WASH_SALE_REENTRY_DAYS,
+) -> int | None:
+    """Calendar days until `ticker` clears the wash-sale re-entry guard, or None.
+
+    BUY-side mirror of min_hold_days_remaining, using the SAME date arithmetic as
+    enforce_wash_sale_reentry (calendar days since the last live SELL). None means
+    "no live SELL on record" — freely buyable. 0 means buyable now. Used to show
+    the PM which candidates are actually BUY-eligible, so it stops proposing
+    re-entries the guard is guaranteed to reject (Jun 25–Jul 2 2026: JNJ/TJX/V
+    BUYs proposed repeatedly, silently rejected, cash stuck at 46%+ — the PM's
+    recently_exited warning covered only 10 of the 30 blocked days).
+    """
+    if transactions is None:
+        transactions = _load_list(TRANSACTIONS_FILE)
+    sell_date = _last_live_sell_date(ticker, transactions)
+    if not sell_date:
+        return None
+    today_date = (datetime.strptime(today, "%Y-%m-%d").date()
+                  if today else datetime.now(_ET).date())
+    try:
+        days = (today_date - datetime.strptime(sell_date, "%Y-%m-%d").date()).days
+    except ValueError:
+        return None
+    if days < 0:  # future-dated SELL row — malformed; fail open like the guard
+        return None
+    return max(0, window_days - days)
+
+
 def enforce_wash_sale_reentry(
     decisions: list[dict],
     transactions: list | None = None,

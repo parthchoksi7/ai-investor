@@ -7929,6 +7929,236 @@ class TestPMMinHoldInjection:
         assert "NOT sellable" in _PM_SYSTEM
 
 
+class TestWashSaleDaysRemaining:
+    """BUY-side mirror of min_hold_days_remaining — calendar-day arithmetic must
+    agree with enforce_wash_sale_reentry at the 30-day boundary."""
+
+    def test_counts_down_calendar_days(self):
+        from guardrails import wash_sale_days_remaining
+        txs = [{"ticker": "JNJ", "action": "SELL", "date": "2026-06-10", "dry_run": False}]
+        # Jun 30 = 20 calendar days after the sale → 10 left (the live JNJ case)
+        assert wash_sale_days_remaining("JNJ", transactions=txs,
+                                        today="2026-06-30") == 10
+
+    def test_boundary_matches_the_guard(self):
+        from guardrails import enforce_wash_sale_reentry, wash_sale_days_remaining
+        txs = [{"ticker": "JNJ", "action": "SELL", "date": "2026-06-10", "dry_run": False}]
+        buy = [{"ticker": "JNJ", "action": "BUY", "target_weight": 0.05}]
+        # day 29: guard rejects ⟺ helper says blocked
+        kept, rej = enforce_wash_sale_reentry(buy, transactions=txs, today="2026-07-09")
+        assert rej and wash_sale_days_remaining("JNJ", transactions=txs,
+                                                today="2026-07-09") == 1
+        # day 30: guard allows ⟺ helper says 0
+        kept, rej = enforce_wash_sale_reentry(buy, transactions=txs, today="2026-07-10")
+        assert kept and wash_sale_days_remaining("JNJ", transactions=txs,
+                                                 today="2026-07-10") == 0
+
+    def test_no_sell_record_returns_none(self):
+        from guardrails import wash_sale_days_remaining
+        assert wash_sale_days_remaining("WM", transactions=[],
+                                        today="2026-07-15") is None
+
+    def test_dry_run_sell_ignored(self):
+        from guardrails import wash_sale_days_remaining
+        txs = [{"ticker": "JNJ", "action": "SELL", "date": "2026-07-14", "dry_run": True}]
+        assert wash_sale_days_remaining("JNJ", transactions=txs,
+                                        today="2026-07-15") is None
+
+    def test_future_dated_sell_fails_open_like_the_guard(self):
+        from guardrails import wash_sale_days_remaining
+        txs = [{"ticker": "JNJ", "action": "SELL", "date": "2026-08-01", "dry_run": False}]
+        assert wash_sale_days_remaining("JNJ", transactions=txs,
+                                        today="2026-07-15") is None
+
+
+class TestPMBuyEligibilityInjection:
+    """Acceptance for the Jul 15 2026 cash-stall fix: BUY eligibility (wash-sale
+    block / sector-cap headroom) actually reaches the PM user_msg, so the PM
+    stops proposing BUYs the guard chain silently rejects (V/JNJ/JPM, Jun 25–
+    Jul 2 — the BUY-side twin of the Jul 8 min-hold SELL fix)."""
+
+    def _capture(self, monkeypatch, tmp_path, txs):
+        import json as _j
+        import analysis, journal
+        txf = tmp_path / "transactions.json"
+        txf.write_text(_j.dumps(txs))
+        monkeypatch.setattr(journal, "TRANSACTIONS_FILE", str(txf))
+        captured = {}
+        def fake_call(model, system, user_msg, **kw):
+            captured["user_msg"] = user_msg
+            return ([], {"parsed_ok": True}) if kw.get("return_meta") else kw.get("default")
+        monkeypatch.setattr(analysis, "_safe_call", fake_call)
+        return analysis, captured
+
+    def _quant(self, ticker):
+        return {ticker: {"composite_score": 85.0, "momentum_score": 70.0,
+                         "quality_score": 90.0, "valuation_score": 50,
+                         "volatility": 25.0, "beta": 1.0}}
+
+    def test_wash_blocked_candidate_tagged(self, monkeypatch, tmp_path):
+        analysis, captured = self._capture(monkeypatch, tmp_path, [
+            {"ticker": "JNJ", "action": "SELL", "date": "2026-07-05", "dry_run": False}])
+        portfolio = {"total_value": 500.0, "cash": 230.0, "positions": []}
+        analysis.run_portfolio_manager({}, {}, {}, {}, {}, self._quant("JNJ"),
+                                       portfolio, [], date="2026-07-15")
+        assert "wash-sale re-entry block" in captured["user_msg"]
+        assert "⛔ NOT buyable" in captured["user_msg"]
+
+    def test_sector_capped_candidate_tagged(self, monkeypatch, tmp_path):
+        analysis, captured = self._capture(monkeypatch, tmp_path, [])
+        # 26% of the book in JPM → Financials over the 25% cap → any Financials
+        # candidate (JPM itself here) must be tagged not-buyable.
+        portfolio = {"total_value": 500.0, "cash": 230.0, "positions": [
+            {"symbol": "JPM", "qty": 0.5, "avg_price": 200.0, "market_value": 130.0}]}
+        analysis.run_portfolio_manager({}, {}, {}, {}, {}, self._quant("JPM"),
+                                       portfolio, [], date="2026-07-15")
+        assert "≥ 25% cap" in captured["user_msg"]
+
+    def test_clean_candidate_tagged_eligible_with_headroom(self, monkeypatch, tmp_path):
+        analysis, captured = self._capture(monkeypatch, tmp_path, [])
+        portfolio = {"total_value": 500.0, "cash": 230.0, "positions": []}
+        analysis.run_portfolio_manager({}, {}, {}, {}, {}, self._quant("JNJ"),
+                                       portfolio, [], date="2026-07-15")
+        assert "✓ BUY-eligible" in captured["user_msg"]
+        assert "sector headroom" in captured["user_msg"]
+
+    def test_cash_over_band_renders_discipline_block(self, monkeypatch, tmp_path):
+        analysis, captured = self._capture(monkeypatch, tmp_path, [])
+        portfolio = {"total_value": 500.0, "cash": 230.0, "positions": []}  # 46%
+        analysis.run_portfolio_manager({}, {}, {}, {}, {}, self._quant("JNJ"),
+                                       portfolio, [], date="2026-07-15")
+        assert "CASH DISCIPLINE" in captured["user_msg"]
+        assert "8-holding floor" in captured["user_msg"]   # 0 positions < 8
+
+    def test_cash_within_band_no_discipline_block(self, monkeypatch, tmp_path):
+        analysis, captured = self._capture(monkeypatch, tmp_path, [])
+        portfolio = {"total_value": 500.0, "cash": 25.0, "positions": []}  # 5%
+        analysis.run_portfolio_manager({}, {}, {}, {}, {}, self._quant("JNJ"),
+                                       portfolio, [], date="2026-07-15")
+        assert "CASH DISCIPLINE" not in captured["user_msg"]
+
+    def test_system_prompt_carries_deploy_mandate(self):
+        from analysis import _PM_SYSTEM
+        assert "Cash is a position" in _PM_SYSTEM
+        assert "BUY-eligible" in _PM_SYSTEM
+        assert "NOT buyable" in _PM_SYSTEM
+
+
+class TestDAFabricationGuard:
+    """Jul 15 2026: with valuation_available=False the DA cited precise forward
+    P/E multiples from training priors on all 14 candidates — same fabrication
+    class as the earnings-date guard (Phase 3.2), now guarded the same way."""
+
+    def _capture(self, monkeypatch):
+        import analysis
+        captured = {}
+        def fake_call(model, system, user_msg, **kw):
+            captured["user_msg"] = user_msg
+            return kw.get("default")
+        monkeypatch.setattr(analysis, "_safe_call", fake_call)
+        return analysis, captured
+
+    def _md(self, ticker):
+        return {"prices": {ticker: {"close": 100.0}}}
+
+    def test_no_valuation_data_forbids_multiples(self, monkeypatch):
+        analysis, captured = self._capture(monkeypatch)
+        scores = {"WM": {"valuation_available": False, "volatility": 22.0}}
+        analysis.run_devils_advocate("WM", {}, {}, self._md("WM"), scores)
+        assert "NO VALUATION DATA" in captured["user_msg"]
+        assert "Do NOT cite specific multiples" in captured["user_msg"]
+
+    def test_real_valuation_data_passes_the_score(self, monkeypatch):
+        analysis, captured = self._capture(monkeypatch)
+        scores = {"BAC": {"valuation_available": True, "valuation_score": 83.3,
+                          "volatility": 20.6}}
+        analysis.run_devils_advocate("BAC", {}, {}, self._md("BAC"), scores)
+        assert "Pipeline valuation score: 83.3/100" in captured["user_msg"]
+        assert "NO VALUATION DATA" not in captured["user_msg"]
+
+    def test_rejection_criterion_c_gated_on_data(self, monkeypatch):
+        analysis, captured = self._capture(monkeypatch)
+        scores = {"WM": {"valuation_available": False}}
+        analysis.run_devils_advocate("WM", {}, {}, self._md("WM"), scores)
+        assert "criterion (c) is only usable" in captured["user_msg"]
+
+
+class TestRecentlyExitedWindow:
+    """The PM's re-entry warning must cover the full 30-day enforced block —
+    the 10-day default left days 11–30 invisible (JNJ proposed on day 20)."""
+
+    def test_30d_window_sees_a_20_day_old_exit(self, monkeypatch, tmp_path):
+        import json as _j
+        from datetime import date, timedelta
+        import journal
+        exit_date = (date.today() - timedelta(days=20)).isoformat()
+        jf = tmp_path / "decision_journal.json"
+        jf.write_text(_j.dumps([{
+            "ticker": "JNJ", "action": "BUY", "status": "closed",
+            "exits": [{"date": exit_date, "qty": 1.0}]}]))
+        monkeypatch.setattr(journal, "JOURNAL_FILE", str(jf))
+        assert "JNJ" not in journal.recently_exited()              # 10d default misses it
+        assert "JNJ" in journal.recently_exited(within_days=30)    # enforced window sees it
+
+
+class TestCashDragReport:
+    """§IPS 0–10% band opportunity-cost metric (A4 of the Jul 15 cash-stall fix)."""
+
+    def _write_inputs(self, tmp_path, spy_closes, cash=300.0, total=500.0):
+        import json as _j
+        dates = ["2026-07-01", "2026-07-08", "2026-07-15"][:len(spy_closes)]
+        log = [{"date": d, "portfolio_snapshot": {"total_value": total, "cash": cash}}
+               for d in dates]
+        lp = tmp_path / "agent_log.json"
+        lp.write_text(_j.dumps(log))
+        snap = {"history": {"SPY": [{"date": d, "close": c}
+                                    for d, c in zip(dates, spy_closes)]}}
+        sp = tmp_path / "market_snapshot.json"
+        sp.write_text(_j.dumps(snap))
+        return str(lp), str(sp)
+
+    def test_positive_drag_when_spy_rises(self, tmp_path):
+        from performance import cash_drag_report
+        lp, sp = self._write_inputs(tmp_path, [100.0, 110.0])
+        r = cash_drag_report(lp, sp)
+        # excess = 300 − 10%·500 = 250; SPY +10% → drag = 25.00
+        assert r["cumulative_drag"] == 25.0
+        assert r["avg_excess_cash_pct"] == 50.0   # 60% cash − 10% band
+        assert r["n_periods"] == 1
+
+    def test_negative_drag_when_spy_falls(self, tmp_path):
+        from performance import cash_drag_report
+        lp, sp = self._write_inputs(tmp_path, [100.0, 90.0])
+        r = cash_drag_report(lp, sp)
+        assert r["cumulative_drag"] == -25.0      # cash was protective
+
+    def test_no_drag_when_cash_within_band(self, tmp_path):
+        from performance import cash_drag_report
+        lp, sp = self._write_inputs(tmp_path, [100.0, 110.0], cash=25.0)
+        r = cash_drag_report(lp, sp)
+        assert r["cumulative_drag"] == 0.0
+
+    def test_single_observation_returns_none(self, tmp_path):
+        from performance import cash_drag_report
+        lp, sp = self._write_inputs(tmp_path, [100.0])
+        assert cash_drag_report(lp, sp) is None
+
+    def test_missing_log_returns_none(self, tmp_path):
+        from performance import cash_drag_report
+        assert cash_drag_report(str(tmp_path / "nope.json"),
+                                str(tmp_path / "nope2.json")) is None
+
+    def test_nan_spy_close_does_not_poison_drag(self, tmp_path):
+        # NaN closes occur in market_snapshot.json (Jun 16 2026 quant NaN fix);
+        # `s0 <= 0` is False for NaN so drag would silently become NaN.
+        import math
+        from performance import cash_drag_report
+        lp, sp = self._write_inputs(tmp_path, [100.0, float("nan"), 110.0])
+        r = cash_drag_report(lp, sp)
+        assert r is not None
+        assert math.isfinite(r["cumulative_drag"])   # periods touching NaN skipped
+
+
 class TestLintGate:
     """ruff F821/F823 catches the exact Jul 8 bug class (a function-local
     re-import shadowing a module-level name → UnboundLocalError at runtime).

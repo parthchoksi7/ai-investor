@@ -202,8 +202,17 @@ revisit when the holding becomes sellable.
 Freeing capital from a deteriorating position is a valid primary action.
 Do not let lack of attractive BUY candidates prevent you from exiting a bad position.
 
-Default action is HOLD.
-Trade only when portfolio expected value increases."""
+BUY decisions have the symmetric discipline. Cash is a position with a known 0%
+return — it must compete for capital like any holding. When cash exceeds the
+mandate band and the candidate list contains names tagged "✓ BUY-eligible",
+deploying toward the band is the default and idle cash is the exception: either
+propose BUYs of ✓ names, or justify the pass on the record (the OUTPUT FORMAT
+shows how). Never propose a BUY tagged ⛔ NOT buyable — a guard rejects it
+unconditionally and the capital stays idle another week.
+
+Default action for a book WITHIN its mandate bands is HOLD.
+Trade only when portfolio expected value increases — and remember that on an
+under-deployed book, remaining in cash is itself a trade that must clear that bar."""
 
 _CRO_SYSTEM = """\
 You are the Chief Risk Officer.
@@ -752,9 +761,28 @@ def run_devils_advocate(
 
     bull_thesis = research.get('thesis', '') or f"{ticker} — no explicit thesis provided"
 
+    # Fabrication guard (same class as the earnings-date guard, Phase 3.2): with
+    # no valuation data in the pipeline, Haiku/Sonnet bear cases were citing
+    # precise forward P/E multiples from training priors ("~30x", "35-40x") —
+    # every candidate got a uniform "priced for perfection" verdict that
+    # suppressed the PM's conviction wholesale (Jul 15 2026: all 14 bear cases).
+    if scores.get("valuation_available"):
+        valuation_note = (f"Pipeline valuation score: {scores.get('valuation_score')}/100 "
+                          f"(higher = cheaper; from real P/E / FCF-yield / EV-EBITDA data).")
+    else:
+        valuation_note = (
+            "⚠ NO VALUATION DATA: this pipeline has no verified P/E, EV/EBITDA or "
+            "FCF-yield figures for this ticker. Do NOT cite specific multiples or "
+            "claim it 'trades at ~Nx' — any such number would be fabricated. You may "
+            "flag valuation as an unverified qualitative risk, and if the bull case "
+            "hinges on valuation you may set valuation_risk accordingly, but ground "
+            "recommend_reject in verifiable arguments (competition, thesis fragility, "
+            "catalyst failure), not invented multiples.")
+
     user_msg = f"""\
 TICKER: {ticker}
 Price: ${data.get('close', 'N/A')} | Vol: {scores.get('volatility', '?')}% | Beta: {scores.get('beta', '?')}
+VALUATION DATA STATUS: {valuation_note}
 
 BULL THESIS TO DESTROY:
   {bull_thesis}
@@ -780,7 +808,9 @@ evaluations — not every idea is fatally flawed, but not every idea is sound. \
 Set recommend_reject=true when overall_risk_score >= 7 AND at least one of: \
 (a) the central bull assumption is empirically false or unverifiable, \
 (b) downside scenarios include permanent capital loss (>40% drawdown), \
-(c) the valuation already prices in the bull case leaving no margin of safety. \
+(c) the valuation already prices in the bull case leaving no margin of safety — \
+criterion (c) is only usable when VALUATION DATA STATUS above shows real data; \
+without it, an "it's expensive" hunch cannot justify rejection on its own. \
 Do NOT default to false — force an honest verdict.
 
 Output JSON. overall_risk_score and recommend_reject come FIRST so they are \
@@ -896,16 +926,20 @@ def run_portfolio_manager(
     # holding's min-hold eligibility so the PM stops proposing discretionary
     # SELLs the turnover guard is guaranteed to reject (Jul 8 2026: both SELL
     # legs of a rotation rejected → DEGRADED health + orphaned BUYs).
-    from guardrails import sector_of, min_hold_days_remaining
+    from guardrails import sector_of, min_hold_days_remaining, wash_sale_days_remaining
     from journal import _load_list, TRANSACTIONS_FILE
     _txs = _load_list(TRANSACTIONS_FILE)
+    # Eligibility is computed as of the RUN's date, not wall-clock, so a replay /
+    # backfill run tags candidates for the day being replayed (falls back to
+    # today when date is unset — both helpers treat "" as "now").
+    _as_of = date or None
     holdings_lines = []
     sector_weights: dict[str, float] = {}
     for p in portfolio["positions"]:
         t = p["symbol"]
         weight = (p["market_value"] / total * 100) if total else 0
         review = position_reviews.get(t, {})
-        rem = min_hold_days_remaining(t, transactions=_txs)
+        rem = min_hold_days_remaining(t, transactions=_txs, today=_as_of)
         hold_tag = "sellable" if not rem else f"min_hold: {rem}d left — NOT sellable"
         holdings_lines.append(
             f"  {t}: {p['qty']} sh @ ${p['avg_price']:.2f} = ${p['market_value']:,.0f} ({weight:.1f}%) "
@@ -927,18 +961,36 @@ def run_portfolio_manager(
             sector_lines.append(f"  {sec}: {pct:.1f}%")
     sector_block = "\n".join(sector_lines) if sector_lines else "  (no holdings)"
 
-    # Format quant scores table (top 25 by composite, exclude ETFs)
+    # Format quant scores table (top 25 by composite, exclude ETFs). Each line
+    # carries the candidate's BUY eligibility — wash-sale re-entry block and
+    # sector-cap headroom — so the PM stops proposing BUYs the guard chain is
+    # guaranteed to reject. (Jun 25–Jul 2 2026: V/JNJ/JPM BUYs proposed run
+    # after run, silently rejected by the sector cap / wash-sale guards, cash
+    # stuck above 46% for 29 runs — the BUY-side twin of the Jul 8 min-hold fix.)
     sorted_q = sorted(
         [(t, s) for t, s in quant_scores.items() if t not in ("SPY", "QQQ")],
         key=lambda x: x[1].get("composite_score", 0),
         reverse=True,
     )[:25]
-    quant_lines = [
-        f"  {t}: cmp={s.get('composite_score','?')} mom={s.get('momentum_score','?')} "
-        f"q={s.get('quality_score','?')} val={s.get('valuation_score','?')} "
-        f"vol={s.get('volatility','?')}% beta={s.get('beta','?')}"
-        for t, s in sorted_q
-    ]
+    quant_lines = []
+    for t, s in sorted_q:
+        wash = wash_sale_days_remaining(t, transactions=_txs, today=_as_of)
+        sec = sector_of(t)
+        sec_pct = sector_weights.get(sec, 0.0)
+        if wash:
+            buy_tag = f"⛔ NOT buyable — wash-sale re-entry block, {wash}d left"
+        elif sec == "UNKNOWN":
+            buy_tag = "⛔ NOT buyable — unmapped sector (BUY fails closed)"
+        elif sec_pct >= _CAP:
+            buy_tag = f"⛔ NOT buyable — {sec} at {sec_pct:.0f}% ≥ {_CAP:.0f}% cap"
+        else:
+            headroom = (_CAP - sec_pct) / 100.0 * total
+            buy_tag = f"✓ BUY-eligible ({sec}, ~${headroom:,.0f} sector headroom)"
+        quant_lines.append(
+            f"  {t}: cmp={s.get('composite_score','?')} mom={s.get('momentum_score','?')} "
+            f"q={s.get('quality_score','?')} val={s.get('valuation_score','?')} "
+            f"vol={s.get('volatility','?')}% beta={s.get('beta','?')} | {buy_tag}"
+        )
 
     # Format research summaries
     research_lines = []
@@ -961,6 +1013,32 @@ def run_portfolio_manager(
         history_lines.append(f"  {t.get('date')} | {t.get('action')} {t.get('ticker')} | {t.get('rationale','')[:80]}")
 
     reentry_block = _fmt_recently_exited(recently_exited)
+
+    # Cash-discipline mandate (deploy-or-justify) — the symmetric counterpart of
+    # the MUST-SELL rule. Only rendered when cash is above the 0–10% band; the
+    # extra holdings-floor line fires when the book is also under 8 names. This
+    # makes idle cash compete for capital explicitly instead of being the silent
+    # default (29 consecutive DEGRADED cash_discipline runs through Jul 15 2026).
+    if cash_pct > 10.0:
+        floor_line = ("\n  The book also holds FEWER than the 8-holding floor — "
+                      "both band violations point the same way: deploy."
+                      if len(portfolio.get("positions", [])) < 8 else "")
+        cash_block = f"""
+  ⚠ CASH DISCIPLINE: cash is {cash_pct:.1f}% — ABOVE the 0–10% band.{floor_line}
+  You MUST either propose BUYs of ✓ BUY-eligible candidates to move toward the
+  band, or return one HOLD entry (see OUTPUT FORMAT) whose rationale says why
+  every ✓ candidate is worse than 0%-yielding cash right now. Passing silently
+  is not an allocation decision."""
+        output_exception = """
+EXCEPTION — cash above band with no BUYs: if you propose zero BUYs despite the
+CASH DISCIPLINE warning above, the array MUST contain exactly one HOLD entry:
+{"ticker": "<the top ✓ BUY-eligible candidate>", "action": "HOLD",
+"target_weight": 0.0, "source_of_capital": "cash", "expected_return": 0.0,
+"rationale": "<why cash beats every ✓ candidate — max 25 words>"}. HOLD entries
+are never executed; this is your no-deploy justification, on the record."""
+    else:
+        cash_block = ""
+        output_exception = ""
 
     # Dossier persistence signals for the researched names (Phase 5 Stage C) — a
     # stable composite over the week is a different animal from a one-day pop.
@@ -991,7 +1069,9 @@ CURRENT PORTFOLIO:
   Holdings:
 {chr(10).join(holdings_lines) or '  (none — all cash)'}
 
-QUANT SCORES (top candidates):
+QUANT SCORES (top candidates — each tagged ✓ BUY-eligible or ⛔ NOT buyable;
+a ⛔ BUY is guaranteed-rejected by the guard chain, so never propose one — pick
+from the ✓ names instead):
 {chr(10).join(quant_lines)}
 {(dossier_block + chr(10)) if dossier_block else ''}
 RESEARCH & DEVIL'S ADVOCATE:
@@ -1008,7 +1088,7 @@ SECTOR ALLOCATION (25% hard cap per sector — enforced by risk controls):
 
 CONSTRAINTS:
   Holdings target: 8–15 | Max position: 10% | Max sector: 25% | Cash: 0–10%
-  Hard-blocked (NEVER propose): TSLA
+  Hard-blocked (NEVER propose): TSLA{cash_block}
   HORIZON DISCIPLINE (weekly cadence, 9–12 month horizon): you decide ONCE A WEEK.
   Default is HOLD — a SELL needs a broken thesis or a real measured change, never
   a one-day re-rank. A discretionary SELL of a name held < 30 trading days will be
@@ -1021,7 +1101,7 @@ CONSTRAINTS:
 OUTPUT FORMAT — CRITICAL FOR PARSING:
 Return ONLY a JSON array — no prose, no reasoning, no markdown, nothing before or
 after it. Your response MUST start with [ and end with ]. Omit HOLD decisions.
-Return [] if no trade improves portfolio expected value.
+Return [] if no trade improves portfolio expected value.{output_exception}
 
 Keep every field compact — a long response gets truncated and discarded, so a
 verbose rationale loses the whole trade list. Each element:

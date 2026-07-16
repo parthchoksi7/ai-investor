@@ -13,6 +13,55 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+## [2026-07-16] — cash-stall fix: BUY-eligibility tags · deploy-or-justify mandate · DA valuation-fabrication guard · cash-drag metric  ·  ~00:15 PT  ·  main
+
+### Fixed — the PM's persistent 46% idle cash (29 consecutive over-band runs)
+
+Root-caused the standing high-cash problem to a cluster of pipeline gaps, not a single
+LLM refusal. Diagnosis from today's RISK_ON run (0 trades, 8 viable candidates): the PM
+*was* proposing BUYs weekly (V/JNJ/JPM through Jun 25–Jul 2), but they were **silently
+rejected** by the wash-sale and sector-cap guards — the PM had no visibility into BUY
+eligibility (the mirror image of the Jul 8 min-hold SELL blind spot), and the Devil's
+Advocate was suppressing conviction on every candidate with fabricated valuation
+multiples. Four fixes, reviewed by the portfolio_manager / quant_researcher /
+ml_ai_engineer personas + `/code-review high`:
+
+- **`feat(analysis)` per-candidate BUY-eligibility tags** — every name in the PM's quant
+  table is now tagged `✓ BUY-eligible (~$N sector headroom)` or `⛔ NOT buyable` (wash-sale
+  re-entry block Nd left / sector at cap / unmapped sector), via the new
+  `guardrails.wash_sale_days_remaining` (BUY-side twin of `min_hold_days_remaining`).
+  Computed as-of the run date, not wall-clock, so replays tag correctly.
+- **`feat(analysis)` deploy-or-justify mandate** — `_PM_SYSTEM` gains a symmetric
+  counterpart to the Jul-8 MUST-SELL rule: cash is a 0%-return position that must compete
+  for capital. When cash exceeds the 0–10% band, the PM must either propose BUYs of ✓
+  candidates or emit ONE `HOLD` entry whose rationale states why cash beats every ✓ name
+  — no more silent `[]`. HOLD entries are filtered out at every executor/logger/calibration
+  consumer (verified end-to-end), so this adds an audit record with zero order-path risk.
+- **`fix(analysis)` DA valuation-fabrication guard** — with `valuation_available=False`
+  (FMP free-tier gap on ~13/14 candidates), the Devil's Advocate was citing invented
+  forward P/E multiples ("~30x", "priced for perfection") from training priors and
+  rejecting on them. Same fabrication class as the Phase-3.2 earnings-date guard: the DA
+  is now told when there's no valuation data and forbidden from inventing multiples;
+  rejection criterion (c) (valuation) is gated on real data.
+- **`fix(main)` re-entry warning window widened 10d→30d** to match the enforced wash-sale
+  block — the PM's `recently_exited` warning previously went dark for days 11–30, exactly
+  when it proposed guaranteed-rejected re-entries (JNJ on day 20, Jun 30).
+- **`feat(performance)` cash-drag metric** — `cash_drag_report` marks over-band cash
+  against SPY per inter-run period so the year-end verdict prices the defensive posture
+  (currently ~+$4 drag over the book's life); surfaced weekly in `pipeline_digest`.
+  NaN-close-guarded (the Jun-16 snapshot-NaN class would otherwise poison the sum).
+
+> **QA:** full `pytest` green (**765**, +21: wash-sale-days boundary vs the guard, BUY-eligibility
+> injection, DA fabrication guard, 30d re-entry window, cash-drag incl. NaN-poison regression);
+> ruff F-gate + workflow YAML clean. `/code-review high` (8-angle) surfaced a replay-date
+> inconsistency and an avg-excess-cash mismatch (both fixed); a **live prompt smoke against
+> today's real snapshot caught a `cumulative_drag=NaN` bug** the static review missed (NaN SPY
+> close, `s0 <= 0` is False for NaN) — now guarded + regression-tested. **Prompt-only + offline
+> observability; zero order/qty/idempotency code touched.** ⚠ **Requires a live daily-routine
+> sync** — the PM prompt changed; until synced the cloud PM keeps the old prompt (degrades safely
+> to today's behavior, just without the new tags/mandate). §7.1 dry-run skipped (trading day, day's
+> rebalance already executed); validated via suite + `TestRunDailyCycleSmoke` + live prompt smoke.
+
 ## [2026-07-15] — agent_6 health check: min-hold + kill-switch awareness  ·  ~18:51 PT  ·  main
 
 ### Fixed — false-positive DEGRADED on PM 0-trade days blocked by min-hold (2026-07-15)
