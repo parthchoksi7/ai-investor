@@ -57,10 +57,11 @@ ml_ai_engineer personas + `/code-review high`:
 > inconsistency and an avg-excess-cash mismatch (both fixed); a **live prompt smoke against
 > today's real snapshot caught a `cumulative_drag=NaN` bug** the static review missed (NaN SPY
 > close, `s0 <= 0` is False for NaN) — now guarded + regression-tested. **Prompt-only + offline
-> observability; zero order/qty/idempotency code touched.** ⚠ **Requires a live daily-routine
-> sync** — the PM prompt changed; until synced the cloud PM keeps the old prompt (degrades safely
-> to today's behavior, just without the new tags/mandate). §7.1 dry-run skipped (trading day, day's
-> rebalance already executed); validated via suite + `TestRunDailyCycleSmoke` + live prompt smoke.
+> observability; zero order/qty/idempotency code touched.** **No routine-prompt sync needed** —
+> the PM/DA prompts live in `analysis.py` (executed in-cloud by `python main.py`), not in
+> `ROUTINE_DAILY_CYCLE.md`, so they take effect on the next cloud `git pull`. §7.1 dry-run skipped
+> (trading day, day's rebalance already executed); validated via suite + `TestRunDailyCycleSmoke`
+> + live prompt smoke against today's real snapshot.
 
 ## [2026-07-15] — agent_6 health check: min-hold + kill-switch awareness  ·  ~18:51 PT  ·  main
 
