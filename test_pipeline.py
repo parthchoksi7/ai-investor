@@ -8001,7 +8001,8 @@ class TestRunDailyCycleSmoke:
             "final_decisions": list(decisions),
         }
 
-    def _run(self, monkeypatch, tmp_path, decisions, portfolio=None):
+    def _run(self, monkeypatch, tmp_path, decisions, portfolio=None, pipeline_state=None,
+             kill_active=False):
         import json as _j
         from datetime import datetime
         from zoneinfo import ZoneInfo
@@ -8025,7 +8026,8 @@ class TestRunDailyCycleSmoke:
                  | {p["symbol"] for p in portfolio["positions"]}) - set(self.TICKERS)
 
         monkeypatch.setattr(main, "get_portfolio_summary", lambda: portfolio)
-        monkeypatch.setattr(main, "check_kill_switches", lambda p: (False, ""))
+        monkeypatch.setattr(main, "check_kill_switches",
+                            lambda p: (kill_active, "kill switch active" if kill_active else ""))
         monkeypatch.setattr(main, "get_market_snapshot",
                             lambda: self._market_data(today, extra=sorted(extra)))
         monkeypatch.setattr(main, "load_dossier", lambda: self._dossier(today))
@@ -8033,7 +8035,7 @@ class TestRunDailyCycleSmoke:
                             lambda d, as_of=None: (True, []))
         monkeypatch.setattr(main, "get_trade_decisions",
                             lambda *a, **k: (list(decisions),
-                                             self._pipeline_state(decisions)))
+                                             pipeline_state or self._pipeline_state(decisions)))
         monkeypatch.setattr(main, "publish_to_supabase",
                             lambda *a, **k: None)
         # Belt-and-suspenders: never let the broker path go live in a test.
@@ -8068,6 +8070,58 @@ class TestRunDailyCycleSmoke:
         pending = _j.loads((tmp_path / "pending_decisions.json").read_text())
         assert pending["date"] == today and pending["decisions"] == []
         assert (tmp_path / "system_health.json").exists()
+
+    def test_min_hold_blocked_reduce_does_not_flag_starvation(self, monkeypatch, tmp_path):
+        """Jul 15 2026: a REDUCE recommendation on a still-min-hold-blocked
+        holding must not trip the 'likely data starvation' DEGRADED — the PM
+        correctly can't act on it (Jul 8 2026 post-mortem: PM min-hold
+        awareness). Regression for the main.py agent_6 heuristic gap."""
+        import json as _j
+        from datetime import datetime, timedelta
+        recent = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        import main  # noqa: F401  (ensure import side effects precede chdir)
+        (tmp_path / "transactions.json").write_text(_j.dumps([
+            {"ticker": "JPM", "action": "BUY", "date": recent, "dry_run": False}]))
+        pipeline_state = self._pipeline_state([])
+        pipeline_state["position_reviews"] = {
+            "JPM": {"hold_score": 4, "remaining_alpha": "LOW",
+                    "recommended_action": "REDUCE"}}
+        self._run(monkeypatch, tmp_path, [], pipeline_state=pipeline_state)
+        health = _j.loads((tmp_path / "system_health.json").read_text())
+        assert health["checks"]["agent_6_portfolio_manager"]["status"] == "OK"
+
+    def test_freely_sellable_reduce_still_flags_starvation(self, monkeypatch, tmp_path):
+        """Counterfactual to the above: a REDUCE on a holding with NO buy
+        record (freely sellable, unblocked) and 0 trades is still a genuine
+        data-starvation signal — the fix must not blanket-suppress the check."""
+        import json as _j
+        pipeline_state = self._pipeline_state([])
+        pipeline_state["position_reviews"] = {
+            "JPM": {"hold_score": 4, "remaining_alpha": "LOW",
+                    "recommended_action": "REDUCE"}}
+        self._run(monkeypatch, tmp_path, [], pipeline_state=pipeline_state)
+        health = _j.loads((tmp_path / "system_health.json").read_text())
+        assert health["checks"]["agent_6_portfolio_manager"]["status"] == "DEGRADED"
+
+    def test_kill_active_reduce_still_flags_starvation_even_if_recent_buy(self, monkeypatch, tmp_path):
+        """During a kill switch, enforce_min_holding_period bypasses min-hold
+        entirely (risk exits are never blocked) — so a REDUCE on a
+        recently-bought name IS actionable even though min_hold_days_remaining
+        alone would say otherwise. The health check must mirror that exemption,
+        not just min_hold_days_remaining in isolation."""
+        import json as _j
+        from datetime import datetime, timedelta
+        recent = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        import main  # noqa: F401  (ensure import side effects precede chdir)
+        (tmp_path / "transactions.json").write_text(_j.dumps([
+            {"ticker": "JPM", "action": "BUY", "date": recent, "dry_run": False}]))
+        pipeline_state = self._pipeline_state([])
+        pipeline_state["position_reviews"] = {
+            "JPM": {"hold_score": 2, "remaining_alpha": "LOW",
+                    "recommended_action": "EXIT"}}
+        self._run(monkeypatch, tmp_path, [], pipeline_state=pipeline_state, kill_active=True)
+        health = _j.loads((tmp_path / "system_health.json").read_text())
+        assert health["checks"]["agent_6_portfolio_manager"]["status"] == "DEGRADED"
 
     def test_orphaned_buy_is_dropped_end_to_end(self, monkeypatch, tmp_path):
         """Jul 8 2026 end-to-end regression through main's guard chain: a SELL

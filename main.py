@@ -30,7 +30,7 @@ from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, StalePortfolioError, DRY_RUN
 from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions, close_position, get_ticker_history, recently_exited, consecutive_cash_above, _load_list, TRANSACTIONS_FILE
-from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, enforce_tax_aware_hold, enforce_safe_mode, enforce_capital_dependency, flag_wash_sale_presale
+from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, enforce_tax_aware_hold, enforce_safe_mode, enforce_capital_dependency, flag_wash_sale_presale, min_hold_days_remaining
 from build_dossier import load_dossier, validate_dossier
 from policy       import policy_version as _policy_version
 from publish      import publish_to_supabase
@@ -547,6 +547,17 @@ def run_daily_cycle():
     pm_parsed_ok = pipeline_state.get("portfolio_manager_parsed_ok", True)
     reduces      = sum(1 for v in position_reviews.values()
                       if v.get("recommended_action") in ("REDUCE", "EXIT"))
+    # Only count REDUCE/EXIT tickers the PM could actually have acted on — a
+    # REDUCE recommendation on a still-min-hold-blocked ticker is expected to
+    # produce 0 trades (Jul 8 2026 post-mortem: PM min-hold awareness) and must
+    # not masquerade as data starvation. kill_active mirrors
+    # enforce_min_holding_period's own exemption — during a kill switch, min-hold
+    # never blocks a SELL, so every REDUCE/EXIT is actionable regardless.
+    sellable_reduces = sum(
+        1 for t, v in position_reviews.items()
+        if v.get("recommended_action") in ("REDUCE", "EXIT")
+        and (kill_active or not min_hold_days_remaining(t, transactions=_txs, today=today))
+    )
     if not pm_proposed and not pm_parsed_ok:
         # A parse failure that silently collapsed to [] — NOT a deliberate no-trade.
         # Without this branch a mangled PM response is indistinguishable from "hold".
@@ -554,9 +565,10 @@ def run_daily_cycle():
                       message="PM returned no decisions due to an unparseable response "
                               "(not a deliberate no-trade) — output failed to parse",
                       proposed=0, parsed_ok=False)
-    elif reduces > 0 and len(pm_proposed) == 0 and not decisions:
+    elif sellable_reduces > 0 and len(pm_proposed) == 0 and not decisions:
         health.record("agent_6_portfolio_manager", DEGRADED,
-                      message=f"PM proposed 0 trades despite {reduces} REDUCE/EXIT from position review — likely data starvation",
+                      message=f"PM proposed 0 trades despite {sellable_reduces} sellable REDUCE/EXIT "
+                              f"from position review — likely data starvation",
                       position_review_reduce_exit=reduces, proposed=0)
     else:
         health.record("agent_6_portfolio_manager", OK,

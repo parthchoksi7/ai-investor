@@ -13,6 +13,42 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+## [2026-07-15] — agent_6 health check: min-hold + kill-switch awareness  ·  ~18:51 PT  ·  main
+
+### Fixed — false-positive DEGRADED on PM 0-trade days blocked by min-hold (2026-07-15)
+
+Today's weekly rebalance (`20260715-134745`) flagged `agent_6_portfolio_manager` DEGRADED
+("likely data starvation") even though the PM behaved correctly: both REDUCE-flagged holdings
+(MS, VRTX) were still inside the 30-trading-day min-hold window (5 and 13 trading days
+remaining respectively) — the Jul 8 2026 post-mortem's PM min-hold awareness feature working
+exactly as designed. The health-check heuristic (`main.py`) hadn't been updated to match: it
+counted every REDUCE/EXIT signal toward "should have traded" regardless of whether the ticker
+was actually sellable.
+
+- **`fix(health)` `agent_6_portfolio_manager` now excludes min-hold-blocked REDUCE/EXIT
+  tickers** from the "0 trades despite REDUCE/EXIT" DEGRADED trigger, via a new
+  `sellable_reduces` count built on `guardrails.min_hold_days_remaining`.
+- **Kill-switch exemption preserved** — `enforce_min_holding_period` bypasses min-hold entirely
+  when `kill_active` (risk exits must never be blocked), so the health check now reads
+  `kill_active or not min_hold_days_remaining(...)`, mirroring the guardrail's own exemption
+  exactly. Without this the check would have silently suppressed DEGRADED in the one scenario
+  — a PM failing to exit during a drawdown — where catching inaction matters most. Caught during
+  a three-persona review (portfolio_manager / quant_researcher / senior_backend_engineer) before
+  commit.
+- Pure observability change — zero order/qty/idempotency code touched; `position_reviews` /
+  calibration logging (`forecasts.jsonl`) is unaffected (already logs `hold_score` for every
+  reviewed ticker regardless of actionability).
+
+> **QA:** full `pytest` green (**744**, +3: `test_min_hold_blocked_reduce_does_not_flag_starvation`,
+> `test_freely_sellable_reduce_still_flags_starvation` counterfactual,
+> `test_kill_active_reduce_still_flags_starvation_even_if_recent_buy`); ruff F821/F823 clean.
+> Reviewed via the `portfolio_manager` / `quant_researcher` / `senior_backend_engineer` persona
+> skills in lieu of `/code-review high` (equivalent depth for a non-execution-path change, per
+> owner direction) — no unresolved findings. **§7.1 dry-run skipped**: 2026-07-15 is a trading
+> day and the day's rebalance already executed; `DRY_RUN=true python main.py` would overwrite
+> `pending_decisions.json` and risk a double-fill on a later retry (DEPLOYMENT §7.1). Validated
+> via the full suite + the `TestRunDailyCycleSmoke` end-to-end harness instead.
+
 ## [2026-07-09] — Jul 8 rebalance post-mortem: sector cap made real · atomic rotations · PM min-hold awareness · regression nets  ·  ~18:10 PT  ·  main
 
 ### Fixed — Jul 8 rebalance post-mortem: sector cap made real, rotations atomic, PM min-hold awareness (2026-07-09)
