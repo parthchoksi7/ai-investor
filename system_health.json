@@ -1,7 +1,7 @@
 {
   "run_id": "20260722-134836",
   "date": "2026-07-22",
-  "timestamp": "2026-07-22T13:53:16.654991+00:00",
+  "timestamp": "2026-07-22T13:54:54.303742+00:00",
   "overall_status": "DEGRADED",
   "checks": {
     "portfolio": {
@@ -140,6 +140,16 @@
       "status": "OK",
       "message": "",
       "ts": "2026-07-22T13:53:16.654976+00:00"
+    },
+    "reconciliation": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-07-22T13:54:54.303713+00:00",
+      "filled": [
+        "EOG",
+        "MS",
+        "PLD"
+      ]
     }
   },
   "alerts": [
