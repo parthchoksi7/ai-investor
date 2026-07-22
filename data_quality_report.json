@@ -1,9 +1,9 @@
 {
   "date": "2026-07-22",
   "data_date": "2026-07-22",
-  "generated_at": "2026-07-22T12:00:41.056443+00:00",
-  "status": "DEGRADED",
-  "data_quality_score": 85,
+  "generated_at": "2026-07-22T12:53:29.661806+00:00",
+  "status": "OK",
+  "data_quality_score": 100,
   "strategy_shift_ok": true,
   "expected_universe": 177,
   "fetched_universe": 175,
@@ -15,13 +15,13 @@
       "abort_below": 80.0
     },
     "min_history_depth": {
-      "value": 45,
-      "status": "DEGRADED",
+      "value": 76,
+      "status": "OK",
       "degraded_below": 60,
       "abort_below": 22
     },
     "fundamental_coverage_pct": {
-      "value": 94.4,
+      "value": 94.9,
       "status": "OK",
       "degraded_below": 80.0,
       "abort_below": null
@@ -33,19 +33,17 @@
       "abort_below": null
     },
     "valuation_coverage_pct": {
-      "value": 16.9,
+      "value": 17.5,
       "status": "OK",
       "degraded_below": null,
       "abort_below": null,
       "informational": true
     }
   },
-  "breaches": [
-    "min_history_depth DEGRADED: 45 < 60"
-  ],
+  "breaches": [],
   "cik_map_ok": true,
-  "price_outlier_count": 2,
-  "hash": "a61c798b33c9a1fc",
+  "price_outlier_count": 1,
+  "hash": "a3572310c02c9df0",
   "event_digest": {
     "chunks": 4,
     "chunks_ok": 4,
