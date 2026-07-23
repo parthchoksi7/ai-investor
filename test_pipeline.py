@@ -7583,7 +7583,9 @@ class TestDossierConsumer:
         captured = {}
         def fake_call(model, system, user_msg, **kw):
             captured["user_msg"] = user_msg
-            return kw.get("default")
+            # run_research_analyst now calls with return_meta=True → return a tuple.
+            return ((kw.get("default"), {"parsed_ok": True, "api_failed": False})
+                    if kw.get("return_meta") else kw.get("default"))
         monkeypatch.setattr(analysis, "_safe_call", fake_call)
         md = {"date": "2026-07-06", "prices": {"AAPL": {"close": 104.0, "change_pct": 0.5}},
               "news": [], "ticker_news": {}}
@@ -7999,10 +8001,12 @@ class TestPMBuyEligibilityInjection:
         analysis, captured = self._capture(monkeypatch, tmp_path, [
             {"ticker": "JNJ", "action": "SELL", "date": "2026-07-05", "dry_run": False}])
         portfolio = {"total_value": 500.0, "cash": 230.0, "positions": []}
-        # research_map must contain the candidate — the PM's quant table is
-        # restricted to the vetted set (Jul 22 2026), so an un-researched name
-        # never appears in the BUY menu at all.
-        analysis.run_portfolio_manager({}, {"JNJ": {}}, {}, {}, {}, self._quant("JNJ"),
+        # research_map must contain the candidate WITH a non-empty thesis — the
+        # PM's quant table is restricted to the vetted set (Jul 22 2026), and an
+        # empty thesis would trip the higher-priority research-unavailable tag
+        # instead of the wash-sale tag under test.
+        analysis.run_portfolio_manager({}, {"JNJ": {"thesis": "t"}}, {}, {}, {},
+                                       self._quant("JNJ"),
                                        portfolio, [], date="2026-07-15")
         assert "wash-sale re-entry block" in captured["user_msg"]
         assert "⛔ NOT buyable" in captured["user_msg"]
@@ -8013,14 +8017,16 @@ class TestPMBuyEligibilityInjection:
         # candidate (JPM itself here) must be tagged not-buyable.
         portfolio = {"total_value": 500.0, "cash": 230.0, "positions": [
             {"symbol": "JPM", "qty": 0.5, "avg_price": 200.0, "market_value": 130.0}]}
-        analysis.run_portfolio_manager({}, {}, {}, {}, {}, self._quant("JPM"),
+        analysis.run_portfolio_manager({}, {"JPM": {"thesis": "t"}}, {}, {}, {},
+                                       self._quant("JPM"),
                                        portfolio, [], date="2026-07-15")
         assert "≥ 25% cap" in captured["user_msg"]
 
     def test_clean_candidate_tagged_eligible_with_headroom(self, monkeypatch, tmp_path):
         analysis, captured = self._capture(monkeypatch, tmp_path, [])
         portfolio = {"total_value": 500.0, "cash": 230.0, "positions": []}
-        analysis.run_portfolio_manager({}, {"JNJ": {}}, {}, {}, {}, self._quant("JNJ"),
+        analysis.run_portfolio_manager({}, {"JNJ": {"thesis": "t"}}, {}, {}, {},
+                                       self._quant("JNJ"),
                                        portfolio, [], date="2026-07-15")
         assert "✓ BUY-eligible" in captured["user_msg"]
         assert "sector headroom" in captured["user_msg"]
@@ -8177,6 +8183,157 @@ class TestCandidateScopeEnforcement:
         assert risk.get("api_failed") is True
         assert risk["approved"] is False
         assert risk["rejected_tickers"] == []   # untouched → full veto stands
+
+
+class TestResearchBackedBuyGuard:
+    """Jul 22 2026 (P3): a BUY whose Research thesis came back empty (529 / parse
+    fail / blank) must be dropped — enrichment failure must never become a
+    full-conviction BUY on the quant score alone. SELLs/HOLDs always pass."""
+
+    def test_empty_thesis_buy_rejected(self):
+        from guardrails import enforce_research_backed_buys
+        decisions = [{"ticker": "EOG", "action": "BUY", "target_weight": 0.09}]
+        research = {"EOG": {"thesis": "", "_empty_reason": "api_error"}}
+        kept, rejected = enforce_research_backed_buys(decisions, research)
+        assert kept == []
+        assert rejected[0]["ticker"] == "EOG"
+        assert "api_error" in rejected[0]["rejected_reason"]
+
+    def test_backed_buy_kept(self):
+        from guardrails import enforce_research_backed_buys
+        decisions = [{"ticker": "EOG", "action": "BUY", "target_weight": 0.09}]
+        research = {"EOG": {"thesis": "real thesis"}}
+        kept, rejected = enforce_research_backed_buys(decisions, research)
+        assert [d["ticker"] for d in kept] == ["EOG"] and rejected == []
+
+    def test_sell_of_empty_thesis_name_passes(self):
+        from guardrails import enforce_research_backed_buys
+        # A SELL/exit needs no fresh thesis — never blocked.
+        decisions = [{"ticker": "EOG", "action": "SELL", "target_weight": 0.0}]
+        research = {"EOG": {"thesis": ""}}
+        kept, rejected = enforce_research_backed_buys(decisions, research)
+        assert [d["ticker"] for d in kept] == ["EOG"] and rejected == []
+
+    def test_research_none_is_noop(self):
+        from guardrails import enforce_research_backed_buys
+        decisions = [{"ticker": "EOG", "action": "BUY", "target_weight": 0.09}]
+        kept, rejected = enforce_research_backed_buys(decisions, None)
+        assert [d["ticker"] for d in kept] == ["EOG"] and rejected == []
+
+    def test_empty_research_map_blocks_all_buys(self):
+        from guardrails import enforce_research_backed_buys
+        # Total research failure ({}) is NOT a no-op — buying on zero research
+        # is the exact failure mode; every BUY is rejected (fail-safe direction).
+        decisions = [
+            {"ticker": "EOG", "action": "BUY", "target_weight": 0.09},
+            {"ticker": "MS", "action": "SELL", "target_weight": 0.0},
+        ]
+        kept, rejected = enforce_research_backed_buys(decisions, {})
+        assert [d["ticker"] for d in kept] == ["MS"]      # SELL survives
+        assert [d["ticker"] for d in rejected] == ["EOG"]  # BUY blocked
+
+    def test_missing_ticker_key_treated_as_empty(self):
+        from guardrails import enforce_research_backed_buys
+        decisions = [{"ticker": "NSC", "action": "BUY", "target_weight": 0.09}]
+        research = {"EOG": {"thesis": "t"}}  # NSC absent
+        kept, rejected = enforce_research_backed_buys(decisions, research)
+        assert kept == [] and rejected[0]["ticker"] == "NSC"
+
+
+class TestResearchEmptyReasonStamping:
+    """Jul 22 2026 (529 surfacing): run_research_analyst records WHY a thesis is
+    empty (api_error / truncated / parse_failed / model_returned_empty) so the
+    root cause is auditable instead of a generic "empty thesis"."""
+
+    def _md(self):
+        return {"date": "2026-07-22", "news": [], "ticker_news": {},
+                "prices": {"AAPL": {"close": 104.0, "change_pct": 0.5}}}
+
+    def _stub(self, monkeypatch, result, meta):
+        import analysis
+        def fake(model, system, user_msg, **kw):
+            return (result, meta) if kw.get("return_meta") else result
+        monkeypatch.setattr(analysis, "_safe_call", fake)
+        return analysis
+
+    def test_api_failure_stamped_api_error(self, monkeypatch):
+        default = {"thesis": "", "catalysts": [], "confidence": 5,
+                   "key_risks": [], "invalidates_if": [], "variant_view": ""}
+        analysis = self._stub(monkeypatch, dict(default),
+                              {"parsed_ok": False, "stop_reason": None, "api_failed": True})
+        out = analysis.run_research_analyst("AAPL", self._md(), {})
+        assert out["_empty_reason"] == "api_error"
+
+    def test_truncation_stamped_truncated(self, monkeypatch):
+        default = {"thesis": "", "catalysts": [], "confidence": 5,
+                   "key_risks": [], "invalidates_if": [], "variant_view": ""}
+        analysis = self._stub(monkeypatch, dict(default),
+                              {"parsed_ok": False, "stop_reason": "max_tokens", "api_failed": False})
+        out = analysis.run_research_analyst("AAPL", self._md(), {})
+        assert out["_empty_reason"] == "truncated"
+
+    def test_parse_failure_stamped_parse_failed(self, monkeypatch):
+        default = {"thesis": "", "catalysts": [], "confidence": 5,
+                   "key_risks": [], "invalidates_if": [], "variant_view": ""}
+        analysis = self._stub(monkeypatch, dict(default),
+                              {"parsed_ok": False, "stop_reason": "end_turn", "api_failed": False})
+        out = analysis.run_research_analyst("AAPL", self._md(), {})
+        assert out["_empty_reason"] == "parse_failed"
+
+    def test_non_empty_thesis_not_stamped(self, monkeypatch):
+        analysis = self._stub(monkeypatch, {"thesis": "real", "confidence": 6},
+                              {"parsed_ok": True, "stop_reason": "end_turn", "api_failed": False})
+        out = analysis.run_research_analyst("AAPL", self._md(), {})
+        assert "_empty_reason" not in out
+
+    def test_safe_call_meta_carries_api_failed_flag(self, monkeypatch):
+        # _safe_call's success-path meta must expose api_failed=False so callers
+        # can distinguish an infra failure from a content one.
+        import analysis
+        monkeypatch.setattr(analysis, "_call",
+                            lambda *a, **k: ('{"thesis": "x"}', "end_turn"))
+        _, meta = analysis._safe_call("m", "s", "u", default={"thesis": ""},
+                                      return_meta=True)
+        assert meta["api_failed"] is False
+
+
+class TestPMValuationDisplay:
+    """Jul 22 2026 (P1): the PM quant menu shows val=N/A when the valuation factor
+    has no real data (no FMP key), not a misleading val=50 that reads as a real
+    neutral valuation call."""
+
+    def _capture(self, monkeypatch, tmp_path):
+        import analysis, journal
+        (tmp_path / "transactions.json").write_text("[]")
+        monkeypatch.setattr(journal, "TRANSACTIONS_FILE",
+                            str(tmp_path / "transactions.json"))
+        cap = {}
+        def fake(model, system, user_msg, **kw):
+            cap["user_msg"] = user_msg
+            return ([], {"parsed_ok": True}) if kw.get("return_meta") else kw.get("default")
+        monkeypatch.setattr(analysis, "_safe_call", fake)
+        return analysis, cap
+
+    def test_valuation_unavailable_shows_na(self, monkeypatch, tmp_path):
+        analysis, cap = self._capture(monkeypatch, tmp_path)
+        quant = {"EOG": {"composite_score": 87.0, "momentum_score": 97.0,
+                         "quality_score": 90.0, "valuation_score": 50,
+                         "valuation_available": False, "volatility": 30.0, "beta": 1.0}}
+        portfolio = {"total_value": 500.0, "cash": 100.0, "positions": []}
+        analysis.run_portfolio_manager({}, {"EOG": {"thesis": "t"}}, {}, {}, {},
+                                       quant, portfolio, [], date="2026-07-22")
+        assert "val=N/A" in cap["user_msg"]
+        assert "val=50" not in cap["user_msg"]
+
+    def test_valuation_available_shows_score(self, monkeypatch, tmp_path):
+        analysis, cap = self._capture(monkeypatch, tmp_path)
+        quant = {"EOG": {"composite_score": 87.0, "momentum_score": 97.0,
+                         "quality_score": 90.0, "valuation_score": 72,
+                         "valuation_available": True, "volatility": 30.0, "beta": 1.0}}
+        portfolio = {"total_value": 500.0, "cash": 100.0, "positions": []}
+        analysis.run_portfolio_manager({}, {"EOG": {"thesis": "t"}}, {}, {}, {},
+                                       quant, portfolio, [], date="2026-07-22")
+        assert "val=72" in cap["user_msg"]
 
 
 class TestDAFabricationGuard:
@@ -8353,7 +8510,9 @@ class TestRunDailyCycleSmoke:
             "regime": {"regime": "NEUTRAL", "confidence": 60},
             "candidates": cands,
             "quant_scores": {},
-            "research": {"MSFT": {"thesis": "stub thesis", "confidence": 6}},
+            # Every candidate carries a non-empty thesis so enforce_research_backed_buys
+            # passes them through to the guards under test (Jul 22 2026 research gate).
+            "research": {t: {"thesis": "stub thesis", "confidence": 6} for t in cands},
             "earnings": {"MSFT": {"earnings_alpha_score": 6,
                                   "key_catalysts_90d": ["stub"]}},
             "devils_advocate": {"MSFT": {"bear_case": "stub bear",

@@ -24,10 +24,26 @@ import math
 # is a DETERMINISTIC change — its edge is proven or falsified in backtest/, not on
 # faith. The change is gated on the §8 fundamental-coverage fix: quality/valuation
 # are only real once SEC EDGAR coverage clears the 80% floor.
+#
+# ⚠ VALUATION IS INACTIVE IN PRODUCTION (as of Jul 22 2026). PE / FCF-yield /
+# EV-EBITDA require FMP_API_KEY, which is not set, so `valuation_available` is
+# False for the ENTIRE universe → the 0.25 valuation weight is renormalized out
+# on every name. The OPERATIVE live formula is therefore 3-factor — momentum /
+# quality / volatility, renormalized to effective ~0.20 / 0.467 / 0.333. The
+# weights below are deliberately LEFT UNCHANGED (not collapsed to a 3-factor
+# table): (1) the renormalization already makes the composite honest — valuation
+# is dropped, never blended as a fake 50; (2) editing the weights would silently
+# change the live composite that selects candidates AND would force a
+# FORMULA_VERSION bump, resetting the factor-persistence / IC evidence clock
+# (P0-2) mid-accumulation for zero signal benefit. Activating the 4th factor is a
+# CONFIG decision (provision FMP_API_KEY), not a code change — and would then need
+# its own version bump + fresh backtest. Until then, read this table as "quality-
+# tilted 3-factor, valuation reserved." See _fmt_scores / the PM quant menu, which
+# now render valuation as N/A (not 50) so no agent misreads the gap as a real call.
 FACTOR_WEIGHTS = {
     "momentum":   0.15,
     "quality":    0.35,
-    "valuation":  0.25,
+    "valuation":  0.25,   # INACTIVE without FMP_API_KEY — renormalized out (see above)
     "volatility": 0.25,
 }
 

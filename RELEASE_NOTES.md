@@ -13,6 +13,44 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — research-backed BUY gate + valuation-display honesty + 529 root-cause surfacing (Jul 22 2026, P1+P3)
+
+Follow-on to the candidate-scope fix below, from the same run's post-mortem.
+
+- **`feat(guardrails)` `enforce_research_backed_buys` — a BUY of a name whose
+  Research thesis came back empty (529 / parse fail / truncation / blank) is
+  dropped.** Enrichment failure must never become a full-conviction BUY sized on
+  the quant score alone (Jul 22: EBAY/CFG research empties on a 529 — harmless
+  that day only because both were holdings under separate Position Review; a NEW
+  BUY candidate with no thesis would have been bought on quant only). Wired in
+  `main.py` right after `validate_decisions`, folded into the `decision_validation`
+  health check. SELLs/HOLDs always pass; `research=None` is a no-op but an empty
+  map blocks all BUYs (fail-safe — never buy on zero research). The PM's quant
+  menu also tags an empty-thesis candidate `⛔ NOT buyable — research thesis
+  unavailable` (belt to the guard's suspenders).
+- **`fix(analysis)` 529 / partial-data root cause is now surfaced, not just
+  "empty".** `run_research_analyst` stamps `_empty_reason` (`api_error` /
+  `truncated` / `parse_failed` / `model_returned_empty`) on an empty thesis —
+  `_safe_call`'s meta gained an `api_failed` flag to distinguish an infra failure
+  (529/network) from a content one. The `agent_2_research` health check now
+  reports the breakdown (`2/20 … (api_error=2)`) with per-ticker detail, instead
+  of a generic "had empty thesis" that discarded the cause inside `_safe_call`.
+- **`docs+fix(quant)` valuation-factor honesty (P1).** Expert decision: the
+  `2.0-quality-tilt` composite math and `FORMULA_VERSION` are LEFT UNCHANGED —
+  the honest-composite renormalization already drops the (permanently
+  FMP-gated, hence unavailable) valuation factor rather than blending a fake 50,
+  and re-weighting would silently change the live candidate-selection signal AND
+  reset the factor-IC evidence clock (P0-2) mid-accumulation for zero benefit.
+  Activating the 4th factor is a config decision (provision `FMP_API_KEY`), not a
+  code change. What DID change: `FACTOR_WEIGHTS` now documents that valuation is
+  inactive in production (operative live formula ≈ momentum 0.20 / quality 0.467 /
+  volatility 0.333), and the PM quant menu renders `val=N/A` (was `val=50`) so no
+  agent misreads the gap as a real neutral valuation call — matching `_fmt_scores`.
+
+QA: full `pytest` green (**785**, +13: `TestResearchBackedBuyGuard`,
+`TestResearchEmptyReasonStamping`, `TestPMValuationDisplay`); ruff F-gate clean.
+Validation-path only — no order-placement/idempotency code touched.
+
 ### Fixed — candidate-scope discipline (Jul 22 2026 rebalance post-mortem, run `20260722-134836`)
 
 The Wednesday rebalance executed cleanly (SELL MS, BUY EOG/PLD) but a post-mortem

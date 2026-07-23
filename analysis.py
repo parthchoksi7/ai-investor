@@ -382,7 +382,8 @@ def _safe_call(model, system, user_msg, default, max_tokens=600, retries=2, retu
                     and not (return_meta and parsed_ok)):
                 raise ValueError(f"Response parsed to default (raw_len={len(raw)}) — retrying")
             if return_meta:
-                return result, {"raw": raw[:4000], "stop_reason": stop_reason, "parsed_ok": parsed_ok}
+                return result, {"raw": raw[:4000], "stop_reason": stop_reason,
+                                "parsed_ok": parsed_ok, "api_failed": False}
             return result
         except Exception as e:
             if attempt < retries:
@@ -394,8 +395,14 @@ def _safe_call(model, system, user_msg, default, max_tokens=600, retries=2, retu
             else:
                 print(f"   ⚠ Agent call failed: {e}")
                 if return_meta:
+                    # api_failed=True: the call itself raised on the final attempt
+                    # (529 / network / API error), as opposed to a call that
+                    # returned but parsed to the default. Lets callers surface the
+                    # ROOT CAUSE of an empty result (infra vs content), not just
+                    # "empty" (Jul 22 2026: EBAY/CFG research empties were reported
+                    # as "empty thesis" with no record of whether a 529 caused it).
                     return default, {"raw": last_raw[:4000], "stop_reason": last_stop,
-                                     "parsed_ok": last_parsed_ok}
+                                     "parsed_ok": last_parsed_ok, "api_failed": True}
                 return default
 
 
@@ -666,12 +673,29 @@ Output JSON (fill in every field):
   "evidence_quality": 5
 }}"""
 
-    return _safe_call(
+    result, meta = _safe_call(
         MODEL_FAST, _cached_system(_RESEARCH_SYSTEM), user_msg,
         default={"thesis": "", "catalysts": [], "confidence": 5,
                  "key_risks": [], "invalidates_if": [], "variant_view": ""},
         max_tokens=2200,
+        return_meta=True,
     )
+    # Stamp WHY a thesis is empty so the root cause is auditable (surfaced in the
+    # agent_2_research health check + agent_log), instead of a generic "empty".
+    # A downstream guard (enforce_research_backed_buys) blocks BUYs of empty-
+    # thesis names regardless of the reason — enrichment failure must never
+    # become a full-conviction BUY on quant score alone.
+    if isinstance(result, dict) and not str(result.get("thesis", "")).strip():
+        if meta.get("api_failed"):
+            reason = "api_error"            # 529 / network — transient infra
+        elif meta.get("stop_reason") == "max_tokens":
+            reason = "truncated"            # response too long, parse gave up
+        elif not meta.get("parsed_ok"):
+            reason = "parse_failed"         # malformed JSON on a complete reply
+        else:
+            reason = "model_returned_empty"  # valid JSON, blank thesis field
+        result["_empty_reason"] = reason
+    return result
 
 
 # ── Agent 3: Earnings & Catalyst Analyst ─────────────────────────────────────
@@ -989,7 +1013,15 @@ def run_portfolio_manager(
         wash = wash_sale_days_remaining(t, transactions=_txs, today=_as_of)
         sec = sector_of(t)
         sec_pct = sector_weights.get(sec, 0.0)
-        if wash:
+        # A candidate whose Research thesis came back empty (529 / parse fail /
+        # blank) is NOT research-backed — never buy it on quant score alone
+        # (a guard also blocks it). Highest-priority ⛔: no thesis trumps every
+        # other eligibility question. SELLs are unaffected (buy_tag is advisory
+        # to the BUY side only).
+        thesis_empty = not str((research_map.get(t) or {}).get("thesis", "")).strip()
+        if thesis_empty:
+            buy_tag = "⛔ NOT buyable — research thesis unavailable (empty/failed)"
+        elif wash:
             buy_tag = f"⛔ NOT buyable — wash-sale re-entry block, {wash}d left"
         elif sec == "UNKNOWN":
             buy_tag = "⛔ NOT buyable — unmapped sector (BUY fails closed)"
@@ -998,9 +1030,15 @@ def run_portfolio_manager(
         else:
             headroom = (_CAP - sec_pct) / 100.0 * total
             buy_tag = f"✓ BUY-eligible ({sec}, ~${headroom:,.0f} sector headroom)"
+        # Show valuation as N/A when the factor has no real data (no FMP key →
+        # PE/FCF/EV-EBITDA absent for the whole universe), matching _fmt_scores.
+        # A bare "val=50" reads to the LLM as a real neutral valuation call; it
+        # is actually "no data" (renormalized OUT of the composite, never blended).
+        val_disp = (s.get("valuation_score", "?")
+                    if s.get("valuation_available", False) else "N/A")
         quant_lines.append(
             f"  {t}: cmp={s.get('composite_score','?')} mom={s.get('momentum_score','?')} "
-            f"q={s.get('quality_score','?')} val={s.get('valuation_score','?')} "
+            f"q={s.get('quality_score','?')} val={val_disp} "
             f"vol={s.get('volatility','?')}% beta={s.get('beta','?')} | {buy_tag}"
         )
 

@@ -368,6 +368,44 @@ def _trading_days_since(buy_date: str, today: str) -> int:
     return days
 
 
+def enforce_research_backed_buys(
+    decisions: list[dict],
+    research: dict[str, dict] | None,
+) -> tuple[list[dict], list[dict]]:
+    """Reject a BUY whose Research Analyst thesis came back empty — a 529/API
+    failure, a parse failure, a truncation, or a genuinely blank model response.
+    Enrichment failure must NEVER silently become a full-conviction BUY sized on
+    the quant score alone (Jul 22 2026: EBAY/CFG research empties on a 529 — that
+    day harmless because both were holdings under separate Position Review, but a
+    NEW BUY candidate with no thesis would have been bought on quant only).
+
+    Returns (kept, rejected); rejected dicts carry a `rejected_reason` (with the
+    `_empty_reason` root cause when the research row recorded one) and flow into
+    the `decision_validation` health check like every other guard. SELLs and
+    HOLDs always pass — an exit needs no fresh thesis.
+
+    `research=None` (map not supplied / feature off) → no-op. An EMPTY dict is
+    NOT a no-op: it means research produced nothing, so every BUY is
+    un-backed and rejected (the fail-safe direction — never buy on zero research).
+    """
+    if research is None:
+        return list(decisions), []
+    kept, rejected = [], []
+    for d in decisions:
+        if str(d.get("action", "")).upper() != "BUY":
+            kept.append(d)                      # SELL / HOLD never blocked
+            continue
+        rec = research.get(d.get("ticker", "")) or {}
+        if str(rec.get("thesis", "")).strip():
+            kept.append(d)
+            continue
+        why = rec.get("_empty_reason", "empty/unavailable")
+        reason = f"research thesis unavailable ({why}) — BUY not research-backed"
+        rejected.append({**d, "rejected_reason": reason})
+        print(f"   🚫 RESEARCH REJECT: BUY {d.get('ticker')} — {reason}")
+    return kept, rejected
+
+
 def _last_live_trade_date(ticker: str, transactions: list, side: str) -> str | None:
     """Most recent broker-accepted (non-dry-run) `side` ('BUY'|'SELL') date for ticker.
 

@@ -16,6 +16,7 @@ Pipeline:
 import json as _json
 import os
 import uuid as _uuid
+from collections import Counter
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -30,7 +31,7 @@ from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, StalePortfolioError, DRY_RUN
 from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions, close_position, get_ticker_history, recently_exited, consecutive_cash_above, _load_list, TRANSACTIONS_FILE
-from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, enforce_tax_aware_hold, enforce_safe_mode, enforce_capital_dependency, flag_wash_sale_presale, min_hold_days_remaining, WASH_SALE_REENTRY_DAYS
+from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, enforce_tax_aware_hold, enforce_safe_mode, enforce_capital_dependency, enforce_research_backed_buys, flag_wash_sale_presale, min_hold_days_remaining, WASH_SALE_REENTRY_DAYS
 from build_dossier import load_dossier, validate_dossier
 from policy       import policy_version as _policy_version
 from publish      import publish_to_supabase
@@ -385,6 +386,15 @@ def run_daily_cycle():
         pipeline_state.get("candidates", []), kill_active, transactions=_txs,
     )
 
+    # Research-backed BUY gate (Jul 22 2026) — a BUY of a name whose Research
+    # thesis came back empty (529 / parse fail / blank) is dropped: enrichment
+    # failure must never become a full-conviction BUY on the quant score alone.
+    # Runs right after validate_decisions (candidate universe already resolved)
+    # and BEFORE the economic guards. SELLs/HOLDs pass; rejects fold into the
+    # decision_validation health check below.
+    decisions, research_rejected = enforce_research_backed_buys(
+        decisions, pipeline_state.get("research"))
+
     # Market-wide crisis safe-mode (§18.5) — per-name stops don't cover a market
     # crash. On a SPY 1-day drop ≥ the policy threshold, ALL new BUYs are halted
     # (SELLs / risk exits stay allowed) and the owner is alerted via the DEGRADED
@@ -451,9 +461,9 @@ def run_daily_cycle():
     except Exception as _e:
         print(f"   ⚠ wash-sale pre-sale flag skipped: {_e}")
 
-    for r in (safemode_rejected + holding_rejected + reentry_rejected
-              + taxhold_rejected + dependency_rejected + sector_rejected
-              + netedge_rejected):
+    for r in (research_rejected + safemode_rejected + holding_rejected
+              + reentry_rejected + taxhold_rejected + dependency_rejected
+              + sector_rejected + netedge_rejected):
         validation_report["rejected"].append(
             {"ticker": r.get("ticker", "?"), "action": r.get("action", "?"),
              "reason": r.get("rejected_reason", "turnover/sector/net-edge guard")})
@@ -485,17 +495,30 @@ def run_daily_cycle():
 
     # Agent 2: Research
     research    = pipeline_state.get("research", {})
-    empty_rsrch = sum(1 for v in research.values() if not v.get("thesis", "").strip())
+    # Break the empties down by ROOT CAUSE (stamped by run_research_analyst):
+    # api_error (529/network) vs truncated vs parse_failed vs model_returned_empty.
+    # Previously an empty thesis was reported generically ("had empty thesis")
+    # with no record of whether a 529 caused it — the reason was discarded inside
+    # _safe_call. Now the cause rides into the health message + per-ticker detail.
+    empty_names = {t: v.get("_empty_reason", "unknown")
+                   for t, v in research.items() if not v.get("thesis", "").strip()}
+    empty_rsrch = len(empty_names)
+    _reason_counts = dict(Counter(empty_names.values()))
+    _reason_str = ", ".join(f"{k}={v}" for k, v in sorted(_reason_counts.items()))
     if not research:
         health.record("agent_2_research", FAILED, message="No research output")
     elif empty_rsrch == len(research):
         health.record("agent_2_research", FAILED,
-                      message=f"All {empty_rsrch}/{len(research)} research responses returned empty thesis",
-                      empty=empty_rsrch, total=len(research))
+                      message=f"All {empty_rsrch}/{len(research)} research responses "
+                              f"returned empty thesis ({_reason_str})",
+                      empty=empty_rsrch, total=len(research),
+                      empty_reasons=_reason_counts, empty_tickers=empty_names)
     elif empty_rsrch > 0:
         health.record("agent_2_research", DEGRADED,
-                      message=f"{empty_rsrch}/{len(research)} research responses had empty thesis",
-                      empty=empty_rsrch, total=len(research))
+                      message=f"{empty_rsrch}/{len(research)} research responses had "
+                              f"empty thesis ({_reason_str})",
+                      empty=empty_rsrch, total=len(research),
+                      empty_reasons=_reason_counts, empty_tickers=empty_names)
     else:
         health.record("agent_2_research", OK, total=len(research))
 
