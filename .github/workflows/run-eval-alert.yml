@@ -1,0 +1,82 @@
+name: Run-Eval Alert
+
+# Turns the post-run health reviewer's verdict into an ACTIVE notification.
+# The scheduled cloud routine ("AI Investor — Post-Run Health Review") pushes
+# RUN_REVIEW.md to main each run; this workflow reads the verdict and, only when
+# it is PROBLEM, emails the owner via Resend. Runs on GitHub's infra (real network
+# egress) rather than the routine's restricted sandbox, so the send is reliable.
+#
+# Setup (one-time, by the owner):
+#   1. Resend → API Keys → create a key.
+#   2. GitHub → Settings → Secrets and variables → Actions → New secret:
+#        RESEND_API_KEY = <the key>
+#   3. (optional) Actions Variables to override the defaults below:
+#        ALERT_EMAIL_TO   = where to send   (default: the owner's gmail)
+#        ALERT_EMAIL_FROM = verified sender (default: onboarding@resend.dev,
+#                           which Resend allows only to the account owner's own
+#                           email; verify parth-choksi.com in Resend to send
+#                           from e.g. "AI Investor <alerts@parth-choksi.com>").
+#
+# Until RESEND_API_KEY exists, a PROBLEM verdict falls back to opening a
+# `run-eval` GitHub Issue so the alert is never silent.
+
+on:
+  push:
+    branches: [main]
+    paths: ['RUN_REVIEW.md']
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Parse verdict
+        id: v
+        run: |
+          if [ ! -f RUN_REVIEW.md ]; then
+            echo "verdict=NONE" >> "$GITHUB_OUTPUT"
+            echo "No RUN_REVIEW.md — nothing to notify."; exit 0
+          fi
+          # Prefer the machine-readable first line "VERDICT: OK|BENIGN|PROBLEM";
+          # fall back to scanning the human emoji line so this works even if the
+          # reviewer prompt hasn't been updated yet.
+          VERDICT=$(grep -m1 -oiE '^VERDICT:[[:space:]]*[A-Z]+' RUN_REVIEW.md | grep -oiE '[A-Z]+$' | tr '[:lower:]' '[:upper:]' || true)
+          if [ -z "$VERDICT" ]; then
+            if   grep -q '🚨' RUN_REVIEW.md; then VERDICT=PROBLEM
+            elif grep -q '⚠️' RUN_REVIEW.md; then VERDICT=BENIGN
+            else VERDICT=OK; fi
+          fi
+          echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
+          echo "Parsed verdict: $VERDICT"
+
+      - name: Email via Resend (or fall back to a GitHub issue)
+        if: steps.v.outputs.verdict == 'PROBLEM'
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_TO:   ${{ vars.ALERT_EMAIL_TO   || 'parthchoksi007@gmail.com' }}
+          EMAIL_FROM: ${{ vars.ALERT_EMAIL_FROM || 'AI Investor Alerts <onboarding@resend.dev>' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SUBJECT="🚨 AI Investor run review: problem found ($(date -u +%F))"
+          if [ -n "${RESEND_API_KEY:-}" ]; then
+            echo "Sending alert email via Resend to $EMAIL_TO ..."
+            jq -n --arg from "$EMAIL_FROM" --arg to "$EMAIL_TO" \
+                  --arg subject "$SUBJECT" --rawfile text RUN_REVIEW.md \
+                  '{from:$from, to:[$to], subject:$subject, text:$text}' \
+              | curl -sS --fail-with-body -X POST https://api.resend.com/emails \
+                  -H "Authorization: Bearer $RESEND_API_KEY" \
+                  -H "Content-Type: application/json" \
+                  --data @- \
+              && echo "Resend accepted the message."
+          else
+            echo "No RESEND_API_KEY set — opening a GitHub issue so the alert is not silent."
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "$SUBJECT" --label run-eval --body-file RUN_REVIEW.md \
+              || echo "gh issue create failed (check the run-eval label / permissions)."
+          fi
