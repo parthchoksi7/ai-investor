@@ -35,6 +35,10 @@ provider_cache.json
 # Resumable universe-fetch cursor (universe.next_batch). Transient operational
 # state — persisted across GH Actions runs via actions/cache, not committed.
 fetch_progress.json
+# Ken French factor-data cache (factor_attribution.py, C6/T3.3) — re-fetched
+# from the Ken French data library on a 7-day TTL. Transient/regenerable, not
+# committed.
+factor_cache.json
 # Stage D rolling raw-history store — the crash-resume checkpoint + ≤5-day
 # carry-forward source for the (expanded) universe sweep. Large; persisted via
 # actions/cache, never committed (the committed snapshot is the slimmed view).
