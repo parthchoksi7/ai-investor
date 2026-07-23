@@ -13,6 +13,72 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — SEC valuation components extraction (PLAN_SEC_VALUATION Phase 1, Jul 23 2026)
+
+First increment of the free full-universe valuation plan. **Zero behavior change** —
+extraction only; nothing consumes the new data yet, so the composite and
+`FORMULA_VERSION` are unchanged (the version bump + backtest land in Phase 2).
+
+- **`feat(data_providers)` `SECProvider.fundamentals()` now emits price-INDEPENDENT
+  valuation components** as underscore intermediates — `_eps_diluted_annual`,
+  `_shares_diluted`, `_fcf_annual`, `_total_debt`, `_cash`, `_ebitda_annual` — pulled
+  from the SAME latest 10-K as the existing margins (companyfacts we already download).
+  Cached in `provider_cache.json` and carried in the snapshot exactly like the current
+  fields. Phase 2 will combine them with the snapshot price → P/E, FCF yield, EV/EBITDA
+  for ~the full US universe (vs FMP's free-tier ~18%). `compute_valuation_score` reads
+  only the finished ratios, which stay absent until Phase 2 → behavior-inert.
+- **`feat(data_providers)` `_latest_annual` gains `unit=` and `prefer_recent=`.** `unit`
+  reads the `shares` / `USD/shares` XBRL buckets (share counts, diluted EPS) alongside
+  the default `USD`. `prefer_recent` (valuation components only; quality path unchanged,
+  still first-match-wins) picks the fallback concept whose latest 10-K entry is NEWEST —
+  fixing a **vintage-mismatch bug found in live NVDA verification**: NVDA tags capex under
+  `PaymentsToAcquirePropertyPlantAndEquipment` only through FY2011 but
+  `PaymentsToAcquireProductiveAssets` through FY2026, so first-match-wins paired FY2026
+  cash flow with FY2011 capex → a wrong FCF. Now correct ($96.7B, not the mismatched
+  value). `_as_of_filing` is deliberately NOT moved by the new components (they are not
+  "used inputs" in any emitted ratio until Phase 2).
+- **`fix(data_providers)` cross-field vintage guard (`/code-review high` finding,
+  pre-commit).** `prefer_recent` only guarantees the freshest tag WITHIN one field's own
+  concept-fallback list — it does not guarantee two DIFFERENT fields feeding the same
+  derived metric (`cfo`−`capex` → `_fcf_annual`; `op`+`dna` → `_ebitda_annual`; `ltd`+`std`
+  → `_total_debt`) land on the same fiscal period. `_latest_annual_ex` now also returns
+  each entry's fiscal `end` date so `fundamentals()` can check period agreement before
+  combining two fields; a mismatch omits the derived metric (`_fcf_annual`/`_ebitda_annual`)
+  or falls back to the single reliable side (`_total_debt` → `ltd` alone) rather than
+  fabricating a blended figure. **Found live in JPM**: `LongTermDebt` is frozen at FY2013
+  (JPM apparently abandoned that us-gaap concept over a decade ago) while
+  `ShortTermBorrowings` is current (FY2025) — the unguarded sum would have silently
+  blended a 12-year-stale $267.9B figure with $64.8B of this year's short-term borrowings
+  into a fabricated $332.7B "total debt." Also fixed the same review pass: `_total_debt`
+  was dropped entirely (not falling back to `std` alone) when a filer reports only
+  short-term debt with no `LongTermDebt`/`LongTermDebtNoncurrent` tag.
+- **Known, accepted, narrow behavior widening (documented, not changed):**
+  `fundamentals()`'s `if not out: return None` gate can now return a non-`None` dict for
+  a ticker with **zero** quality fields (no revenue-derived margin AND no positive-equity
+  debt ratio) but ≥1 extractable valuation component — versus `None` pre-diff. This
+  requires a real 10-K filer to have neither a usable revenue tag nor a positive-equity+
+  debt combo, which essentially never occurs for an actual operating company (assessed,
+  not merely asserted — the two `out`-populating conditions in the quality block cover
+  the near-totality of real 10-K filers). Propagates through `CascadeProvider` and
+  shrinks `market_data.py`'s provider-cache TTL from 7d→2d for the (near-empty) affected
+  subset — bounded well inside EDGAR's 10 req/s rate limit. Left as-is: it's an honest
+  coverage improvement (real data where there was none), not corrupted data, and the
+  population it affects is negligible in the actual universe.
+
+QA: full `pytest` green (**807**, +22: `TestSECValuationComponents` — extraction, unit
+routing, every tag fallback, honest-N/A omission, the NVDA capex-vintage regression, the
+zero-behavior-change guards on `_as_of_filing` + `valuation_available`; +
+`TestSECCrossFieldVintageGuard` — the JPM-shaped ltd/std mismatch, matched-vintage sum,
+std-alone fallback, and cfo/capex + op/dna + dep/amort mismatch omissions); ruff F-gate
+clean. `/code-review high` run pre-commit per §7.0 — 5 correctness findings, all
+CONFIRMED via independent verification, 4 fixed in this same commit (the 5th is the
+documented widening above). Re-verified against LIVE EDGAR post-fix for
+AAPL/MSFT/NVDA/KO/WMT/PG/UNH/JPM/BAC/GS/V/UNH — coverage unchanged, NVDA FCF still
+correct, several banks' `_total_debt` values changed (now internally consistent instead
+of silently blending mismatched fiscal years) — and honest N/A confirmed for financials
+where FCF/EBITDA are meaningless. No order-placement / idempotency / envelope code
+touched.
+
 ### Added — research-backed BUY gate + valuation-display honesty + 529 root-cause surfacing (Jul 22 2026, P1+P3)
 
 Follow-on to the candidate-scope fix below, from the same run's post-mortem.

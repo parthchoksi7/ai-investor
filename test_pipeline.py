@@ -3631,6 +3631,350 @@ class TestSECProvider:
         assert n[0] == 1     # one attempt total, then cached failure
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  PLAN_SEC_VALUATION Phase 1 — SECProvider extracts the price-independent raw
+#  valuation components (underscore intermediates). Cached + carried in the snapshot
+#  but consumed by NO score until Phase 2's derive step → behavior-inert.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSECValuationComponents:
+    """SECProvider._latest_annual unit routing + the 6 valuation components."""
+
+    # A full AAPL-FY2024-shaped 10-K payload: quality inputs (so `out` is non-empty
+    # via the existing path) PLUS every valuation-component concept, each in its
+    # correct XBRL unit bucket (USD / shares / USD/shares).
+    FULL_FACTS = {"facts": {"us-gaap": {
+        "Revenues": {"units": {"USD": [
+            {"end": "2024-09-28", "val": 391035000000, "form": "10-K", "filed": "2024-11-01"}]}},
+        "GrossProfit": {"units": {"USD": [
+            {"end": "2024-09-28", "val": 180683000000, "form": "10-K", "filed": "2024-11-01"}]}},
+        "OperatingIncomeLoss": {"units": {"USD": [
+            {"end": "2024-09-28", "val": 123216000000, "form": "10-K", "filed": "2024-11-01"}]}},
+        "StockholdersEquity": {"units": {"USD": [
+            {"end": "2024-09-28", "val": 56950000000, "form": "10-K", "filed": "2024-11-01"}]}},
+        "LongTermDebt": {"units": {"USD": [
+            {"end": "2024-09-28", "val": 85750000000, "form": "10-K", "filed": "2024-11-01"}]}},
+        "EarningsPerShareDiluted": {"units": {"USD/shares": [
+            {"end": "2024-09-28", "val": 6.08, "form": "10-K", "filed": "2024-11-01"}]}},
+        "WeightedAverageNumberOfDilutedSharesOutstanding": {"units": {"shares": [
+            {"end": "2024-09-28", "val": 15343783000, "form": "10-K", "filed": "2024-11-01"}]}},
+        "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
+            {"end": "2024-09-28", "val": 118254000000, "form": "10-K", "filed": "2024-11-01"}]}},
+        "PaymentsToAcquirePropertyPlantAndEquipment": {"units": {"USD": [
+            {"end": "2024-09-28", "val": 9447000000, "form": "10-K", "filed": "2024-11-01"}]}},
+        "CashAndCashEquivalentsAtCarryingValue": {"units": {"USD": [
+            {"end": "2024-09-28", "val": 29943000000, "form": "10-K", "filed": "2024-11-01"}]}},
+        "LongTermDebtCurrent": {"units": {"USD": [
+            {"end": "2024-09-28", "val": 10912000000, "form": "10-K", "filed": "2024-11-01"}]}},
+        "DepreciationDepletionAndAmortization": {"units": {"USD": [
+            {"end": "2024-09-28", "val": 11445000000, "form": "10-K", "filed": "2024-11-01"}]}},
+    }}}
+
+    def _provider(self, monkeypatch, facts):
+        from data_providers import SECProvider
+        import requests, types
+        p = SECProvider(timeout=5)
+        def fake_get(url, **kwargs):
+            resp = types.SimpleNamespace(raise_for_status=lambda: None)
+            resp.json = (lambda: {"0": {"cik_str": 1, "ticker": "XYZ", "title": "X"}}) \
+                if "company_tickers" in url else (lambda: facts)
+            return resp
+        monkeypatch.setattr(requests, "get", fake_get)
+        return p
+
+    def test_all_components_extracted(self, monkeypatch):
+        p = self._provider(monkeypatch, self.FULL_FACTS)
+        f = p.fundamentals("XYZ")
+        assert f["_eps_diluted_annual"] == 6.08
+        assert f["_shares_diluted"] == 15343783000
+        assert f["_fcf_annual"] == 118254000000 - 9447000000        # CFO − capex
+        assert f["_total_debt"] == 85750000000 + 10912000000        # LTD + current
+        assert f["_cash"] == 29943000000
+        assert f["_ebitda_annual"] == 123216000000 + 11445000000    # OpInc + D&A
+
+    def test_quality_fields_unaffected(self, monkeypatch):
+        # The existing quality path is untouched by the new extraction.
+        p = self._provider(monkeypatch, self.FULL_FACTS)
+        f = p.fundamentals("XYZ")
+        assert f["gross_margin"] == round(180683000000 / 391035000000, 4)
+        assert f["debt_to_equity"] == round(85750000000 / 56950000000, 4)
+
+    def test_latest_annual_reads_shares_and_per_share_units(self, monkeypatch):
+        # Direct unit-routing check: the same helper reads three different buckets.
+        p = self._provider(monkeypatch, self.FULL_FACTS)
+        g = p._get_us_gaap("XYZ")
+        assert p._latest_annual(g, "EarningsPerShareDiluted", unit="USD/shares")[0] == 6.08
+        assert p._latest_annual(
+            g, "WeightedAverageNumberOfDilutedSharesOutstanding", unit="shares")[0] == 15343783000
+        assert p._latest_annual(g, "OperatingIncomeLoss")[0] == 123216000000   # default USD
+
+    def test_eps_falls_back_to_basic(self, monkeypatch):
+        facts = {"facts": {"us-gaap": {
+            "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
+            "GrossProfit": {"units": {"USD": [{"end": "2024-01-01", "val": 400, "form": "10-K"}]}},
+            "EarningsPerShareBasic": {"units": {"USD/shares": [
+                {"end": "2024-01-01", "val": 3.21, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        assert p.fundamentals("XYZ")["_eps_diluted_annual"] == 3.21
+
+    def test_shares_falls_back_to_common_outstanding(self, monkeypatch):
+        facts = {"facts": {"us-gaap": {
+            "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
+            "GrossProfit": {"units": {"USD": [{"end": "2024-01-01", "val": 400, "form": "10-K"}]}},
+            "CommonStockSharesOutstanding": {"units": {"shares": [
+                {"end": "2024-01-01", "val": 5000000, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        assert p.fundamentals("XYZ")["_shares_diluted"] == 5000000
+
+    def test_dna_composite_fallback(self, monkeypatch):
+        # No combined D&A concept → sum Depreciation + AmortizationOfIntangibleAssets.
+        facts = {"facts": {"us-gaap": {
+            "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
+            "OperatingIncomeLoss": {"units": {"USD": [{"end": "2024-01-01", "val": 200, "form": "10-K"}]}},
+            "Depreciation": {"units": {"USD": [{"end": "2024-01-01", "val": 30, "form": "10-K"}]}},
+            "AmortizationOfIntangibleAssets": {"units": {"USD": [
+                {"end": "2024-01-01", "val": 12, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        assert p.fundamentals("XYZ")["_ebitda_annual"] == 200 + 30 + 12
+
+    def test_fcf_omitted_without_capex(self, monkeypatch):
+        # CFO present but no capex concept → cannot form FCF honestly → omit.
+        facts = {"facts": {"us-gaap": {
+            "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
+            "GrossProfit": {"units": {"USD": [{"end": "2024-01-01", "val": 400, "form": "10-K"}]}},
+            "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
+                {"end": "2024-01-01", "val": 500, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        assert "_fcf_annual" not in p.fundamentals("XYZ")
+
+    def test_ebitda_omitted_without_dna(self, monkeypatch):
+        # OperatingIncome present but no D&A of any tag → omit EBITDA.
+        facts = {"facts": {"us-gaap": {
+            "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
+            "OperatingIncomeLoss": {"units": {"USD": [{"end": "2024-01-01", "val": 200, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        assert "_ebitda_annual" not in p.fundamentals("XYZ")
+
+    def test_total_debt_without_short_term(self, monkeypatch):
+        # No current-debt tag → total debt is just long-term (short-term defaults to 0).
+        facts = {"facts": {"us-gaap": {
+            "StockholdersEquity": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
+            "LongTermDebt": {"units": {"USD": [{"end": "2024-01-01", "val": 700, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        assert p.fundamentals("XYZ")["_total_debt"] == 700
+
+    def test_zero_shares_omitted(self, monkeypatch):
+        # A 0/negative share count is nonsense for a market cap → omit.
+        facts = {"facts": {"us-gaap": {
+            "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
+            "GrossProfit": {"units": {"USD": [{"end": "2024-01-01", "val": 400, "form": "10-K"}]}},
+            "WeightedAverageNumberOfDilutedSharesOutstanding": {"units": {"shares": [
+                {"end": "2024-01-01", "val": 0, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        assert "_shares_diluted" not in p.fundamentals("XYZ")
+
+    def test_negative_eps_stored_raw(self, monkeypatch):
+        # Component layer stores the raw (negative) EPS; the pe>0 guard is applied
+        # later in derive_valuation_ratios (Phase 2), not here.
+        facts = {"facts": {"us-gaap": {
+            "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
+            "GrossProfit": {"units": {"USD": [{"end": "2024-01-01", "val": 400, "form": "10-K"}]}},
+            "EarningsPerShareDiluted": {"units": {"USD/shares": [
+                {"end": "2024-01-01", "val": -1.5, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        assert p.fundamentals("XYZ")["_eps_diluted_annual"] == -1.5
+
+    def test_components_do_not_affect_as_of_filing(self, monkeypatch):
+        # ZERO-BEHAVIOR-CHANGE regression: `_as_of_filing` is stamped over the QUALITY
+        # inputs only. A valuation component filed LATER than every quality input must
+        # NOT move the stamp — the components are not "used inputs" in any emitted ratio
+        # until Phase 2, and moving the vintage would change the dossier's age/no-look-
+        # ahead behavior on a supposedly-inert change.
+        facts = {"facts": {"us-gaap": {
+            "Revenues": {"units": {"USD": [
+                {"end": "2024-09-28", "val": 1000, "form": "10-K", "filed": "2024-11-01"}]}},
+            "GrossProfit": {"units": {"USD": [
+                {"end": "2024-09-28", "val": 400, "form": "10-K", "filed": "2024-11-01"}]}},
+            # A later-filed cash figure that WOULD win a max() if it were folded in.
+            "CashAndCashEquivalentsAtCarryingValue": {"units": {"USD": [
+                {"end": "2024-09-28", "val": 50, "form": "10-K", "filed": "2025-03-15"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        f = p.fundamentals("XYZ")
+        assert f["_cash"] == 50                        # component extracted
+        assert f["_as_of_filing"] == "2024-11-01"      # but vintage unmoved
+
+    def test_capex_vintage_mismatch_avoided(self, monkeypatch):
+        # Regression (found in live NVDA verification): the FIRST capex concept's latest
+        # 10-K entry can be FAR STALER than a later fallback's. prefer_recent must pair
+        # the FY2026 cash flow with FY2026 capex, not a frozen FY2011 tag → correct FCF.
+        facts = {"facts": {"us-gaap": {
+            "Revenues": {"units": {"USD": [{"end": "2026-01-25", "val": 1000, "form": "10-K"}]}},
+            "GrossProfit": {"units": {"USD": [{"end": "2026-01-25", "val": 700, "form": "10-K"}]}},
+            "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
+                {"end": "2026-01-25", "val": 102718, "form": "10-K"}]}},
+            # Stale: this filer stopped tagging PP&E-payments after FY2011.
+            "PaymentsToAcquirePropertyPlantAndEquipment": {"units": {"USD": [
+                {"end": "2012-01-29", "val": 139, "form": "10-K"}]}},
+            # Fresh: current capex lives under the productive-assets concept.
+            "PaymentsToAcquireProductiveAssets": {"units": {"USD": [
+                {"end": "2026-01-25", "val": 6042, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        f = p.fundamentals("XYZ")
+        assert f["_fcf_annual"] == 102718 - 6042        # NOT 102718 − 139
+
+    def test_prefer_recent_tiebreak_keeps_concept_priority(self, monkeypatch):
+        # Equal end dates → the earlier-priority concept wins (diluted over basic).
+        facts = {"facts": {"us-gaap": {
+            "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
+            "GrossProfit": {"units": {"USD": [{"end": "2024-01-01", "val": 400, "form": "10-K"}]}},
+            "EarningsPerShareDiluted": {"units": {"USD/shares": [
+                {"end": "2024-01-01", "val": 5.00, "form": "10-K"}]}},
+            "EarningsPerShareBasic": {"units": {"USD/shares": [
+                {"end": "2024-01-01", "val": 5.25, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        assert p.fundamentals("XYZ")["_eps_diluted_annual"] == 5.00   # diluted, not basic
+
+    def test_first_match_semantics_unchanged_for_quality(self):
+        # The default (quality) path must still be first-match-wins, not newest-end.
+        from data_providers import SECProvider
+        g = {"A": {"units": {"USD": [{"end": "2020-01-01", "val": 10, "form": "10-K"}]}},
+             "B": {"units": {"USD": [{"end": "2024-01-01", "val": 99, "form": "10-K"}]}}}
+        # First concept A wins by priority even though B is newer (default behavior).
+        assert SECProvider._latest_annual(g, "A", "B")[0] == 10
+        # prefer_recent flips to the newest-end concept B.
+        assert SECProvider._latest_annual(g, "A", "B", prefer_recent=True)[0] == 99
+
+    def test_components_do_not_flip_valuation_available(self, monkeypatch):
+        # Behavior-inertness at the score boundary: a fundamentals dict carrying ONLY
+        # the underscore components (no pe/fcf/ev) leaves valuation_available False.
+        from quant_engine import compute_valuation_score
+        p = self._provider(monkeypatch, self.FULL_FACTS)
+        f = p.fundamentals("XYZ")
+        vs = compute_valuation_score(f)
+        assert vs["valuation_available"] is False
+        assert not ({"pe_ratio", "fcf_yield", "ev_ebitda"} & f.keys())
+
+
+class TestSECCrossFieldVintageGuard:
+    """Code-review remediation: `prefer_recent` only protects WITHIN one field's own
+    concept-fallback list. A metric that COMBINES two independently-resolved fields
+    (cfo-capex, op+dna, ltd+std) needs its own check that both fields' fiscal `end`
+    dates agree before combining — otherwise the exact vintage-mismatch bug class the
+    NVDA fix targeted reopens one level up, across fields instead of within one field's
+    fallback list. Found in live verification: JPM's `LongTermDebt` tag is stale from
+    FY2013 (JPM apparently abandoned that concept over a decade ago) while
+    `ShortTermBorrowings` is current — the unguarded sum would silently blend a 12-year-
+    stale figure with this year's short-term borrowings into a fabricated total."""
+
+    def _provider(self, monkeypatch, facts):
+        from data_providers import SECProvider
+        import requests, types
+        p = SECProvider(timeout=5)
+        def fake_get(url, **kwargs):
+            resp = types.SimpleNamespace(raise_for_status=lambda: None)
+            resp.json = (lambda: {"0": {"cik_str": 1, "ticker": "XYZ", "title": "X"}}) \
+                if "company_tickers" in url else (lambda: facts)
+            return resp
+        monkeypatch.setattr(requests, "get", fake_get)
+        return p
+
+    def test_total_debt_mismatched_vintage_falls_back_to_ltd_alone(self, monkeypatch):
+        # The exact JPM shape: LongTermDebt frozen at FY2013, ShortTermBorrowings fresh
+        # at FY2025. Must NOT sum them (a 12-year-old + current-year blend) — falls
+        # back to ltd alone rather than fabricating a mismatched total.
+        facts = {"facts": {"us-gaap": {
+            "LongTermDebt": {"units": {"USD": [
+                {"end": "2013-12-31", "val": 267889000000, "form": "10-K"}]}},
+            "ShortTermBorrowings": {"units": {"USD": [
+                {"end": "2025-12-31", "val": 64776000000, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        f = p.fundamentals("XYZ")
+        assert f["_total_debt"] == 267889000000          # ltd alone, NOT ltd+std
+
+    def test_total_debt_matched_vintage_sums(self, monkeypatch):
+        # Sanity: when ltd and std genuinely share the same fiscal period, sum them.
+        facts = {"facts": {"us-gaap": {
+            "LongTermDebt": {"units": {"USD": [
+                {"end": "2024-12-31", "val": 700, "form": "10-K"}]}},
+            "ShortTermBorrowings": {"units": {"USD": [
+                {"end": "2024-12-31", "val": 100, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        assert p.fundamentals("XYZ")["_total_debt"] == 800
+
+    def test_total_debt_std_alone_when_no_ltd(self, monkeypatch):
+        # Code-review fix: a filer with only short-term debt (no LongTermDebt/
+        # LongTermDebtNoncurrent tag at all) must still get _total_debt from std alone,
+        # not have it dropped entirely (the pre-fix asymmetric-None-guard bug).
+        facts = {"facts": {"us-gaap": {
+            "ShortTermBorrowings": {"units": {"USD": [
+                {"end": "2024-12-31", "val": 500, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        assert p.fundamentals("XYZ")["_total_debt"] == 500
+
+    def test_fcf_omitted_on_cfo_capex_vintage_mismatch(self, monkeypatch):
+        # cfo fresh at FY2026, capex (across both fallback concepts) stuck at FY2020 —
+        # no sensible "FCF" exists blending two different years; must omit, not fabricate.
+        # Cash is included only so `out` stays non-empty (fundamentals() returns a dict,
+        # not None) — the assertion is about _fcf_annual specifically.
+        facts = {"facts": {"us-gaap": {
+            "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
+                {"end": "2026-01-25", "val": 100000, "form": "10-K"}]}},
+            "PaymentsToAcquirePropertyPlantAndEquipment": {"units": {"USD": [
+                {"end": "2020-01-25", "val": 5000, "form": "10-K"}]}},
+            "CashAndCashEquivalentsAtCarryingValue": {"units": {"USD": [
+                {"end": "2026-01-25", "val": 999, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        f = p.fundamentals("XYZ")
+        assert f is not None and "_fcf_annual" not in f
+
+    def test_ebitda_omitted_on_op_dna_vintage_mismatch(self, monkeypatch):
+        # OperatingIncomeLoss fresh, D&A stuck at an older year — omit rather than blend.
+        facts = {"facts": {"us-gaap": {
+            "OperatingIncomeLoss": {"units": {"USD": [
+                {"end": "2026-01-25", "val": 200, "form": "10-K"}]}},
+            "DepreciationDepletionAndAmortization": {"units": {"USD": [
+                {"end": "2020-01-25", "val": 30, "form": "10-K"}]}},
+            "CashAndCashEquivalentsAtCarryingValue": {"units": {"USD": [
+                {"end": "2026-01-25", "val": 999, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        f = p.fundamentals("XYZ")
+        assert f is not None and "_ebitda_annual" not in f
+
+    def test_dna_composite_omitted_on_dep_amort_vintage_mismatch(self, monkeypatch):
+        # Depreciation and AmortizationOfIntangibleAssets resolve to different years —
+        # the composite D&A must be omitted (never a fabricated cross-period sum),
+        # which in turn omits EBITDA (op present but dna is None).
+        facts = {"facts": {"us-gaap": {
+            "OperatingIncomeLoss": {"units": {"USD": [
+                {"end": "2024-01-01", "val": 200, "form": "10-K"}]}},
+            "Depreciation": {"units": {"USD": [
+                {"end": "2024-01-01", "val": 30, "form": "10-K"}]}},
+            "AmortizationOfIntangibleAssets": {"units": {"USD": [
+                {"end": "2019-01-01", "val": 12, "form": "10-K"}]}},
+            "CashAndCashEquivalentsAtCarryingValue": {"units": {"USD": [
+                {"end": "2024-01-01", "val": 999, "form": "10-K"}]}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        f = p.fundamentals("XYZ")
+        assert f is not None and "_ebitda_annual" not in f
+
+
 class TestUniverse:
     """Phase 2: gated universe expansion + resumable fetch cursor."""
 

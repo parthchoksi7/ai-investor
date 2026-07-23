@@ -234,31 +234,80 @@ class SECProvider:
             return {}
 
     @staticmethod
-    def _latest_annual(us_gaap: dict, *concepts: str) -> tuple[float | None, str | None]:
-        """(value, filed_date) for the most-recent 10-K USD value of the first matching
+    def _latest_annual_ex(us_gaap: dict, *concepts: str, unit: str = "USD",
+                          prefer_recent: bool = False
+                          ) -> tuple[float | None, str | None, str | None]:
+        """(value, filed_date, end_date) for the most-recent 10-K value of a matching
         XBRL concept. `filed_date` is the SEC ``filed`` field (YYYY-MM-DD) of the chosen
         entry — when the figure became PUBLIC, i.e. the no-look-ahead availability date
-        (a 2025 fiscal year's 10-K filed 2026-02 is unusable before 2026-02). Returns
-        (None, None) if no matching annual entry is found."""
-        for concept in concepts:
-            entries = us_gaap.get(concept, {}).get("units", {}).get("USD", [])
+        (a 2025 fiscal year's 10-K filed 2026-02 is unusable before 2026-02). `end_date`
+        is the fiscal-period ``end`` — callers that combine TWO fields into one derived
+        metric (e.g. cfo − capex) use it to verify both landed on the same fiscal period
+        before combining (see the vintage-consistency guards in `fundamentals()`).
+        Returns (None, None, None) if no matching annual entry is found.
+
+        `unit` selects the XBRL unit bucket: ``"USD"`` (dollar figures — the default,
+        every existing caller), ``"shares"`` (diluted/outstanding share counts), or
+        ``"USD/shares"`` (per-share figures like diluted EPS). Company-facts stores each
+        concept's values under exactly one of these buckets, so the caller must name it.
+
+        `prefer_recent` chooses BETWEEN the fallback concepts:
+          - False (default, every quality/leverage caller): FIRST concept that has any
+            10-K annual entry wins — preserves the existing concept-priority behavior.
+          - True (the valuation components): the concept whose latest entry has the
+            newest ``end`` wins, concept order breaking ties. This avoids a vintage
+            mismatch when an earlier-priority concept's latest tag is far STALER than a
+            later one's — e.g. NVDA tags capex under `PaymentsToAcquirePropertyPlant…`
+            only through FY2011 but `PaymentsToAcquireProductiveAssets` through FY2026;
+            first-match-wins would pair FY2011 capex with FY2026 cash flow. Note this
+            only protects WITHIN one field's own concept list — a caller combining two
+            DIFFERENT fields (e.g. cfo and capex) must additionally compare the two
+            `end_date`s itself before combining them."""
+        best = None   # (sort_key, value, filed, end) for the freshest concept seen so far
+        for i, concept in enumerate(concepts):
+            entries = us_gaap.get(concept, {}).get("units", {}).get(unit, [])
             annual = [
                 e for e in entries
                 if e.get("form") in ("10-K", "10-K/A") and isinstance(e.get("val"), (int, float))
             ]
-            if annual:
-                chosen = max(annual, key=lambda x: x.get("end", ""))
-                filed = chosen.get("filed")
-                return float(chosen["val"]), (filed if isinstance(filed, str) else None)
-        return None, None
+            if not annual:
+                continue
+            chosen = max(annual, key=lambda x: x.get("end", ""))
+            filed = chosen.get("filed")
+            end = chosen.get("end")
+            result = (float(chosen["val"]), filed if isinstance(filed, str) else None,
+                     end if isinstance(end, str) else None)
+            if not prefer_recent:
+                return result
+            # Newest end wins; earlier concept (smaller i → larger -i) breaks ties.
+            key = (chosen.get("end", ""), -i)
+            if best is None or key > best[0]:
+                best = (key, *result)
+        if best is not None:
+            return best[1], best[2], best[3]
+        return None, None, None
+
+    @classmethod
+    def _latest_annual(cls, us_gaap: dict, *concepts: str, unit: str = "USD",
+                       prefer_recent: bool = False) -> tuple[float | None, str | None]:
+        """(value, filed_date) — thin wrapper over `_latest_annual_ex` for the
+        (majority of) callers that don't need the fiscal-period `end` date."""
+        value, filed, _end = cls._latest_annual_ex(
+            us_gaap, *concepts, unit=unit, prefer_recent=prefer_recent)
+        return value, filed
 
     def fundamentals(self, ticker: str) -> dict | None:
         """Return gross_margin, operating_margin, debt_to_equity from the latest 10-K,
         plus `_as_of_filing` (the latest SEC filing date among the inputs used — the
         no-look-ahead availability date the dossier reads to compute fundamentals age /
         drop future-dated filings). Returns None if the ticker is not found in EDGAR or
-        has no annual filing. P/E, FCF yield, EV/EBITDA require price data and are
-        omitted (use FMPProvider for those)."""
+        has no annual filing.
+
+        Also emits price-INDEPENDENT valuation components as underscore intermediates
+        (`_eps_diluted_annual`, `_shares_diluted`, `_fcf_annual`, `_total_debt`, `_cash`,
+        `_ebitda_annual`) — the raw inputs Phase 2's market_data.derive_valuation_ratios
+        turns into P/E, FCF yield, EV/EBITDA once the snapshot price is in scope. The
+        finished ratios still require price and are NOT emitted here."""
         g = self._get_us_gaap(ticker)
         if not g:
             return None
@@ -269,12 +318,12 @@ class SECProvider:
             "SalesRevenueGoodsNet",
         )
         gp,  gp_f  = self._latest_annual(g, "GrossProfit")
-        op,  op_f  = self._latest_annual(g, "OperatingIncomeLoss")
+        op,  op_f, op_end = self._latest_annual_ex(g, "OperatingIncomeLoss")
         eq,  eq_f  = self._latest_annual(
             g, "StockholdersEquity",
             "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
         )
-        ltd, ltd_f = self._latest_annual(g, "LongTermDebt", "LongTermDebtNoncurrent")
+        ltd, ltd_f, ltd_end = self._latest_annual_ex(g, "LongTermDebt", "LongTermDebtNoncurrent")
 
         out: dict[str, float] = {}
         filed_dates: list[str] = []
@@ -285,6 +334,84 @@ class SECProvider:
                 out["operating_margin"] = round(op / rev, 4); filed_dates += [rev_f, op_f]
         if eq and eq > 0 and ltd is not None:
             out["debt_to_equity"] = round(ltd / eq, 4); filed_dates += [eq_f, ltd_f]
+
+        # ── Phase 1 (PLAN_SEC_VALUATION §4.1/§5): price-INDEPENDENT valuation
+        # components. Extracted from the SAME latest 10-K as the margins above, cached
+        # (provider_cache.json) and carried in the snapshot as underscore intermediates,
+        # but NOT consumed by any score. Phase 2's market_data.derive_valuation_ratios
+        # combines them with the snapshot's close price → pe_ratio / fcf_yield /
+        # ev_ebitda. Emitting them is behavior-inert: compute_valuation_score reads only
+        # pe_ratio/fcf_yield/ev_ebitda, which stay absent until Phase 2 wires the derive
+        # step. They deliberately do NOT feed `_as_of_filing` — §7 stamps the vintage
+        # over the USED inputs, and these are unused (in any emitted ratio) until Phase 2.
+        # prefer_recent=True on every fallback list: pick the concept whose latest 10-K
+        # entry is NEWEST, so a stale earlier-priority tag never pairs with fresh data.
+        # NOTE: prefer_recent only protects WITHIN one field's own concept list. Every
+        # metric below that COMBINES two independently-resolved fields (cfo−capex,
+        # op+dna, ltd+std) additionally checks their `end` dates agree before combining
+        # — found via live NVDA verification that the within-field fix alone still
+        # leaves a cross-field version of the same vintage-mismatch bug reachable.
+        eps,   _, _ = self._latest_annual_ex(g, "EarningsPerShareDiluted",
+                                             "EarningsPerShareBasic",
+                                             unit="USD/shares", prefer_recent=True)
+        shares, _, _ = self._latest_annual_ex(
+            g, "WeightedAverageNumberOfDilutedSharesOutstanding",
+            "WeightedAverageNumberOfSharesOutstandingBasic",
+            "CommonStockSharesOutstanding", unit="shares", prefer_recent=True)
+        cfo,   _, cfo_end   = self._latest_annual_ex(
+            g, "NetCashProvidedByUsedInOperatingActivities",
+            "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations",
+            prefer_recent=True)
+        capex, _, capex_end = self._latest_annual_ex(
+            g, "PaymentsToAcquirePropertyPlantAndEquipment",
+            "PaymentsToAcquireProductiveAssets", prefer_recent=True)
+        cash,  _, _ = self._latest_annual_ex(
+            g, "CashAndCashEquivalentsAtCarryingValue",
+            "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+            prefer_recent=True)
+        std,   _, std_end   = self._latest_annual_ex(
+            g, "LongTermDebtCurrent", "DebtCurrent", "ShortTermBorrowings",
+            prefer_recent=True)
+        dna,   _, dna_end   = self._latest_annual_ex(
+            g, "DepreciationDepletionAndAmortization",
+            "DepreciationAmortizationAndAccretionNet", prefer_recent=True)
+        if dna is None:
+            # Composite fallback: some filers tag depreciation and intangible
+            # amortization separately rather than a single combined D&A concept.
+            dep,   _, dep_end   = self._latest_annual_ex(g, "Depreciation")
+            amort, _, amort_end = self._latest_annual_ex(g, "AmortizationOfIntangibleAssets")
+            if dep is not None and amort is not None:
+                if dep_end and dep_end == amort_end:
+                    dna, dna_end = dep + amort, dep_end
+                # else: the two halves are from different fiscal periods — omit rather
+                # than silently blend (honest N/A over a fabricated composite).
+            elif dep is not None:
+                dna, dna_end = dep, dep_end
+            elif amort is not None:
+                dna, dna_end = amort, amort_end
+
+        if eps is not None:
+            out["_eps_diluted_annual"] = round(eps, 4)
+        if shares is not None and shares > 0:
+            out["_shares_diluted"] = shares
+        if cfo is not None and capex is not None and cfo_end and cfo_end == capex_end:
+            # capex (PaymentsTo…) is reported as a positive outflow → subtract. Requires
+            # matching fiscal periods — see the vintage-mismatch note above.
+            out["_fcf_annual"] = round(cfo - capex, 2)
+        if ltd is not None or std is not None:
+            if ltd is not None and std is not None:
+                # Same fiscal period → sum; mismatched → the long-term figure alone is
+                # still valid data (it's the same value the debt_to_equity calc above
+                # uses), just without a possibly-stale short-term add-on.
+                out["_total_debt"] = round(ltd + std, 2) if ltd_end and ltd_end == std_end \
+                    else round(ltd, 2)
+            else:
+                out["_total_debt"] = round(ltd if ltd is not None else std, 2)
+        if cash is not None:
+            out["_cash"] = round(cash, 2)
+        if op is not None and dna is not None and op_end and op_end == dna_end:
+            out["_ebitda_annual"] = round(op + dna, 2)
+
         if not out:
             return None
         # No-look-ahead vintage: the bundle isn't fully available until the LATEST of
