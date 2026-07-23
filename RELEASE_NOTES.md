@@ -36,20 +36,30 @@ Follow-on to the candidate-scope fix below, from the same run's post-mortem.
   reports the breakdown (`2/20 … (api_error=2)`) with per-ticker detail, instead
   of a generic "had empty thesis" that discarded the cause inside `_safe_call`.
 - **`docs+fix(quant)` valuation-factor honesty (P1).** Expert decision: the
-  `2.0-quality-tilt` composite math and `FORMULA_VERSION` are LEFT UNCHANGED —
-  the honest-composite renormalization already drops the (permanently
-  FMP-gated, hence unavailable) valuation factor rather than blending a fake 50,
-  and re-weighting would silently change the live candidate-selection signal AND
-  reset the factor-IC evidence clock (P0-2) mid-accumulation for zero benefit.
-  Activating the 4th factor is a config decision (provision `FMP_API_KEY`), not a
-  code change. What DID change: `FACTOR_WEIGHTS` now documents that valuation is
-  inactive in production (operative live formula ≈ momentum 0.20 / quality 0.467 /
-  volatility 0.333), and the PM quant menu renders `val=N/A` (was `val=50`) so no
-  agent misreads the gap as a real neutral valuation call — matching `_fmt_scores`.
+  `2.0-quality-tilt` composite math and `FORMULA_VERSION` are LEFT UNCHANGED — the
+  honest-composite renormalization already drops the valuation factor *per-ticker*
+  when it's absent rather than blending a fake 50, and re-weighting would silently
+  change the live candidate-selection signal AND reset the factor-IC evidence clock
+  (P0-2) mid-accumulation for zero benefit. What DID change: the PM quant menu
+  renders `val=N/A` (was `val=50`) when valuation is unavailable, so no agent
+  misreads the gap as a real neutral valuation call — matching `_fmt_scores`.
+- **`docs(quant)` valuation-coverage correction (Jul 23 2026).** An interim note
+  in this entry claimed valuation was "inactive in production / FMP not set." That
+  was WRONG and is corrected in `FACTOR_WEIGHTS`: `FMP_API_KEY` **is** provisioned
+  (GitHub Actions secret, passed by `market_data.yml`), the FMP→SEC cascade runs,
+  and PE/FCF/EV-EBITDA **are** fetched — but FMP's FREE tier only returns them for
+  ~mega-caps (**32 of 177 names, ~18%** on the Jul 23 snapshot); the rest get
+  SEC-only fundamentals. So `valuation_available` is genuinely **per-ticker** (real
+  4-factor for FMP-covered names with a fresh 50/50-cache entry, 3-factor
+  elsewhere), NOT a flat 3-factor universe. Practical caveat: momentum/quality
+  candidate selection rarely surfaces the covered mega-caps, so valuation seldom
+  moves a weekly rebalance today — a free-tier COVERAGE limit, not a wiring gap
+  (full coverage needs a paid FMP tier + a re-backtest under a new `FORMULA_VERSION`).
 
 QA: full `pytest` green (**785**, +13: `TestResearchBackedBuyGuard`,
 `TestResearchEmptyReasonStamping`, `TestPMValuationDisplay`); ruff F-gate clean.
-Validation-path only — no order-placement/idempotency code touched.
+Validation-path only — no order-placement/idempotency code touched. The Jul 23
+valuation-coverage correction is docs-only (no logic change).
 
 ### Fixed — candidate-scope discipline (Jul 22 2026 rebalance post-mortem, run `20260722-134836`)
 

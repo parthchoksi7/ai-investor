@@ -25,25 +25,32 @@ import math
 # faith. The change is gated on the §8 fundamental-coverage fix: quality/valuation
 # are only real once SEC EDGAR coverage clears the 80% floor.
 #
-# ⚠ VALUATION IS INACTIVE IN PRODUCTION (as of Jul 22 2026). PE / FCF-yield /
-# EV-EBITDA require FMP_API_KEY, which is not set, so `valuation_available` is
-# False for the ENTIRE universe → the 0.25 valuation weight is renormalized out
-# on every name. The OPERATIVE live formula is therefore 3-factor — momentum /
-# quality / volatility, renormalized to effective ~0.20 / 0.467 / 0.333. The
-# weights below are deliberately LEFT UNCHANGED (not collapsed to a 3-factor
-# table): (1) the renormalization already makes the composite honest — valuation
-# is dropped, never blended as a fake 50; (2) editing the weights would silently
-# change the live composite that selects candidates AND would force a
-# FORMULA_VERSION bump, resetting the factor-persistence / IC evidence clock
-# (P0-2) mid-accumulation for zero signal benefit. Activating the 4th factor is a
-# CONFIG decision (provision FMP_API_KEY), not a code change — and would then need
-# its own version bump + fresh backtest. Until then, read this table as "quality-
-# tilted 3-factor, valuation reserved." See _fmt_scores / the PM quant menu, which
-# now render valuation as N/A (not 50) so no agent misreads the gap as a real call.
+# VALUATION COVERAGE (verified Jul 23 2026 — corrects an earlier note that wrongly
+# called valuation universally inactive). FMP_API_KEY *is* provisioned (GitHub
+# Actions secret, passed by market_data.yml), so get_provider() runs the FMP→SEC
+# cascade and PE / FCF-yield / EV-EBITDA ARE fetched. But FMP's FREE tier only
+# returns them for ~mega-caps: on the Jul 23 snapshot, 32 of 177 names (~18%) carry
+# valuation (AAPL, MSFT, NVDA, JPM, V, META, GOOGL, …); the other ~82% get SEC-only
+# fundamentals (margins + leverage) and no valuation. On top of that, the
+# alternate-day 50/50 provider cache (_provider_group, ~2-day refresh) means a
+# covered name's valuation is present only on days its group was last enriched.
+# NET: `valuation_available` is genuinely PER-TICKER — True (4-factor) for an
+# FMP-covered name with a fresh cache entry, False (3-factor) otherwise. The honest
+# composite renormalizes valuation out ONLY for names that lack it and blends the
+# 0.25 weight for names that have it — so the weights below are correct AS-IS and
+# are deliberately LEFT UNCHANGED: editing them would change the live
+# candidate-selection composite AND force a FORMULA_VERSION bump that resets the
+# factor-IC evidence clock (P0-2) for no benefit. _fmt_scores / the PM quant menu
+# render valuation as N/A (not a fake 50) when it is absent, so no agent misreads
+# the gap. Practical caveat: momentum/quality candidate selection rarely surfaces
+# the covered mega-caps (Jul 8 & Jul 22 rebalances had ~0 FMP-covered candidates),
+# so valuation seldom actually moves a weekly decision today — a free-tier COVERAGE
+# limit, not a wiring gap. Full coverage would need a paid FMP tier (then blend it
+# broadly and re-backtest under a new FORMULA_VERSION).
 FACTOR_WEIGHTS = {
     "momentum":   0.15,
     "quality":    0.35,
-    "valuation":  0.25,   # INACTIVE without FMP_API_KEY — renormalized out (see above)
+    "valuation":  0.25,   # FMP: real for ~mega-caps, renormalized out per-ticker elsewhere (see above)
     "volatility": 0.25,
 }
 
