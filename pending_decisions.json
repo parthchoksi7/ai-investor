@@ -1,49 +1,11 @@
 {
-  "run_id": "20260722-134836",
-  "date": "2026-07-22",
-  "mode": "rebalance",
-  "generated_at": "2026-07-22T13:48:36.993538+00:00",
+  "run_id": "20260723-134830",
+  "date": "2026-07-23",
+  "mode": "risk_watch",
+  "generated_at": "2026-07-23T13:48:30.890197+00:00",
   "policy_version": "2.0-phase5-weekly",
-  "data_quality": {
-    "data_quality_score": 100,
-    "data_quality_status": "OK",
-    "data_quality_hash": "a3572310c02c9df0"
-  },
-  "execution_started_at": "2026-07-22T13:53:47.844300+00:00",
-  "executed_at": "2026-07-22T13:54:54.049295+00:00",
-  "decisions": [
-    {
-      "ticker": "MS",
-      "action": "SELL",
-      "target_weight": 0.0,
-      "source_of_capital": "cash",
-      "expected_return": 0.0,
-      "rationale": "hold=4, alpha=LOW, persist=55, weakest financial holding",
-      "qty": 0.215357,
-      "price_as_of": "2026-07-22",
-      "sizing_price": 216.39999389648438
-    },
-    {
-      "ticker": "EOG",
-      "action": "BUY",
-      "target_weight": 0.09,
-      "source_of_capital": "cash",
-      "expected_return": 0.09,
-      "rationale": "mom=97.5, persist=84, rank+46, top quant composite",
-      "qty": 0.31977,
-      "price_as_of": "2026-07-22",
-      "sizing_price": 143.44000244140625
-    },
-    {
-      "ticker": "PLD",
-      "action": "BUY",
-      "target_weight": 0.09,
-      "source_of_capital": "cash",
-      "expected_return": 0.07,
-      "rationale": "logistics REIT, persist=80, diversifies away from Financials",
-      "qty": 0.305908,
-      "price_as_of": "2026-07-22",
-      "sizing_price": 149.94
-    }
-  ]
+  "data_quality": null,
+  "execution_started_at": null,
+  "executed_at": "2026-07-23T13:49:10.354657+00:00",
+  "decisions": []
 }
