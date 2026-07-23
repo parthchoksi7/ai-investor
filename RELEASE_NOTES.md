@@ -13,6 +13,38 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — candidate-scope discipline (Jul 22 2026 rebalance post-mortem, run `20260722-134836`)
+
+The Wednesday rebalance executed cleanly (SELL MS, BUY EOG/PLD) but a post-mortem
+found the PM had **also proposed NSC (Norfolk Southern), a name that was never in the
+20-ticker candidate shortlist** — it skipped the entire Research / Earnings / Devil's
+Advocate debate. The scope-blind CRO approved it as legitimate ("EOG, PLD, NSC — are
+approved"); only the deterministic `validate_decisions` guard rejected it. First
+occurrence in the run history — zero live impact (no bad trade reached the broker), but
+scope discipline was resting on a single hard-coded rule while the two LLM judgment
+layers that should own it were structurally incapable of it. Two fixes (both
+validation-path — no order-placement / idempotency code touched):
+
+- **`fix(analysis)` the PM's quant menu is restricted to the vetted set** — the BUY menu
+  the Portfolio Manager sees is now built from `research_map` keys (the names that
+  actually went through the per-ticker agents) ∪ current holdings, not the full-universe
+  top-25 by composite. An un-researched name (NSC, full-universe composite 83, never a
+  candidate) can no longer appear in the menu at all — the leak is closed at the source.
+  This set matches the `candidates ∪ holdings` universe `validate_decisions` enforces.
+- **`fix(analysis)` the CRO is given the vetted scope** — `run_chief_risk_officer` now
+  receives the candidate list, renders a `VETTED CANDIDATES` block in its prompt, and
+  **force-rejects any out-of-scope proposed ticker** into `rejected_tickers` (belt-and-
+  suspenders around the LLM instruction) with the reason recorded in the CRO output — so
+  the veto is visible in `agent_log` / the `agent_7` health check, one layer earlier than
+  the deterministic backstop. `candidates=None` preserves the old permissive behavior for
+  legacy callers.
+
+QA: full `pytest` green (**771**, +6: `TestCandidateScopeEnforcement` — PM-menu leak
+closed, holdings always shown, CRO force-reject, in-scope kept, model correlation-veto
+preserved, legacy `candidates=None` no-op); ruff F-gate clean. Deploy-safe on a
+trading day: the pipeline (PM/CRO) only runs on the Wednesday rebalance, and this ISO
+week (2026-W30) already rebalanced, so no run touches this code until 2026-W31.
+
 ## [2026-07-16] — cash-stall fix: BUY-eligibility tags · deploy-or-justify mandate · DA valuation-fabrication guard · cash-drag metric  ·  ~00:15 PT  ·  main
 
 ### Fixed — the PM's persistent 46% idle cash (29 consecutive over-band runs)

@@ -7999,7 +7999,10 @@ class TestPMBuyEligibilityInjection:
         analysis, captured = self._capture(monkeypatch, tmp_path, [
             {"ticker": "JNJ", "action": "SELL", "date": "2026-07-05", "dry_run": False}])
         portfolio = {"total_value": 500.0, "cash": 230.0, "positions": []}
-        analysis.run_portfolio_manager({}, {}, {}, {}, {}, self._quant("JNJ"),
+        # research_map must contain the candidate — the PM's quant table is
+        # restricted to the vetted set (Jul 22 2026), so an un-researched name
+        # never appears in the BUY menu at all.
+        analysis.run_portfolio_manager({}, {"JNJ": {}}, {}, {}, {}, self._quant("JNJ"),
                                        portfolio, [], date="2026-07-15")
         assert "wash-sale re-entry block" in captured["user_msg"]
         assert "⛔ NOT buyable" in captured["user_msg"]
@@ -8017,7 +8020,7 @@ class TestPMBuyEligibilityInjection:
     def test_clean_candidate_tagged_eligible_with_headroom(self, monkeypatch, tmp_path):
         analysis, captured = self._capture(monkeypatch, tmp_path, [])
         portfolio = {"total_value": 500.0, "cash": 230.0, "positions": []}
-        analysis.run_portfolio_manager({}, {}, {}, {}, {}, self._quant("JNJ"),
+        analysis.run_portfolio_manager({}, {"JNJ": {}}, {}, {}, {}, self._quant("JNJ"),
                                        portfolio, [], date="2026-07-15")
         assert "✓ BUY-eligible" in captured["user_msg"]
         assert "sector headroom" in captured["user_msg"]
@@ -8042,6 +8045,138 @@ class TestPMBuyEligibilityInjection:
         assert "Cash is a position" in _PM_SYSTEM
         assert "BUY-eligible" in _PM_SYSTEM
         assert "NOT buyable" in _PM_SYSTEM
+
+
+class TestCandidateScopeEnforcement:
+    """Jul 22 2026 (run 20260722-134836): the PM proposed NSC — a name NOT in
+    the 20-ticker candidate shortlist (never through Research/Earnings/Devil's
+    Advocate) — and the scope-blind CRO approved it; only validate_decisions
+    caught it. Two fixes, both tested here:
+      P0-1: the PM's quant menu is restricted to the vetted set (research_map
+            keys ∪ holdings), so an un-researched name never appears to buy.
+      P0-2: the CRO is given the vetted scope and force-rejects any out-of-scope
+            proposed ticker (belt-and-suspenders around the LLM instruction)."""
+
+    def _capture_pm(self, monkeypatch, tmp_path):
+        import json as _j
+        import analysis, journal
+        (tmp_path / "transactions.json").write_text("[]")
+        monkeypatch.setattr(journal, "TRANSACTIONS_FILE",
+                            str(tmp_path / "transactions.json"))
+        captured = {}
+        def fake_call(model, system, user_msg, **kw):
+            captured["user_msg"] = user_msg
+            return ([], {"parsed_ok": True}) if kw.get("return_meta") else kw.get("default")
+        monkeypatch.setattr(analysis, "_safe_call", fake_call)
+        return analysis, captured
+
+    def _q(self, **names):
+        # names: ticker -> composite score
+        return {t: {"composite_score": c, "momentum_score": 70.0,
+                    "quality_score": 80.0, "valuation_score": 50,
+                    "volatility": 25.0, "beta": 1.0} for t, c in names.items()}
+
+    # ── P0-1: PM menu = vetted set ───────────────────────────────────────────
+    def test_unvetted_high_score_name_absent_from_pm_menu(self, monkeypatch, tmp_path):
+        analysis, captured = self._capture_pm(monkeypatch, tmp_path)
+        # EOG is vetted (in research_map); NSC scores HIGHER but was never
+        # researched → it must not appear in the PM's quant table.
+        research_map = {"EOG": {"thesis": "vetted", "confidence": 6}}
+        quant = self._q(NSC=90.0, EOG=85.0)
+        portfolio = {"total_value": 500.0, "cash": 230.0, "positions": []}
+        analysis.run_portfolio_manager({}, research_map, {}, {}, {}, quant,
+                                       portfolio, [], date="2026-07-22")
+        assert "EOG:" in captured["user_msg"]
+        assert "NSC:" not in captured["user_msg"]   # the leak is closed
+
+    def test_holdings_always_in_pm_menu_even_if_unresearched(self, monkeypatch, tmp_path):
+        analysis, captured = self._capture_pm(monkeypatch, tmp_path)
+        # A holding with no research_map entry must still show (for SELL/trim).
+        quant = self._q(CB=88.0)
+        portfolio = {"total_value": 500.0, "cash": 100.0, "positions": [
+            {"symbol": "CB", "qty": 0.1, "avg_price": 350.0, "market_value": 45.0}]}
+        analysis.run_portfolio_manager({}, {}, {}, {}, {}, quant,
+                                       portfolio, [], date="2026-07-22")
+        assert "CB:" in captured["user_msg"]
+
+    # ── P0-2: CRO scope awareness ────────────────────────────────────────────
+    def _capture_cro(self, monkeypatch, llm_result):
+        import analysis
+        captured = {}
+        def fake_call(model, system, user_msg, **kw):
+            captured["user_msg"] = user_msg
+            return dict(llm_result)
+        monkeypatch.setattr(analysis, "_safe_call", fake_call)
+        return analysis, captured
+
+    def _portfolio(self):
+        return {"total_value": 500.0, "cash": 100.0, "positions": [
+            {"symbol": "AXP", "qty": 0.1, "avg_price": 300.0, "market_value": 40.0}]}
+
+    def test_cro_force_rejects_out_of_scope_ticker(self, monkeypatch):
+        analysis, captured = self._capture_cro(
+            monkeypatch, {"approved": True, "rejected_tickers": [], "reasoning": "ok"})
+        decisions = [{"ticker": "NSC", "action": "BUY", "target_weight": 0.09}]
+        risk = analysis.run_chief_risk_officer(
+            decisions, self._portfolio(), {}, candidates=["EOG", "PLD"])
+        assert "NSC" in risk["rejected_tickers"]            # forced in
+        assert "scope" in risk["reasoning"].lower()          # and explained
+        assert "VETTED CANDIDATES" in captured["user_msg"]   # told the model too
+
+    def test_cro_keeps_in_scope_candidate_and_holding(self, monkeypatch):
+        analysis, _ = self._capture_cro(
+            monkeypatch, {"approved": True, "rejected_tickers": [], "reasoning": "ok"})
+        decisions = [
+            {"ticker": "EOG", "action": "BUY", "target_weight": 0.09},   # candidate
+            {"ticker": "AXP", "action": "SELL", "target_weight": 0.0},   # holding
+        ]
+        risk = analysis.run_chief_risk_officer(
+            decisions, self._portfolio(), {}, candidates=["EOG", "PLD"])
+        assert risk["rejected_tickers"] == []
+
+    def test_cro_preserves_model_correlation_veto_and_adds_scope(self, monkeypatch):
+        analysis, _ = self._capture_cro(
+            monkeypatch, {"approved": True, "rejected_tickers": ["XOM"],
+                          "reasoning": "XOM correlated"})
+        decisions = [
+            {"ticker": "EOG", "action": "BUY", "target_weight": 0.09},
+            {"ticker": "XOM", "action": "BUY", "target_weight": 0.09},  # candidate, model-vetoed
+            {"ticker": "NSC", "action": "BUY", "target_weight": 0.09},  # out of scope
+        ]
+        risk = analysis.run_chief_risk_officer(
+            decisions, self._portfolio(), {}, candidates=["EOG", "XOM", "PLD"])
+        assert set(risk["rejected_tickers"]) == {"XOM", "NSC"}  # both survive/added
+        assert "XOM correlated" in risk["reasoning"]            # model veto intact
+
+    def test_cro_no_candidates_disables_scope_check(self, monkeypatch):
+        # Legacy caller (candidates=None) → no scope block, no forced rejects.
+        analysis, captured = self._capture_cro(
+            monkeypatch, {"approved": True, "rejected_tickers": [], "reasoning": "ok"})
+        decisions = [{"ticker": "NSC", "action": "BUY", "target_weight": 0.09}]
+        risk = analysis.run_chief_risk_officer(decisions, self._portfolio(), {})
+        assert risk["rejected_tickers"] == []
+        assert "VETTED CANDIDATES" not in captured["user_msg"]
+
+    def test_cro_api_failure_stays_full_veto_not_partial(self, monkeypatch):
+        """Fail-safe regression: on a CRO API failure the default is
+        approved=False + rejected_tickers=[] → the veto boundary reads that as a
+        FULL veto (block ALL trades). The out-of-scope force-reject must NOT
+        inject a named ticker there — doing so flips it to a PARTIAL veto and
+        lets the OTHER (un-approved) trades execute with no risk sign-off."""
+        import analysis
+        # Simulate _safe_call returning its api-failure default unchanged.
+        def fake_call(model, system, user_msg, **kw):
+            return dict(kw.get("default"))
+        monkeypatch.setattr(analysis, "_safe_call", fake_call)
+        decisions = [
+            {"ticker": "EOG", "action": "BUY", "target_weight": 0.09},  # in scope
+            {"ticker": "NSC", "action": "BUY", "target_weight": 0.09},  # out of scope
+        ]
+        risk = analysis.run_chief_risk_officer(
+            decisions, self._portfolio(), {}, candidates=["EOG", "PLD"])
+        assert risk.get("api_failed") is True
+        assert risk["approved"] is False
+        assert risk["rejected_tickers"] == []   # untouched → full veto stands
 
 
 class TestDAFabricationGuard:

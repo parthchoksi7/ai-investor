@@ -961,17 +961,29 @@ def run_portfolio_manager(
             sector_lines.append(f"  {sec}: {pct:.1f}%")
     sector_block = "\n".join(sector_lines) if sector_lines else "  (no holdings)"
 
-    # Format quant scores table (top 25 by composite, exclude ETFs). Each line
-    # carries the candidate's BUY eligibility — wash-sale re-entry block and
-    # sector-cap headroom — so the PM stops proposing BUYs the guard chain is
-    # guaranteed to reject. (Jun 25–Jul 2 2026: V/JNJ/JPM BUYs proposed run
-    # after run, silently rejected by the sector cap / wash-sale guards, cash
-    # stuck above 46% for 29 runs — the BUY-side twin of the Jul 8 min-hold fix.)
+    # Format quant scores table. RESTRICTED to the vetted set — the names that
+    # actually passed through Research/Earnings/Devil's Advocate (research_map
+    # keys), plus current holdings (always shown so the PM can judge SELL/trim).
+    # The PM's BUY menu must NEVER be wider than what was researched: a broader
+    # menu lets the PM propose an un-vetted name that skipped the whole
+    # per-ticker debate, which the scope-blind CRO then waves through, leaving
+    # only the deterministic validate_decisions backstop to catch it (Jul 22
+    # 2026: NSC — full-universe composite 83, NOT a candidate — was proposed and
+    # CRO-approved; only the guard stopped it). This set matches the
+    # `candidates ∪ holdings` universe validate_decisions enforces, so every
+    # name the PM sees here is one it is actually allowed to trade.
+    # Each line also carries BUY eligibility (wash-sale re-entry block /
+    # sector-cap headroom) so the PM stops proposing BUYs the guard chain would
+    # reject (Jun 25–Jul 2 2026: V/JNJ/JPM proposed run after run, silently
+    # rejected, cash stuck above 46% for 29 runs — the BUY-side twin of the
+    # Jul 8 min-hold SELL fix).
+    _vetted = set(research_map) | {p["symbol"] for p in portfolio["positions"]}
     sorted_q = sorted(
-        [(t, s) for t, s in quant_scores.items() if t not in ("SPY", "QQQ")],
+        [(t, s) for t, s in quant_scores.items()
+         if t not in ("SPY", "QQQ") and t in _vetted],
         key=lambda x: x[1].get("composite_score", 0),
         reverse=True,
-    )[:25]
+    )
     quant_lines = []
     for t, s in sorted_q:
         wash = wash_sale_days_remaining(t, transactions=_txs, today=_as_of)
@@ -1164,12 +1176,40 @@ def run_chief_risk_officer(
     portfolio: dict,
     quant_scores: dict,
     history: dict | None = None,
+    candidates: list[str] | None = None,
 ) -> dict:
     if not decisions:
         return {"approved": True, "risk_budget_used": 0, "largest_risk": "none",
                 "rejected_tickers": [], "reasoning": "No trades to evaluate."}
 
     total = portfolio["total_value"]
+
+    # Vetted scope (Jul 22 2026 — candidate discipline). `candidates` are the
+    # tickers that actually passed through the Research/Earnings/Devil's Advocate
+    # debate; current holdings are always in scope (an exit/trim needs no fresh
+    # research). A proposed ticker OUTSIDE this set was never analyzed, so the
+    # risk layer must reject it on scope grounds. Historically the CRO received
+    # only the decision list and was structurally blind to scope, so it approved
+    # NSC (never a candidate) as legitimate; the deterministic validate_decisions
+    # in main.py was the only thing that caught it. `candidates=None` (legacy
+    # callers / no list supplied) disables the check — same permissive behavior
+    # as before, so nothing regresses when scope is simply unknown.
+    scope = set(candidates or []) | {p.get("symbol") for p in portfolio.get("positions", [])}
+    out_of_scope = sorted({
+        d.get("ticker") for d in decisions
+        if d.get("ticker") and candidates is not None and d.get("ticker") not in scope
+    })
+    scope_block = ""
+    scope_instruction = ""
+    if candidates is not None:
+        scope_block = (
+            "\nVETTED CANDIDATES — only these tickers were researched (Research / "
+            "Earnings / Devil's Advocate). A proposed ticker NOT in this set was "
+            "never analyzed and MUST be rejected on scope grounds:\n  "
+            + ", ".join(sorted(scope))
+        )
+        scope_instruction = ("\nAlso list in rejected_tickers any proposed ticker "
+                             "not in VETTED CANDIDATES (un-researched — reject on scope).")
 
     # Project resulting portfolio after proposed trades
     projected: dict[str, float] = {}
@@ -1197,6 +1237,7 @@ def run_chief_risk_officer(
     user_msg = f"""\
 PROPOSED TRADES:
 {json.dumps(decisions, indent=2)}
+{scope_block}
 
 PROJECTED PORTFOLIO (post-trade weights):
 {chr(10).join(risk_lines)}
@@ -1212,9 +1253,9 @@ Output JSON:
   "rejected_tickers": [],
   "reasoning": "brief explanation"
 }}
-Set approved=false only for severe concentration / correlation risks that could cause catastrophic loss."""
+Set approved=false only for severe concentration / correlation risks that could cause catastrophic loss.{scope_instruction}"""
 
-    return _safe_call(
+    result = _safe_call(
         MODEL_SMART, _CRO_SYSTEM, user_msg,
         default={"approved": False, "risk_budget_used": 0,
                  "largest_risk": "CRO unavailable (API error)",
@@ -1224,6 +1265,35 @@ Set approved=false only for severe concentration / correlation risks that could 
         max_tokens=880,
         retries=2,
     )
+
+    # Belt-and-suspenders: the RISK layer owns scope regardless of whether the
+    # LLM honored the instruction above. Force every out-of-scope (un-vetted)
+    # proposed ticker into rejected_tickers so it is dropped at the veto boundary
+    # in get_trade_decisions — one layer earlier than the deterministic
+    # validate_decisions backstop, and with the veto recorded in the CRO output
+    # (so agent_log/agent_7 health show WHY, not a silent guard drop). The
+    # scope note is appended without weakening any correlation/concentration
+    # veto the model already made.
+    #
+    # CRITICAL: skip this on an API-failure result (`api_failed`). Its default is
+    # approved=False + rejected_tickers=[] → the veto boundary reads that as a
+    # FULL veto (block ALL trades until the CRO can run). Injecting a named
+    # ticker would flip it into a PARTIAL veto, letting the OTHER (reviewed but
+    # un-approved) trades execute with no risk sign-off. On failure the
+    # fail-safe full-veto must stand — the out-of-scope name is blocked with
+    # everything else anyway.
+    if (out_of_scope and isinstance(result, dict)
+            and not result.get("api_failed")):
+        prior_rejects = result.get("rejected_tickers")
+        prior_rejects = prior_rejects if isinstance(prior_rejects, list) else []
+        merged = set(prior_rejects) | set(out_of_scope)
+        result["rejected_tickers"] = sorted(merged)
+        note = ("Out-of-scope (un-vetted) ticker(s) rejected on scope: "
+                + ", ".join(out_of_scope) + ".")
+        prior = str(result.get("reasoning", "")).strip()
+        result["reasoning"] = (prior + " " + note).strip() if prior else note
+
+    return result
 
 
 # ── Main Orchestration ────────────────────────────────────────────────────────
@@ -1346,7 +1416,8 @@ def get_trade_decisions(
     # ── 7. Chief Risk Officer ─────────────────────────────────────────────────
     print("   [7/7] Chief Risk Officer...")
     risk = run_chief_risk_officer(decisions, portfolio, quant_scores,
-                                  history=market_data.get("history"))
+                                  history=market_data.get("history"),
+                                  candidates=candidates)
     print(
         f"         {'✅ APPROVED' if risk.get('approved') else '🚨 REJECTED'} | "
         f"risk_budget={risk.get('risk_budget_used')}% | {risk.get('largest_risk')}"
