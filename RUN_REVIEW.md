@@ -1,17 +1,10 @@
-VERDICT: PROBLEM
+VERDICT: OK
 
-# 🚨 Wiring test — Run-Eval Alert → Resend
+# Run-Eval — notification wiring verified ✅
 
-**This is a one-time MANUAL test of the notification pipeline, not a real run review.**
+The alert pipeline is live and confirmed end to end (Resend accepted a test
+message on 2026-07-23, id a427cb4c). No action needed.
 
-If you received this as an email, the alert path works end to end:
-
-```
-RUN_REVIEW.md push → run-eval-alert.yml (GitHub Action) → Resend API → your inbox
-```
-
-No action needed. The very next commit resets this file to `VERDICT: OK`, and from
-tomorrow the scheduled reviewer overwrites it twice each weekday with the real verdict.
-
-- Triggered: 2026-07-23 (manual wiring verification)
-- Expected real cadence: ~1:30 PM ET (post-morning) and ~4:30 PM ET (post-EOD), weekdays through Aug 5
+From here this file is overwritten by the scheduled **Post-Run Health Review**
+routine — twice each weekday (~1:30 PM ET post-morning, ~4:30 PM ET post-EOD)
+through Aug 5. Only a `VERDICT: PROBLEM` emails the owner; `OK`/`BENIGN` are silent.
