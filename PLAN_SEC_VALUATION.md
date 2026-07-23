@@ -174,9 +174,33 @@ version string.
 
 ## 11. Rollout / phasing (each shippable, reversible)
 
-- **Phase 1 — extraction (zero behavior change):** add the raw components to
-  `SECProvider` (new underscore keys). Cached but unused → composite identical. Ship +
-  verify coverage of the components in the snapshot.
+- **Phase 1 — extraction (zero behavior change): ✅ SHIPPED (2026-07-23, commit
+  `5ac70eb`).** Added the raw components to `SECProvider` (new underscore keys).
+  Cached but unused → composite identical. Verified against live EDGAR (coverage,
+  and the honest-N/A behavior for financials). `/code-review high` pre-commit found 5
+  correctness bugs (a cross-field vintage-mismatch class the within-field
+  `prefer_recent` fix didn't cover — e.g. combining `cfo`/`capex` or `ltd`/`std` from
+  two different fiscal years into one metric; caught live in JPM, whose `LongTermDebt`
+  tag is frozen at FY2013); 4 fixed same-commit (regression tests added), 1 documented
+  as an accepted, near-zero-population edge case. See `RELEASE_NOTES.md`'s Phase-1
+  entry for the full remediation writeup.
+  - **Deferred cleanup (found by the same review pass, not applied — low priority, no
+    correctness impact, revisit in a dedicated cleanup pass rather than blocking
+    Phase 2):**
+    - `data_providers.py:354-397` — the ~9 near-identical
+      `_latest_annual_ex(g, concept-list, unit=..., prefer_recent=True)` calls in
+      `fundamentals()` are written out longhand rather than iterating a small
+      `(name, concepts, unit)` spec table.
+    - `data_providers.py:266-282` (`_latest_annual_ex`'s `prefer_recent` branch) —
+      hand-rolls a running max (`best = None` / `if best is None or key > best[0]`)
+      instead of collecting per-concept candidates and calling
+      `max(candidates, key=..., default=None)`.
+    - `market_data.py:194-195` vs `data_providers.py`'s `_fcf_annual` — the
+      Polygon-path `fcf_margin` (`ocf - abs(capex)`) and the new SEC-path
+      `_fcf_annual` (`cfo - capex`) reimplement the same "operating cash flow minus
+      capex" formula independently, with different capex-sign handling (`abs()` vs.
+      relying on capex already being reported as a positive outflow) — worth a shared
+      helper once Phase 2 makes both paths live simultaneously.
 - **Phase 2 — derive + light up (the behavior change):** add
   `derive_valuation_ratios`, wire into `fetch_snapshot.py`, bump `FORMULA_VERSION`,
   backtest, deploy. Reversible by reverting the derive wiring (components go back to
