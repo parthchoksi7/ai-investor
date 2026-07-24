@@ -13,6 +13,29 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — Supabase `trades` publish failure (Jul 24 2026)
+
+`publish.yml` failed on **every** run since Jul 22 20:07 PT with postgrest
+`invalid input syntax for type integer: "6.5"`. Root cause: the `2026-07-22 PLD BUY`
+transaction carries `research_confidence: 6.5` — the Research Analyst's confidence
+score is documented as a 0-10 scale but nothing constrains it to an integer, and
+Supabase's `trades.research_confidence` column is `integer`. Because `client.table
+("trades").upsert(trade_rows)` sends the whole array in one call, this single bad
+row failed the publish of every trade on every subsequent run (website `trades`
+table stopped updating; `portfolio_snapshots`/`positions` were unaffected since
+they upsert separately, earlier in the function).
+
+- **`fix(publish)`** `research_confidence` is rounded to an int at the publish
+  boundary (`publish.py` trade_rows construction) — `int(x + 0.5)`, not `round()`,
+  since Python's `round()` half-to-evens `6.5` down to `6`, which is not what a
+  human reading a confidence score expects. Defensive: never trust upstream LLM
+  output to match the exact Supabase column type.
+
+QA: full `pytest` green (**823**, +3: `TestPublishTradeConfidenceRounding` — float
+rounds up, int passes through, missing stays `None`); ruff F-gate clean. Publish
+layer only (GitHub Actions `publish.yml`) — no order-placement/idempotency code
+touched.
+
 ### Added — SEC valuation components extraction (PLAN_SEC_VALUATION Phase 1, Jul 23 2026)
 
 First increment of the free full-universe valuation plan. **Zero behavior change** —

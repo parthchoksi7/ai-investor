@@ -5799,6 +5799,117 @@ class TestPublishDryRunGuard:
         assert reached["create_client"] is True
 
 
+class _FakeSupabaseResult:
+    def __init__(self, data=None):
+        self.data = data or []
+
+
+class _FakeSupabaseQuery:
+    """Minimal fluent stand-in for postgrest's query builder: every filter/order
+    method returns self so any chain resolves; upsert() records the payload."""
+
+    def __init__(self, table_name, sink):
+        self.table_name = table_name
+        self.sink = sink
+        self.not_ = self
+
+    def upsert(self, data, on_conflict=None):
+        self.sink.setdefault(self.table_name, []).append(data)
+        return self
+
+    def delete(self):
+        return self
+
+    def select(self, *a, **k):
+        return self
+
+    def eq(self, *a, **k):
+        return self
+
+    def neq(self, *a, **k):
+        return self
+
+    def is_(self, *a, **k):
+        return self
+
+    def in_(self, *a, **k):
+        return self
+
+    def order(self, *a, **k):
+        return self
+
+    def limit(self, *a, **k):
+        return self
+
+    def execute(self):
+        return _FakeSupabaseResult()
+
+
+class _FakeSupabaseClient:
+    def __init__(self):
+        self.sink = {}
+
+    def table(self, name):
+        return _FakeSupabaseQuery(name, self.sink)
+
+
+class TestPublishTradeConfidenceRounding:
+    """Found 2026-07-24: publish.yml failed on every run since Jul 22 with
+    postgrest 'invalid input syntax for type integer: "6.5"' — the Supabase
+    `trades.research_confidence` column is integer, but the research agent
+    occasionally emits a float confidence score (e.g. 6.5) on its 0-10 scale.
+    Because upsert() sends the whole trade_rows array in one call, one bad row
+    failed the publish of EVERY trade, every day, until fixed."""
+
+    def _setup(self, tmp_path, monkeypatch, transactions):
+        import importlib, publish
+        importlib.reload(publish)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
+        monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-key")
+        monkeypatch.delenv("DRY_RUN", raising=False)
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        # A local .env commonly carries a real POLYGON_API_KEY (publish.py calls
+        # load_dotenv() at import time); clear it so the SPY-fallback fetch never
+        # makes a live network call during this test.
+        monkeypatch.delenv("POLYGON_API_KEY", raising=False)
+        (tmp_path / "transactions.json").write_text(json.dumps(transactions))
+        fake_client = _FakeSupabaseClient()
+        import supabase
+        monkeypatch.setattr(supabase, "create_client", lambda *a, **k: fake_client)
+        return publish, fake_client
+
+    def _tx(self, research_confidence):
+        return {
+            "transaction_id": "t1", "date": "2026-07-22", "ticker": "PLD",
+            "action": "BUY", "qty": 0.3, "price": 100.0, "total_value": 30.0,
+            "target_weight": 0.05, "regime": "NEUTRAL", "rationale": "x",
+            "research_confidence": research_confidence, "dry_run": False,
+        }
+
+    def test_float_confidence_rounded_to_int(self, tmp_path, monkeypatch):
+        publish, fake_client = self._setup(tmp_path, monkeypatch, [self._tx(6.5)])
+        publish.publish_to_supabase({"cash": 100, "total_value": 500, "positions": []})
+        trades = fake_client.sink.get("trades", [])
+        assert trades, "trades upsert was never called"
+        row = trades[-1][0]
+        assert row["research_confidence"] == 7
+        assert isinstance(row["research_confidence"], int)
+
+    def test_int_confidence_passes_through(self, tmp_path, monkeypatch):
+        publish, fake_client = self._setup(tmp_path, monkeypatch, [self._tx(6)])
+        publish.publish_to_supabase({"cash": 100, "total_value": 500, "positions": []})
+        row = fake_client.sink["trades"][-1][0]
+        assert row["research_confidence"] == 6
+        assert isinstance(row["research_confidence"], int)
+
+    def test_missing_confidence_stays_none(self, tmp_path, monkeypatch):
+        publish, fake_client = self._setup(tmp_path, monkeypatch, [self._tx(None)])
+        publish.publish_to_supabase({"cash": 100, "total_value": 500, "positions": []})
+        row = fake_client.sink["trades"][-1][0]
+        assert row["research_confidence"] is None
+
+
 # ── CascadeProvider tests ──────────────────────────────────────────────────────
 
 class TestCascadeProvider:

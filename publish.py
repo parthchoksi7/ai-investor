@@ -432,7 +432,16 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
                 "target_weight":       tx.get("target_weight"),
                 "regime":              tx.get("regime"),
                 "rationale":           tx.get("rationale"),
-                "research_confidence": tx.get("research_confidence"),
+                # Supabase `trades.research_confidence` is an integer column; the agent's
+                # 0-10 confidence score is occasionally emitted as a float (e.g. 6.5) —
+                # round at the publish boundary rather than trust upstream LLM output to
+                # match the exact column type. int(x + 0.5), not round(), since the score
+                # is always non-negative and round() half-to-evens 6.5 down to 6.
+                "research_confidence": (
+                    int(tx["research_confidence"] + 0.5)
+                    if isinstance(tx.get("research_confidence"), (int, float))
+                    else None
+                ),
                 **({"broker_order_id": tx["broker_order_id"]} if tx.get("broker_order_id") else {}),
             }
             for tx in transactions
