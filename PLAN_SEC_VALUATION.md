@@ -1,7 +1,8 @@
 # Plan — Free full-universe valuation via SEC EDGAR (retire the FMP free-tier gap)
 
-**Status:** Phases 1–3 SHIPPED (2026-07-23/24, owner decisions per §10). Phase 4
-(TTM basis) remains, per §11.
+**Status:** ALL FOUR PHASES SHIPPED (2026-07-23/24, owner decisions per §10). Plan
+complete — see §11 for the full rollout history and §14 for the follow-on factor
+roadmap (gross profitability, investment factor, Form 4 insider sentiment).
 **Type:** deterministic signal-layer change → touches the live candidate-selection
 composite → **`FORMULA_VERSION` bump + backtest-before-deploy** (evidence-gated).
 
@@ -241,15 +242,60 @@ version string.
   the same single-snapshot-applied-across-history limitation already documented in
   §9.2, not a claimed edge. See `RELEASE_NOTES.md`'s Phase-3 entry for the full
   writeup.
-- **Phase 4 — TTM basis (committed follow-up, per §10.3):** replace annual (10-K) inputs
-  with trailing-twelve-months (sum of the last 4 10-Q `us-gaap` flow figures; balance
-  items stay point-in-time latest). Flow concepts (revenue, net income, CFO, capex, D&A,
-  operating income) become TTM; EPS becomes TTM diluted. Starts as soon as Phases 1–3
-  land (now true — Phases 1–3 are shipped). Same discipline: `FORMULA_VERSION` bump
-  (**`2.3-valuation-ttm`** — renumbered from the plan's original `2.2` sketch now that
-  Phase 3 used `2.2-valuation-sec-only`) + backtest. No-look-ahead unchanged (each
-  quarter carries its own `filed` date; TTM is available only once the 4th quarter is
-  filed).
+- **Phase 4 — TTM basis (committed follow-up, per §10.3): ✅ SHIPPED (2026-07-24).**
+  Flow valuation components (EPS, CFO, capex, D&A, operating income for EBITDA) now
+  sum the 4 most recent CONTIGUOUS fiscal quarters instead of reading the latest
+  10-K; balance components (shares, debt, cash) now take the latest value from
+  ANY form (10-K or 10-Q), not just the latest 10-K. `FORMULA_VERSION` bumped to
+  `2.3-valuation-ttm`.
+  - **The real engineering problem, not anticipated at planning time:** XBRL never
+    discloses a standalone "Q4" duration fact — a fiscal year's 4th quarter is only
+    ever visible folded into the 10-K's full-year figure. `SECProvider` gained a
+    small TTM engine (`_quarterly_series` / `_ytd_derived_quarters` /
+    `_combined_quarterly_series` / `_annual_series` / `_fill_derived_quarters` /
+    `_ttm_ex`) that derives the missing quarter as `annual − known 3 quarters`,
+    refusing (honest N/A) on any ambiguity — overlapping coverage, more than one
+    gap, or a gap that isn't itself quarter-shaped.
+  - **A second real-world wrinkle found live:** cash-flow-statement items (CFO,
+    capex, D&A) are, in practice, very often tagged ONLY as YTD-cumulative
+    ("six/nine months ended"), never as a standalone quarter the way income-
+    statement items (revenue, EPS) usually are — live-verified on AAPL, whose CFO
+    has zero standalone Q2/Q3 entries. A second derivation path
+    (`_ytd_derived_quarters`) differences consecutive YTD figures to recover
+    individual quarters for exactly these concepts.
+  - **Two more bugs found and fixed during live validation** (same self-review
+    discipline as Phase 1's NVDA/JPM findings): (1) `_shares_diluted` could be
+    silently wrong by ~6 orders of magnitude for a filer (live: MCD) that reports
+    `WeightedAverageNumberOfDilutedSharesOutstanding` scaled in millions rather
+    than the raw count — undetectable from SEC's companyfacts API alone (no scale
+    field exposed); fixed with a `_MIN_PLAUSIBLE_SHARES = 1,000,000` floor (no real
+    exchange-listed company has fewer diluted shares), which had been silently
+    producing a ~37,000× `fcf_yield` for MCD. (2) The QUALITY-factor extraction
+    (`gross_margin`/`operating_margin` via `Revenues`, `debt_to_equity` via
+    `LongTermDebt`/`StockholdersEquity`) had used first-match-wins (not
+    `prefer_recent`) since before Phase 1 — live-verified computing AAPL's
+    gross_margin from a `Revenues` tag last filed **2018-11-05** (abandoned after
+    ASC 606) instead of the fresh `RevenueFromContractWithCustomerExcludingAssessedTax`
+    tag, and JPM's `debt_to_equity` from a `LongTermDebt` tag frozen since 2014 —
+    the exact same bug class Phase 1 fixed for the valuation side, never applied to
+    quality. Production impact was masked for FMP-covered names (FMP quality wins
+    on overlap) but live for the SEC-only-quality majority of the universe; fixed
+    by adding `prefer_recent=True` to those three extractions.
+  - **Live-verified basis impact:** re-fetched all 175 snapshot tickers fresh from
+    SEC EDGAR under the new TTM/point-in-time-latest logic — 0 errors, valuation
+    coverage **94.3%** (165/175, up from Phase 3's 60.0% cached-view, matching the
+    "~90%+ SEC quality-coverage level" Phase 2/3 predicted). TTM vs. the prior
+    annual basis differs materially for the same names (GOOGL P/E 29.39 → 15.96 —
+    crosses a valuation-score bucket boundary), confirming this is a real signal
+    change. Scoring-mechanics backtest re-run clean under `2.3-valuation-ttm`
+    (96.0% fundamental coverage, no errors/NaNs).
+  - **QA:** full `pytest` green (**847**, net +19 over Phase 3's 828 — a new
+    `TestTTMEngine` class unit-testing every pure helper in isolation (dedup,
+    quarter/YTD/annual series extraction, derivation, contiguity, cross-concept
+    `prefer_recent`), `TestSECValuationComponents`/`TestSECCrossFieldVintageGuard`
+    rewritten with realistic quarterly fixtures for the new mechanism, plus the
+    implausible-share-count regression); ruff F821/F823 clean; workflow YAML
+    parses. See `RELEASE_NOTES.md`'s Phase-4 entry for the full writeup.
 
 ## 12. Risks & mitigations
 

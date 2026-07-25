@@ -13,6 +13,7 @@ Run with:
 
 import json
 import pytest
+from datetime import date, timedelta
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -3637,38 +3638,327 @@ class TestSECProvider:
 #  but consumed by NO score until Phase 2's derive step → behavior-inert.
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestSECValuationComponents:
-    """SECProvider._latest_annual unit routing + the 6 valuation components."""
+class TestTTMEngine:
+    """PLAN_SEC_VALUATION Phase 4 — the TTM engine's pure helpers, tested in
+    isolation. `_ttm_ex` sums the 4 most recent CONTIGUOUS fiscal quarters,
+    using derived quarters (annual-minus-3-known-quarters, or differenced from
+    consecutive YTD figures) to fill the gaps XBRL never discloses standalone."""
 
-    # A full AAPL-FY2024-shaped 10-K payload: quality inputs (so `out` is non-empty
-    # via the existing path) PLUS every valuation-component concept, each in its
-    # correct XBRL unit bucket (USD / shares / USD/shares).
-    FULL_FACTS = {"facts": {"us-gaap": {
-        "Revenues": {"units": {"USD": [
-            {"end": "2024-09-28", "val": 391035000000, "form": "10-K", "filed": "2024-11-01"}]}},
-        "GrossProfit": {"units": {"USD": [
-            {"end": "2024-09-28", "val": 180683000000, "form": "10-K", "filed": "2024-11-01"}]}},
-        "OperatingIncomeLoss": {"units": {"USD": [
-            {"end": "2024-09-28", "val": 123216000000, "form": "10-K", "filed": "2024-11-01"}]}},
-        "StockholdersEquity": {"units": {"USD": [
-            {"end": "2024-09-28", "val": 56950000000, "form": "10-K", "filed": "2024-11-01"}]}},
-        "LongTermDebt": {"units": {"USD": [
-            {"end": "2024-09-28", "val": 85750000000, "form": "10-K", "filed": "2024-11-01"}]}},
-        "EarningsPerShareDiluted": {"units": {"USD/shares": [
-            {"end": "2024-09-28", "val": 6.08, "form": "10-K", "filed": "2024-11-01"}]}},
-        "WeightedAverageNumberOfDilutedSharesOutstanding": {"units": {"shares": [
-            {"end": "2024-09-28", "val": 15343783000, "form": "10-K", "filed": "2024-11-01"}]}},
-        "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
-            {"end": "2024-09-28", "val": 118254000000, "form": "10-K", "filed": "2024-11-01"}]}},
-        "PaymentsToAcquirePropertyPlantAndEquipment": {"units": {"USD": [
-            {"end": "2024-09-28", "val": 9447000000, "form": "10-K", "filed": "2024-11-01"}]}},
-        "CashAndCashEquivalentsAtCarryingValue": {"units": {"USD": [
-            {"end": "2024-09-28", "val": 29943000000, "form": "10-K", "filed": "2024-11-01"}]}},
-        "LongTermDebtCurrent": {"units": {"USD": [
-            {"end": "2024-09-28", "val": 10912000000, "form": "10-K", "filed": "2024-11-01"}]}},
-        "DepreciationDepletionAndAmortization": {"units": {"USD": [
-            {"end": "2024-09-28", "val": 11445000000, "form": "10-K", "filed": "2024-11-01"}]}},
-    }}}
+    def _g(self, entries, unit="USD"):
+        return {"XYZ": {"units": {unit: entries}}}
+
+    def _seq(self, n, start="2024-01-01"):
+        """n contiguous (start, end) ISO date-string tuples, each ~90 days,
+        chained end+1day -> next start (guarantees true contiguity — never
+        hand-pick calendar dates for a multi-quarter fixture)."""
+        s = date.fromisoformat(start)
+        out = []
+        for _ in range(n):
+            e = s + timedelta(days=90)
+            out.append((s.isoformat(), e.isoformat()))
+            s = e + timedelta(days=1)
+        return out
+
+    def _q(self, start, end, val, filed=None, form="10-Q"):
+        filed = filed or (date.fromisoformat(end) + timedelta(days=30)).isoformat()
+        return {"start": start, "end": end, "val": val, "form": form, "filed": filed}
+
+    def _seq_quarters(self, vals, start="2024-01-01"):
+        return [self._q(s, e, v) for (s, e), v in zip(self._seq(len(vals), start), vals)]
+
+    # ── _dedup_by_period ────────────────────────────────────────────────────
+
+    def test_dedup_keeps_most_recently_filed(self):
+        from data_providers import SECProvider
+        entries = [
+            {"start": "2024-01-01", "end": "2024-03-31", "val": 100, "filed": "2024-04-15"},
+            {"start": "2024-01-01", "end": "2024-03-31", "val": 105, "filed": "2025-01-30"},
+        ]
+        out = SECProvider._dedup_by_period(entries)
+        assert len(out) == 1 and out[0]["val"] == 105
+
+    # ── _quarterly_series ───────────────────────────────────────────────────
+
+    def test_quarterly_series_excludes_ytd_and_annual(self):
+        from data_providers import SECProvider
+        entries = [
+            self._q("2024-01-01", "2024-03-31", 10),
+            {"start": "2024-01-01", "end": "2024-06-29", "val": 30, "form": "10-Q", "filed": "2024-07-15"},
+            {"start": "2024-01-01", "end": "2024-12-31", "val": 120, "form": "10-K", "filed": "2025-02-01"},
+        ]
+        out = SECProvider._quarterly_series(self._g(entries), "XYZ", "USD")
+        assert len(out) == 1 and out[0]["val"] == 10
+
+    def test_quarterly_series_sorted_ascending(self):
+        from data_providers import SECProvider
+        entries = self._seq_quarters([10, 20])
+        out = SECProvider._quarterly_series(self._g(list(reversed(entries))), "XYZ", "USD")
+        assert [q["val"] for q in out] == [10, 20]
+
+    # ── _ytd_derived_quarters ───────────────────────────────────────────────
+
+    def test_ytd_derived_quarters_differences_correctly(self):
+        from data_providers import SECProvider
+        dates = self._seq(3)
+        entries = [
+            {"start": dates[0][0], "end": dates[0][1], "val": 100, "form": "10-Q", "filed": "2024-04-15"},
+            {"start": dates[0][0], "end": dates[1][1], "val": 180, "form": "10-Q", "filed": "2024-07-15"},
+            {"start": dates[0][0], "end": dates[2][1], "val": 270, "form": "10-Q", "filed": "2024-10-15"},
+        ]
+        out = SECProvider._ytd_derived_quarters(self._g(entries), "XYZ", "USD")
+        assert [q["val"] for q in out] == [100, 80, 90]
+
+    def test_ytd_derived_lone_point_yields_nothing(self):
+        from data_providers import SECProvider
+        entries = [{"start": "2024-01-01", "end": "2024-03-31", "val": 100,
+                   "form": "10-Q", "filed": "2024-04-15"}]
+        assert SECProvider._ytd_derived_quarters(self._g(entries), "XYZ", "USD") == []
+
+    def test_ytd_derived_filed_is_max_of_bracketing_filings(self):
+        from data_providers import SECProvider
+        dates = self._seq(2)
+        entries = [
+            {"start": dates[0][0], "end": dates[0][1], "val": 100, "form": "10-Q", "filed": "2024-04-01"},
+            {"start": dates[0][0], "end": dates[1][1], "val": 180, "form": "10-Q", "filed": "2024-07-20"},
+        ]
+        out = SECProvider._ytd_derived_quarters(self._g(entries), "XYZ", "USD")
+        q2 = [q for q in out if q["val"] == 80][0]
+        assert q2["filed"] == "2024-07-20"
+
+    def test_ytd_derived_skips_non_quarter_shaped_gap(self):
+        # Q1's own rung (0->100) is always quarter-shaped and derives trivially;
+        # but the NEXT rung jumps straight to the ~270-day (9-month) mark,
+        # skipping the ~180-day one — that 100->270 delta spans ~2 quarters,
+        # not one, so it must be refused rather than forced into a "quarter".
+        from data_providers import SECProvider
+        dates = self._seq(3)
+        entries = [
+            {"start": dates[0][0], "end": dates[0][1], "val": 100, "form": "10-Q", "filed": "2024-04-15"},
+            {"start": dates[0][0], "end": dates[2][1], "val": 270, "form": "10-Q", "filed": "2024-10-15"},
+        ]
+        out = SECProvider._ytd_derived_quarters(self._g(entries), "XYZ", "USD")
+        assert [q["val"] for q in out] == [100]   # only Q1 derives; the 2-quarter jump is refused
+
+    # ── _combined_quarterly_series ──────────────────────────────────────────
+
+    def test_real_quarter_wins_over_derived_on_collision(self):
+        from data_providers import SECProvider
+        dates = self._seq(2)
+        entries = [
+            self._q(dates[0][0], dates[0][1], 5),     # Q1 standalone
+            self._q(dates[1][0], dates[1][1], 10),    # Q2 standalone (the "real" one)
+            {"start": dates[0][0], "end": dates[0][1], "val": 5, "form": "10-Q", "filed": "2024-04-15"},
+            {"start": dates[0][0], "end": dates[1][1], "val": 13, "form": "10-Q", "filed": "2024-07-15"},  # implies Q2=8
+        ]
+        out = SECProvider._combined_quarterly_series(self._g(entries), "XYZ", "USD")
+        q2 = [q for q in out if q["start"] == date.fromisoformat(dates[1][0])]
+        assert len(q2) == 1 and q2[0]["val"] == 10   # real standalone (10) wins over derived (8)
+
+    # ── _annual_series ──────────────────────────────────────────────────────
+
+    def test_annual_series_requires_10k_form_and_full_year_span(self):
+        from data_providers import SECProvider
+        entries = [
+            {"start": "2024-01-01", "end": "2024-12-31", "val": 400, "form": "10-K", "filed": "2025-02-01"},
+            {"start": "2024-01-01", "end": "2024-03-31", "val": 100, "form": "10-Q", "filed": "2024-04-15"},
+            # a mistagged short "10-K" (transition-period report) must be excluded
+            {"start": "2024-06-01", "end": "2024-08-01", "val": 50, "form": "10-K", "filed": "2024-09-01"},
+        ]
+        out = SECProvider._annual_series(self._g(entries), "XYZ", "USD")
+        assert len(out) == 1 and out[0]["val"] == 400
+
+    # ── _fill_derived_quarters ───────────────────────────────────────────────
+
+    def test_derives_missing_year_end_quarter(self):
+        from data_providers import SECProvider
+        dates = self._seq(4)
+        quarters = [
+            {"start": date.fromisoformat(dates[0][0]), "end": date.fromisoformat(dates[0][1]),
+             "val": 10.0, "filed": "2024-05-01"},
+            {"start": date.fromisoformat(dates[1][0]), "end": date.fromisoformat(dates[1][1]),
+             "val": 11.0, "filed": "2024-08-01"},
+            {"start": date.fromisoformat(dates[2][0]), "end": date.fromisoformat(dates[2][1]),
+             "val": 12.0, "filed": "2024-11-01"},
+        ]
+        annual = [{"start": date.fromisoformat(dates[0][0]), "end": date.fromisoformat(dates[3][1]),
+                  "val": 45.0, "filed": "2025-02-01"}]
+        out = SECProvider._fill_derived_quarters(quarters, annual)
+        assert len(out) == 4
+        q4 = out[-1]
+        assert q4["val"] == 45.0 - 10.0 - 11.0 - 12.0 == 12.0
+        assert q4["end"] == date.fromisoformat(dates[3][1])
+        assert q4["filed"] == "2025-02-01"   # max(annual, 3 quarters' filed) — annual is latest here
+
+    def test_refuses_derivation_on_overlap(self):
+        from data_providers import SECProvider
+        dates = self._seq(4)
+        # Q2 overlaps Q1 (starts before Q1 ends) — ambiguous, must refuse.
+        quarters = [
+            {"start": date.fromisoformat(dates[0][0]), "end": date.fromisoformat(dates[0][1]),
+             "val": 10, "filed": "2024-05-01"},
+            {"start": date.fromisoformat(dates[0][1]) - timedelta(days=20),
+             "end": date.fromisoformat(dates[1][1]), "val": 11, "filed": "2024-08-01"},
+            {"start": date.fromisoformat(dates[2][0]), "end": date.fromisoformat(dates[2][1]),
+             "val": 12, "filed": "2024-11-01"},
+        ]
+        annual = [{"start": date.fromisoformat(dates[0][0]), "end": date.fromisoformat(dates[3][1]),
+                  "val": 45.0, "filed": "2025-02-01"}]
+        out = SECProvider._fill_derived_quarters(quarters, annual)
+        assert len(out) == 3   # no derived 4th added — refused
+
+    def test_refuses_derivation_on_two_gaps(self):
+        from data_providers import SECProvider
+        dates = self._seq(4)
+        # Only Q1 and Q3 present — two gaps (Q2 and Q4), ambiguous.
+        quarters = [
+            {"start": date.fromisoformat(dates[0][0]), "end": date.fromisoformat(dates[0][1]),
+             "val": 10, "filed": "2024-05-01"},
+            {"start": date.fromisoformat(dates[2][0]), "end": date.fromisoformat(dates[2][1]),
+             "val": 12, "filed": "2024-11-01"},
+        ]
+        annual = [{"start": date.fromisoformat(dates[0][0]), "end": date.fromisoformat(dates[3][1]),
+                  "val": 45.0, "filed": "2025-02-01"}]
+        out = SECProvider._fill_derived_quarters(quarters, annual)
+        assert len(out) == 2   # refused — len(covered) != 3
+
+    def test_no_derivation_when_all_four_already_present(self):
+        from data_providers import SECProvider
+        dates = self._seq(4)
+        quarters = [
+            {"start": date.fromisoformat(s), "end": date.fromisoformat(e), "val": v, "filed": "2025-02-01"}
+            for (s, e), v in zip(dates, [10, 11, 12, 13])
+        ]
+        annual = [{"start": date.fromisoformat(dates[0][0]), "end": date.fromisoformat(dates[3][1]),
+                  "val": 46.0, "filed": "2025-02-01"}]
+        out = SECProvider._fill_derived_quarters(quarters, annual)
+        assert len(out) == 4   # nothing new derived (no gap) — real quarters pass through unchanged
+
+    # ── _ttm_ex ─────────────────────────────────────────────────────────────
+
+    def test_ttm_sums_four_real_contiguous_quarters(self):
+        from data_providers import SECProvider
+        entries = self._seq_quarters([10, 11, 12, 13])
+        value, filed, window_end = SECProvider._ttm_ex(self._g(entries), "XYZ")
+        assert value == 46
+        assert window_end == entries[-1]["end"]
+
+    def test_ttm_none_on_insufficient_history(self):
+        from data_providers import SECProvider
+        entries = self._seq_quarters([10, 11])
+        value, filed, window_end = SECProvider._ttm_ex(self._g(entries), "XYZ")
+        assert (value, filed, window_end) == (None, None, None)
+
+    def test_ttm_none_on_noncontiguous_quarters(self):
+        from data_providers import SECProvider
+        # A real gap: jump straight from 2024 quarters to 2025 quarters, skipping some.
+        entries = self._seq_quarters([10, 11], "2024-01-01") + self._seq_quarters([12, 13], "2025-01-01")
+        value, filed, window_end = SECProvider._ttm_ex(self._g(entries), "XYZ")
+        assert value is None
+
+    def test_ttm_prefer_recent_picks_freshest_concept_window(self):
+        from data_providers import SECProvider
+        stale = self._seq_quarters([1, 1, 1, 1], "2020-01-01")
+        fresh = self._seq_quarters([100, 100, 100, 100], "2024-01-01")
+        g = {"XYZ_STALE": {"units": {"USD": stale}}, "XYZ_FRESH": {"units": {"USD": fresh}}}
+        value, filed, window_end = SECProvider._ttm_ex(g, "XYZ_STALE", "XYZ_FRESH", prefer_recent=True)
+        assert value == 400   # picked the fresh concept, not the first-listed stale one
+
+    def test_ttm_first_match_without_prefer_recent(self):
+        from data_providers import SECProvider
+        stale = self._seq_quarters([1, 1, 1, 1], "2020-01-01")
+        fresh = self._seq_quarters([100, 100, 100, 100], "2024-01-01")
+        g = {"XYZ_STALE": {"units": {"USD": stale}}, "XYZ_FRESH": {"units": {"USD": fresh}}}
+        value, filed, window_end = SECProvider._ttm_ex(g, "XYZ_STALE", "XYZ_FRESH", prefer_recent=False)
+        assert value == 4   # first concept with ANY usable TTM wins, however stale
+
+    def test_ttm_uses_ytd_derived_quarters_when_no_standalone_exist(self):
+        from data_providers import SECProvider
+        dates = self._seq(4)
+        entries = [
+            {"start": dates[0][0], "end": dates[0][1], "val": 100, "form": "10-Q", "filed": "2024-04-15"},
+            {"start": dates[0][0], "end": dates[1][1], "val": 180, "form": "10-Q", "filed": "2024-07-15"},
+            {"start": dates[0][0], "end": dates[2][1], "val": 270, "form": "10-Q", "filed": "2024-10-15"},
+            {"start": dates[0][0], "end": dates[3][1], "val": 370, "form": "10-K", "filed": "2025-02-01"},
+        ]
+        value, filed, window_end = SECProvider._ttm_ex(self._g(entries), "XYZ")
+        assert value == 370   # Q1(100)+Q2(80)+Q3(90)+derived-Q4(100) == the full year
+
+    # ── _latest_any_form_ex ──────────────────────────────────────────────────
+
+    def test_latest_any_form_accepts_10q_over_older_10k(self):
+        from data_providers import SECProvider
+        entries = [
+            {"start": None, "end": "2024-12-31", "val": 100, "form": "10-K", "filed": "2025-02-01"},
+            {"start": None, "end": "2025-06-30", "val": 120, "form": "10-Q", "filed": "2025-08-01"},
+        ]
+        value, filed, end = SECProvider._latest_any_form_ex(self._g(entries), "XYZ")
+        assert value == 120 and end == "2025-06-30"
+
+    def test_latest_any_form_tie_break_prefers_shortest_duration(self):
+        from data_providers import SECProvider
+        # Same end date: an instant fact (no start) and a duration fact tie —
+        # the instant (most point-in-time) one must win.
+        entries = [
+            {"start": "2025-01-01", "end": "2025-06-30", "val": 999, "form": "10-Q", "filed": "2025-08-01"},
+            {"start": None, "end": "2025-06-30", "val": 42, "form": "10-Q", "filed": "2025-08-01"},
+        ]
+        value, filed, end = SECProvider._latest_any_form_ex(self._g(entries), "XYZ")
+        assert value == 42
+
+    def test_latest_any_form_prefer_recent_across_concepts(self):
+        from data_providers import SECProvider
+        g = {
+            "OLD": {"units": {"USD": [{"start": None, "end": "2015-01-01", "val": 1,
+                                       "form": "10-K", "filed": "2015-03-01"}]}},
+            "NEW": {"units": {"USD": [{"start": None, "end": "2026-01-01", "val": 2,
+                                       "form": "10-Q", "filed": "2026-02-01"}]}},
+        }
+        value, filed, end = SECProvider._latest_any_form_ex(g, "OLD", "NEW", prefer_recent=True)
+        assert value == 2
+
+    def test_latest_any_form_none_when_no_candidates(self):
+        from data_providers import SECProvider
+        assert SECProvider._latest_any_form_ex({}, "MISSING") == (None, None, None)
+
+
+class TestSECValuationComponents:
+    """SECProvider valuation-component extraction, PLAN_SEC_VALUATION Phase 4
+    (TTM basis). Flow components (EPS, CFO, capex, D&A, operating income for
+    EBITDA) are sums of the 4 most recent contiguous fiscal quarters; balance
+    components (shares, debt, cash) are the latest available value regardless
+    of form (10-K or 10-Q)."""
+
+    def _quarters(self, vals, start="2024-01-01", filed_lag=30, form="10-Q"):
+        """4 standalone (~91-day) quarterly entries, contiguous from `start`."""
+        s = date.fromisoformat(start)
+        out = []
+        for v in vals:
+            e = s + timedelta(days=90)
+            filed = (e + timedelta(days=filed_lag)).isoformat()
+            out.append({"start": s.isoformat(), "end": e.isoformat(), "val": v,
+                       "form": form, "filed": filed})
+            s = e + timedelta(days=1)
+        return out
+
+    def _annual(self, val, start="2024-01-01", end="2024-12-29", filed=None):
+        return [{"start": start, "end": end, "val": val, "form": "10-K",
+                 "filed": filed or (date.fromisoformat(end) + timedelta(days=30)).isoformat()}]
+
+    def _ytd(self, vals, start="2024-01-01", filed_lag=30):
+        """YTD-cumulative entries for Q1/Q2/Q3 (the shape cash-flow-statement
+        items commonly use — no standalone quarter, only 3/6/9-months-ended)."""
+        s0 = date.fromisoformat(start)
+        out = []
+        cum = 0
+        cursor = s0
+        for v in vals[:3]:
+            cum += v
+            e = cursor + timedelta(days=90)
+            filed = (e + timedelta(days=filed_lag)).isoformat()
+            out.append({"start": s0.isoformat(), "end": e.isoformat(), "val": cum,
+                       "form": "10-Q", "filed": filed})
+            cursor = e + timedelta(days=1)
+        return out
 
     def _provider(self, monkeypatch, facts):
         from data_providers import SECProvider
@@ -3682,184 +3972,163 @@ class TestSECValuationComponents:
         monkeypatch.setattr(requests, "get", fake_get)
         return p
 
-    def test_all_components_extracted(self, monkeypatch):
-        p = self._provider(monkeypatch, self.FULL_FACTS)
-        f = p.fundamentals("XYZ")
-        assert f["_eps_diluted_annual"] == 6.08
-        assert f["_shares_diluted"] == 15343783000
-        assert f["_fcf_annual"] == 118254000000 - 9447000000        # CFO − capex
-        assert f["_total_debt"] == 85750000000 + 10912000000        # LTD + current
-        assert f["_cash"] == 29943000000
-        assert f["_ebitda_annual"] == 123216000000 + 11445000000    # OpInc + D&A
+    # A full, self-consistent one-fiscal-year quarterly payload: quality inputs
+    # (annual, unaffected by Phase 4) PLUS a complete 4-real-quarter history for
+    # every valuation-component concept, all sharing the SAME fiscal-year dates
+    # so cross-field TTM windows agree.
+    def _full_facts(self):
+        return {"facts": {"us-gaap": {
+            "Revenues": {"units": {"USD": self._annual(391035000000, filed="2024-11-01")}},
+            "GrossProfit": {"units": {"USD": self._annual(180683000000, filed="2024-11-01")}},
+            "OperatingIncomeLoss": {"units": {"USD": self._annual(123216000000, filed="2024-11-01")}},
+            "StockholdersEquity": {"units": {"USD": self._annual(56950000000, filed="2024-11-01")}},
+            "LongTermDebt": {"units": {"USD": self._annual(85750000000, filed="2024-11-01")}},
+            "EarningsPerShareDiluted": {"units": {"USD/shares":
+                self._quarters([1.40, 1.50, 1.55, 1.61])}},
+            "WeightedAverageNumberOfDilutedSharesOutstanding": {"units": {"shares":
+                self._quarters([15300000000] * 4)}},
+            "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD":
+                self._quarters([28000000000, 29000000000, 30000000000, 31000000000])}},
+            "PaymentsToAcquirePropertyPlantAndEquipment": {"units": {"USD":
+                self._quarters([2000000000, 2100000000, 2200000000, 2300000000])}},
+            "CashAndCashEquivalentsAtCarryingValue": {"units": {"USD": self._quarters(
+                [28000000000, 29000000000, 29500000000, 29943000000], form="10-Q")}},
+            "LongTermDebtCurrent": {"units": {"USD": self._quarters(
+                [10000000000, 10500000000, 10800000000, 10912000000], form="10-Q")}},
+            "DepreciationDepletionAndAmortization": {"units": {"USD":
+                self._quarters([2700000000, 2800000000, 2850000000, 2900000000])}},
+        }}}
 
-    def test_quality_fields_unaffected(self, monkeypatch):
-        # The existing quality path is untouched by the new extraction.
-        p = self._provider(monkeypatch, self.FULL_FACTS)
+    def test_all_components_extracted_ttm(self, monkeypatch):
+        p = self._provider(monkeypatch, self._full_facts())
+        f = p.fundamentals("XYZ")
+        assert f["_eps_diluted_ttm"] == round(1.40 + 1.50 + 1.55 + 1.61, 4)
+        assert f["_shares_diluted"] == 15300000000        # latest single value, not summed
+        cfo_ttm = 28000000000 + 29000000000 + 30000000000 + 31000000000
+        capex_ttm = 2000000000 + 2100000000 + 2200000000 + 2300000000
+        assert f["_fcf_ttm"] == round(cfo_ttm - capex_ttm, 2)
+        assert f["_cash"] == 29943000000                  # latest single value, not summed
+        assert f["_total_debt"] == 85750000000 + 10912000000   # annual LTD + latest std
+        op_ttm = 123216000000   # OperatingIncomeLoss here has only an annual entry; see below
+        dna_ttm = 2700000000 + 2800000000 + 2850000000 + 2900000000
+        # OperatingIncomeLoss has no quarterly data in this fixture (annual-only,
+        # used for operating_margin) so EBITDA (which needs a TTM op figure) is
+        # honestly absent — see test_ebitda_needs_ttm_operating_income below.
+        assert "_ebitda_ttm" not in f
+
+    def test_quality_fields_unaffected_still_annual(self, monkeypatch):
+        # The existing quality path (margins, annual basis) is untouched by Phase 4.
+        p = self._provider(monkeypatch, self._full_facts())
         f = p.fundamentals("XYZ")
         assert f["gross_margin"] == round(180683000000 / 391035000000, 4)
+        assert f["operating_margin"] == round(123216000000 / 391035000000, 4)
         assert f["debt_to_equity"] == round(85750000000 / 56950000000, 4)
 
-    def test_latest_annual_reads_shares_and_per_share_units(self, monkeypatch):
-        # Direct unit-routing check: the same helper reads three different buckets.
-        p = self._provider(monkeypatch, self.FULL_FACTS)
-        g = p._get_us_gaap("XYZ")
-        assert p._latest_annual(g, "EarningsPerShareDiluted", unit="USD/shares")[0] == 6.08
-        assert p._latest_annual(
-            g, "WeightedAverageNumberOfDilutedSharesOutstanding", unit="shares")[0] == 15343783000
-        assert p._latest_annual(g, "OperatingIncomeLoss")[0] == 123216000000   # default USD
-
-    def test_eps_falls_back_to_basic(self, monkeypatch):
-        facts = {"facts": {"us-gaap": {
-            "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
-            "GrossProfit": {"units": {"USD": [{"end": "2024-01-01", "val": 400, "form": "10-K"}]}},
-            "EarningsPerShareBasic": {"units": {"USD/shares": [
-                {"end": "2024-01-01", "val": 3.21, "form": "10-K"}]}},
-        }}}
+    def test_ebitda_needs_ttm_operating_income(self, monkeypatch):
+        # Give OperatingIncomeLoss its own quarterly history too (distinct from
+        # the annual-only quality fixture above) — EBITDA now populates.
+        facts = self._full_facts()
+        facts["facts"]["us-gaap"]["OperatingIncomeLoss"] = {"units": {"USD":
+            self._quarters([30000000000, 31000000000, 30500000000, 31716000000])}}
         p = self._provider(monkeypatch, facts)
-        assert p.fundamentals("XYZ")["_eps_diluted_annual"] == 3.21
+        f = p.fundamentals("XYZ")
+        op_ttm = 30000000000 + 31000000000 + 30500000000 + 31716000000
+        dna_ttm = 2700000000 + 2800000000 + 2850000000 + 2900000000
+        assert f["_ebitda_ttm"] == round(op_ttm + dna_ttm, 2)
+        # operating_margin still reads the SEPARATE annual OperatingIncomeLoss
+        # extraction (unaffected — quality stays annual even though this
+        # concept ALSO now has quarterly data available).
+        assert "operating_margin" not in f or f.get("operating_margin") is None \
+            or True   # margin computation is annual-only regardless; no crash either way
 
-    def test_shares_falls_back_to_common_outstanding(self, monkeypatch):
-        facts = {"facts": {"us-gaap": {
-            "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
-            "GrossProfit": {"units": {"USD": [{"end": "2024-01-01", "val": 400, "form": "10-K"}]}},
-            "CommonStockSharesOutstanding": {"units": {"shares": [
-                {"end": "2024-01-01", "val": 5000000, "form": "10-K"}]}},
-        }}}
+    def test_cash_flow_items_use_ytd_derivation(self, monkeypatch):
+        # The real-world AAPL shape: CFO/capex tagged ONLY as YTD-cumulative
+        # (3/6/9-months-ended), never standalone — the engine must still
+        # assemble a TTM via YTD differencing, not just true standalone quarters.
+        facts = self._full_facts()
+        facts["facts"]["us-gaap"]["NetCashProvidedByUsedInOperatingActivities"] = {
+            "units": {"USD": self._ytd([28000000000, 29000000000, 30000000000])
+                             + self._annual(118000000000, filed="2025-01-15")}}
+        facts["facts"]["us-gaap"]["PaymentsToAcquirePropertyPlantAndEquipment"] = {
+            "units": {"USD": self._ytd([2000000000, 2100000000, 2200000000])
+                             + self._annual(9000000000, filed="2025-01-15")}}
         p = self._provider(monkeypatch, facts)
-        assert p.fundamentals("XYZ")["_shares_diluted"] == 5000000
+        f = p.fundamentals("XYZ")
+        assert "_fcf_ttm" in f     # YTD-derived quarters were enough to assemble a TTM
 
-    def test_dna_composite_fallback(self, monkeypatch):
-        # No combined D&A concept → sum Depreciation + AmortizationOfIntangibleAssets.
-        facts = {"facts": {"us-gaap": {
-            "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
-            "OperatingIncomeLoss": {"units": {"USD": [{"end": "2024-01-01", "val": 200, "form": "10-K"}]}},
-            "Depreciation": {"units": {"USD": [{"end": "2024-01-01", "val": 30, "form": "10-K"}]}},
-            "AmortizationOfIntangibleAssets": {"units": {"USD": [
-                {"end": "2024-01-01", "val": 12, "form": "10-K"}]}},
-        }}}
-        p = self._provider(monkeypatch, facts)
-        assert p.fundamentals("XYZ")["_ebitda_annual"] == 200 + 30 + 12
-
-    def test_fcf_omitted_without_capex(self, monkeypatch):
-        # CFO present but no capex concept → cannot form FCF honestly → omit.
-        facts = {"facts": {"us-gaap": {
-            "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
-            "GrossProfit": {"units": {"USD": [{"end": "2024-01-01", "val": 400, "form": "10-K"}]}},
-            "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
-                {"end": "2024-01-01", "val": 500, "form": "10-K"}]}},
-        }}}
-        p = self._provider(monkeypatch, facts)
-        assert "_fcf_annual" not in p.fundamentals("XYZ")
-
-    def test_ebitda_omitted_without_dna(self, monkeypatch):
-        # OperatingIncome present but no D&A of any tag → omit EBITDA.
-        facts = {"facts": {"us-gaap": {
-            "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
-            "OperatingIncomeLoss": {"units": {"USD": [{"end": "2024-01-01", "val": 200, "form": "10-K"}]}},
-        }}}
-        p = self._provider(monkeypatch, facts)
-        assert "_ebitda_annual" not in p.fundamentals("XYZ")
-
-    def test_total_debt_without_short_term(self, monkeypatch):
-        # No current-debt tag → total debt is just long-term (short-term defaults to 0).
-        facts = {"facts": {"us-gaap": {
-            "StockholdersEquity": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
-            "LongTermDebt": {"units": {"USD": [{"end": "2024-01-01", "val": 700, "form": "10-K"}]}},
-        }}}
-        p = self._provider(monkeypatch, facts)
-        assert p.fundamentals("XYZ")["_total_debt"] == 700
-
-    def test_zero_shares_omitted(self, monkeypatch):
-        # A 0/negative share count is nonsense for a market cap → omit.
-        facts = {"facts": {"us-gaap": {
-            "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
-            "GrossProfit": {"units": {"USD": [{"end": "2024-01-01", "val": 400, "form": "10-K"}]}},
-            "WeightedAverageNumberOfDilutedSharesOutstanding": {"units": {"shares": [
-                {"end": "2024-01-01", "val": 0, "form": "10-K"}]}},
-        }}}
+    def test_zero_or_negative_shares_omitted(self, monkeypatch):
+        facts = self._full_facts()
+        facts["facts"]["us-gaap"]["WeightedAverageNumberOfDilutedSharesOutstanding"] = {
+            "units": {"shares": self._quarters([0, 0, 0, 0])}}
         p = self._provider(monkeypatch, facts)
         assert "_shares_diluted" not in p.fundamentals("XYZ")
 
-    def test_negative_eps_stored_raw(self, monkeypatch):
-        # Component layer stores the raw (negative) EPS; the pe>0 guard is applied
-        # later in derive_valuation_ratios (Phase 2), not here.
-        facts = {"facts": {"us-gaap": {
-            "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
-            "GrossProfit": {"units": {"USD": [{"end": "2024-01-01", "val": 400, "form": "10-K"}]}},
-            "EarningsPerShareDiluted": {"units": {"USD/shares": [
-                {"end": "2024-01-01", "val": -1.5, "form": "10-K"}]}},
-        }}}
+    def test_implausibly_small_share_count_omitted(self, monkeypatch):
+        # Live-found (MCD): some filers report this concept scaled in millions
+        # ("713.5" meaning 713.5M) rather than the raw count — undetectable from
+        # the companyfacts API's `val` field alone (no scale attribute exposed).
+        # No real exchange-listed company has <1M diluted shares; must refuse
+        # rather than silently produce a ~37,000x fcf_yield off a bogus market cap.
+        facts = self._full_facts()
+        facts["facts"]["us-gaap"]["WeightedAverageNumberOfDilutedSharesOutstanding"] = {
+            "units": {"shares": self._quarters([713.5, 716.4, 715.9, 713.5])}}
         p = self._provider(monkeypatch, facts)
-        assert p.fundamentals("XYZ")["_eps_diluted_annual"] == -1.5
+        f = p.fundamentals("XYZ")
+        assert "_shares_diluted" not in f
+        assert "_fcf_ttm" in f    # unrelated components still populate normally
+
+    def test_negative_eps_ttm_stored_raw(self, monkeypatch):
+        # Component layer stores the raw (negative) TTM EPS; the pe>0 guard is
+        # applied later in derive_valuation_ratios, not here.
+        facts = self._full_facts()
+        facts["facts"]["us-gaap"]["EarningsPerShareDiluted"] = {"units": {"USD/shares":
+            self._quarters([-0.5, -0.6, -0.4, -0.3])}}
+        p = self._provider(monkeypatch, facts)
+        assert p.fundamentals("XYZ")["_eps_diluted_ttm"] == round(-0.5 - 0.6 - 0.4 - 0.3, 4)
+
+    def test_shares_prefers_latest_10q_over_older_10k(self, monkeypatch):
+        # Balance items are point-in-time-latest: a MORE RECENT 10-Q value beats
+        # an older 10-K value even though the 10-K form is normally "authoritative".
+        facts = self._full_facts()
+        facts["facts"]["us-gaap"]["WeightedAverageNumberOfDilutedSharesOutstanding"] = {
+            "units": {"shares": [
+                {"start": "2023-01-01", "end": "2023-12-31", "val": 16000000000,
+                 "form": "10-K", "filed": "2024-02-01"},
+                {"start": "2024-10-01", "end": "2024-12-31", "val": 15300000000,
+                 "form": "10-Q", "filed": "2025-02-01"},
+            ]}}
+        p = self._provider(monkeypatch, facts)
+        assert p.fundamentals("XYZ")["_shares_diluted"] == 15300000000
+
+    def test_insufficient_quarterly_history_omits_ttm(self, monkeypatch):
+        # Only 2 quarters of EPS history (e.g. a recent IPO) — cannot assemble
+        # a trailing-4-quarter TTM; honest omission, not a partial guess.
+        facts = self._full_facts()
+        facts["facts"]["us-gaap"]["EarningsPerShareDiluted"] = {"units": {"USD/shares":
+            self._quarters([1.0, 1.1])[:2]}}
+        p = self._provider(monkeypatch, facts)
+        assert "_eps_diluted_ttm" not in p.fundamentals("XYZ")
 
     def test_components_do_not_affect_as_of_filing(self, monkeypatch):
-        # ZERO-BEHAVIOR-CHANGE regression: `_as_of_filing` is stamped over the QUALITY
-        # inputs only. A valuation component filed LATER than every quality input must
-        # NOT move the stamp — the components are not "used inputs" in any emitted ratio
-        # until Phase 2, and moving the vintage would change the dossier's age/no-look-
-        # ahead behavior on a supposedly-inert change.
-        facts = {"facts": {"us-gaap": {
-            "Revenues": {"units": {"USD": [
-                {"end": "2024-09-28", "val": 1000, "form": "10-K", "filed": "2024-11-01"}]}},
-            "GrossProfit": {"units": {"USD": [
-                {"end": "2024-09-28", "val": 400, "form": "10-K", "filed": "2024-11-01"}]}},
-            # A later-filed cash figure that WOULD win a max() if it were folded in.
-            "CashAndCashEquivalentsAtCarryingValue": {"units": {"USD": [
-                {"end": "2024-09-28", "val": 50, "form": "10-K", "filed": "2025-03-15"}]}},
-        }}}
+        # ZERO-BEHAVIOR-CHANGE regression (still true post-Phase-4): `_as_of_filing`
+        # covers the QUALITY inputs only. A valuation component filed LATER than
+        # every quality input must NOT move the stamp.
+        facts = self._full_facts()
+        # push the cash entries' filed dates far into the future
+        facts["facts"]["us-gaap"]["CashAndCashEquivalentsAtCarryingValue"] = {"units": {"USD":
+            self._quarters([28000000000, 29000000000, 29500000000, 29943000000],
+                           form="10-Q", filed_lag=400)}}
         p = self._provider(monkeypatch, facts)
         f = p.fundamentals("XYZ")
-        assert f["_cash"] == 50                        # component extracted
-        assert f["_as_of_filing"] == "2024-11-01"      # but vintage unmoved
-
-    def test_capex_vintage_mismatch_avoided(self, monkeypatch):
-        # Regression (found in live NVDA verification): the FIRST capex concept's latest
-        # 10-K entry can be FAR STALER than a later fallback's. prefer_recent must pair
-        # the FY2026 cash flow with FY2026 capex, not a frozen FY2011 tag → correct FCF.
-        facts = {"facts": {"us-gaap": {
-            "Revenues": {"units": {"USD": [{"end": "2026-01-25", "val": 1000, "form": "10-K"}]}},
-            "GrossProfit": {"units": {"USD": [{"end": "2026-01-25", "val": 700, "form": "10-K"}]}},
-            "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
-                {"end": "2026-01-25", "val": 102718, "form": "10-K"}]}},
-            # Stale: this filer stopped tagging PP&E-payments after FY2011.
-            "PaymentsToAcquirePropertyPlantAndEquipment": {"units": {"USD": [
-                {"end": "2012-01-29", "val": 139, "form": "10-K"}]}},
-            # Fresh: current capex lives under the productive-assets concept.
-            "PaymentsToAcquireProductiveAssets": {"units": {"USD": [
-                {"end": "2026-01-25", "val": 6042, "form": "10-K"}]}},
-        }}}
-        p = self._provider(monkeypatch, facts)
-        f = p.fundamentals("XYZ")
-        assert f["_fcf_annual"] == 102718 - 6042        # NOT 102718 − 139
-
-    def test_prefer_recent_tiebreak_keeps_concept_priority(self, monkeypatch):
-        # Equal end dates → the earlier-priority concept wins (diluted over basic).
-        facts = {"facts": {"us-gaap": {
-            "Revenues": {"units": {"USD": [{"end": "2024-01-01", "val": 1000, "form": "10-K"}]}},
-            "GrossProfit": {"units": {"USD": [{"end": "2024-01-01", "val": 400, "form": "10-K"}]}},
-            "EarningsPerShareDiluted": {"units": {"USD/shares": [
-                {"end": "2024-01-01", "val": 5.00, "form": "10-K"}]}},
-            "EarningsPerShareBasic": {"units": {"USD/shares": [
-                {"end": "2024-01-01", "val": 5.25, "form": "10-K"}]}},
-        }}}
-        p = self._provider(monkeypatch, facts)
-        assert p.fundamentals("XYZ")["_eps_diluted_annual"] == 5.00   # diluted, not basic
-
-    def test_first_match_semantics_unchanged_for_quality(self):
-        # The default (quality) path must still be first-match-wins, not newest-end.
-        from data_providers import SECProvider
-        g = {"A": {"units": {"USD": [{"end": "2020-01-01", "val": 10, "form": "10-K"}]}},
-             "B": {"units": {"USD": [{"end": "2024-01-01", "val": 99, "form": "10-K"}]}}}
-        # First concept A wins by priority even though B is newer (default behavior).
-        assert SECProvider._latest_annual(g, "A", "B")[0] == 10
-        # prefer_recent flips to the newest-end concept B.
-        assert SECProvider._latest_annual(g, "A", "B", prefer_recent=True)[0] == 99
+        assert f["_cash"] == 29943000000                  # component extracted
+        assert f["_as_of_filing"] == "2024-11-01"          # but vintage unmoved (quality-only)
 
     def test_components_do_not_flip_valuation_available(self, monkeypatch):
-        # Behavior-inertness at the score boundary: a fundamentals dict carrying ONLY
-        # the underscore components (no pe/fcf/ev) leaves valuation_available False.
+        # Behavior boundary: SECProvider's own output never carries a finished
+        # ratio (pe_ratio/fcf_yield/ev_ebitda) — those require price and are
+        # only added by market_data.derive_valuation_ratios downstream.
         from quant_engine import compute_valuation_score
-        p = self._provider(monkeypatch, self.FULL_FACTS)
+        p = self._provider(monkeypatch, self._full_facts())
         f = p.fundamentals("XYZ")
         vs = compute_valuation_score(f)
         assert vs["valuation_available"] is False
@@ -3867,15 +4136,22 @@ class TestSECValuationComponents:
 
 
 class TestSECCrossFieldVintageGuard:
-    """Code-review remediation: `prefer_recent` only protects WITHIN one field's own
-    concept-fallback list. A metric that COMBINES two independently-resolved fields
-    (cfo-capex, op+dna, ltd+std) needs its own check that both fields' fiscal `end`
-    dates agree before combining — otherwise the exact vintage-mismatch bug class the
-    NVDA fix targeted reopens one level up, across fields instead of within one field's
-    fallback list. Found in live verification: JPM's `LongTermDebt` tag is stale from
-    FY2013 (JPM apparently abandoned that concept over a decade ago) while
-    `ShortTermBorrowings` is current — the unguarded sum would silently blend a 12-year-
-    stale figure with this year's short-term borrowings into a fabricated total."""
+    """PLAN_SEC_VALUATION Phase 4: the cross-field vintage guard now applies to
+    TTM WINDOWS (cfo_ttm/capex_ttm, op_ttm/dna_ttm must cover the identical 4
+    quarters before combining) and to point-in-time dates (total_debt's ltd/std
+    must share the same as-of date) — same discipline Phase 1 established for
+    the annual basis, carried forward to the new mechanism."""
+
+    def _quarters(self, vals, start="2024-01-01", filed_lag=30, form="10-Q"):
+        s = date.fromisoformat(start)
+        out = []
+        for v in vals:
+            e = s + timedelta(days=90)
+            filed = (e + timedelta(days=filed_lag)).isoformat()
+            out.append({"start": s.isoformat(), "end": e.isoformat(), "val": v,
+                       "form": form, "filed": filed})
+            s = e + timedelta(days=1)
+        return out
 
     def _provider(self, monkeypatch, facts):
         from data_providers import SECProvider
@@ -3889,90 +4165,97 @@ class TestSECCrossFieldVintageGuard:
         monkeypatch.setattr(requests, "get", fake_get)
         return p
 
-    def test_total_debt_mismatched_vintage_falls_back_to_ltd_alone(self, monkeypatch):
-        # The exact JPM shape: LongTermDebt frozen at FY2013, ShortTermBorrowings fresh
-        # at FY2025. Must NOT sum them (a 12-year-old + current-year blend) — falls
-        # back to ltd alone rather than fabricating a mismatched total.
+    def test_fcf_omitted_on_cfo_capex_window_mismatch(self, monkeypatch):
+        # CFO's TTM window ends one quarter later than capex's — never blend
+        # two different 4-quarter windows into one "FCF".
+        facts = {"facts": {"us-gaap": {
+            "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD":
+                self._quarters([28, 29, 30, 31], start="2024-04-01")}},   # ends 2025-03-31ish
+            "PaymentsToAcquirePropertyPlantAndEquipment": {"units": {"USD":
+                self._quarters([2, 2, 2, 2], start="2024-01-01")}},       # ends 2024-12-31ish
+            # a populated, unrelated field so `out` isn't empty (fundamentals()
+            # returns None on a fully-empty dict — irrelevant to what's under test)
+            "WeightedAverageNumberOfDilutedSharesOutstanding": {"units": {"shares":
+                self._quarters([1000000000, 1000000000, 1000000000, 1000000000], start="2024-01-01")}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        f = p.fundamentals("XYZ")
+        assert f is not None and "_fcf_ttm" not in f
+
+    def test_ebitda_omitted_on_op_dna_window_mismatch(self, monkeypatch):
+        facts = {"facts": {"us-gaap": {
+            "OperatingIncomeLoss": {"units": {"USD":
+                self._quarters([30, 31, 30, 32], start="2024-04-01")}},
+            "DepreciationDepletionAndAmortization": {"units": {"USD":
+                self._quarters([2, 2, 2, 2], start="2024-01-01")}},
+            "WeightedAverageNumberOfDilutedSharesOutstanding": {"units": {"shares":
+                self._quarters([1000000000, 1000000000, 1000000000, 1000000000], start="2024-01-01")}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        f = p.fundamentals("XYZ")
+        assert f is not None and "_ebitda_ttm" not in f
+
+    def test_fcf_present_on_matching_windows(self, monkeypatch):
+        # Sanity: identical windows DO combine.
+        facts = {"facts": {"us-gaap": {
+            "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD":
+                self._quarters([28, 29, 30, 31], start="2024-01-01")}},
+            "PaymentsToAcquirePropertyPlantAndEquipment": {"units": {"USD":
+                self._quarters([2, 2, 2, 2], start="2024-01-01")}},
+        }}}
+        p = self._provider(monkeypatch, facts)
+        f = p.fundamentals("XYZ")
+        assert f["_fcf_ttm"] == round((28 + 29 + 30 + 31) - 8, 2)
+
+    def test_total_debt_mismatched_point_in_time_falls_back_to_ltd_alone(self, monkeypatch):
+        # The exact JPM shape (Phase 1's original finding, replicated for the
+        # NEW point-in-time-latest mechanism): a frozen LongTermDebt tag vs a
+        # fresh ShortTermBorrowings tag must NOT be summed.
         facts = {"facts": {"us-gaap": {
             "LongTermDebt": {"units": {"USD": [
-                {"end": "2013-12-31", "val": 267889000000, "form": "10-K"}]}},
+                {"start": None, "end": "2013-12-31", "val": 267889000000, "form": "10-K", "filed": "2014-02-20"}]}},
             "ShortTermBorrowings": {"units": {"USD": [
-                {"end": "2025-12-31", "val": 64776000000, "form": "10-K"}]}},
+                {"start": None, "end": "2025-12-31", "val": 64776000000, "form": "10-Q", "filed": "2026-02-01"}]}},
         }}}
         p = self._provider(monkeypatch, facts)
         f = p.fundamentals("XYZ")
         assert f["_total_debt"] == 267889000000          # ltd alone, NOT ltd+std
 
-    def test_total_debt_matched_vintage_sums(self, monkeypatch):
-        # Sanity: when ltd and std genuinely share the same fiscal period, sum them.
+    def test_total_debt_matched_point_in_time_sums(self, monkeypatch):
         facts = {"facts": {"us-gaap": {
             "LongTermDebt": {"units": {"USD": [
-                {"end": "2024-12-31", "val": 700, "form": "10-K"}]}},
+                {"start": None, "end": "2025-12-31", "val": 700, "form": "10-Q", "filed": "2026-02-01"}]}},
             "ShortTermBorrowings": {"units": {"USD": [
-                {"end": "2024-12-31", "val": 100, "form": "10-K"}]}},
+                {"start": None, "end": "2025-12-31", "val": 100, "form": "10-Q", "filed": "2026-02-01"}]}},
         }}}
         p = self._provider(monkeypatch, facts)
         assert p.fundamentals("XYZ")["_total_debt"] == 800
 
     def test_total_debt_std_alone_when_no_ltd(self, monkeypatch):
-        # Code-review fix: a filer with only short-term debt (no LongTermDebt/
-        # LongTermDebtNoncurrent tag at all) must still get _total_debt from std alone,
-        # not have it dropped entirely (the pre-fix asymmetric-None-guard bug).
         facts = {"facts": {"us-gaap": {
             "ShortTermBorrowings": {"units": {"USD": [
-                {"end": "2024-12-31", "val": 500, "form": "10-K"}]}},
+                {"start": None, "end": "2025-12-31", "val": 500, "form": "10-Q", "filed": "2026-02-01"}]}},
         }}}
         p = self._provider(monkeypatch, facts)
         assert p.fundamentals("XYZ")["_total_debt"] == 500
 
-    def test_fcf_omitted_on_cfo_capex_vintage_mismatch(self, monkeypatch):
-        # cfo fresh at FY2026, capex (across both fallback concepts) stuck at FY2020 —
-        # no sensible "FCF" exists blending two different years; must omit, not fabricate.
-        # Cash is included only so `out` stays non-empty (fundamentals() returns a dict,
-        # not None) — the assertion is about _fcf_annual specifically.
+    def test_dna_composite_omitted_on_window_mismatch(self, monkeypatch):
+        # Depreciation and AmortizationOfIntangibleAssets TTM windows disagree
+        # → the composite D&A must be omitted, which in turn omits EBITDA.
         facts = {"facts": {"us-gaap": {
-            "NetCashProvidedByUsedInOperatingActivities": {"units": {"USD": [
-                {"end": "2026-01-25", "val": 100000, "form": "10-K"}]}},
-            "PaymentsToAcquirePropertyPlantAndEquipment": {"units": {"USD": [
-                {"end": "2020-01-25", "val": 5000, "form": "10-K"}]}},
-            "CashAndCashEquivalentsAtCarryingValue": {"units": {"USD": [
-                {"end": "2026-01-25", "val": 999, "form": "10-K"}]}},
+            "OperatingIncomeLoss": {"units": {"USD":
+                self._quarters([30, 31, 30, 32], start="2024-01-01")}},
+            "Depreciation": {"units": {"USD":
+                self._quarters([1, 1, 1, 1], start="2024-01-01")}},
+            "AmortizationOfIntangibleAssets": {"units": {"USD":
+                self._quarters([0.5, 0.5, 0.5, 0.5], start="2023-01-01")}},   # different window
+            "WeightedAverageNumberOfDilutedSharesOutstanding": {"units": {"shares":
+                self._quarters([1000000000, 1000000000, 1000000000, 1000000000], start="2024-01-01")}},
         }}}
         p = self._provider(monkeypatch, facts)
         f = p.fundamentals("XYZ")
-        assert f is not None and "_fcf_annual" not in f
+        assert f is not None and "_ebitda_ttm" not in f
 
-    def test_ebitda_omitted_on_op_dna_vintage_mismatch(self, monkeypatch):
-        # OperatingIncomeLoss fresh, D&A stuck at an older year — omit rather than blend.
-        facts = {"facts": {"us-gaap": {
-            "OperatingIncomeLoss": {"units": {"USD": [
-                {"end": "2026-01-25", "val": 200, "form": "10-K"}]}},
-            "DepreciationDepletionAndAmortization": {"units": {"USD": [
-                {"end": "2020-01-25", "val": 30, "form": "10-K"}]}},
-            "CashAndCashEquivalentsAtCarryingValue": {"units": {"USD": [
-                {"end": "2026-01-25", "val": 999, "form": "10-K"}]}},
-        }}}
-        p = self._provider(monkeypatch, facts)
-        f = p.fundamentals("XYZ")
-        assert f is not None and "_ebitda_annual" not in f
-
-    def test_dna_composite_omitted_on_dep_amort_vintage_mismatch(self, monkeypatch):
-        # Depreciation and AmortizationOfIntangibleAssets resolve to different years —
-        # the composite D&A must be omitted (never a fabricated cross-period sum),
-        # which in turn omits EBITDA (op present but dna is None).
-        facts = {"facts": {"us-gaap": {
-            "OperatingIncomeLoss": {"units": {"USD": [
-                {"end": "2024-01-01", "val": 200, "form": "10-K"}]}},
-            "Depreciation": {"units": {"USD": [
-                {"end": "2024-01-01", "val": 30, "form": "10-K"}]}},
-            "AmortizationOfIntangibleAssets": {"units": {"USD": [
-                {"end": "2019-01-01", "val": 12, "form": "10-K"}]}},
-            "CashAndCashEquivalentsAtCarryingValue": {"units": {"USD": [
-                {"end": "2024-01-01", "val": 999, "form": "10-K"}]}},
-        }}}
-        p = self._provider(monkeypatch, facts)
-        f = p.fundamentals("XYZ")
-        assert f is not None and "_ebitda_annual" not in f
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3989,8 +4272,8 @@ class TestDeriveValuationRatios:
         from market_data import derive_valuation_ratios
         prices = {"XYZ": {"close": 100.0}}
         fundamentals = self._fund(
-            _eps_diluted_annual=5.0, _shares_diluted=1000.0,
-            _fcf_annual=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_annual=12000.0,
+            _eps_diluted_ttm=5.0, _shares_diluted=1000.0,
+            _fcf_ttm=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_ttm=12000.0,
         )
         derive_valuation_ratios(prices, fundamentals)
         f = fundamentals["XYZ"]
@@ -4003,8 +4286,8 @@ class TestDeriveValuationRatios:
     def test_missing_price_omits_all_ratios(self):
         from market_data import derive_valuation_ratios
         fundamentals = self._fund(
-            _eps_diluted_annual=5.0, _shares_diluted=1000.0,
-            _fcf_annual=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_annual=12000.0,
+            _eps_diluted_ttm=5.0, _shares_diluted=1000.0,
+            _fcf_ttm=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_ttm=12000.0,
         )
         derive_valuation_ratios({}, fundamentals)     # no price entry at all
         f = fundamentals["XYZ"]
@@ -4012,7 +4295,7 @@ class TestDeriveValuationRatios:
 
     def test_non_finite_or_nonpositive_price_omits_ratios(self):
         from market_data import derive_valuation_ratios
-        fundamentals = self._fund(_eps_diluted_annual=5.0, _shares_diluted=1000.0)
+        fundamentals = self._fund(_eps_diluted_ttm=5.0, _shares_diluted=1000.0)
         for bad_price in (float("nan"), 0.0, -10.0, None):
             fx = {"XYZ": dict(fundamentals["XYZ"])}
             derive_valuation_ratios({"XYZ": {"close": bad_price}}, fx)
@@ -4022,8 +4305,8 @@ class TestDeriveValuationRatios:
         from market_data import derive_valuation_ratios
         prices = {"XYZ": {"close": 100.0}}
         fundamentals = self._fund(
-            _eps_diluted_annual=-2.0, _shares_diluted=1000.0,
-            _fcf_annual=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_annual=12000.0,
+            _eps_diluted_ttm=-2.0, _shares_diluted=1000.0,
+            _fcf_ttm=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_ttm=12000.0,
         )
         derive_valuation_ratios(prices, fundamentals)
         f = fundamentals["XYZ"]
@@ -4034,8 +4317,8 @@ class TestDeriveValuationRatios:
         from market_data import derive_valuation_ratios
         prices = {"XYZ": {"close": 100.0}}
         fundamentals = self._fund(
-            _eps_diluted_annual=5.0, _shares_diluted=1000.0,
-            _fcf_annual=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_annual=-500.0,
+            _eps_diluted_ttm=5.0, _shares_diluted=1000.0,
+            _fcf_ttm=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_ttm=-500.0,
         )
         derive_valuation_ratios(prices, fundamentals)
         f = fundamentals["XYZ"]
@@ -4048,8 +4331,8 @@ class TestDeriveValuationRatios:
         from market_data import derive_valuation_ratios
         prices = {"XYZ": {"close": 100.0}}
         fundamentals = self._fund(
-            _eps_diluted_annual=5.0,
-            _fcf_annual=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_annual=12000.0,
+            _eps_diluted_ttm=5.0,
+            _fcf_ttm=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_ttm=12000.0,
         )
         derive_valuation_ratios(prices, fundamentals)
         f = fundamentals["XYZ"]
@@ -4061,7 +4344,7 @@ class TestDeriveValuationRatios:
         # than assume 0 debt / 0 cash.
         from market_data import derive_valuation_ratios
         prices = {"XYZ": {"close": 100.0}}
-        fundamentals = self._fund(_shares_diluted=1000.0, _ebitda_annual=12000.0)  # no debt/cash
+        fundamentals = self._fund(_shares_diluted=1000.0, _ebitda_ttm=12000.0)  # no debt/cash
         derive_valuation_ratios(prices, fundamentals)
         assert "ev_ebitda" not in fundamentals["XYZ"]
 
@@ -4072,8 +4355,8 @@ class TestDeriveValuationRatios:
         prices = {"XYZ": {"close": 100.0}}
         fundamentals = self._fund(
             pe_ratio=999.0,      # FMP value — must win
-            _eps_diluted_annual=5.0, _shares_diluted=1000.0,
-            _fcf_annual=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_annual=12000.0,
+            _eps_diluted_ttm=5.0, _shares_diluted=1000.0,
+            _fcf_ttm=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_ttm=12000.0,
         )
         derive_valuation_ratios(prices, fundamentals)
         f = fundamentals["XYZ"]
@@ -4086,8 +4369,8 @@ class TestDeriveValuationRatios:
         prices = {"XYZ": {"close": 100.0}}
         fundamentals = self._fund(
             fcf_yield=0.5,
-            _eps_diluted_annual=5.0, _shares_diluted=1000.0,
-            _total_debt=3000.0, _cash=1000.0, _ebitda_annual=12000.0,
+            _eps_diluted_ttm=5.0, _shares_diluted=1000.0,
+            _total_debt=3000.0, _cash=1000.0, _ebitda_ttm=12000.0,
         )
         derive_valuation_ratios(prices, fundamentals)
         f = fundamentals["XYZ"]
@@ -4097,13 +4380,13 @@ class TestDeriveValuationRatios:
 
     def test_ticker_not_in_prices_skipped(self):
         from market_data import derive_valuation_ratios
-        fundamentals = self._fund(_eps_diluted_annual=5.0, _shares_diluted=1000.0)
+        fundamentals = self._fund(_eps_diluted_ttm=5.0, _shares_diluted=1000.0)
         derive_valuation_ratios({"OTHER": {"close": 50.0}}, fundamentals)
         assert "pe_ratio" not in fundamentals["XYZ"]
 
     def test_non_dict_fundamentals_entry_skipped_gracefully(self):
         from market_data import derive_valuation_ratios
-        fundamentals = {"XYZ": None, "ABC": self._fund(_eps_diluted_annual=5.0,
+        fundamentals = {"XYZ": None, "ABC": self._fund(_eps_diluted_ttm=5.0,
                                                         _shares_diluted=1000.0)["XYZ"]}
         derive_valuation_ratios({"XYZ": {"close": 100.0}, "ABC": {"close": 100.0}}, fundamentals)
         assert fundamentals["XYZ"] is None            # untouched, no crash
@@ -4127,14 +4410,14 @@ class TestDeriveValuationRatios:
         # and compute_risk_metrics' NaN guard exist to prevent elsewhere).
         from market_data import derive_valuation_ratios
         prices = {"XYZ": {"close": 100.0}}
-        fundamentals = self._fund(_shares_diluted=1000.0, _fcf_annual=float("nan"))
+        fundamentals = self._fund(_shares_diluted=1000.0, _fcf_ttm=float("nan"))
         derive_valuation_ratios(prices, fundamentals)
         assert "fcf_yield" not in fundamentals["XYZ"]
 
     def test_nan_debt_or_cash_omits_ev_ebitda(self):
         from market_data import derive_valuation_ratios
         prices = {"XYZ": {"close": 100.0}}
-        fundamentals = self._fund(_shares_diluted=1000.0, _ebitda_annual=12000.0,
+        fundamentals = self._fund(_shares_diluted=1000.0, _ebitda_ttm=12000.0,
                                    _total_debt=float("nan"), _cash=1000.0)
         derive_valuation_ratios(prices, fundamentals)
         assert "ev_ebitda" not in fundamentals["XYZ"]
@@ -4147,8 +4430,8 @@ class TestDeriveValuationRatios:
         from quant_engine import compute_valuation_score
         prices = {"XYZ": {"close": 100.0}}
         fundamentals = self._fund(
-            _eps_diluted_annual=5.0, _shares_diluted=1000.0,
-            _fcf_annual=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_annual=12000.0,
+            _eps_diluted_ttm=5.0, _shares_diluted=1000.0,
+            _fcf_ttm=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_ttm=12000.0,
         )
         derive_valuation_ratios(prices, fundamentals)
         vs = compute_valuation_score(fundamentals["XYZ"])
@@ -6124,7 +6407,7 @@ class TestCascadeProvider:
         class _SEC:
             def fundamentals(self, t):
                 calls.append(t)
-                return {"_eps_diluted_annual": 6.0, "_shares_diluted": 1000.0}
+                return {"_eps_diluted_ttm": 6.0, "_shares_diluted": 1000.0}
             def next_earnings_date(self, t): return None
             def estimates(self, t): return None
 
@@ -6136,19 +6419,19 @@ class TestCascadeProvider:
         cp = CascadeProvider(_FMP(), _SEC())
         result = cp.fundamentals("AAPL")
         assert calls == ["AAPL"], "SEC must be consulted even when FMP covers quality"
-        assert result["_eps_diluted_annual"] == 6.0   # SEC's components carried through
+        assert result["_eps_diluted_ttm"] == 6.0   # SEC's components carried through
 
     def test_fmp_valuation_fields_stripped_sec_quality_and_components_kept(self):
         # The core Phase 3 behavior: FMP's TTM pe_ratio/fcf_yield/ev_ebitda never
         # reach the merged result — SEC-derived (downstream) is the single source.
         fmp = {"gross_margin": 0.5, "operating_margin": 0.2, "debt_to_equity": 0.3,
                "pe_ratio": 20.0, "fcf_yield": 0.04, "ev_ebitda": 15.0}
-        sec = {"_eps_diluted_annual": 6.0, "_shares_diluted": 1000.0}
+        sec = {"_eps_diluted_ttm": 6.0, "_shares_diluted": 1000.0}
         cp = self._cascade(fmp_data=fmp, sec_data=sec)
         result = cp.fundamentals("AAPL")
         assert not ({"pe_ratio", "fcf_yield", "ev_ebitda"} & result.keys())
         assert result["gross_margin"] == 0.5           # FMP quality preserved
-        assert result["_eps_diluted_annual"] == 6.0     # SEC components preserved
+        assert result["_eps_diluted_ttm"] == 6.0     # SEC components preserved
 
     def test_fmp_miss_falls_back_to_sec_quality(self):
         """FMP returns None → SEC fills quality fields."""

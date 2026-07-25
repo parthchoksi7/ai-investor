@@ -13,6 +13,79 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — TTM valuation basis, the PLAN_SEC_VALUATION finale (Phase 4, Jul 24 2026)
+
+Flow valuation components (EPS, CFO, capex, D&A, operating income for EBITDA) move
+from the latest annual 10-K to trailing-twelve-months; balance components (shares,
+debt, cash) move from latest-10-K-only to latest-available-any-form. `FORMULA_VERSION`
+bumped `2.2-valuation-sec-only` → `2.3-valuation-ttm`. This closes out the four-phase
+plan — see `PLAN_SEC_VALUATION.md` for the full history.
+
+- **`feat(data_providers)` a small TTM engine inside `SECProvider`** — the real
+  problem planning didn't anticipate: XBRL never discloses a standalone "Q4"
+  duration fact (a fiscal year's 4th quarter only ever appears folded into the
+  10-K's full-year figure). New pure helpers (`_quarterly_series` /
+  `_ytd_derived_quarters` / `_combined_quarterly_series` / `_annual_series` /
+  `_fill_derived_quarters` / `_ttm_ex`) build a quarterly time series and DERIVE
+  the missing quarter as `annual − known 3 quarters`, refusing (honest N/A) on any
+  ambiguity — overlapping coverage, more than one gap, or a gap that isn't itself
+  quarter-shaped. `_latest_any_form_ex` handles balance items (accepts 10-K or
+  10-Q, tie-breaks toward the shortest/most-instantaneous duration).
+- **`feat(data_providers)` YTD-differencing for cash-flow items** — live-verified
+  a second real-world wrinkle: AAPL's CFO/capex have ZERO standalone Q2/Q3
+  entries, only Q1 (trivially both) and 6-/9-month YTD-cumulative figures — a
+  common pattern for cash-flow-statement items specifically (unlike revenue/EPS,
+  which usually get clean standalone-quarter tags). `_ytd_derived_quarters`
+  differences consecutive YTD figures to recover individual quarters for exactly
+  these concepts; without it the TTM engine was starved for CFO/capex/D&A on
+  real filers.
+- **`fix(data_providers)` implausible-share-count guard** — live-verified a
+  second bug: MCD reports `WeightedAverageNumberOfDilutedSharesOutstanding`
+  SCALED IN MILLIONS ("713.5" meaning 713.5M) rather than the raw count (AAPL:
+  "14725873000") — a valid XBRL choice (the `decimals` attribute carries the
+  scale) that SEC's companyfacts JSON doesn't expose, so it's undetectable from
+  the API alone. This silently produced a **~37,000× `fcf_yield`** for MCD (a
+  bogus market cap near zero). No real exchange-listed company has under 1M
+  diluted shares; `_MIN_PLAUSIBLE_SHARES = 1,000,000` now refuses the field
+  rather than fabricate a ratio off it. Pre-existing since Phase 1 — only
+  surfaced once Phase 4's live full-universe validation actually multiplied
+  shares × price for every ticker.
+- **`fix(data_providers)` quality-factor `prefer_recent` gap** — live-verified a
+  third bug, the SAME class Phase 1 fixed for valuation components but never
+  applied to quality: `gross_margin`/`operating_margin` (via the `Revenues`
+  fallback list) and `debt_to_equity` (via `LongTermDebt`) used first-match-wins,
+  not `prefer_recent`. AAPL's `Revenues` concept has entries but the newest was
+  filed **2018-11-05** (abandoned after ASC 606 for
+  `RevenueFromContractWithCustomerExcludingAssessedTax`) — first-match-wins
+  silently computed AAPL's gross_margin as **0.735** off a 2018 figure instead of
+  the correct **~0.469**. JPM's `debt_to_equity` had the identical issue via a
+  `LongTermDebt` tag frozen since 2014 (the exact tag Phase 1's own regression
+  test already documented as frozen — for a different consumer). Production
+  impact was masked for FMP-covered names (FMP quality wins on overlap in
+  `CascadeProvider`) but live for the SEC-only-quality majority of the universe.
+  Fixed by adding `prefer_recent=True` to all three quality extractions.
+- **Live-verified basis impact, not just unit tests:** re-fetched all 175
+  snapshot tickers fresh from SEC EDGAR under the new logic — **0 errors**,
+  valuation coverage **94.3%** (165/175), up from Phase 3's 60.0% cached-view and
+  essentially matching the SEC quality-coverage level (94.9%) Phase 2/3 predicted
+  it would climb toward. TTM materially changes realized values vs. the prior
+  annual basis for the same names — e.g. GOOGL P/E **29.39 → 15.96**, crossing a
+  `compute_valuation_score` bucket boundary — confirming a real signal change,
+  not a cosmetic one.
+
+QA: full `pytest` green (**847**, +19 over Phase 3's 828 — a new `TestTTMEngine`
+class unit-tests every pure helper in isolation: dedup/restatement handling,
+quarter vs. YTD vs. annual extraction, missing-quarter derivation, overlap/
+multi-gap/wrong-shaped-gap refusal, contiguity, cross-concept `prefer_recent`;
+`TestSECValuationComponents`/`TestSECCrossFieldVintageGuard` rewritten with
+realistic multi-quarter fixtures for the new mechanism; plus the implausible-
+share-count regression); ruff F821/F823 clean; workflow YAML parses. Backtest
+(`python -m backtest`) re-run against the live snapshot with the new logic applied
+in-memory (96.0% fundamental coverage, formula `2.3-valuation-ttm`, no errors or
+NaNs) — same §9.2 honest caveat as every prior phase: a single current-fundamentals
+snapshot applied across the whole backtest window validates the scoring mechanics,
+not a point-in-time historical valuation edge.
+
 ### Added — Single-source SEC valuation (PLAN_SEC_VALUATION Phase 3, Jul 24 2026)
 
 Removes the mixed TTM(FMP)/annual(SEC) basis wart Phase 2 left as a documented

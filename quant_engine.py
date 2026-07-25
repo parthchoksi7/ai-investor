@@ -69,9 +69,20 @@ FACTOR_WEIGHTS = {
 # REALIZED valuation numbers, not just their coverage, changed for those names), so
 # the evidence clock resets again — bumped rather than silently reusing 2.1 across
 # a basis change. FACTOR_WEIGHTS unchanged; `compute_valuation_score`'s formula
-# unchanged. (Phase 4's planned TTM-basis rewrite becomes 2.3-valuation-ttm, not
-# 2.2 as the plan doc originally sketched before this bump was made.)
-FORMULA_VERSION = "2.2-valuation-sec-only"
+# unchanged.
+#
+# 2.3-valuation-ttm (PLAN_SEC_VALUATION Phase 4, Jul 24 2026): flow valuation
+# components (EPS, CFO, capex, D&A, operating income for EBITDA) move from
+# latest-ANNUAL to trailing-twelve-months (sum of the 4 most recent contiguous
+# fiscal quarters, deriving the one quarter XBRL never discloses standalone —
+# see data_providers.SECProvider._ttm_ex); balance components (shares, debt,
+# cash) move from latest-10-K-only to latest-available-any-form (may now come
+# from a 10-Q). Live-verified: TTM P/E differs materially from the prior
+# annual-basis figure for the same names (e.g. GOOGL 29.39 -> 15.96 — crosses
+# a valuation-score bucket boundary), so this is a real signal change, not a
+# cosmetic one — evidence clock resets again. FACTOR_WEIGHTS and
+# `compute_valuation_score`'s formula are unchanged.
+FORMULA_VERSION = "2.3-valuation-ttm"
 
 
 def _mean(values: list) -> float:

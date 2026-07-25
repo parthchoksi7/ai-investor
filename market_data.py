@@ -317,9 +317,11 @@ def _compute_fundamental_coverage(all_tickers: list, fundamentals: dict,
 
 def derive_valuation_ratios(prices: dict, fundamentals: dict) -> None:
     """PLAN_SEC_VALUATION Phase 2 — combine Phase 1's price-INDEPENDENT SEC EDGAR
-    components (`_eps_diluted_annual` / `_shares_diluted` / `_fcf_annual` /
-    `_total_debt` / `_cash` / `_ebitda_annual`) with today's snapshot close price to
-    derive pe_ratio / fcf_yield / ev_ebitda.
+    components with today's snapshot close price to derive pe_ratio / fcf_yield /
+    ev_ebitda. As of Phase 4, the flow components are TTM (`_eps_diluted_ttm` /
+    `_fcf_ttm` / `_ebitda_ttm` — trailing twelve months, not the latest annual
+    10-K); the balance components (`_shares_diluted` / `_total_debt` / `_cash`)
+    are point-in-time-latest (may come from a 10-Q, not just the latest 10-K).
 
     "Not already present" guard: a ratio field already present in `fundamentals[t]`
     is never overwritten. As of Phase 3, `data_providers.CascadeProvider` strips
@@ -359,17 +361,17 @@ def derive_valuation_ratios(prices: dict, fundamentals: dict) -> None:
         market_cap = price * shares if shares and shares > 0 else None
 
         if "pe_ratio" not in f:
-            eps = _num(f.get("_eps_diluted_annual"))
+            eps = _num(f.get("_eps_diluted_ttm"))
             if eps is not None and eps > 0:
                 f["pe_ratio"] = round(price / eps, 2)
 
         if "fcf_yield" not in f and market_cap:
-            fcf = _num(f.get("_fcf_annual"))
+            fcf = _num(f.get("_fcf_ttm"))
             if fcf is not None:
                 f["fcf_yield"] = round(fcf / market_cap, 4)
 
         if "ev_ebitda" not in f and market_cap:
-            ebitda = _num(f.get("_ebitda_annual"))
+            ebitda = _num(f.get("_ebitda_ttm"))
             debt = _num(f.get("_total_debt"))
             cash = _num(f.get("_cash"))
             if ebitda is not None and ebitda > 0 and debt is not None and cash is not None:
