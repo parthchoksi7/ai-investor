@@ -2,24 +2,33 @@
 data_providers.py — pluggable real-data providers (#1 / FINAL_PLAN P2).
 
 Why: the system runs on free-tier Polygon, which returns NO fundamentals (so the
-quant quality/valuation factors are permanently N/A) and NO earnings calendar (so
+quant quality/valuation factors were permanently N/A) and NO earnings calendar (so
 the earnings agent invents dates — a live fabrication vector feeding real orders).
-This module adds a provider abstraction + two concrete providers so the snapshot
-can carry real fundamentals + a verified earnings calendar.
+This module adds a provider abstraction + concrete providers so the snapshot can
+carry real fundamentals + a verified earnings calendar.
 
 Provider chain (selected by `get_provider()`):
-  - `FMPProvider` (FMP_API_KEY set): all 6 quant factors + earnings calendar + estimates.
-    FMP free tier covers ~35% of the universe (mega-caps); the rest return 402.
-  - `SECProvider` (no key): gross_margin / operating_margin / debt_to_equity from
-    SEC EDGAR company-facts — completely free, no API key, ~100% US equity coverage.
-    No earnings calendar (EDGAR has no forward calendar). Degrades gracefully for
-    non-US-listed names (returns None).
+  - `FMPProvider` (FMP_API_KEY set): quality factors + earnings calendar + estimates.
+    FMP free tier covers ~35% of the universe (mega-caps) for quality; the rest
+    return 402. FMP CAN also return TTM valuation ratios, but as of
+    PLAN_SEC_VALUATION Phase 3 those are discarded by `CascadeProvider` — valuation
+    is single-sourced from SEC (below) to avoid mixing TTM and annual bases.
+  - `SECProvider` (no key): gross_margin / operating_margin / debt_to_equity, PLUS
+    the price-INDEPENDENT valuation components (`_eps_diluted_annual` /
+    `_shares_diluted` / `_fcf_annual` / `_total_debt` / `_cash` / `_ebitda_annual`)
+    that `market_data.derive_valuation_ratios` turns into pe_ratio / fcf_yield /
+    ev_ebitda once the snapshot price is in scope — from SEC EDGAR company-facts,
+    completely free, no API key, ~100% US equity coverage. No earnings calendar
+    (EDGAR has no forward calendar). Degrades gracefully for non-US-listed names
+    (returns None).
+  - `CascadeProvider` (FMP_API_KEY set): FMP for quality-when-covered + the
+    earnings calendar; SEC EDGAR for the single-sourced valuation components +
+    the quality fallback. Always consults both (see its docstring).
   - `StubProvider`: deterministic in-memory data for tests / offline dev.
 
-Upgrade path: add FMP_API_KEY to get the remaining 3 valuation factors (P/E, FCF
-yield, EV/EBITDA) and the earnings calendar. Without it, quality factors are real
-for the full universe; valuation stays N/A — a major improvement over the all-N/A
-pre-provider behavior.
+Net effect: quality AND valuation factors are real for ~the full US universe for
+free (no FMP_API_KEY required); FMP, when present, only sharpens quality (TTM) for
+the names it covers and supplies the earnings calendar EDGAR doesn't have.
 """
 
 from __future__ import annotations
@@ -433,8 +442,11 @@ class SECProvider:
 
 
 _QUALITY_FIELDS = {"gross_margin", "operating_margin", "debt_to_equity"}
-# Valuation fields require FMP (price-relative ratios); SEC EDGAR does NOT supply them,
-# so valuation coverage is structurally capped near FMP's free-tier reach (~35%).
+# PLAN_SEC_VALUATION Phase 3 (2026-07-24): valuation is no longer FMP-gated. SEC
+# EDGAR supplies these too — CascadeProvider always fetches SEC's price-INDEPENDENT
+# components (Phase 1) and market_data.derive_valuation_ratios (Phase 2) turns them
+# into pe_ratio/fcf_yield/ev_ebitda for the full US-equity universe, single-source
+# (Phase 3 strips FMP's own TTM valuation fields so basis never mixes — §7/§10.1).
 _VALUATION_FIELDS = {"pe_ratio", "fcf_yield", "ev_ebitda"}
 
 
@@ -445,8 +457,11 @@ def fundamental_coverage(tickers, fundamentals: dict) -> dict:
     snapshot gate (market_data) and the backtest caveat (backtest/engine) call this, so
     the number that gates the quality-tilt re-weight is computed ONE way — a fork here
     would let the backtest clear the 80% floor while the live snapshot doesn't (or vice
-    versa). Quality (EDGAR, ~all US equities) is the primary gate; valuation is reported
-    for transparency because it can't structurally reach the floor without paid FMP.
+    versa). Quality (EDGAR, ~all US equities) is the primary gate. Valuation is reported
+    for transparency but still does NOT gate — as of Phase 3 it is SEC-derived
+    (single-source, no FMP dependency) and climbs toward the same ~90%+ level as
+    quality, but a per-ticker XBRL tag gap (thin ADR/20-F filings, a vintage-mismatch
+    guard) can still leave a name N/A, so it stays informational rather than a floor.
     """
     total = len(tickers)
 
@@ -468,16 +483,26 @@ def fundamental_coverage(tickers, fundamentals: dict) -> dict:
 
 
 class CascadeProvider:
-    """FMP for all 6 factors when covered; SEC EDGAR fallback for 3 quality factors on FMP misses.
+    """FMP for quality when covered (TTM, more current) + the earnings calendar;
+    SEC EDGAR for EVERYTHING valuation-related (PLAN_SEC_VALUATION Phase 3 — single
+    valuation source, §10.1 Option B) plus the quality fallback for FMP misses.
 
-    FMP free tier covers ~35% of the universe (mega-caps). For the remaining ~65%,
-    SEC EDGAR provides gross_margin / operating_margin / debt_to_equity for free.
-    The cascade gets quality signal for ~100% of US equities and the full 6-factor
-    coverage for the ~35% FMP covers, vs. the 37/100 coverage before this class.
+    Always consults BOTH providers: SEC's price-INDEPENDENT valuation components
+    (Phase 1 — `_eps_diluted_annual` / `_shares_diluted` / `_fcf_annual` / etc.) are
+    needed for market_data.derive_valuation_ratios to compute ratios for the FULL
+    universe, not just the ~35% of names FMP's free tier misses on quality — the old
+    "FMP quality hit → SEC never consulted" short-circuit would have starved
+    derive_valuation_ratios of components for exactly the mega-caps most likely to
+    have them. FMP's own pe_ratio/fcf_yield/ev_ebitda (TTM) are dropped before
+    merging: SEC-derived (annual, no-look-ahead-stamped) is the SINGLE valuation
+    source now, so the composite never mixes TTM and annual bases across tickers.
 
-    Why merge order {sec, fmp}: FMP data wins on any overlap (it's more current —
-    TTM vs. annual EDGAR filings), and SEC fills only the quality fields that FMP
-    didn't supply.
+    Quality fields (gross_margin/operating_margin/debt_to_equity) are UNCHANGED by
+    Phase 3: FMP still wins on overlap (TTM, more current than EDGAR's annual 10-K),
+    SEC fills the quality fields FMP's free tier doesn't cover. Merge order
+    {sec, fmp_no_valuation} — FMP wins ties on quality; SEC uniquely supplies the
+    underscore valuation components and `_as_of_filing` (FMP has neither key, so
+    there's no overlap to arbitrate there).
     """
 
     def __init__(self, primary: "FMPProvider", fallback: "SECProvider"):
@@ -485,15 +510,15 @@ class CascadeProvider:
         self._fallback = fallback
 
     def fundamentals(self, ticker: str) -> dict | None:
-        result = self._primary.fundamentals(ticker)
-        if result and any(k in result for k in _QUALITY_FIELDS):
-            return result  # FMP covered this ticker; quality fields are present
-        # FMP miss (402 / premium-only on free tier): supplement with SEC EDGAR.
-        # Merge as {sec, fmp} so FMP valuation fields (if any) still win on overlap.
+        fmp = self._primary.fundamentals(ticker) or {}
+        # Phase 3: FMP no longer contributes valuation ratios — SEC-derived (via
+        # market_data.derive_valuation_ratios, downstream of this call) is the
+        # single source, avoiding a mixed TTM(FMP)/annual(SEC) basis.
+        fmp_no_valuation = {k: v for k, v in fmp.items() if k not in _VALUATION_FIELDS}
         sec = self._fallback.fundamentals(ticker)
-        if sec is None and not result:
+        if sec is None and not fmp_no_valuation:
             return None
-        return {**(sec or {}), **(result or {})}
+        return {**(sec or {}), **fmp_no_valuation}
 
     def next_earnings_date(self, ticker: str) -> str | None:
         return self._primary.next_earnings_date(ticker)
@@ -510,9 +535,11 @@ class CascadeProvider:
 
 def get_provider() -> MarketDataProvider:
     """Provider selection:
-      - FMP_API_KEY set → CascadeProvider: FMP for all 6 factors + earnings calendar,
-                          with SEC EDGAR fallback for 3 quality factors on FMP free-tier misses.
-      - No key          → SECProvider: 3 quality factors from EDGAR (free, full US coverage).
+      - FMP_API_KEY set → CascadeProvider: FMP for quality (when covered) + the
+                          earnings calendar; SEC EDGAR for valuation (single source,
+                          PLAN_SEC_VALUATION Phase 3) + the quality fallback.
+      - No key          → SECProvider: quality (+ valuation components) from EDGAR,
+                          free, full US coverage. No earnings calendar without FMP.
     """
     if os.getenv("FMP_API_KEY"):
         return CascadeProvider(FMPProvider(), SECProvider())

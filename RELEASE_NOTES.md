@@ -13,6 +13,50 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — Single-source SEC valuation (PLAN_SEC_VALUATION Phase 3, Jul 24 2026)
+
+Removes the mixed TTM(FMP)/annual(SEC) basis wart Phase 2 left as a documented
+interim compromise. SEC-derived valuation is now the ONLY valuation source, for
+every ticker, whether or not FMP covers it.
+
+- **`fix(data_providers)` `CascadeProvider.fundamentals()` redesigned** — previously
+  short-circuited to FMP's raw result whenever FMP covered a ticker's quality
+  fields, which meant SEC was **never consulted** for FMP-covered mega-caps and
+  `derive_valuation_ratios` had no components to work with for exactly the names
+  most likely to have them. Now ALWAYS consults both providers: SEC's price-
+  independent valuation components merge in unconditionally, and FMP's own TTM
+  `pe_ratio`/`fcf_yield`/`ev_ebitda` are stripped before merging so they can never
+  reach the snapshot. Quality fields (`gross_margin`/`operating_margin`/
+  `debt_to_equity`) are UNCHANGED — FMP still wins on overlap (TTM, more current),
+  SEC still fills the quality gaps FMP's free tier misses.
+- **`feat(quant_engine)` `FORMULA_VERSION` bumped `2.1-valuation-live` →
+  `2.2-valuation-sec-only`** — a real signal change: the REALIZED valuation numbers
+  for the ~35 previously-FMP-covered names change (annual basis replaces TTM), not
+  just their coverage, so the factor-persistence/IC evidence clock resets again per
+  the same §8 discipline as Phase 2's bump.
+- **Live-verified, not just unit-tested:** re-fetched fresh SEC EDGAR data for the
+  exact 35 tickers that were FMP-TTM-sourced on today's committed snapshot and
+  re-derived under the new logic. Of those 35: **19 keep all 3 ratios**, **15 keep
+  1–2** (mostly banks/financials — `OperatingIncomeLoss` isn't meaningfully tagged
+  for banks, so EV/EBITDA is honestly omitted rather than fabricated), **1 (V)
+  loses all three** (Visa's diluted-EPS/share-count concepts aren't in the current
+  XBRL fallback list — a genuine per-filer tagging gap, not a bug; candidate for a
+  future fallback-list extension). Net universe-level valuation coverage is
+  essentially a **wash — 107 → 105 of 175 tickers** (Phase 3's win is basis
+  *consistency*, not a fresh coverage jump; Phase 2 already delivered that).
+  Scoring-mechanics backtest re-run clean under `2.2-valuation-sec-only` (96.0%
+  fundamental coverage, no errors/NaNs) — the swing in absolute backtest return vs
+  the Phase-2 run is expected noise from the already-documented single-snapshot-
+  applied-across-history limitation (§9.2), not a claimed edge either way.
+
+QA: full `pytest` green (**828**, +3: `TestCascadeProvider` rewritten for the new
+always-consult-SEC / strip-FMP-valuation behavior — `test_sec_always_consulted_
+even_on_fmp_quality_hit` locks in the exact regression this phase fixes); ruff
+F821/F823 clean; workflow YAML parses. `CascadeProvider`'s docstring, the module
+docstring, `fundamental_coverage()`'s docstring, and `data_quality.py`'s stale
+"structurally FMP-capped (~35%)" comment all corrected to match — Phase 2 had
+already made that claim false; this batch also cleans up the leftover wording.
+
 ### Added — SEC-derived full-universe valuation live (PLAN_SEC_VALUATION Phase 2, Jul 24 2026)
 
 The behavior change Phase 1 set up for: valuation (P/E, FCF yield, EV/EBITDA) is now

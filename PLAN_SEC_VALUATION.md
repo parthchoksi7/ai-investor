@@ -1,7 +1,7 @@
 # Plan — Free full-universe valuation via SEC EDGAR (retire the FMP free-tier gap)
 
-**Status:** Phases 1–2 SHIPPED (2026-07-23/24, owner decisions per §10). Phase 3
-(single-source SEC valuation) and Phase 4 (TTM basis) remain, per §11.
+**Status:** Phases 1–3 SHIPPED (2026-07-23/24, owner decisions per §10). Phase 4
+(TTM basis) remains, per §11.
 **Type:** deterministic signal-layer change → touches the live candidate-selection
 composite → **`FORMULA_VERSION` bump + backtest-before-deploy** (evidence-gated).
 
@@ -218,16 +218,38 @@ version string.
   papered over. Reversible by reverting the derive wiring (components go back to
   unused; version reverts). See `RELEASE_NOTES.md`'s Phase-2 entry for the full
   writeup.
-- **Phase 3 — single-source (option B, in-scope per §10.1):** route valuation entirely
-  through SEC-derived; keep FMP for the calendar only. Removes the mixed-basis wart and
-  the FMP-valuation dependency.
+- **Phase 3 — single-source (option B, in-scope per §10.1): ✅ SHIPPED (2026-07-24).**
+  `data_providers.CascadeProvider` redesigned: now ALWAYS consults SEC EDGAR (not just
+  on an FMP quality-miss — the old short-circuit was silently starving
+  `derive_valuation_ratios` of components for exactly the FMP-covered mega-caps most
+  likely to have them) and strips FMP's own TTM pe_ratio/fcf_yield/ev_ebitda before
+  merging. SEC-derived (annual) is now the single valuation source for the FULL
+  universe; FMP is used only for quality-when-covered (unchanged, still wins on
+  overlap) + the earnings calendar. `FORMULA_VERSION` bumped to
+  `2.2-valuation-sec-only` (§8 discipline — the REALIZED numbers changed for
+  previously-FMP-covered names, not just coverage, so the evidence clock resets
+  again). **Live-verified** against the 35 tickers that were FMP-TTM-sourced on the
+  committed snapshot: re-fetched fresh from SEC EDGAR and re-derived — 19 keep all 3
+  ratios, 15 keep 1–2 (mostly banks/financials losing EV/EBITDA — `OperatingIncomeLoss`
+  isn't meaningfully tagged for banks, an honest N/A, not a bug), 1 (V) loses all
+  three (missing diluted-EPS/share-count XBRL tags — a genuine per-filer coverage gap,
+  same class as the plan's §12 risk row). Net universe-level valuation coverage is
+  essentially a WASH (107→105 of 175) — Phase 3's win is basis CONSISTENCY, not a
+  fresh coverage jump (Phase 2 already delivered that). Scoring-mechanics backtest
+  re-run clean under `2.2-valuation-sec-only` (96.0% fundamental coverage, no
+  errors/NaNs); absolute-return swing vs the Phase-2 backtest is expected noise from
+  the same single-snapshot-applied-across-history limitation already documented in
+  §9.2, not a claimed edge. See `RELEASE_NOTES.md`'s Phase-3 entry for the full
+  writeup.
 - **Phase 4 — TTM basis (committed follow-up, per §10.3):** replace annual (10-K) inputs
   with trailing-twelve-months (sum of the last 4 10-Q `us-gaap` flow figures; balance
   items stay point-in-time latest). Flow concepts (revenue, net income, CFO, capex, D&A,
   operating income) become TTM; EPS becomes TTM diluted. Starts as soon as Phases 1–3
-  land. Same discipline: `FORMULA_VERSION` bump (`2.2-valuation-ttm`) + backtest. No-
-  look-ahead unchanged (each quarter carries its own `filed` date; TTM is available only
-  once the 4th quarter is filed).
+  land (now true — Phases 1–3 are shipped). Same discipline: `FORMULA_VERSION` bump
+  (**`2.3-valuation-ttm`** — renumbered from the plan's original `2.2` sketch now that
+  Phase 3 used `2.2-valuation-sec-only`) + backtest. No-look-ahead unchanged (each
+  quarter carries its own `filed` date; TTM is available only once the 4th quarter is
+  filed).
 
 ## 12. Risks & mitigations
 

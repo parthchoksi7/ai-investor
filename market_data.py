@@ -301,8 +301,10 @@ def _compute_fundamental_coverage(all_tickers: list, fundamentals: dict,
     observability layer (Phase 3) can gate the strategy shift on the IPS floor. The
     quality/valuation counts come from the ONE shared `data_providers.fundamental_coverage`
     so the backtest and live paths never disagree. ``coverage_ok`` gates on the
-    QUALITY floor (EDGAR-achievable); valuation is reported for transparency but is
-    structurally capped by FMP's free tier and is NOT part of the gate.
+    QUALITY floor (EDGAR-achievable); valuation is reported for transparency but
+    stays informational (PLAN_SEC_VALUATION Phase 3: single-sourced from SEC, no
+    longer FMP-capped, but a per-ticker XBRL tag gap can still leave it N/A) and is
+    NOT part of the gate.
     ``cik_map_ok`` is None when the provider path isn't SEC-backed (e.g. tests).
     """
     from data_providers import fundamental_coverage
@@ -317,13 +319,18 @@ def derive_valuation_ratios(prices: dict, fundamentals: dict) -> None:
     """PLAN_SEC_VALUATION Phase 2 — combine Phase 1's price-INDEPENDENT SEC EDGAR
     components (`_eps_diluted_annual` / `_shares_diluted` / `_fcf_annual` /
     `_total_debt` / `_cash` / `_ebitda_annual`) with today's snapshot close price to
-    derive pe_ratio / fcf_yield / ev_ebitda for the tickers FMP's free tier misses.
+    derive pe_ratio / fcf_yield / ev_ebitda.
 
-    FMP-first: a ratio field already present in `fundamentals[t]` (from FMPProvider,
-    when FMP_API_KEY is set) is NEVER overwritten — SEC only fills the gap. Emits a
-    ratio only when every input it needs is present and passes its guard (plan §6);
-    otherwise the field stays absent — honest N/A, never a fabricated fallback.
-    Mutates `fundamentals` in place; returns nothing.
+    "Not already present" guard: a ratio field already present in `fundamentals[t]`
+    is never overwritten. As of Phase 3, `data_providers.CascadeProvider` strips
+    FMP's own TTM valuation fields before this function ever sees the dict — SEC-
+    derived (annual) is the single valuation source for every ticker — so in
+    practice this guard is now pure defense-in-depth (idempotent on a second call,
+    and safe if a future provider ever populates a field upstream again) rather than
+    the FMP-vs-SEC arbitration point it was in Phase 2. Emits a ratio only when
+    every input it needs is present and passes its guard (plan §6); otherwise the
+    field stays absent — honest N/A, never a fabricated fallback. Mutates
+    `fundamentals` in place; returns nothing.
 
     Formulas (plan §6): market_cap = price × shares; pe = price / eps (eps>0);
     fcf_yield = fcf / market_cap; ev = market_cap + total_debt − cash;

@@ -6093,7 +6093,9 @@ class TestPublishTradeConfidenceRounding:
 # ── CascadeProvider tests ──────────────────────────────────────────────────────
 
 class TestCascadeProvider:
-    """CascadeProvider: FMP for all 6 factors, SEC EDGAR fallback for 3 quality fields on FMP misses."""
+    """CascadeProvider (PLAN_SEC_VALUATION Phase 3): FMP for quality-when-covered +
+    the earnings calendar; SEC EDGAR is the SINGLE valuation source (always
+    consulted) plus the quality fallback for FMP misses."""
 
     def _cascade(self, fmp_data=None, sec_data=None, earnings=None, estimates=None):
         from data_providers import CascadeProvider
@@ -6110,19 +6112,19 @@ class TestCascadeProvider:
 
         return CascadeProvider(_FMP(), _SEC())
 
-    def test_fmp_hit_returns_fmp_data_sec_not_consulted(self):
-        """FMP covers the ticker → return FMP data, SEC not called."""
+    def test_sec_always_consulted_even_on_fmp_quality_hit(self):
+        # Phase 3 regression: the old short-circuit (FMP quality hit → SEC never
+        # called) starved derive_valuation_ratios of SEC's components for exactly
+        # the mega-caps most likely to have them. SEC must be consulted every time.
         fmp = {"gross_margin": 0.5, "operating_margin": 0.2, "debt_to_equity": 0.3,
                "pe_ratio": 20.0, "fcf_yield": 0.04, "ev_ebitda": 15.0}
-        # sec_data=None simulates SEC never being invoked; if it were consulted and
-        # returned None, merged result would still equal fmp — but we also verify
-        # via a sentinel that the SEC object isn't called.
         calls = []
-
         from data_providers import CascadeProvider
 
         class _SEC:
-            def fundamentals(self, t): calls.append(t); return None
+            def fundamentals(self, t):
+                calls.append(t)
+                return {"_eps_diluted_annual": 6.0, "_shares_diluted": 1000.0}
             def next_earnings_date(self, t): return None
             def estimates(self, t): return None
 
@@ -6133,11 +6135,23 @@ class TestCascadeProvider:
 
         cp = CascadeProvider(_FMP(), _SEC())
         result = cp.fundamentals("AAPL")
-        assert result == fmp
-        assert calls == [], "SEC should not be consulted when FMP has quality fields"
+        assert calls == ["AAPL"], "SEC must be consulted even when FMP covers quality"
+        assert result["_eps_diluted_annual"] == 6.0   # SEC's components carried through
 
-    def test_fmp_miss_falls_back_to_sec(self):
-        """FMP returns None → SEC fills 3 quality fields."""
+    def test_fmp_valuation_fields_stripped_sec_quality_and_components_kept(self):
+        # The core Phase 3 behavior: FMP's TTM pe_ratio/fcf_yield/ev_ebitda never
+        # reach the merged result — SEC-derived (downstream) is the single source.
+        fmp = {"gross_margin": 0.5, "operating_margin": 0.2, "debt_to_equity": 0.3,
+               "pe_ratio": 20.0, "fcf_yield": 0.04, "ev_ebitda": 15.0}
+        sec = {"_eps_diluted_annual": 6.0, "_shares_diluted": 1000.0}
+        cp = self._cascade(fmp_data=fmp, sec_data=sec)
+        result = cp.fundamentals("AAPL")
+        assert not ({"pe_ratio", "fcf_yield", "ev_ebitda"} & result.keys())
+        assert result["gross_margin"] == 0.5           # FMP quality preserved
+        assert result["_eps_diluted_annual"] == 6.0     # SEC components preserved
+
+    def test_fmp_miss_falls_back_to_sec_quality(self):
+        """FMP returns None → SEC fills quality fields."""
         sec = {"gross_margin": 0.6, "operating_margin": 0.25, "debt_to_equity": 0.8}
         cp = self._cascade(fmp_data=None, sec_data=sec)
         assert cp.fundamentals("PANW") == sec
@@ -6150,42 +6164,34 @@ class TestCascadeProvider:
         assert result["gross_margin"] == 0.4
         assert result["operating_margin"] == 0.1
 
-    def test_fmp_wins_on_overlap(self):
-        """When both providers have gross_margin, FMP value wins."""
+    def test_fmp_quality_wins_on_overlap(self):
+        """When both providers have gross_margin, FMP's (TTM, more current) wins."""
         fmp = {"gross_margin": 0.55, "operating_margin": 0.30, "debt_to_equity": 0.5}
         sec = {"gross_margin": 0.40, "operating_margin": 0.20, "debt_to_equity": 1.0}
-        cp = self._cascade(fmp_data=None, sec_data=sec)
-        # FMP returns None here so SEC fills in; but if FMP had data it wins:
-        from data_providers import CascadeProvider
+        cp = self._cascade(fmp_data=fmp, sec_data=sec)
+        result = cp.fundamentals("X")
+        assert result["gross_margin"] == 0.55
 
-        class _FMP:
-            def fundamentals(self, t): return None  # miss on free tier
-            def next_earnings_date(self, t): return None
-            def estimates(self, t): return None
-
-        class _SEC:
-            def fundamentals(self, t): return sec
-            def next_earnings_date(self, t): return None
-            def estimates(self, t): return None
-
-        # Simulate a partial FMP hit with valuation only (no quality fields):
-        from data_providers import _QUALITY_FIELDS
-
-        class _FMP_partial:
-            def fundamentals(self, t): return {"pe_ratio": 25.0}  # no quality fields
-            def next_earnings_date(self, t): return None
-            def estimates(self, t): return None
-
-        cp2 = CascadeProvider(_FMP_partial(), _SEC())
-        result = cp2.fundamentals("X")
-        # SEC fills quality fields; FMP's pe_ratio is preserved
+    def test_fmp_valuation_only_hit_dropped_sec_quality_fills(self):
+        # A partial FMP hit with valuation but no quality fields: the valuation is
+        # dropped (Phase 3 — SEC-derived only), quality still comes from SEC.
+        sec = {"gross_margin": 0.4, "operating_margin": 0.2, "debt_to_equity": 1.0}
+        cp = self._cascade(fmp_data={"pe_ratio": 25.0}, sec_data=sec)
+        result = cp.fundamentals("X")
         assert result.get("gross_margin") == sec["gross_margin"]
-        assert result.get("pe_ratio") == 25.0
+        assert "pe_ratio" not in result
 
     def test_both_none_returns_none(self):
-        """FMP and SEC both return None → CascadeProvider returns None."""
+        """FMP and SEC both return None/empty → CascadeProvider returns None."""
         cp = self._cascade(fmp_data=None, sec_data=None)
         assert cp.fundamentals("UNKNOWN") is None
+
+    def test_fmp_valuation_only_and_sec_none_returns_none(self):
+        # FMP has ONLY a stripped-away valuation field, SEC has nothing at all →
+        # the merged result would be {} (falsy), must still return None like the
+        # both-empty case, not an empty dict.
+        cp = self._cascade(fmp_data={"pe_ratio": 25.0}, sec_data=None)
+        assert cp.fundamentals("X") is None
 
     def test_earnings_and_estimates_use_primary(self):
         """next_earnings_date and estimates delegate to FMP, not SEC."""

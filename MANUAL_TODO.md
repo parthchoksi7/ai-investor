@@ -291,9 +291,12 @@ a look before assuming something is broken.
 - **Increment 3 shipped — `_as_of_filing` stamping** (`data_providers.SECProvider`): SEC
   fundamentals now carry the 10-K `filed` date (the no-look-ahead availability date), so the
   dossier reports REAL `fundamentals_age_days` / `fundamentals_stale` (was `null`) and the
-  future-filing look-ahead drop is now LIVE, not inert. Note: FMP-covered names (~35%) still
+  future-filing look-ahead drop is now LIVE, not inert. ~~Note: FMP-covered names (~35%) still
   lack a filing date (FMP TTM has no single filing); those report vintage-unknown, which is
-  honest. Old `provider_cache.json` entries backfill `_as_of_filing` on their normal TTL refresh.
+  honest.~~ **Superseded by PLAN_SEC_VALUATION Phase 3 (2026-07-24):** `CascadeProvider` now
+  always consults SEC EDGAR (not just on an FMP quality-miss), so EVERY ticker — including the
+  ~35% FMP covers — gets a real `_as_of_filing` stamp. Old `provider_cache.json` entries
+  backfill `_as_of_filing` on their normal TTL refresh.
 - **⬜ PENDING, not built:** per-lot FIFO tax dates (P0-4).
 - **⬜ PENDING (non-correctness — tracked, not blocking):**
   (a) **storage wall (§12.4):** `research_dossier.json` is committed whole to git daily and grows

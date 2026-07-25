@@ -25,23 +25,22 @@ import math
 # faith. The change is gated on the §8 fundamental-coverage fix: quality/valuation
 # are only real once SEC EDGAR coverage clears the 80% floor.
 #
-# VALUATION COVERAGE (PLAN_SEC_VALUATION Phase 2, shipped Jul 24 2026 — supersedes
-# the pre-Phase-2 note that valuation was structurally FMP-mega-cap-only). FMP
-# still runs first when FMP_API_KEY is provisioned (get_provider()'s FMP→SEC
-# cascade), but market_data.derive_valuation_ratios now DERIVES pe_ratio /
-# fcf_yield / ev_ebitda from SEC EDGAR's price-independent components (Phase 1)
-# combined with the snapshot's close price, for every ticker FMP's free tier
-# misses — FMP-first, SEC fills the gap. This lifts valuation coverage from
-# ~18% (FMP mega-caps only) toward the SEC quality-coverage level (~90%+),
-# same annual (10-K) basis as the existing margins (mixed TTM/annual only for the
-# minority of names FMP still covers; Phase 3 will make SEC-derived the single
-# source). `valuation_available` is still genuinely PER-TICKER (a name with no
-# EDGAR filing, thin XBRL tagging, or a not-yet-refreshed alternate-day cache entry
-# stays N/A) — the composite renormalizes it out where absent and blends the 0.25
-# weight where present, same honest-composite mechanism as before. The weights
-# below are UNCHANGED (plan §4.3): only the coverage of the existing valuation slot
-# grew, not the bet size. _fmt_scores / the PM quant menu render valuation as N/A
-# (never a fake 50) when it is absent.
+# VALUATION COVERAGE (PLAN_SEC_VALUATION Phase 3, shipped Jul 24 2026 — supersedes
+# the Phase 2 note about a mixed TTM/annual basis). `data_providers.CascadeProvider`
+# now strips FMP's own TTM valuation fields; `market_data.derive_valuation_ratios`
+# is the SINGLE valuation source for the full universe, computed from SEC EDGAR's
+# price-independent components (Phase 1) on one consistent annual (10-K) basis —
+# no more mixed-basis wart for the subset FMP used to cover. FMP is now used only
+# for quality (when covered, TTM, more current) + the earnings calendar. Valuation
+# coverage climbs toward the SEC quality-coverage level (~90%+) as the alternate-
+# day cache rotates. `valuation_available` is still genuinely PER-TICKER (a name
+# with no EDGAR filing, thin XBRL tagging, a vintage-mismatch guard, or a not-yet-
+# refreshed cache entry stays N/A) — the composite renormalizes it out where absent
+# and blends the 0.25 weight where present, same honest-composite mechanism as
+# before. The weights below are UNCHANGED (plan §4.3): only the coverage AND the
+# basis consistency of the existing valuation slot changed, not the bet size.
+# _fmt_scores / the PM quant menu render valuation as N/A (never a fake 50) when
+# it is absent.
 FACTOR_WEIGHTS = {
     "momentum":   0.15,
     "quality":    0.35,
@@ -62,7 +61,17 @@ FACTOR_WEIGHTS = {
 # market_data.derive_valuation_ratios — a real signal change (many more names now
 # carry a non-N/A valuation_score), so the evidence clock resets as expected (§8),
 # unlike a bump for zero benefit. FACTOR_WEIGHTS themselves are unchanged.
-FORMULA_VERSION = "2.1-valuation-live"
+#
+# 2.2-valuation-sec-only (PLAN_SEC_VALUATION Phase 3, Jul 24 2026): SEC-derived
+# valuation is now the SINGLE source (§10.1 Option B) — for the subset of tickers
+# FMP used to cover (TTM basis), pe_ratio/fcf_yield/ev_ebitda now come from SEC
+# EDGAR's annual 10-K basis instead. Same class of real signal change as 2.1 (the
+# REALIZED valuation numbers, not just their coverage, changed for those names), so
+# the evidence clock resets again — bumped rather than silently reusing 2.1 across
+# a basis change. FACTOR_WEIGHTS unchanged; `compute_valuation_score`'s formula
+# unchanged. (Phase 4's planned TTM-basis rewrite becomes 2.3-valuation-ttm, not
+# 2.2 as the plan doc originally sketched before this bump was made.)
+FORMULA_VERSION = "2.2-valuation-sec-only"
 
 
 def _mean(values: list) -> float:

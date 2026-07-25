@@ -143,10 +143,12 @@ def classify_data_quality(snapshot: dict, expected_universe: int | None = None) 
         breaches.append(f"nan_inf_count DEGRADED: {nan_count} non-finite numeric value(s)")
         n_degraded += 1
 
-    # Valuation coverage is REPORTED for transparency but does NOT gate: it is
-    # structurally FMP-capped (~35%) and can't reach 80% without a paid key, so
-    # gating on it would make every run DEGRADED (Phase 2 decision — quality is the
-    # gate, valuation is informational).
+    # Valuation coverage is REPORTED for transparency but does NOT gate. As of
+    # PLAN_SEC_VALUATION Phase 3 it is SEC-derived, single-source, and climbs
+    # toward the same ~90%+ level as quality — no longer structurally FMP-capped —
+    # but a per-ticker XBRL tag gap can still leave a name N/A, so it stays
+    # informational rather than a floor (original Phase 2 decision, still holds:
+    # quality is the gate, valuation is informational).
     metrics["valuation_coverage_pct"] = {
         "value": dq.get("valuation_coverage_pct"), "status": OK,
         "degraded_below": None, "abort_below": None, "informational": True}
