@@ -25,28 +25,23 @@ import math
 # faith. The change is gated on the §8 fundamental-coverage fix: quality/valuation
 # are only real once SEC EDGAR coverage clears the 80% floor.
 #
-# VALUATION COVERAGE (verified Jul 23 2026 — corrects an earlier note that wrongly
-# called valuation universally inactive). FMP_API_KEY *is* provisioned (GitHub
-# Actions secret, passed by market_data.yml), so get_provider() runs the FMP→SEC
-# cascade and PE / FCF-yield / EV-EBITDA ARE fetched. But FMP's FREE tier only
-# returns them for ~mega-caps: on the Jul 23 snapshot, 32 of 177 names (~18%) carry
-# valuation (AAPL, MSFT, NVDA, JPM, V, META, GOOGL, …); the other ~82% get SEC-only
-# fundamentals (margins + leverage) and no valuation. On top of that, the
-# alternate-day 50/50 provider cache (_provider_group, ~2-day refresh) means a
-# covered name's valuation is present only on days its group was last enriched.
-# NET: `valuation_available` is genuinely PER-TICKER — True (4-factor) for an
-# FMP-covered name with a fresh cache entry, False (3-factor) otherwise. The honest
-# composite renormalizes valuation out ONLY for names that lack it and blends the
-# 0.25 weight for names that have it — so the weights below are correct AS-IS and
-# are deliberately LEFT UNCHANGED: editing them would change the live
-# candidate-selection composite AND force a FORMULA_VERSION bump that resets the
-# factor-IC evidence clock (P0-2) for no benefit. _fmt_scores / the PM quant menu
-# render valuation as N/A (not a fake 50) when it is absent, so no agent misreads
-# the gap. Practical caveat: momentum/quality candidate selection rarely surfaces
-# the covered mega-caps (Jul 8 & Jul 22 rebalances had ~0 FMP-covered candidates),
-# so valuation seldom actually moves a weekly decision today — a free-tier COVERAGE
-# limit, not a wiring gap. Full coverage would need a paid FMP tier (then blend it
-# broadly and re-backtest under a new FORMULA_VERSION).
+# VALUATION COVERAGE (PLAN_SEC_VALUATION Phase 2, shipped Jul 24 2026 — supersedes
+# the pre-Phase-2 note that valuation was structurally FMP-mega-cap-only). FMP
+# still runs first when FMP_API_KEY is provisioned (get_provider()'s FMP→SEC
+# cascade), but market_data.derive_valuation_ratios now DERIVES pe_ratio /
+# fcf_yield / ev_ebitda from SEC EDGAR's price-independent components (Phase 1)
+# combined with the snapshot's close price, for every ticker FMP's free tier
+# misses — FMP-first, SEC fills the gap. This lifts valuation coverage from
+# ~18% (FMP mega-caps only) toward the SEC quality-coverage level (~90%+),
+# same annual (10-K) basis as the existing margins (mixed TTM/annual only for the
+# minority of names FMP still covers; Phase 3 will make SEC-derived the single
+# source). `valuation_available` is still genuinely PER-TICKER (a name with no
+# EDGAR filing, thin XBRL tagging, or a not-yet-refreshed alternate-day cache entry
+# stays N/A) — the composite renormalizes it out where absent and blends the 0.25
+# weight where present, same honest-composite mechanism as before. The weights
+# below are UNCHANGED (plan §4.3): only the coverage of the existing valuation slot
+# grew, not the bet size. _fmt_scores / the PM quant menu render valuation as N/A
+# (never a fake 50) when it is absent.
 FACTOR_WEIGHTS = {
     "momentum":   0.15,
     "quality":    0.35,
@@ -61,7 +56,13 @@ FACTOR_WEIGHTS = {
 # *yet* (the harness scores agent forecasts, not factor_history), so the guarantee
 # is "the data is grouped-by-able", and the eventual analyzer must honor it. Bump
 # this string whenever FACTOR_WEIGHTS or any sub-score formula changes.
-FORMULA_VERSION = "2.0-quality-tilt"
+#
+# 2.1-valuation-live (PLAN_SEC_VALUATION Phase 2, Jul 24 2026): valuation coverage
+# jumped from ~18% (FMP mega-caps) toward the SEC quality-coverage level via
+# market_data.derive_valuation_ratios — a real signal change (many more names now
+# carry a non-N/A valuation_score), so the evidence clock resets as expected (§8),
+# unlike a bump for zero benefit. FACTOR_WEIGHTS themselves are unchanged.
+FORMULA_VERSION = "2.1-valuation-live"
 
 
 def _mean(values: list) -> float:

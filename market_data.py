@@ -4,6 +4,7 @@ Primary: Polygon.io (local). Fallback: yfinance (cloud, no API key needed).
 """
 
 import json
+import math
 import os
 import re
 import requests
@@ -310,6 +311,63 @@ def _compute_fundamental_coverage(all_tickers: list, fundamentals: dict,
     cov["coverage_ok"]        = cov["fundamental_coverage_pct"] >= FUNDAMENTAL_COVERAGE_FLOOR_PCT
     cov["cik_map_ok"]         = cik_map_ok
     return cov
+
+
+def derive_valuation_ratios(prices: dict, fundamentals: dict) -> None:
+    """PLAN_SEC_VALUATION Phase 2 — combine Phase 1's price-INDEPENDENT SEC EDGAR
+    components (`_eps_diluted_annual` / `_shares_diluted` / `_fcf_annual` /
+    `_total_debt` / `_cash` / `_ebitda_annual`) with today's snapshot close price to
+    derive pe_ratio / fcf_yield / ev_ebitda for the tickers FMP's free tier misses.
+
+    FMP-first: a ratio field already present in `fundamentals[t]` (from FMPProvider,
+    when FMP_API_KEY is set) is NEVER overwritten — SEC only fills the gap. Emits a
+    ratio only when every input it needs is present and passes its guard (plan §6);
+    otherwise the field stays absent — honest N/A, never a fabricated fallback.
+    Mutates `fundamentals` in place; returns nothing.
+
+    Formulas (plan §6): market_cap = price × shares; pe = price / eps (eps>0);
+    fcf_yield = fcf / market_cap; ev = market_cap + total_debt − cash;
+    ev_ebitda = ev / ebitda (ebitda>0). ev_ebitda additionally requires both
+    total_debt and cash to be present — a missing debt/cash tag is a data gap, not
+    a meaningful zero, so it is treated the same honest-N/A way as a missing EPS.
+    """
+    def _num(x) -> float | None:
+        """x as a finite, non-bool float, or None if it isn't usable. A NaN/Inf
+        slipping in here (as has happened before — see compute_risk_metrics /
+        data_quality's NaN scan) must not silently produce a NaN ratio."""
+        if isinstance(x, bool) or not isinstance(x, (int, float)):
+            return None
+        x = float(x)
+        return x if math.isfinite(x) else None
+
+    for ticker, f in fundamentals.items():
+        if not isinstance(f, dict):
+            continue
+        price_entry = prices.get(ticker)
+        price = _num(price_entry.get("close")) if isinstance(price_entry, dict) else None
+        if price is None or price <= 0:
+            continue
+
+        shares = _num(f.get("_shares_diluted"))
+        market_cap = price * shares if shares and shares > 0 else None
+
+        if "pe_ratio" not in f:
+            eps = _num(f.get("_eps_diluted_annual"))
+            if eps is not None and eps > 0:
+                f["pe_ratio"] = round(price / eps, 2)
+
+        if "fcf_yield" not in f and market_cap:
+            fcf = _num(f.get("_fcf_annual"))
+            if fcf is not None:
+                f["fcf_yield"] = round(fcf / market_cap, 4)
+
+        if "ev_ebitda" not in f and market_cap:
+            ebitda = _num(f.get("_ebitda_annual"))
+            debt = _num(f.get("_total_debt"))
+            cash = _num(f.get("_cash"))
+            if ebitda is not None and ebitda > 0 and debt is not None and cash is not None:
+                ev = market_cap + debt - cash
+                f["ev_ebitda"] = round(ev / ebitda, 2)
 
 
 def _enrich_with_provider(all_tickers: list, fundamentals: dict, today=None):

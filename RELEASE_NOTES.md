@@ -13,6 +13,55 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — SEC-derived full-universe valuation live (PLAN_SEC_VALUATION Phase 2, Jul 24 2026)
+
+The behavior change Phase 1 set up for: valuation (P/E, FCF yield, EV/EBITDA) is now
+**derived**, not just FMP-mega-cap-only. **Real backtested lift, not a projection** —
+on today's live snapshot, valuation coverage rose **20.0% → 61.1%** (35 → 107 of 175
+tickers) the moment the derive step ran, and will keep climbing toward the ~90%+ SEC
+quality-coverage level as the alternate-day 50/50 provider cache rotates every
+ticker through the Phase-1-aware fetch over the next ~2 days.
+
+- **`feat(market_data)` `derive_valuation_ratios(prices, fundamentals)`** combines
+  Phase 1's price-independent SEC EDGAR components with the snapshot's close price:
+  `pe_ratio = price / eps` (eps>0 guard), `fcf_yield = fcf / market_cap`,
+  `ev_ebitda = (market_cap + total_debt − cash) / ebitda` (ebitda>0 guard, and
+  total_debt/cash must both be present — a missing debt/cash tag is a data gap, not
+  a meaningful zero, so it's treated with the same honest-N/A discipline as a
+  missing EPS). **FMP-first, SEC fills the gap**: a ratio field already populated by
+  FMPProvider is never overwritten; SEC only derives the fields FMP's free tier
+  misses. Mutates `fundamentals` in place; emits a field only when every input it
+  needs is present and passes its guard — otherwise stays absent, never a fabricated
+  fallback.
+- **`feat(fetch_snapshot)`** wired right after the snapshot fetch, before the file is
+  written/scored/classified, so the committed snapshot, `quant_engine.score_all_tickers`,
+  and `data_quality_report.json` all see the same enriched fundamentals. Logs the
+  before/after valuation-coverage lift and refreshes `data_quality.valuation_coverage_pct`
+  in place (quality-coverage fields are untouched — derive only adds valuation fields).
+- **`feat(quant_engine)` `FORMULA_VERSION` bumped `2.0-quality-tilt` → `2.1-valuation-live`**
+  (§8) — a real signal change (`valuation_available` now flips True for far more
+  names), so the factor-persistence/IC evidence clock resets as expected, unlike a
+  bump for zero benefit. `FACTOR_WEIGHTS` themselves are unchanged — only the
+  coverage of the existing 0.25 valuation slot grew, not the bet size.
+- **Basis note (plan §7/§10.1):** SEC-derived valuation uses the latest annual 10-K,
+  the same basis as the existing margins; FMP (where it still wins on overlap) is
+  TTM. Mixed-basis is accepted as an interim wart — Phase 3 (owner-decided Option B)
+  makes SEC-derived the single valuation source and drops the FMP-valuation
+  dependency entirely, keeping FMP only for the earnings calendar.
+
+QA: full `pytest` green (**822**, +15: `TestDeriveValuationRatios` — all-three-ratios,
+missing price/eps/shares/ebitda/debt/cash guards independently, NaN
+fcf/debt/cash guarded explicitly (found in self-review: unlike eps/ebitda, fcf has
+no `>0` guard to incidentally catch a NaN — never write a NaN ratio through),
+FMP-not-overwritten, partial-FMP-gap-fill, non-dict/missing-ticker safety, end-to-end
+`valuation_available` flip); ruff F821/F823 clean; workflow YAML parses. Backtest
+(`python -m backtest`) re-run against the live snapshot with `derive_valuation_ratios`
+applied in-memory (97.1% fundamental coverage, formula `2.1-valuation-live`) —
+scoring mechanics validated; **honest caveat unchanged from the plan**: a single
+current-fundamentals snapshot applied across the whole backtest window validates
+that the composite computes correctly, not a point-in-time historical valuation
+edge (needs a fundamentals-history store, §9.2/§14d).
+
 ### Fixed — Supabase `trades` publish failure (Jul 24 2026)
 
 `publish.yml` failed on **every** run since Jul 22 20:07 PT with postgrest

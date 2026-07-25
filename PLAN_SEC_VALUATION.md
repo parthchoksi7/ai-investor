@@ -1,6 +1,7 @@
 # Plan — Free full-universe valuation via SEC EDGAR (retire the FMP free-tier gap)
 
-**Status:** proposed (2026-07-23). **Owner decision required** before build (see §10).
+**Status:** Phases 1–2 SHIPPED (2026-07-23/24, owner decisions per §10). Phase 3
+(single-source SEC valuation) and Phase 4 (TTM basis) remain, per §11.
 **Type:** deterministic signal-layer change → touches the live candidate-selection
 composite → **`FORMULA_VERSION` bump + backtest-before-deploy** (evidence-gated).
 
@@ -201,10 +202,22 @@ version string.
       capex" formula independently, with different capex-sign handling (`abs()` vs.
       relying on capex already being reported as a positive outflow) — worth a shared
       helper once Phase 2 makes both paths live simultaneously.
-- **Phase 2 — derive + light up (the behavior change):** add
-  `derive_valuation_ratios`, wire into `fetch_snapshot.py`, bump `FORMULA_VERSION`,
-  backtest, deploy. Reversible by reverting the derive wiring (components go back to
-  unused; version reverts).
+- **Phase 2 — derive + light up (the behavior change): ✅ SHIPPED (2026-07-24).**
+  Added `market_data.derive_valuation_ratios(prices, fundamentals)` (FMP-first, SEC
+  fills the gap; guards per §6; honest-N/A on any missing/failed input), wired into
+  `fetch_snapshot.py` right after the snapshot fetch (before write/score/classify),
+  bumped `FORMULA_VERSION` to `2.1-valuation-live`. Verified against the live
+  2026-07-24 snapshot: valuation coverage **20.0% → 61.1%** (35 → 107/175 tickers)
+  the moment the derive step ran — climbing toward the ~90%+ SEC quality-coverage
+  level as the alternate-day cache rotates every ticker through the Phase-1-aware
+  fetch (~2 more days). Scoring-mechanics backtest re-run against the live snapshot
+  with the derive step applied in-memory (97.1% fundamental coverage, formula
+  `2.1-valuation-live`) — validates the composite computes correctly; the §9.2
+  historical-IC limitation (single current-fundamentals snapshot, not a
+  point-in-time series) still applies and is stated in `RELEASE_NOTES.md`, not
+  papered over. Reversible by reverting the derive wiring (components go back to
+  unused; version reverts). See `RELEASE_NOTES.md`'s Phase-2 entry for the full
+  writeup.
 - **Phase 3 — single-source (option B, in-scope per §10.1):** route valuation entirely
   through SEC-derived; keep FMP for the calendar only. Removes the mixed-basis wart and
   the FMP-valuation dependency.

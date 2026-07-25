@@ -18,6 +18,30 @@ print("Fetching market snapshot...")
 # always fetches live from Polygon. Those caches exist for the cloud routine only.
 snapshot = get_market_snapshot(force=True)
 
+# PLAN_SEC_VALUATION Phase 2 — light up valuation (pe_ratio/fcf_yield/ev_ebitda) for
+# the tickers FMP's free tier misses, combining Phase 1's SEC EDGAR components with
+# today's close price. Must run BEFORE the snapshot is written/scored/classified so
+# the committed file, quant scoring, and the data-quality report all see the same
+# enriched fundamentals. Refreshes the valuation-coverage numbers already embedded
+# in snapshot["data_quality"] in place so the before/after lift is visible below and
+# in data_quality_report.json (quality-coverage fields are untouched — derive only
+# adds valuation fields). Never fails the fetch — valuation just stays FMP-only.
+try:
+    from data_providers import fundamental_coverage
+    from market_data import derive_valuation_ratios
+    _val_tickers = list(snapshot.get("prices", {}).keys())
+    _val_before = fundamental_coverage(_val_tickers, snapshot.get("fundamentals", {}))
+    derive_valuation_ratios(snapshot.get("prices", {}), snapshot.get("fundamentals", {}))
+    _val_after = fundamental_coverage(_val_tickers, snapshot.get("fundamentals", {}))
+    if isinstance(snapshot.get("data_quality"), dict):
+        snapshot["data_quality"]["valuation_covered"]      = _val_after["valuation_covered"]
+        snapshot["data_quality"]["valuation_coverage_pct"] = _val_after["valuation_coverage_pct"]
+    print(f"Valuation coverage (SEC-derived): {_val_before['valuation_coverage_pct']}% -> "
+          f"{_val_after['valuation_coverage_pct']}% "
+          f"(+{_val_after['valuation_covered'] - _val_before['valuation_covered']} ticker(s))")
+except Exception as e:
+    print(f"WARNING: derive_valuation_ratios failed (valuation stays FMP-only) — {e}")
+
 history_depths = [len(h) for h in snapshot.get("history", {}).values()]
 min_depth = min(history_depths) if history_depths else 0
 real_scores = sum(1 for v in snapshot.get("prices", {}).values() if v)  # rough proxy

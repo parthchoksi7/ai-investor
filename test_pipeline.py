@@ -3975,6 +3975,186 @@ class TestSECCrossFieldVintageGuard:
         assert f is not None and "_ebitda_annual" not in f
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+#  PLAN_SEC_VALUATION Phase 2 — derive_valuation_ratios combines Phase 1's SEC
+#  EDGAR price-INDEPENDENT components with today's snapshot price to derive
+#  pe_ratio / fcf_yield / ev_ebitda for tickers FMP's free tier misses.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestDeriveValuationRatios:
+    def _fund(self, **components):
+        return {"XYZ": {"gross_margin": 0.5, **components}}   # gross_margin: non-empty dict
+
+    def test_all_three_ratios_derived(self):
+        from market_data import derive_valuation_ratios
+        prices = {"XYZ": {"close": 100.0}}
+        fundamentals = self._fund(
+            _eps_diluted_annual=5.0, _shares_diluted=1000.0,
+            _fcf_annual=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_annual=12000.0,
+        )
+        derive_valuation_ratios(prices, fundamentals)
+        f = fundamentals["XYZ"]
+        # market_cap = 100 * 1000 = 100_000
+        assert f["pe_ratio"] == round(100.0 / 5.0, 2)                    # 20.0
+        assert f["fcf_yield"] == round(8000.0 / 100_000.0, 4)             # 0.08
+        # ev = 100_000 + 3000 - 1000 = 102_000; ev_ebitda = 102_000/12_000
+        assert f["ev_ebitda"] == round(102_000.0 / 12_000.0, 2)
+
+    def test_missing_price_omits_all_ratios(self):
+        from market_data import derive_valuation_ratios
+        fundamentals = self._fund(
+            _eps_diluted_annual=5.0, _shares_diluted=1000.0,
+            _fcf_annual=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_annual=12000.0,
+        )
+        derive_valuation_ratios({}, fundamentals)     # no price entry at all
+        f = fundamentals["XYZ"]
+        assert not ({"pe_ratio", "fcf_yield", "ev_ebitda"} & f.keys())
+
+    def test_non_finite_or_nonpositive_price_omits_ratios(self):
+        from market_data import derive_valuation_ratios
+        fundamentals = self._fund(_eps_diluted_annual=5.0, _shares_diluted=1000.0)
+        for bad_price in (float("nan"), 0.0, -10.0, None):
+            fx = {"XYZ": dict(fundamentals["XYZ"])}
+            derive_valuation_ratios({"XYZ": {"close": bad_price}}, fx)
+            assert "pe_ratio" not in fx["XYZ"]
+
+    def test_negative_or_zero_eps_omits_pe_only(self):
+        from market_data import derive_valuation_ratios
+        prices = {"XYZ": {"close": 100.0}}
+        fundamentals = self._fund(
+            _eps_diluted_annual=-2.0, _shares_diluted=1000.0,
+            _fcf_annual=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_annual=12000.0,
+        )
+        derive_valuation_ratios(prices, fundamentals)
+        f = fundamentals["XYZ"]
+        assert "pe_ratio" not in f
+        assert "fcf_yield" in f and "ev_ebitda" in f    # unaffected — independent guards
+
+    def test_zero_or_negative_ebitda_omits_ev_ebitda_only(self):
+        from market_data import derive_valuation_ratios
+        prices = {"XYZ": {"close": 100.0}}
+        fundamentals = self._fund(
+            _eps_diluted_annual=5.0, _shares_diluted=1000.0,
+            _fcf_annual=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_annual=-500.0,
+        )
+        derive_valuation_ratios(prices, fundamentals)
+        f = fundamentals["XYZ"]
+        assert "ev_ebitda" not in f
+        assert "pe_ratio" in f and "fcf_yield" in f
+
+    def test_missing_shares_omits_market_cap_dependent_ratios(self):
+        # No _shares_diluted → no market_cap → fcf_yield and ev_ebitda both omitted,
+        # but pe_ratio (price/eps only) is unaffected.
+        from market_data import derive_valuation_ratios
+        prices = {"XYZ": {"close": 100.0}}
+        fundamentals = self._fund(
+            _eps_diluted_annual=5.0,
+            _fcf_annual=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_annual=12000.0,
+        )
+        derive_valuation_ratios(prices, fundamentals)
+        f = fundamentals["XYZ"]
+        assert f["pe_ratio"] == 20.0
+        assert "fcf_yield" not in f and "ev_ebitda" not in f
+
+    def test_missing_debt_or_cash_omits_ev_ebitda_honestly(self):
+        # A missing debt/cash tag is a data gap, not a meaningful zero — omit rather
+        # than assume 0 debt / 0 cash.
+        from market_data import derive_valuation_ratios
+        prices = {"XYZ": {"close": 100.0}}
+        fundamentals = self._fund(_shares_diluted=1000.0, _ebitda_annual=12000.0)  # no debt/cash
+        derive_valuation_ratios(prices, fundamentals)
+        assert "ev_ebitda" not in fundamentals["XYZ"]
+
+    def test_fmp_present_ratio_not_overwritten(self):
+        # FMP-first: an existing pe_ratio must survive untouched even though SEC
+        # components could compute a different value.
+        from market_data import derive_valuation_ratios
+        prices = {"XYZ": {"close": 100.0}}
+        fundamentals = self._fund(
+            pe_ratio=999.0,      # FMP value — must win
+            _eps_diluted_annual=5.0, _shares_diluted=1000.0,
+            _fcf_annual=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_annual=12000.0,
+        )
+        derive_valuation_ratios(prices, fundamentals)
+        f = fundamentals["XYZ"]
+        assert f["pe_ratio"] == 999.0            # untouched
+        assert f["fcf_yield"] == round(8000.0 / 100_000.0, 4)   # SEC still fills the gap
+
+    def test_partial_fmp_fills_remaining_gap(self):
+        # FMP covered only fcf_yield for this name; SEC still derives pe/ev_ebitda.
+        from market_data import derive_valuation_ratios
+        prices = {"XYZ": {"close": 100.0}}
+        fundamentals = self._fund(
+            fcf_yield=0.5,
+            _eps_diluted_annual=5.0, _shares_diluted=1000.0,
+            _total_debt=3000.0, _cash=1000.0, _ebitda_annual=12000.0,
+        )
+        derive_valuation_ratios(prices, fundamentals)
+        f = fundamentals["XYZ"]
+        assert f["fcf_yield"] == 0.5              # FMP's value, untouched
+        assert f["pe_ratio"] == 20.0               # SEC-derived
+        assert "ev_ebitda" in f
+
+    def test_ticker_not_in_prices_skipped(self):
+        from market_data import derive_valuation_ratios
+        fundamentals = self._fund(_eps_diluted_annual=5.0, _shares_diluted=1000.0)
+        derive_valuation_ratios({"OTHER": {"close": 50.0}}, fundamentals)
+        assert "pe_ratio" not in fundamentals["XYZ"]
+
+    def test_non_dict_fundamentals_entry_skipped_gracefully(self):
+        from market_data import derive_valuation_ratios
+        fundamentals = {"XYZ": None, "ABC": self._fund(_eps_diluted_annual=5.0,
+                                                        _shares_diluted=1000.0)["XYZ"]}
+        derive_valuation_ratios({"XYZ": {"close": 100.0}, "ABC": {"close": 100.0}}, fundamentals)
+        assert fundamentals["XYZ"] is None            # untouched, no crash
+        assert fundamentals["ABC"]["pe_ratio"] == 20.0
+
+    def test_no_components_leaves_fundamentals_untouched(self):
+        # A ticker with only quality fields (no valuation components at all, the
+        # pre-Phase-1 shape) must pass through with zero new keys — behavior-inert
+        # for names EDGAR has no valuation-component tags for.
+        from market_data import derive_valuation_ratios
+        prices = {"XYZ": {"close": 100.0}}
+        fundamentals = {"XYZ": {"gross_margin": 0.5, "debt_to_equity": 0.3}}
+        derive_valuation_ratios(prices, fundamentals)
+        assert fundamentals["XYZ"] == {"gross_margin": 0.5, "debt_to_equity": 0.3}
+
+    def test_nan_fcf_omitted_not_written_as_nan(self):
+        # Self-review regression: eps/ebitda are incidentally NaN-safe (NaN fails the
+        # `> 0` guard), but fcf has no `> 0` requirement (it can be legitimately
+        # negative) — a NaN component must still be caught explicitly, never written
+        # through as a NaN fcf_yield (the exact class of bug data_quality's NaN scan
+        # and compute_risk_metrics' NaN guard exist to prevent elsewhere).
+        from market_data import derive_valuation_ratios
+        prices = {"XYZ": {"close": 100.0}}
+        fundamentals = self._fund(_shares_diluted=1000.0, _fcf_annual=float("nan"))
+        derive_valuation_ratios(prices, fundamentals)
+        assert "fcf_yield" not in fundamentals["XYZ"]
+
+    def test_nan_debt_or_cash_omits_ev_ebitda(self):
+        from market_data import derive_valuation_ratios
+        prices = {"XYZ": {"close": 100.0}}
+        fundamentals = self._fund(_shares_diluted=1000.0, _ebitda_annual=12000.0,
+                                   _total_debt=float("nan"), _cash=1000.0)
+        derive_valuation_ratios(prices, fundamentals)
+        assert "ev_ebitda" not in fundamentals["XYZ"]
+
+    def test_lights_up_valuation_available_end_to_end(self):
+        # Integration with quant_engine: once derived, compute_valuation_score flips
+        # valuation_available True (was False on the raw SEC component dict — see
+        # TestSECValuationComponents.test_components_do_not_flip_valuation_available).
+        from market_data import derive_valuation_ratios
+        from quant_engine import compute_valuation_score
+        prices = {"XYZ": {"close": 100.0}}
+        fundamentals = self._fund(
+            _eps_diluted_annual=5.0, _shares_diluted=1000.0,
+            _fcf_annual=8000.0, _total_debt=3000.0, _cash=1000.0, _ebitda_annual=12000.0,
+        )
+        derive_valuation_ratios(prices, fundamentals)
+        vs = compute_valuation_score(fundamentals["XYZ"])
+        assert vs["valuation_available"] is True
+
+
 class TestUniverse:
     """Phase 2: gated universe expansion + resumable fetch cursor."""
 
