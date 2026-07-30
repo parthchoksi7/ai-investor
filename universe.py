@@ -67,6 +67,10 @@ CORE_UNIVERSE: list[str] = [
 # Additional S&P-500-class large/mid-caps, grouped by sector. High-liquidity names
 # with SEC filings (so EDGAR quality factors resolve). Any that fail to resolve are
 # flagged by corporate_actions and excluded by coverage measurement — safe.
+# Confirmed delisted, removed 2026-07-29 (found scoring on frozen pre-delisting
+# history — see market_data.py's stale-fetch guard): IPG (Omnicom merger,
+# delisted 2025-11-28), K/Kellanova (Mars acquisition, delisted 2025-12-12),
+# HOLX/Hologic (delisted 2026-04-08).
 _EXPANSION: list[str] = [
     # Tech / Semis / Hardware
     "CSCO", "ACN", "ADI", "LRCX", "KLAC", "SNPS", "CDNS", "ANET", "FTNT",
@@ -76,7 +80,7 @@ _EXPANSION: list[str] = [
     # Software / Internet / Media / Comm
     "INTU", "ADSK", "CRM", "DOCU", "OKTA", "TWLO", "HUBS", "ZM", "DDOG",
     "DIS", "CMCSA", "T", "VZ", "TMUS", "CHTR", "WBD", "PARA", "FOXA", "OMC",
-    "IPG", "TTD", "PINS", "SNAP", "RBLX", "DASH", "ROKU", "EA", "TTWO",
+    "TTD", "PINS", "SNAP", "RBLX", "DASH", "ROKU", "EA", "TTWO",
     # Financials
     "SCHW", "USB", "PNC", "TFC", "COF", "BK", "STT", "AIG", "MET", "PRU",
     "TRV", "ALL", "PGR", "CB", "AFL", "MMC", "AON", "AJG", "ICE", "CME",
@@ -86,11 +90,11 @@ _EXPANSION: list[str] = [
     "ABT", "MDT", "SYK", "BSX", "BDX", "EW", "ZBH", "BAX", "HCA", "CI",
     "CVS", "ELV", "CNC", "HUM", "MCK", "COR", "CAH", "IQV", "A", "IDXX",
     "MTD", "RMD", "WST", "DXCM", "BIIB", "MRNA", "ZTS",
-    "HOLX", "ALGN", "STE", "PODD", "GEHC",
+    "ALGN", "STE", "PODD", "GEHC",
     # Consumer Staples
     "PG", "KO", "PEP", "MDLZ", "PM", "MO", "CL", "KMB", "GIS", "KHC",
     "HSY", "STZ", "KDP", "MNST", "KR", "SYY", "ADM", "MKC", "CHD", "CLX",
-    "K", "HRL", "TSN", "CAG", "CPB", "DG", "DLTR", "WBA",
+    "HRL", "TSN", "CAG", "CPB", "DG", "DLTR", "WBA",
     # Consumer Discretionary
     "AMZN", "ROST", "ORLY", "AZO", "YUM", "MAR", "HLT", "DRI", "GM", "F",
     "APTV", "BWA", "LEN", "DHI", "NVR", "PHM", "GRMN", "EXPE", "RCL", "CCL",

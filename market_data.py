@@ -136,6 +136,22 @@ def get_extended_history(ticker: str, days: int = 210) -> list[dict]:
     return _history_yfinance(ticker, days)
 
 
+def is_history_dead(hist: list[dict], as_of: date | None = None, max_age_days: int | None = None) -> bool:
+    """True if `hist`'s most recent bar is older than `max_age_days` relative to
+    `as_of` — a delisted ticker (acquired, gone private) still returns HTTP 200
+    from Polygon's aggs range endpoint, just frozen at whatever bars existed
+    before delisting. That "succeeds" indefinitely, so a fetch loop must check
+    the DATA's own recency, not just whether the call returned something."""
+    if not hist:
+        return False
+    if as_of is None:
+        as_of = date.today()
+    if max_age_days is None:
+        max_age_days = CARRY_FORWARD_MAX_DAYS
+    last_bar = datetime.fromtimestamp(hist[-1]["date"] / 1000, tz=timezone.utc).date()
+    return (as_of - last_bar).days > max_age_days
+
+
 def get_price(ticker: str) -> dict | None:
     """Returns the latest price snapshot for a ticker."""
     history = get_extended_history(ticker, days=7)
@@ -672,12 +688,21 @@ def get_market_snapshot(force: bool = False) -> dict:
     # its true price_as_of stamped (P0-1) — beyond that it drops out and counts
     # against the §15.2 universe-fetched floor rather than going silently stale.
     store = _load_history_store() if force else {}
-    fetched = failed = carried = 0
+    fetched = failed = carried = dead = 0
     for i, ticker in enumerate(all_tickers):
         entry = store.get(ticker)
         if not (isinstance(entry, dict) and entry.get("date") == today_str
                 and entry.get("history")):
             hist = get_extended_history(ticker, days=210)
+            # Treat a stale-tailed "success" (delisted ticker frozen at its last
+            # traded bar — confirmed live: HOLX/Hologic delisted 2026-04-08 kept
+            # scoring off its Apr-6 close with a fabricated near-zero volatility)
+            # the same as an outright fetch failure, so it falls through to the
+            # existing carry-forward-or-drop path below instead of being re-stamped
+            # "fresh as of today" and trusted forever.
+            if hist and is_history_dead(hist):
+                hist = None
+                dead += 1
             if hist:
                 store[ticker] = {"date": today_str, "history": hist}
                 fetched += 1
@@ -728,7 +753,8 @@ def get_market_snapshot(force: bool = False) -> dict:
             new_cursor = save_batch(expansion_only, EXPANSION_BATCH_SIZE, batch_cursor)
             print(f"   🌐 expansion batch cursor advanced to {new_cursor}/{len(expansion_only)}")
     if failed or carried:
-        print(f"   ⚠ history sweep: {fetched} fetched, {failed} failed, "
+        print(f"   ⚠ history sweep: {fetched} fetched, {failed} failed"
+              f"{f' ({dead} stale/likely-delisted)' if dead else ''}, "
               f"{carried} carried forward (≤{CARRY_FORWARD_MAX_DAYS}d, price_as_of stamped)")
 
     fundamentals = get_all_fundamentals(all_tickers)

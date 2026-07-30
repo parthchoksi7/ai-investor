@@ -8466,6 +8466,50 @@ class TestStageDStorageSplit:
         assert min(deep_bad) == 63       # still DEGRADED for a shallow core name
 
 
+class TestDelistedTickerGuard:
+    """A delisted ticker's aggs range call still returns HTTP 200 — frozen at
+    whatever bars existed before delisting, forever. `is_history_dead` must
+    catch that so a fetch loop doesn't re-stamp it "fresh" and score dead data
+    (found live: HOLX/Hologic delisted 2026-04-08 kept scoring a fabricated
+    near-zero volatility off its frozen Apr-6 close)."""
+
+    def _bar(self, days_ago: int) -> dict:
+        from datetime import datetime, timezone
+        d = date.today() - timedelta(days=days_ago)
+        ms = int(datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp() * 1000)
+        return {"date": ms, "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1}
+
+    def test_empty_history_is_not_dead(self):
+        from market_data import is_history_dead
+        assert is_history_dead([]) is False
+
+    def test_fresh_history_is_not_dead(self):
+        from market_data import is_history_dead
+        hist = [self._bar(2), self._bar(1), self._bar(0)]
+        assert is_history_dead(hist) is False
+
+    def test_stale_history_beyond_carry_forward_is_dead(self):
+        from market_data import is_history_dead, CARRY_FORWARD_MAX_DAYS
+        hist = [self._bar(CARRY_FORWARD_MAX_DAYS + 30)]
+        assert is_history_dead(hist) is True
+
+    def test_history_within_carry_forward_window_is_not_dead(self):
+        from market_data import is_history_dead, CARRY_FORWARD_MAX_DAYS
+        hist = [self._bar(CARRY_FORWARD_MAX_DAYS)]
+        assert is_history_dead(hist) is False
+
+    def test_confirmed_delisted_tickers_excluded_from_universe(self):
+        """IPG (Omnicom merger, delisted 2025-11-28), K/Kellanova (Mars
+        acquisition, delisted 2025-12-12), HOLX/Hologic (delisted 2026-04-08) —
+        verified against live reference data on 2026-07-29; removed so the
+        expansion sweep stops burning a batch slot on names that can never
+        trade again."""
+        from universe import EXPANDED_UNIVERSE
+        assert "IPG" not in EXPANDED_UNIVERSE
+        assert "K" not in EXPANDED_UNIVERSE
+        assert "HOLX" not in EXPANDED_UNIVERSE
+
+
 class TestDossierConsumer:
     """Phase 5 Stage C — the dossier reaches the agents' prompts."""
 

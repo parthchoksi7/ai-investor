@@ -13,6 +13,36 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — delisted-ticker guard, found in a post-run review of the Jul 29 rebalance
+
+The Jul 29 rebalance PM proposed a 9% BUY into HOLX on a composite score of 83.3,
+built on a reported 2.6% annualized volatility that the CRO flagged as "implausibly
+low, likely a data error" and vetoed alongside a real energy-concentration breach.
+Investigation traced it further: HOLX (Hologic) was delisted 2026-04-08, and Polygon's
+aggs range endpoint keeps returning HTTP 200 for it — frozen at whatever bars existed
+before delisting — so the fetch loop kept re-stamping it "fresh as of today" every
+time its expansion-batch slot came up, scoring a live composite off a frozen
+Apr-6 close. Two more names in the expansion universe were quietly stuck the same
+way: IPG (Omnicom merger, delisted 2025-11-28) and K/Kellanova (Mars acquisition,
+delisted 2025-12-12). No trade executed (the CRO veto held for the (partly)
+right reason), but the root cause was a scoring-layer, not a trade-layer, bug.
+
+- **`fix(market_data)` `is_history_dead()`** — a new pure guard checked right after
+  `get_extended_history` returns: if the fetched series' own last-bar date is more
+  than `CARRY_FORWARD_MAX_DAYS` old relative to today, treat the "successful" fetch
+  as a failure so it falls through to the existing carry-forward-or-drop path
+  instead of being trusted forever. Closes the loophole where a delisted ticker's
+  frozen history never ages out because the fetch itself keeps "succeeding."
+- **`fix(universe)` removed 3 confirmed-delisted tickers** (HOLX, IPG, K) from
+  `_EXPANSION` — live-verified against reference ticker data. Stops burning an
+  expansion-batch fetch slot every cycle on names that can never trade again.
+
+> **QA:** full `pytest` green (**852**, +5: `TestDelistedTickerGuard`). Ruff
+> F821/F823 clean. No live-order-path code touched (producer/scoring layer only —
+> `quant_engine.py`'s composite formula, `main.py`, `execute.py`, and the guardrail
+> chain are all unchanged); the fix only shrinks what tickers ever reach the
+> candidate pool with real data.
+
 ### Added — TTM valuation basis, the PLAN_SEC_VALUATION finale (Phase 4, Jul 24 2026)
 
 Flow valuation components (EPS, CFO, capex, D&A, operating income for EBITDA) move
