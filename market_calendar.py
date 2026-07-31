@@ -13,7 +13,7 @@ adjacent weekday). Does NOT model early-close (half) days — those still trade.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 ET = ZoneInfo("America/New_York")
@@ -54,6 +54,31 @@ def is_trading_day(d: "str | date | datetime") -> bool:
 def today_et() -> date:
     """Today's date in US/Eastern — the market-day date the pipeline keys on."""
     return datetime.now(ET).date()
+
+
+def most_recent_complete_trading_day(now_et: "datetime | None" = None) -> date:
+    """The latest NYSE session whose close is fully final as of ``now_et`` (ET).
+
+    Before 4 PM ET on a trading day, that's the last trading day strictly
+    before today (today's own close doesn't exist yet). At/after 4 PM ET on
+    a trading day, today's own close counts. On a non-trading day (weekend/
+    holiday), walks back to the last trading day regardless of time.
+
+    Used to detect a stale "fetched today" cache entry that was captured
+    before Polygon actually had the newest close available (found live:
+    2026-07-31 — an 11 PM ET dispatch run cached SPY's history one bar
+    short, and every later same-day run trusted the "already fetched
+    today" stamp without ever checking whether that catch was current).
+    """
+    if now_et is None:
+        now_et = datetime.now(ET)
+    d = now_et.date()
+    if is_trading_day(d) and now_et.time() >= time(16, 0):
+        return d
+    d -= timedelta(days=1)
+    while not is_trading_day(d):
+        d -= timedelta(days=1)
+    return d
 
 
 def iso_week_of(d: "str | date | datetime") -> str:

@@ -13,6 +13,51 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — SPY benchmark was structurally always one trading day stale; a second bug re-staled it worse on 2026-07-31
+
+Following the 2026-07-30 crash fix below, a user report ("I think I see the same
+graph") on 2026-07-31 traced to two further bugs, both now fixed. First: full
+verification against real Polygon closes back to inception (6/8) showed 36 of
+38 published `spy_close` rows were wrong — not just the crash day.
+`publish.py._fetch_spy_from_snapshot()` was tried FIRST and always "succeeded"
+(the snapshot file exists, dated today), but the snapshot is only ever fetched
+pre-market (7-8:30 AM ET) and never refreshed — so even the 4 PM EOD close
+publish was stamping the PRIOR day's close as "today's." This was live from
+~2026-07-06 (when the Stage D history-store caching shipped) through 7/30.
+Corrected all 36 rows directly in Supabase against verified Polygon ground
+truth (6/8 inception and the 6/19, 7/3 holidays excluded — no close exists to
+correct against). Second: 7/31 itself reappeared stale even after the crash
+fix landed, because the crash-resumable `raw_history_store.json` cache keys
+purely on "was a fetch attempted today," not on whether that fetch actually
+caught the newest close — an 11 PM ET dispatch run cached SPY one bar short
+(Polygon hadn't finalized 7/30's close yet at that exact moment), and every
+later same-day cron run trusted the "already fetched today" stamp without
+re-checking freshness.
+
+- **`fix(publish)` SPY source priority flipped** — a live Polygon `/prev` call
+  (`_fetch_spy_prev_close`) is now tried FIRST; `market_snapshot.json` is the
+  fallback only, for when Polygon itself is unreachable. "prev" means "most
+  recently completed session relative to right now" — pre-market that's
+  correctly yesterday's close (no regression), but called after 4 PM it
+  correctly flips to today's close, which the pre-market-only snapshot can
+  structurally never have.
+- **`feat(market_calendar)` `most_recent_complete_trading_day()`** — the
+  freshness oracle: given a time, what's the newest NYSE close that should
+  exist. Handles the pre/post-4PM-close boundary and weekend/holiday walk-back.
+- **`fix(market_data)` history-store cache re-verifies freshness** — a "fetched
+  today" entry is only trusted if its own last bar is at least as recent as
+  `most_recent_complete_trading_day()`; otherwise it's re-fetched even though
+  a call was already made today. Preserves the crash-resume intent (a
+  genuinely fresh entry still isn't re-fetched — no added Polygon load on a
+  healthy day) while closing the "early run poisons the whole day" hole.
+
+> **QA:** full `pytest` green (**863**, +9: `TestPublishSpyPriority`,
+> `TestMostRecentCompleteTradingDay`, `TestHistoryStoreFreshnessRecheck`).
+> Ruff F821/F823 clean. No live-order-path code touched — publish/data-fetch
+> layer only. The 36-row Supabase correction was a one-time direct data fix
+> (script + full before/after diff reviewed with the owner), separate from
+> this code change, which prevents recurrence going forward.
+
 ### Fixed — ZeroDivisionError crashed every market_data.yml run on 2026-07-30, stale-ing the website's SPY benchmark
 
 All four of today's `market_data.yml` runs (7:00/8:00/8:30 AM ET crons plus a

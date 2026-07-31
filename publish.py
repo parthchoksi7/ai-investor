@@ -61,10 +61,13 @@ def _load(path: str, default):
 def _fetch_spy_from_snapshot() -> float | None:
     """Read SPY's latest price from market_snapshot.json (committed daily by market_data.yml).
 
-    Preferred over Polygon "prev" because the snapshot contains today's actual price
-    (intraday during market hours, close after 4 PM), whereas Polygon "prev" always
-    returns the previous trading day's close — duplicating yesterday's SPY value on
-    any run that occurs before today's close is available via "prev".
+    Fallback only, used when a live Polygon call is unavailable. The snapshot is
+    fetched pre-market (7-8:30 AM ET) and never refreshed later in the day, so by
+    itself it can never reflect an actual close — a live Polygon "prev" call made
+    AT publish time (morning or 4 PM) is always at least as fresh and, after the
+    close, strictly fresher. Found live: every EOD publish from ~2026-07-06 to
+    2026-07-30 stamped the PRIOR day's close as "today's" spy_close because this
+    was tried first and always "succeeded" (fresh file, stale price inside it).
 
     Returns None if the file is missing, stale (not dated today), or SPY is absent.
     """
@@ -282,15 +285,18 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     drawdown  = max(0.0, (peak - total_value) / peak * 100) if peak > 0 else 0.0
 
     # ── SPY benchmark ──────────────────────────────────────────────────────────
-    # Prefer market_snapshot.json (committed daily, contains today's live price)
-    # over Polygon "prev" (which returns the previous trading day's close, causing
-    # two consecutive snapshots to show the same SPY value when both run before
-    # today's close is available via "prev"). SPY is updated on every run so the
-    # dashboard always reflects the latest available data alongside the portfolio.
+    # Prefer a LIVE Polygon "prev" call over market_snapshot.json. "prev" means
+    # "the most recently completed session relative to right now" — called
+    # pre-market that's correctly yesterday's close (matches what the snapshot
+    # would say anyway), but called after the 4 PM close it correctly flips to
+    # TODAY's close, which the pre-market-only snapshot structurally can never
+    # have (found live: the old snapshot-first order stamped every EOD publish
+    # from ~7/6-7/30 with the PRIOR day's close). Snapshot is the fallback only,
+    # for when Polygon itself is unreachable (e.g. no key, or a transient error).
     polygon_key = os.getenv("POLYGON_API_KEY")
-    spy_close = _fetch_spy_from_snapshot()
-    if spy_close is None and polygon_key:
-        spy_close = _fetch_spy_prev_close(polygon_key)
+    spy_close = _fetch_spy_prev_close(polygon_key) if polygon_key else None
+    if spy_close is None:
+        spy_close = _fetch_spy_from_snapshot()
 
     # ── Upsert portfolio snapshot ──────────────────────────────────────────────
     # When GitHub Actions publishes a snapshot committed after midnight UTC,

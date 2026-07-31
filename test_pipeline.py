@@ -1613,6 +1613,51 @@ class TestPublishSpyDataSource:
         assert result is None
 
 
+class TestPublishSpyPriority:
+    """Found live: 2026-07-06 through 2026-07-30, every EOD publish stamped the
+    PRIOR trading day's close as spy_close for the current date — the snapshot
+    (fetched pre-market, never refreshed) was tried first and always "succeeded"
+    with a stale price inside it. A live Polygon "prev" call at actual publish
+    time is always at least as fresh (and after the close, strictly fresher), so
+    it must be tried first with the snapshot as the fallback only."""
+
+    def _setup(self, tmp_path, monkeypatch, snapshot_spy=None, live_spy=None):
+        import importlib, publish
+        importlib.reload(publish)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
+        monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-key")
+        monkeypatch.setenv("POLYGON_API_KEY", "fake-polygon-key")
+        monkeypatch.delenv("DRY_RUN", raising=False)
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        if snapshot_spy is not None:
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+            today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+            (tmp_path / "market_snapshot.json").write_text(json.dumps(
+                {"date": today, "prices": {"SPY": {"close": snapshot_spy}}}))
+        monkeypatch.setattr(publish, "_fetch_spy_prev_close",
+                             lambda key: live_spy)
+        fake_client = _FakeSupabaseClient()
+        import supabase
+        monkeypatch.setattr(supabase, "create_client", lambda *a, **k: fake_client)
+        return publish, fake_client
+
+    def test_live_polygon_call_wins_over_stale_snapshot(self, tmp_path, monkeypatch):
+        publish, fake_client = self._setup(
+            tmp_path, monkeypatch, snapshot_spy=729.46, live_spy=741.69)
+        publish.publish_to_supabase({"cash": 100, "total_value": 500, "positions": []})
+        row = fake_client.sink["portfolio_snapshots"][-1]
+        assert row["spy_close"] == 741.69
+
+    def test_falls_back_to_snapshot_when_polygon_unreachable(self, tmp_path, monkeypatch):
+        publish, fake_client = self._setup(
+            tmp_path, monkeypatch, snapshot_spy=729.46, live_spy=None)
+        publish.publish_to_supabase({"cash": 100, "total_value": 500, "positions": []})
+        row = fake_client.sink["portfolio_snapshots"][-1]
+        assert row["spy_close"] == 729.46
+
+
 class TestSanitizeNaN:
     """publish._sanitize — the serialization-boundary scrub that keeps a NaN/Inf
     from breaking the Supabase publish (Jun 16: vol=nan reached the upsert →
@@ -7026,6 +7071,120 @@ class TestMarketCalendar:
         # Single source: preflight_gate.NYSE_HOLIDAYS must be market_calendar's set.
         import market_calendar as mc, preflight_gate as pg
         assert pg.NYSE_HOLIDAYS is mc.NYSE_HOLIDAYS
+
+
+class TestMostRecentCompleteTradingDay:
+    """Found live 2026-07-31: an 11 PM ET dispatch run cached SPY's history one
+    bar short of the newest close, and every later same-day run trusted the
+    'already fetched today' stamp without re-checking freshness. This helper is
+    the fix's freshness oracle — what SHOULD the newest cached bar be, given the
+    time of the check."""
+
+    def test_before_close_on_trading_day_is_prior_trading_day(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from market_calendar import most_recent_complete_trading_day
+        # Thursday 2026-07-30, 7:30 AM ET — pre-market, today's own close doesn't exist yet.
+        now = datetime(2026, 7, 30, 7, 30, tzinfo=ZoneInfo("America/New_York"))
+        assert most_recent_complete_trading_day(now).isoformat() == "2026-07-29"
+
+    def test_after_close_on_trading_day_is_today(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from market_calendar import most_recent_complete_trading_day
+        now = datetime(2026, 7, 30, 20, 0, tzinfo=ZoneInfo("America/New_York"))
+        assert most_recent_complete_trading_day(now).isoformat() == "2026-07-30"
+
+    def test_late_night_dispatch_before_next_days_open_still_uses_that_days_close(self):
+        # The exact 2026-07-31 bug scenario: an 11:05 PM ET run on 7/30 — after
+        # 7/30's own close, so 7/30 counts as the most recent complete session.
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from market_calendar import most_recent_complete_trading_day
+        now = datetime(2026, 7, 30, 23, 5, tzinfo=ZoneInfo("America/New_York"))
+        assert most_recent_complete_trading_day(now).isoformat() == "2026-07-30"
+
+    def test_weekend_walks_back_to_friday_regardless_of_time(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from market_calendar import most_recent_complete_trading_day
+        now = datetime(2026, 8, 1, 20, 0, tzinfo=ZoneInfo("America/New_York"))  # Saturday
+        assert most_recent_complete_trading_day(now).isoformat() == "2026-07-31"
+
+    def test_holiday_walks_back_past_the_holiday(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from market_calendar import most_recent_complete_trading_day
+        now = datetime(2026, 7, 3, 10, 0, tzinfo=ZoneInfo("America/New_York"))  # observed holiday
+        assert most_recent_complete_trading_day(now).isoformat() == "2026-07-02"
+
+
+class TestHistoryStoreFreshnessRecheck:
+    """The market_data.py sweep must not trust a same-day 'fetched today' stamp
+    when the cached entry's own last bar is older than expected — otherwise an
+    early run that beat Polygon's EOD finalization poisons every later run that
+    day (the exact 2026-07-31 bug: SPY locked at 7/29's close all day)."""
+
+    def _bar(self, iso_date, close):
+        from datetime import datetime, timezone
+        d = date.fromisoformat(iso_date)
+        ms = int(datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp() * 1000)
+        return {"date": ms, "open": close, "high": close, "low": close,
+                "close": close, "volume": 1}
+
+    def test_stale_same_day_cache_entry_is_refetched(self, tmp_path, monkeypatch):
+        import market_data as md
+        monkeypatch.chdir(tmp_path)
+        # Seed the store as if an early run today already cached SPY, but one
+        # bar short of what's expected by now.
+        md._save_history_store({
+            "SPY": {"date": "2026-07-31", "history": [self._bar("2026-07-29", 729.46)]},
+        })
+        monkeypatch.setattr("market_calendar.most_recent_complete_trading_day",
+                             lambda: date(2026, 7, 30))
+        refetched = {"called": False}
+
+        def fake_history(ticker, days=210):
+            refetched["called"] = True
+            return [self._bar("2026-07-29", 729.46), self._bar("2026-07-30", 741.69)]
+
+        monkeypatch.setattr(md, "get_extended_history", fake_history)
+        monkeypatch.setattr(md, "get_news_summary", lambda: [])
+        monkeypatch.setattr(md, "get_ticker_news", lambda t, limit=5: [])
+        monkeypatch.setattr(md, "get_all_fundamentals", lambda tickers: {})
+        import universe
+        monkeypatch.setattr(universe, "get_active_universe", lambda coverage_ok=True: ["SPY"])
+        monkeypatch.setattr(universe, "CORE_UNIVERSE", ["SPY"])
+        monkeypatch.setattr(md, "SP500_HOLDINGS", {})
+        snap = md.get_market_snapshot(force=True)
+        assert refetched["called"] is True
+        assert snap["prices"]["SPY"]["close"] == 741.69
+
+    def test_genuinely_fresh_same_day_cache_entry_is_not_refetched(self, tmp_path, monkeypatch):
+        import market_data as md
+        monkeypatch.chdir(tmp_path)
+        md._save_history_store({
+            "SPY": {"date": "2026-07-31", "history": [self._bar("2026-07-30", 741.69)]},
+        })
+        monkeypatch.setattr("market_calendar.most_recent_complete_trading_day",
+                             lambda: date(2026, 7, 30))
+        refetched = {"called": False}
+
+        def fake_history(ticker, days=210):
+            refetched["called"] = True
+            return [self._bar("2026-07-30", 741.69)]
+
+        monkeypatch.setattr(md, "get_extended_history", fake_history)
+        monkeypatch.setattr(md, "get_news_summary", lambda: [])
+        monkeypatch.setattr(md, "get_ticker_news", lambda t, limit=5: [])
+        monkeypatch.setattr(md, "get_all_fundamentals", lambda tickers: {})
+        import universe
+        monkeypatch.setattr(universe, "get_active_universe", lambda coverage_ok=True: ["SPY"])
+        monkeypatch.setattr(universe, "CORE_UNIVERSE", ["SPY"])
+        monkeypatch.setattr(md, "SP500_HOLDINGS", {})
+        snap = md.get_market_snapshot(force=True)
+        assert refetched["called"] is False
+        assert snap["prices"]["SPY"]["close"] == 741.69
 
 
 class TestDataQualityClassifier:

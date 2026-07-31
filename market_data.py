@@ -687,12 +687,26 @@ def get_market_snapshot(force: bool = False) -> dict:
     # fails today carries forward from the store for ≤ CARRY_FORWARD_MAX_DAYS with
     # its true price_as_of stamped (P0-1) — beyond that it drops out and counts
     # against the §15.2 universe-fetched floor rather than going silently stale.
+    from market_calendar import most_recent_complete_trading_day
+    expected_fresh_through = most_recent_complete_trading_day()
+
     store = _load_history_store() if force else {}
     fetched = failed = carried = dead = 0
     for i, ticker in enumerate(all_tickers):
         entry = store.get(ticker)
-        if not (isinstance(entry, dict) and entry.get("date") == today_str
-                and entry.get("history")):
+        already_fetched_today = (isinstance(entry, dict) and entry.get("date") == today_str
+                                  and entry.get("history"))
+        # A "fetched today" stamp only means a call was MADE today, not that it
+        # caught the newest close — an early run can beat Polygon's own EOD
+        # finalization and cache a bar short. Re-verify the entry's own last-bar
+        # date is at least as fresh as expected before trusting the stamp, so a
+        # later same-day run isn't blocked from correcting a genuinely stale catch.
+        if already_fetched_today:
+            last_bar_date = datetime.fromtimestamp(
+                entry["history"][-1]["date"] / 1000, tz=timezone.utc
+            ).date()
+            already_fetched_today = last_bar_date >= expected_fresh_through
+        if not already_fetched_today:
             hist = get_extended_history(ticker, days=210)
             # Treat a stale-tailed "success" (delisted ticker frozen at its last
             # traded bar — confirmed live: HOLX/Hologic delisted 2026-04-08 kept
