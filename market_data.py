@@ -157,7 +157,7 @@ def get_price(ticker: str) -> dict | None:
     history = get_extended_history(ticker, days=7)
     if len(history) >= 2:
         prev, curr = history[-2], history[-1]
-        change_pct = round(((curr["close"] - prev["close"]) / prev["close"]) * 100, 2)
+        change_pct = round(((curr["close"] - prev["close"]) / prev["close"]) * 100, 2) if prev["close"] else 0
     elif len(history) == 1:
         curr = history[0]
         change_pct = round(((curr["close"] - curr["open"]) / curr["open"]) * 100, 2) if curr["open"] else 0

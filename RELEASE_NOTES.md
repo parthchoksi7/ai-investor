@@ -13,6 +13,32 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — ZeroDivisionError crashed every market_data.yml run on 2026-07-30, stale-ing the website's SPY benchmark
+
+All four of today's `market_data.yml` runs (7:00/8:00/8:30 AM ET crons plus a
+retry) crashed with an unhandled `ZeroDivisionError` in `get_price()`, so
+`market_snapshot.json` never refreshed past 2026-07-29's data all day. Traced
+from a user report that the website's S&P 500 line showed a *drop* on a day
+the index actually closed **+1.66%**: `publish.py._fetch_spy_from_snapshot()`
+only trusts the snapshot's SPY price when `snapshot.date == today`; with the
+snapshot stuck a day stale it fell back to Polygon's `/prev` endpoint, which
+itself only returns the previous completed trading day's close — so the
+published SPY benchmark never picked up the rally. No trades were at risk
+(2026-07-30 ran in RISK-WATCH mode, which deliberately doesn't require a
+fresh snapshot) — this was a data-freshness/display bug only.
+
+- **`fix(market_data)` `get_price()` zero-guard** — `change_pct` is now `0`
+  when the previous bar's close is `0`, mirroring the existing guard on the
+  `len(history) == 1` branch two lines below. The crash came from the
+  news-discovered-ticker path (arbitrary symbols mentioned in Polygon news
+  articles, outside the normal watchlist/expansion universe, so the
+  Jul 29 `is_history_dead()` delisted-ticker guard doesn't cover it) hitting a
+  ticker with a `close == 0` bar in its Polygon history.
+
+> **QA:** full `pytest` green (**854**, +2: `TestGetPriceZeroDivisionGuard`).
+> Ruff F821/F823 clean. No live-order-path code touched — pure data-fetch
+> defensive guard, identical in form to the adjacent existing line.
+
 ### Fixed — delisted-ticker guard, found in a post-run review of the Jul 29 rebalance
 
 The Jul 29 rebalance PM proposed a 9% BUY into HOLX on a composite score of 83.3,

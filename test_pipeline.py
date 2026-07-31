@@ -8510,6 +8510,32 @@ class TestDelistedTickerGuard:
         assert "HOLX" not in EXPANDED_UNIVERSE
 
 
+class TestGetPriceZeroDivisionGuard:
+    """get_price() crashed the entire fetch_snapshot.py job with an unguarded
+    ZeroDivisionError whenever a news-discovered ticker's previous bar had
+    close == 0 (found live: all four 2026-07-30 market_data.yml runs failed
+    on this, leaving market_snapshot.json stuck on 7/29 data all day and the
+    website's SPY benchmark stale/wrong for the whole trading day)."""
+
+    def _bar(self, close):
+        return {"date": 1, "open": 1, "high": 1, "low": 1, "close": close, "volume": 1}
+
+    def test_zero_prev_close_returns_zero_pct_instead_of_raising(self, monkeypatch):
+        import market_data as md
+        monkeypatch.setattr(md, "get_extended_history",
+                             lambda ticker, days=7: [self._bar(0), self._bar(10.0)])
+        data = md.get_price("ZERO")
+        assert data["change_pct"] == 0
+        assert data["close"] == 10.0
+
+    def test_normal_prev_close_still_computes_correct_pct(self, monkeypatch):
+        import market_data as md
+        monkeypatch.setattr(md, "get_extended_history",
+                             lambda ticker, days=7: [self._bar(100.0), self._bar(110.0)])
+        data = md.get_price("NORMAL")
+        assert data["change_pct"] == 10.0
+
+
 class TestDossierConsumer:
     """Phase 5 Stage C — the dossier reaches the agents' prompts."""
 
