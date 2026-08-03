@@ -1,7 +1,7 @@
 {
   "date": "2026-08-03",
   "data_date": "2026-08-03",
-  "generated_at": "2026-08-03T13:05:39.220349+00:00",
+  "generated_at": "2026-08-03T15:22:15.999415+00:00",
   "status": "OK",
   "data_quality_score": 100,
   "strategy_shift_ok": true,
@@ -15,13 +15,13 @@
       "abort_below": 80.0
     },
     "min_history_depth": {
-      "value": 180,
+      "value": 71,
       "status": "OK",
       "degraded_below": 60,
       "abort_below": 22
     },
     "fundamental_coverage_pct": {
-      "value": 96.0,
+      "value": 94.9,
       "status": "OK",
       "degraded_below": 80.0,
       "abort_below": null
@@ -33,7 +33,7 @@
       "abort_below": null
     },
     "valuation_coverage_pct": {
-      "value": 96.0,
+      "value": 94.3,
       "status": "OK",
       "degraded_below": null,
       "abort_below": null,
@@ -42,18 +42,18 @@
   },
   "breaches": [],
   "cik_map_ok": true,
-  "price_outlier_count": 2,
-  "hash": "ffca0bba73451b83",
+  "price_outlier_count": 1,
+  "hash": "1713192093d644f2",
   "event_digest": {
     "chunks": 4,
     "chunks_ok": 4,
     "parse_success_rate": 1.0,
-    "raw_events": 18,
+    "raw_events": 16,
     "capped": false,
     "chunks_available": 4,
     "max_chunks": 15,
     "as_of": "2026-08-03",
-    "events_written": 17,
+    "events_written": 15,
     "events_deduped": 0
   }
 }
