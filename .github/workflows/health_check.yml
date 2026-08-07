@@ -23,7 +23,7 @@ jobs:
             exit 1
           fi
 
-          TODAY=$(date -u +%Y-%m-%d)
+          TODAY=$(TZ=America/New_York date +%Y-%m-%d)
           RESULT=$(curl -sf \
             -H "apikey: $SUPABASE_SERVICE_KEY" \
             -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
