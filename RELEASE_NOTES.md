@@ -13,6 +13,42 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — SPY benchmark went stale again for 4 more days (7/31–8/5) after the prior fix, because the "live" Polygon call was never checked for freshness
+
+A user-requested audit (comparing every published `spy_close` against verified
+Polygon closes) found the 7/31 fix below didn't hold: `2026-07-31` through
+`2026-08-05` (4 trading days) were each stamped with the PRIOR trading day's
+close again — `08-06` was correct, `07-30` and earlier were correct, but the
+band in between was uniformly one day behind. Root cause: `_fetch_spy_prev_close`
+calls Polygon's `/prev` and takes whatever it returns unconditionally — no check
+that the returned bar's own date is actually the session `/prev` should mean
+right now. The EOD routine fires at exactly `0 20 UTC` (4:00:00 PM ET); Polygon
+can take a few minutes to finalize a session's close, so a call made right at
+the closing bell got a 200 OK with YESTERDAY's close inside it, indistinguishable
+from a fresh response — and since nothing else ever re-publishes that date's row,
+the stale value stuck permanently.
+
+- **`fix(publish)` `_fetch_spy_prev_close` now validates freshness** — the
+  returned bar's own timestamp is checked against
+  `market_calendar.most_recent_complete_trading_day()`; a stale bar is retried
+  (bounded backoff, default 3 attempts / 20s apart) instead of accepted. If
+  still stale after all retries, returns `None` so the caller falls through to
+  the snapshot fallback (or leaves that date's row untouched) rather than
+  writing a value already known to be wrong.
+- **Backfilled the 4 wrong rows directly in Supabase** (`2026-07-31`,
+  `2026-08-03`, `2026-08-04`, `2026-08-05`) — `spy_close` corrected against
+  verified Polygon ground truth and `spy_cumulative_return_pct` recomputed
+  from the same inception baseline/dividend-gross-up formula
+  (`_get_spy_cumulative`); only those 4 rows change (the formula depends on
+  each row's own close + the fixed inception row, not on neighboring rows).
+
+> **QA:** `pytest -k "SpyPrevCloseFreshness or PublishSpyPriority or
+> PublishSpyDataSource"` green (4 new tests + 7 existing); full suite
+> **865/867** (2 pre-existing, unrelated `TestHistoryStoreFreshnessRecheck`
+> failures reproduced identically on `main` before this change — a known
+> time-of-day flake, not touched here). Ruff F821/F823 clean. No
+> live-order-path code touched — publish/data-fetch layer only.
+
 ### Fixed — SPY benchmark was structurally always one trading day stale; a second bug re-staled it worse on 2026-07-31
 
 Following the 2026-07-30 crash fix below, a user report ("I think I see the same

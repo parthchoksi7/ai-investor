@@ -1658,6 +1658,100 @@ class TestPublishSpyPriority:
         assert row["spy_close"] == 729.46
 
 
+class TestSpyPrevCloseFreshness:
+    """publish._fetch_spy_prev_close must validate the returned bar's own date
+    against market_calendar.most_recent_complete_trading_day(), not accept
+    whatever Polygon's "prev" endpoint returns unconditionally.
+
+    Root-cause regression for 2026-07-31 through 2026-08-05: Polygon's "prev"
+    lagged its own session finalization by a few minutes right at the 4:00 PM
+    ET EOD-routine firing time, silently returning the PRIOR day's close as if
+    it were fresh. That stale-but-200-OK response was written straight to
+    Supabase with no validation, four days running, because nothing checked
+    whether the response's own bar date matched what "prev" should mean right
+    now."""
+
+    def _bar(self, close, iso_date):
+        from datetime import datetime as dt
+        from zoneinfo import ZoneInfo
+        # 4:00 PM ET session-close timestamp for the given date, in epoch ms.
+        t = int(dt.fromisoformat(iso_date + "T16:00:00").replace(
+            tzinfo=ZoneInfo("America/New_York")).timestamp() * 1000)
+        return {"results": [{"c": close, "t": t}]}
+
+    def _mock_urlopen(self, monkeypatch, responses):
+        """responses: list of dicts (one per call, in order) to return as the
+        decoded JSON body."""
+        import urllib.request
+        calls = {"n": 0}
+
+        class _Resp:
+            def __init__(self, payload):
+                self._payload = json.dumps(payload).encode()
+            def read(self):
+                return self._payload
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+
+        def _fake_urlopen(req, timeout=10):
+            i = min(calls["n"], len(responses) - 1)
+            calls["n"] += 1
+            return _Resp(responses[i])
+
+        monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+        monkeypatch.setattr("time.sleep", lambda s: None)
+        return calls
+
+    def test_fresh_bar_accepted_immediately(self, monkeypatch):
+        import publish
+        monkeypatch.setattr("market_calendar.most_recent_complete_trading_day",
+                             lambda: date(2026, 8, 5))
+        calls = self._mock_urlopen(monkeypatch, [self._bar(769.79, "2026-08-05")])
+        result = publish._fetch_spy_prev_close("fake-key")
+        assert result == 769.79
+        assert calls["n"] == 1  # no retry needed
+
+    def test_stale_bar_retried_until_fresh(self, monkeypatch):
+        import publish
+        monkeypatch.setattr("market_calendar.most_recent_complete_trading_day",
+                             lambda: date(2026, 8, 5))
+        # First two calls return 08-04's stale close; third call (post-finalization) is fresh.
+        calls = self._mock_urlopen(monkeypatch, [
+            self._bar(771.33, "2026-08-04"),
+            self._bar(771.33, "2026-08-04"),
+            self._bar(769.79, "2026-08-05"),
+        ])
+        result = publish._fetch_spy_prev_close("fake-key", max_retries=3, retry_delay=0)
+        assert result == 769.79
+        assert calls["n"] == 3
+
+    def test_still_stale_after_retries_returns_none(self, monkeypatch):
+        """Never accept known-stale data — return None so the caller falls
+        back to the snapshot (or leaves the existing row untouched) instead of
+        writing a value that's already been proven wrong this run."""
+        import publish
+        monkeypatch.setattr("market_calendar.most_recent_complete_trading_day",
+                             lambda: date(2026, 8, 5))
+        calls = self._mock_urlopen(monkeypatch, [self._bar(771.33, "2026-08-04")])
+        result = publish._fetch_spy_prev_close("fake-key", max_retries=3, retry_delay=0)
+        assert result is None
+        assert calls["n"] == 3
+
+    def test_before_close_yesterdays_bar_is_fresh_no_retry(self, monkeypatch):
+        """Before 4 PM ET, most_recent_complete_trading_day() is yesterday, so
+        yesterday's bar is correctly accepted with no retry — this path must
+        not regress into always retrying."""
+        import publish
+        monkeypatch.setattr("market_calendar.most_recent_complete_trading_day",
+                             lambda: date(2026, 8, 4))
+        calls = self._mock_urlopen(monkeypatch, [self._bar(771.33, "2026-08-04")])
+        result = publish._fetch_spy_prev_close("fake-key")
+        assert result == 771.33
+        assert calls["n"] == 1
+
+
 class TestSanitizeNaN:
     """publish._sanitize — the serialization-boundary scrub that keeps a NaN/Inf
     from breaking the Supabase publish (Jun 16: vol=nan reached the upsert →

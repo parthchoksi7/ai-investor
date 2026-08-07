@@ -14,6 +14,7 @@ Silently skips if either is missing (local dev without Supabase configured).
 import json
 import math
 import os
+import time
 import urllib.request
 import urllib.error
 from datetime import date, datetime, timezone
@@ -84,18 +85,47 @@ def _fetch_spy_from_snapshot() -> float | None:
         return None
 
 
-def _fetch_spy_prev_close(polygon_key: str) -> float | None:
-    """Fetch SPY's previous-day closing price from Polygon. Fallback when snapshot unavailable."""
+def _fetch_spy_prev_close(polygon_key: str, max_retries: int = 3, retry_delay: float = 20.0) -> float | None:
+    """Fetch SPY's most recently completed session close from Polygon.
+
+    Found live: 2026-07-31 through 2026-08-05 published one trading day stale
+    despite the 07-31 "call live Polygon first" fix (34775c4). Root cause: that
+    fix never validated WHAT the live call returned — Polygon's "prev" endpoint
+    can lag its own session's finalization by several minutes right at the
+    close, so a call made at the EOD routine's exact 4:00:00 PM ET firing time
+    can still return YESTERDAY's close even though "prev" is supposed to mean
+    TODAY's close from that instant on. A late, stale-but-200-OK response was
+    indistinguishable from a fresh one, so it was accepted and permanently
+    written — nothing ever re-checked or corrected that date's row afterward.
+    Now the returned bar's own date is validated against
+    market_calendar.most_recent_complete_trading_day(); a stale bar is retried
+    with a bounded backoff (Polygon typically finalizes within ~1 minute of
+    close) rather than accepted. If it's still stale after all retries, this
+    returns None so the caller falls through to the snapshot fallback (or, if
+    that's stale too, leaves the row's spy_close untouched this run) instead of
+    writing a value already known to be wrong.
+    """
+    from market_calendar import most_recent_complete_trading_day
+    expected = most_recent_complete_trading_day()
     url = f"https://api.polygon.io/v2/aggs/ticker/SPY/prev?adjusted=true&apiKey={polygon_key}"
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "ai-investor/1.0"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
-        results = data.get("results", [])
-        if results:
-            return float(results[0].get("c", 0))
-    except Exception:
-        pass
+    for attempt in range(max_retries):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "ai-investor/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+            results = data.get("results", [])
+            if results:
+                bar = results[0]
+                close = float(bar.get("c", 0))
+                bar_ms = bar.get("t")
+                if close > 0 and bar_ms is not None:
+                    bar_date = datetime.fromtimestamp(bar_ms / 1000, tz=timezone.utc).astimezone(_ET).date()
+                    if bar_date >= expected:
+                        return close
+        except Exception:
+            pass
+        if attempt < max_retries - 1:
+            time.sleep(retry_delay)
     return None
 
 
