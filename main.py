@@ -26,7 +26,7 @@ _ET = ZoneInfo("America/New_York")
 # not auto-trade). Set above the 0–10% PM target with a buffer for normal drift.
 CASH_DISCIPLINE_PCT = 15.0
 
-from market_data  import get_market_snapshot
+from market_data  import get_market_snapshot, MIN_VIABLE_BARS
 from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, StalePortfolioError, DRY_RUN
@@ -207,8 +207,10 @@ def run_daily_cycle():
     abort_reasons = []
     if data_date != today:
         abort_reasons.append(f"data is from {data_date}, not today ({today})")
-    if min_depth < 22:
-        abort_reasons.append(f"history depth is {min_depth} bars — need 22+ for any quant calculation")
+    if min_depth < MIN_VIABLE_BARS:
+        abort_reasons.append(
+            f"history depth is {min_depth} bars — need {MIN_VIABLE_BARS}+ for any quant calculation"
+        )
 
     if abort_reasons:
         msg = " | ".join(abort_reasons)

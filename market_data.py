@@ -24,6 +24,14 @@ PROVIDER_CACHE = "provider_cache.json"   # provider enrichment (#1), alternate-d
 RAW_HISTORY_STORE = "raw_history_store.json"
 CARRY_FORWARD_MAX_DAYS = 5   # a store entry older than this is dropped, not carried
 
+# Single source of truth for "enough bars to be usable" — quant_engine needs 22+ for
+# any momentum/vol calculation, and fetch_snapshot's pipeline-abort gate uses the same
+# number. An EXPANSION-batch ticker fetched with fewer bars than this is treated as a
+# failed fetch, not partial data (see the ticker-alive-but-thin sibling check to
+# is_history_dead, below — deliberately scoped to expansion names only; a thin
+# core/held/SP500 ticker stays visible so the abort gate can still see and catch it).
+MIN_VIABLE_BARS = 22
+
 # MANUAL_TODO #6b: expansion-only names are swept in batches via universe.next_batch/
 # save_batch (fetch_progress.json, also cached across GH Actions runs) — ~300
 # expansion-only tickers at Polygon's 5-calls/min would take ~60 min in one run, on
@@ -150,6 +158,20 @@ def is_history_dead(hist: list[dict], as_of: date | None = None, max_age_days: i
         max_age_days = CARRY_FORWARD_MAX_DAYS
     last_bar = datetime.fromtimestamp(hist[-1]["date"] / 1000, tz=timezone.utc).date()
     return (as_of - last_bar).days > max_age_days
+
+
+def is_history_thin(hist: list[dict], min_bars: int | None = None) -> bool:
+    """Sibling of is_history_dead for the other way a "successful" fetch can be
+    useless: a merged-away symbol (confirmed live: PARA/Paramount, folded into PSKY
+    post-Skydance merger) can keep 200-ing from Polygon with a single fresh-dated
+    stub bar forever — recent, so is_history_dead's recency check lets it through,
+    but too few bars for any quant calculation. One shared predicate (not two
+    inline copies) so a future third surfacing point can't independently drift on
+    what "thin" means — the exact gap a 2026-08-11 review pass had to catch by hand
+    when the fetch-time-only copy left the carry-forward path unguarded."""
+    if min_bars is None:
+        min_bars = MIN_VIABLE_BARS
+    return bool(hist) and len(hist) < min_bars
 
 
 def get_price(ticker: str) -> dict | None:
@@ -518,6 +540,20 @@ def _held_tickers() -> set[str]:
     return held
 
 
+def full_depth_scope(core, sp500_keys, held, benchmarks: tuple[str, ...] = ()) -> set[str]:
+    """Tickers that must always be fetched at FULL depth: the core watchlist, SP500
+    weight anchors, and currently-held positions — the exact `always_fetch` formula
+    select_fetch_batch needs below (batch_size/cursor logic must stay pure: no
+    implicit extras, so it takes NO benchmarks by default and existing callers/tests
+    are unaffected). fetch_snapshot.py's depth-gate/commit-slim scope wants a couple
+    more names it doesn't get any other way — pass `benchmarks=("SPY", "QQQ")`
+    there (both already inside CORE_UNIVERSE today; this is a defensive floor in
+    case that ever changes, not currently load-bearing). Single source for both
+    call sites' shared `core | sp500 | held` core, so they can never drift apart on
+    THAT part — the two used to be separately hand-written expressions."""
+    return set(core) | set(sp500_keys) | set(held) | set(benchmarks)
+
+
 def select_fetch_batch(active: list[str], core: list[str], sp500_keys, held: set[str],
                        expanded: bool, batch_size: int = None,
                        progress_path: str = None) -> tuple[list[str], list[str], list[str], int]:
@@ -545,7 +581,7 @@ def select_fetch_batch(active: list[str], core: list[str], sp500_keys, held: set
         batch_size = EXPANSION_BATCH_SIZE
     if progress_path is None:
         progress_path = FETCH_PROGRESS
-    always_fetch = sorted(set(core) | set(sp500_keys) | set(held))
+    always_fetch = sorted(full_depth_scope(core, sp500_keys, held))
     expansion_only = sorted(set(active) - set(always_fetch))
     batch, cursor = ([], 0)
     if expanded and expansion_only:
@@ -691,7 +727,8 @@ def get_market_snapshot(force: bool = False) -> dict:
     expected_fresh_through = most_recent_complete_trading_day()
 
     store = _load_history_store() if force else {}
-    fetched = failed = carried = dead = 0
+    expansion_batch_set = set(batch)
+    fetched = failed = carried = dead = thin = 0
     for i, ticker in enumerate(all_tickers):
         entry = store.get(ticker)
         already_fetched_today = (isinstance(entry, dict) and entry.get("date") == today_str
@@ -717,6 +754,22 @@ def get_market_snapshot(force: bool = False) -> dict:
             if hist and is_history_dead(hist):
                 hist = None
                 dead += 1
+            # Sibling drop for a ticker that ISN'T stale but also isn't real history
+            # (is_history_thin — see its docstring for the PARA incident this guards).
+            # Scoped to the EXPANSION batch only (never core/held/SP500/benchmarks):
+            # dropping a thin candidate is harmless — it just sits out of today's
+            # discovery sweep. Dropping a thin CORE/HELD ticker would be worse than
+            # the pre-fix behavior it replaces — the ticker would vanish from
+            # `history` entirely (no downstream gate iterates *missing* keys), instead
+            # of staying visible-but-thin so fetch_snapshot's core-scoped depth gate
+            # can still catch it and abort. Core/held/SP500 tickers keep the
+            # is_history_dead-only treatment they always had. Counted separately from
+            # `dead` — a thin-but-fresh stub is a different failure mode than a
+            # genuinely stale/delisted ticker, and conflating them under one
+            # "stale/likely-delisted" label misdiagnoses the next incident.
+            if hist and ticker in expansion_batch_set and is_history_thin(hist):
+                hist = None
+                thin += 1
             if hist:
                 store[ticker] = {"date": today_str, "history": hist}
                 fetched += 1
@@ -727,6 +780,17 @@ def get_market_snapshot(force: bool = False) -> dict:
 
         entry = store.get(ticker)
         if not (isinstance(entry, dict) and entry.get("history")):
+            continue
+        # The fetch-time is_history_thin check above only screens a freshly-fetched
+        # `hist` before it's written to `store` — it does NOT retroactively clean an
+        # entry the store already had from a PRIOR day (e.g. PARA-style stub written
+        # before this guard existed, or before today's ticker was even in the
+        # expansion batch). Re-check here, uniformly, for every path that's about to
+        # surface `entry["history"]` — fresh-today, refetched-today-and-rejected (so
+        # falls through to the untouched old entry), AND carried-forward — so a thin
+        # expansion stub can never reach `history`/`prices` no matter which of those
+        # three paths it arrives by.
+        if ticker in expansion_batch_set and is_history_thin(entry["history"]):
             continue
         entry_date = str(entry.get("date") or "")
         if entry_date != today_str:
@@ -767,8 +831,12 @@ def get_market_snapshot(force: bool = False) -> dict:
             new_cursor = save_batch(expansion_only, EXPANSION_BATCH_SIZE, batch_cursor)
             print(f"   🌐 expansion batch cursor advanced to {new_cursor}/{len(expansion_only)}")
     if failed or carried:
+        _failed_detail = ", ".join(filter(None, [
+            f"{dead} stale/likely-delisted" if dead else "",
+            f"{thin} thin/merged-away" if thin else "",
+        ]))
         print(f"   ⚠ history sweep: {fetched} fetched, {failed} failed"
-              f"{f' ({dead} stale/likely-delisted)' if dead else ''}, "
+              f"{f' ({_failed_detail})' if _failed_detail else ''}, "
               f"{carried} carried forward (≤{CARRY_FORWARD_MAX_DAYS}d, price_as_of stamped)")
 
     fundamentals = get_all_fundamentals(all_tickers)

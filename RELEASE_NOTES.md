@@ -13,6 +13,108 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — `market_data.yml` was failing 3-5 out of 4 daily runs, replaying the identical poisoned expansion batch on every attempt
+
+Investigating a run of user-reported failures (2026-08-10: 3/4 runs failed; 2026-08-11:
+2/2 completed runs failed) traced to a single merged-away ticker, `PARA` (Paramount
+Global, folded into PSKY post-Skydance merger). Polygon still returns HTTP 200 for it
+with exactly one recent-dated stub bar — recent enough that the existing delisted-ticker
+guard (`is_history_dead`, which only checks bar *recency*) let it straight through, and
+that one thin ticker collapsed the whole-snapshot `min_depth` to 1, tripping
+`fetch_snapshot.py`'s `< 22 bars` abort gate under a misleading "Polygon was unreachable"
+message — even though the 100 core/held/benchmark tickers the pipeline actually trades on
+were sitting at 205 bars, untouched. Worse: `actions/cache` skips its save step on a
+failed job by default, so the expansion-sweep cursor advance and the updated
+`raw_history_store.json` written mid-run never persisted — every subsequent run restored
+the last-successful cache, re-fetched the identical cursor=150 batch, and failed
+identically. Confirmed via a live Polygon probe (`PARA` → 1 result, HTTP 200) and by
+reproducing the exact multi-run failure signature (same cursor, same batch, same
+`min_depth: 1`) across 5 consecutive runs spanning two days.
+
+- **`feat(market_data)` `MIN_VIABLE_BARS` (=22) per-ticker guard, scoped to the
+  EXPANSION batch only** — a fetched expansion-candidate history shorter than the
+  quant-scoring floor is now dropped the same way a stale-tailed (recency-failed)
+  history already was, so a merged/delisted ticker that Polygon still 200s with a stub
+  bar can't reach the snapshot at all. Sibling check to the existing `is_history_dead`
+  recency guard, not a replacement — the two catch different failure shapes
+  (frozen-but-old vs. thin-but-fresh). Deliberately NOT applied to core/held/SP500
+  tickers: dropping a thin candidate is harmless (it just sits out today's discovery
+  sweep), but dropping a thin CORE/HELD ticker the same way would make it vanish from
+  `history` entirely — worse than staying visible-but-thin, since no downstream gate
+  iterates *missing* keys, only present ones. Core/held/SP500 keep the
+  is_history_dead-only treatment they always had, so the gate below can still see and
+  catch a genuine problem on a name that matters.
+- **`fix(fetch_snapshot)` depth-abort gate rescoped to core + held + SP500 +
+  benchmarks** (`FULL_DEPTH_SCOPE`, matching `market_data.select_fetch_batch`'s own
+  "always-fetch" definition exactly) — computed once and reused by both the gate and
+  the commit-time slim step so the two can never disagree on what counts as "core." The
+  optional ~300-name expansion batch is candidate-discovery only; one thin name in it
+  must never abort a run whose actual decision inputs (quant scoring, risk_watch, the
+  CRO correlation matrix) are fine. Full-universe depth is still logged for visibility,
+  just no longer gates. This is defense-in-depth alongside the guard above, not a
+  replacement for it — a genuine Polygon outage on a CORE name still aborts correctly.
+- **`fix(workflow)` `market_data.yml` cache is now saved even when the fetch step
+  fails** — split the combined `actions/cache@v5` step into explicit
+  `actions/cache/restore` + `actions/cache/save` (the maintainers' documented pattern;
+  the simpler `save-always: true` input on the combined action is flagged by GitHub as
+  not working as intended and slated for removal). The save step runs unconditionally
+  (`if: always()`) after the fetch step, so a run's cursor/history-store progress is
+  never thrown away by an unrelated downstream failure — breaking the class of bug
+  that turned one bad ticker into a multi-day stuck loop.
+- **`fix(market_data)` closed a carry-forward gap in the guard above** — the
+  fetch-time `MIN_VIABLE_BARS` check only screened a *freshly* fetched history before
+  it was written to `store`; it did nothing for an entry the store already had from
+  BEFORE this fix existed (exactly PARA's situation the day this ships — its 1-bar
+  stub was almost certainly already sitting in the cached `raw_history_store.json`
+  from the 5 failed runs). The carry-forward path re-reads `store.get(ticker)`
+  independently and would have kept resurfacing that stale stub for up to
+  `CARRY_FORWARD_MAX_DAYS` (5) more days. Added a second, unified check at the single
+  point every path (fresh-today / refetched-and-rejected / carried-forward) actually
+  surfaces a ticker's history, so a thin expansion stub can't reach the snapshot by
+  any route. Caught by a second-pass `/code-review high` before this shipped, not by
+  the first — see QA below.
+- **`refactor(market_data)` `full_depth_scope()` — one function, not two hand-written
+  expressions** — `select_fetch_batch`'s internal "always fetch" set and
+  `fetch_snapshot.py`'s `FULL_DEPTH_SCOPE` used to independently compute
+  `core | sp500 | held` (plus fetch_snapshot's own extra `{SPY, QQQ}` union); now both
+  call the same function, parametrized so `select_fetch_batch` stays exactly as pure
+  as its existing tests require (no implicit benchmark injection) while
+  `fetch_snapshot.py` opts into the `SPY`/`QQQ` defensive floor explicitly. Also
+  swapped `main.py`'s independent `min_depth < 22` preflight check to import
+  `MIN_VIABLE_BARS` instead of re-hardcoding the literal, so the "single source of
+  truth" claim actually holds for all three call sites, not just two.
+- **`refactor(market_data)` `is_history_thin()` — one predicate, not two inline
+  copies** — a parallel review pass (6 independent angles run concurrently) flagged
+  that the fetch-time and carry-forward thin checks had duplicated the exact same
+  `len(hist) < MIN_VIABLE_BARS` condition inline, the precise shape of drift that let
+  the carry-forward gap above slip past the first review pass. Factored into a
+  sibling function to `is_history_dead` instead. Also split the diagnostic `dead`
+  counter into `dead` (stale/recency-failed) vs. `thin` (bar-count-failed) — the sweep
+  summary previously would have mislabeled a wave of merged-away tickers as
+  "stale/likely-delisted," which is the exact wrong-path-investigation cost this
+  whole incident already paid for a different misleading message.
+
+> **QA:** full `pytest` green modulo the same 2 pre-existing `TestHistoryStoreFreshnessRecheck`
+> failures already documented below (reproduced identically on `main` before this change —
+> unrelated, hardcoded-date time-of-day flake); 868/870 (+3 new: `TestExpansionThinTickerGuard`
+> covers the per-ticker drop, its expansion-only scoping — a thin CORE ticker is asserted to
+> stay visible, not vanish — and the carry-forward closure, verified to actually fail without
+> the fix by temporarily reverting just that hunk and re-running). Ruff F821/F823 clean.
+> Workflow YAML parses. Manually verified against real snapshot data: injecting a synthetic
+> 1-bar `PARA` entry into today's known-good snapshot reproduces `min_depth: 1` under the OLD
+> (full-universe) gate scope and `min_depth: 205 (core, n=102)` under the NEW scope — i.e. the
+> exact fix for the exact incident. Two `/code-review high` passes: the first caught 7 findings
+> (4 confirmed, addressed above), the second re-review of the resulting diff caught the
+> carry-forward gap plus the `full_depth_scope` refactor's own regression (unconditionally
+> injecting `SPY`/`QQQ` broke `select_fetch_batch`'s pure-function contract and 3 existing
+> tests — caught immediately by the full suite, fixed by parametrizing rather than hardcoding).
+> All changes are in the data-fetch layer (`fetch_snapshot.py` / `market_data.py` / the GH
+> Actions workflow) plus one import-only line in `main.py` — no order/qty/idempotency code
+> touched. Note `get_market_snapshot()` (the touched function) is the same one `main.py` calls
+> for its own snapshot load, so the new per-ticker/gate logic does run inside the live process
+> too, just normally short-circuited by the cloud routine's local-file cache (GH Actions is the
+> only plane that calls it with `force=True`).
+
 ### Fixed — SPY benchmark went stale again for 4 more days (7/31–8/5) after the prior fix, because the "live" Polygon call was never checked for freshness
 
 A user-requested audit (comparing every published `spy_close` against verified

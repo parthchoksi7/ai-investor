@@ -37,9 +37,12 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Restore fundamentals + provider + raw-history cache
-        uses: actions/cache@v5
+        id: cache-restore
+        uses: actions/cache/restore@v5
         with:
-          path: |
+          # Anchored so the save step below (which MUST list the identical paths to
+          # round-trip the same cache) can't drift from this list independently.
+          path: &cache_paths |
             fundamentals_cache.json
             provider_cache.json
             raw_history_store.json
@@ -64,6 +67,23 @@ jobs:
           # (universe.get_active_universe) — the flag alone is not sufficient.
           UNIVERSE_EXPANDED: ${{ vars.UNIVERSE_EXPANDED || 'false' }}
         run: python fetch_snapshot.py
+
+      - name: Save fundamentals + provider + raw-history cache
+        # Explicit save (not the combined actions/cache action's implicit post-save,
+        # which the maintainers say "does not work as intended" for this — see
+        # https://github.com/actions/cache/tree/main/save#always-save-cache) so the
+        # sweep's progress is durable even when the FETCH STEP ABOVE FAILED. Without
+        # this, a run that hits fetch_snapshot's depth-abort (sys.exit(1), thrown
+        # AFTER the sweep already advanced the expansion cursor + wrote
+        # raw_history_store.json to disk) discards that progress instead of
+        # persisting it — 2026-08-10/11, 5 straight runs replayed the IDENTICAL
+        # cursor=150 batch because none of their in-run progress ever reached the
+        # cache, so every run re-hit the same thin ticker from scratch.
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: *cache_paths
+          key: ${{ steps.cache-restore.outputs.cache-primary-key }}
 
       - name: Commit market_snapshot.json to repo
         run: |

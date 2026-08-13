@@ -7281,6 +7281,95 @@ class TestHistoryStoreFreshnessRecheck:
         assert snap["prices"]["SPY"]["close"] == 741.69
 
 
+class TestExpansionThinTickerGuard:
+    """2026-08-10/11 incident: PARA (merged into PSKY) kept 200-ing from Polygon
+    with a single fresh-dated stub bar, which is enough to satisfy is_history_dead's
+    recency check but useless for scoring. One such ticker collapsed the whole-run
+    min_depth to 1 and aborted fetch_snapshot for 5 straight runs, because nothing
+    filtered a thin-but-fresh history before it reached the depth gate. Guards
+    MIN_VIABLE_BARS's per-ticker drop AND its deliberate scoping to expansion-only
+    names (a thin CORE/HELD ticker must stay visible, not vanish, so the caller's
+    own depth gate can still see and catch it)."""
+
+    def _bar(self, iso_date, close):
+        from datetime import datetime, timezone
+        d = date.fromisoformat(iso_date)
+        ms = int(datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp() * 1000)
+        return {"date": ms, "open": close, "high": close, "low": close,
+                "close": close, "volume": 1}
+
+    def _setup_expanded_universe(self, monkeypatch):
+        import market_data as md
+        import universe
+        monkeypatch.setattr(universe, "CORE_UNIVERSE", ["SPY", "AAPL"])
+        monkeypatch.setattr(universe, "get_active_universe",
+                             lambda coverage_ok=True: ["SPY", "AAPL", "THINX"])
+        monkeypatch.setattr(md, "SP500_HOLDINGS", {})
+        monkeypatch.setattr(md, "_held_tickers", lambda: set())
+        monkeypatch.setattr(md, "get_news_summary", lambda: [])
+        monkeypatch.setattr(md, "get_ticker_news", lambda t, limit=5: [])
+        monkeypatch.setattr(md, "get_all_fundamentals", lambda tickers: {})
+        return md
+
+    def test_thin_stub_in_expansion_batch_is_dropped(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        md = self._setup_expanded_universe(monkeypatch)
+
+        def fake_history(ticker, days=210):
+            if ticker == "THINX":
+                return [self._bar(date.today().isoformat(), 10.0)]  # PARA-style 1-bar stub
+            return [self._bar(date.today().isoformat(), 100.0)] * 25  # real, viable history
+
+        monkeypatch.setattr(md, "get_extended_history", fake_history)
+        snap = md.get_market_snapshot(force=True)
+        assert "THINX" not in snap["history"]
+        assert "THINX" not in snap["prices"]
+        assert "SPY" in snap["history"] and "AAPL" in snap["history"]
+
+    def test_thin_core_ticker_stays_visible_not_dropped(self, tmp_path, monkeypatch):
+        # The asymmetry that matters: a thin CORE ticker must NOT be silently
+        # dropped the way a thin expansion candidate is — dropping it would let a
+        # real data problem on a name that's actually traded escape the caller's
+        # depth gate entirely (no gate iterates a MISSING key).
+        monkeypatch.chdir(tmp_path)
+        md = self._setup_expanded_universe(monkeypatch)
+
+        def fake_history(ticker, days=210):
+            if ticker == "AAPL":
+                return [self._bar(date.today().isoformat(), 100.0)]  # thin, but a CORE name
+            return [self._bar(date.today().isoformat(), 100.0)] * 25
+
+        monkeypatch.setattr(md, "get_extended_history", fake_history)
+        snap = md.get_market_snapshot(force=True)
+        assert "AAPL" in snap["history"]
+        assert len(snap["history"]["AAPL"]) == 1
+
+    def test_preexisting_thin_store_entry_is_not_carried_forward(self, tmp_path, monkeypatch):
+        # The gap the first version of this fix missed: MIN_VIABLE_BARS only screened
+        # a FRESHLY fetched hist before it got written to store — an entry already
+        # sitting in raw_history_store.json from BEFORE the guard existed (exactly
+        # PARA's situation the day this fix ships) would still reach snap["history"]
+        # via the carry-forward path, which re-reads store.get(ticker) independently.
+        # Today's live fetch also returns a stub, so the write-time guard alone can't
+        # help — only a check at the point hist is actually surfaced closes this.
+        monkeypatch.chdir(tmp_path)
+        md = self._setup_expanded_universe(monkeypatch)
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        md._save_history_store({
+            "THINX": {"date": yesterday, "history": [self._bar(yesterday, 10.0)]},
+        })
+
+        def fake_history(ticker, days=210):
+            if ticker == "THINX":
+                return [self._bar(date.today().isoformat(), 10.0)]  # still a stub today
+            return [self._bar(date.today().isoformat(), 100.0)] * 25
+
+        monkeypatch.setattr(md, "get_extended_history", fake_history)
+        snap = md.get_market_snapshot(force=True)
+        assert "THINX" not in snap["history"]
+        assert "THINX" not in snap["prices"]
+
+
 class TestDataQualityClassifier:
     def test_clean_snapshot_is_ok(self):
         from data_quality import classify_data_quality, OK

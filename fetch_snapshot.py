@@ -10,13 +10,23 @@ by Anthropic's cloud network policy.
 import json
 import os
 import sys
-from market_data import get_market_snapshot
+from market_data import (
+    get_market_snapshot, _held_tickers, SP500_HOLDINGS, full_depth_scope, MIN_VIABLE_BARS,
+)
+from universe import CORE_UNIVERSE
 
 
 print("Fetching market snapshot...")
 # force=True bypasses the local-file and Supabase caches so every GH Actions run
 # always fetches live from Polygon. Those caches exist for the cloud routine only.
 snapshot = get_market_snapshot(force=True)
+
+# The "always-fetch, full-depth" scope — the SAME function select_fetch_batch calls
+# internally to decide what gets fetched at full depth every run, so this can never
+# independently drift from what actually got fetched. Computed once here and reused
+# below by BOTH the depth-abort gate and the commit-time slim step.
+FULL_DEPTH_SCOPE = full_depth_scope(CORE_UNIVERSE, SP500_HOLDINGS.keys(), _held_tickers(),
+                                     benchmarks=("SPY", "QQQ"))
 
 # PLAN_SEC_VALUATION Phase 2 — light up valuation (pe_ratio/fcf_yield/ev_ebitda) for
 # the tickers FMP's free tier misses, combining Phase 1's SEC EDGAR components with
@@ -42,20 +52,44 @@ try:
 except Exception as e:
     print(f"WARNING: derive_valuation_ratios failed (valuation stays FMP-only) — {e}")
 
-history_depths = [len(h) for h in snapshot.get("history", {}).values()]
-min_depth = min(history_depths) if history_depths else 0
+# Depth gate scope: FULL_DEPTH_SCOPE (core + held + SP500 + benchmarks) is what every
+# downstream decision (quant scoring, risk_watch, the CRO correlation matrix) actually
+# reads — it's ALSO what slim_snapshot_for_commit keeps at full depth below, so the
+# gate can never disagree with what actually ships full-depth. The optional ~300-name
+# expansion batch is candidate-discovery only; one thin name in it (2026-08-10/11:
+# PARA, a merged-away symbol Polygon still 200s with a single stub bar) must never
+# abort a run whose real decision inputs are fine — that's what happened for 5 straight
+# runs before market_data.py's per-ticker MIN_VIABLE_BARS drop (added alongside this
+# fix, and itself scoped to expansion-only names — see market_data.py's comment on
+# why core/held tickers deliberately do NOT get silently dropped the same way) started
+# filtering thin expansion tickers out before they reach here at all. This gate is now
+# a second, differently-scoped line of defense, not the only one.
+def _min_depth(history_dict: dict) -> int:
+    depths = [len(h) for h in history_dict.values()]
+    return min(depths) if depths else 0
+
+
+_core_history = {t: h for t, h in snapshot.get("history", {}).items() if t in FULL_DEPTH_SCOPE}
+min_depth = _min_depth(_core_history)
 real_scores = sum(1 for v in snapshot.get("prices", {}).values() if v)  # rough proxy
+
+# Full-universe depth (incl. expansion) is still surfaced for visibility, just not
+# used to decide the abort — a thin expansion name is a data_quality DEGRADED signal,
+# not a pipeline-halting one.
+_all_min = _min_depth(snapshot.get("history", {}))
 
 print(
     f"Snapshot ready: "
     f"{len(snapshot['prices'])} tickers | "
     f"{len(snapshot.get('news', []))} news articles | "
-    f"min history depth: {min_depth} bars | "
+    f"min history depth: {min_depth} bars (core+held+benchmarks, {len(_core_history)} names) | "
+    f"{_all_min} bars (full universe) | "
     f"source: {snapshot.get('_source', 'unknown')}"
 )
 
-if min_depth < 22:
-    print(f"ERROR: Snapshot has only {min_depth} history bars — insufficient for quant scoring (need 22+).")
+if min_depth < MIN_VIABLE_BARS:
+    print(f"ERROR: Core/held/benchmark snapshot has only {min_depth} history bars — "
+          f"insufficient for quant scoring (need {MIN_VIABLE_BARS}+).")
     print("This means Polygon was unreachable or returned empty data. Cloud routine will abort.")
     sys.exit(1)
 
@@ -160,10 +194,10 @@ except Exception as e:
 # (~13 MB/day → ~6 MB/day at 400 names).
 try:
     if snapshot.get("universe_expanded"):
-        from market_data import slim_snapshot_for_commit, _held_tickers
-        from universe import CORE_UNIVERSE
-        keep_full = set(CORE_UNIVERSE) | _held_tickers() | {"SPY", "QQQ"}
-        slim = slim_snapshot_for_commit(snapshot, keep_full)
+        from market_data import slim_snapshot_for_commit
+        # Reuse the exact scope the depth gate above already validated — see
+        # FULL_DEPTH_SCOPE's definition at the top of this file.
+        slim = slim_snapshot_for_commit(snapshot, FULL_DEPTH_SCOPE)
         with open("market_snapshot.json", "w") as f:
             json.dump(slim, f)
         print(f"Slimmed committed snapshot: {len(slim.get('history_tail_tickers', []))} "
