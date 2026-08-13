@@ -1,36 +1,147 @@
 {
-  "run_id": "20260811-135810",
-  "date": "2026-08-11",
-  "timestamp": "2026-08-11T13:58:10.652083+00:00",
-  "overall_status": "OK",
+  "run_id": "20260813-134928",
+  "date": "2026-08-13",
+  "timestamp": "2026-08-13T13:52:11.281826+00:00",
+  "overall_status": "DEGRADED",
   "checks": {
     "portfolio": {
       "status": "OK",
       "message": "",
-      "ts": "2026-08-11T13:58:10.538427+00:00",
-      "total_value": 518.70552614,
+      "ts": "2026-08-13T13:49:28.001124+00:00",
+      "total_value": 518.009162915,
+      "cash": 98.97,
       "positions": 9
     },
     "kill_switch": {
       "status": "OK",
       "message": "",
-      "ts": "2026-08-11T13:58:10.543883+00:00"
+      "ts": "2026-08-13T13:49:28.001211+00:00"
     },
-    "risk_watch": {
+    "market_data": {
       "status": "OK",
-      "message": "9 position(s) evaluated; 0 stop(s) fired",
-      "ts": "2026-08-11T13:58:10.545546+00:00",
-      "evaluated": 9,
-      "fired": [],
-      "interlocked": [],
-      "blocked": [],
-      "skipped_no_basis": []
+      "message": "",
+      "ts": "2026-08-13T13:49:28.085218+00:00",
+      "source": "market_snapshot_file",
+      "data_date": "2026-08-13",
+      "tickers": 174,
+      "tail_tickers": 72,
+      "history_min_bars": 205,
+      "history_avg_bars": 147.3
+    },
+    "data_quality": {
+      "status": "OK",
+      "message": "all floors OK",
+      "ts": "2026-08-13T13:49:28.089134+00:00",
+      "score": 100,
+      "strategy_shift_ok": true,
+      "dq_hash": "7eb5103ba3173ead"
+    },
+    "research_dossier": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-08-13T13:49:28.096439+00:00",
+      "dossier_as_of": "2026-08-13",
+      "n_tickers": 172,
+      "built_from_days": 7
+    },
+    "quant_scores": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-08-13T13:49:28.117553+00:00",
+      "real_scores": 173,
+      "total": 174
+    },
+    "crisis_safe_mode": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-08-13T13:52:10.132298+00:00",
+      "spy_change_pct": 0.25
+    },
+    "decision_validation": {
+      "status": "DEGRADED",
+      "message": "1 rejected, 0 clamped, 0 skipped by guardrails",
+      "ts": "2026-08-13T13:52:10.134770+00:00",
+      "passed": 3,
+      "rejected": [
+        {
+          "ticker": "PLD",
+          "action": "SELL",
+          "reason": "min-holding: bought 2026-07-22, < 30 trading days ago (anti-churn/tax)"
+        }
+      ],
+      "modified": [],
+      "skipped": []
+    },
+    "agent_1_regime": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-08-13T13:52:10.134784+00:00",
+      "regime": "RISK_ON",
+      "confidence": 78
+    },
+    "agent_2_research": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-08-13T13:52:10.134959+00:00",
+      "total": 20
+    },
+    "agent_3_earnings": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-08-13T13:52:10.134973+00:00",
+      "total": 20
+    },
+    "agent_4_devils_advocate": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-08-13T13:52:10.134995+00:00",
+      "total": 20
+    },
+    "agent_5_position_review": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-08-13T13:52:10.135012+00:00",
+      "reviewed": 9,
+      "reduce_exit_recommended": 3
+    },
+    "agent_6_portfolio_manager": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-08-13T13:52:10.135137+00:00",
+      "proposed": 3,
+      "final_decisions": 2
+    },
+    "agent_7_cro": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-08-13T13:52:10.135143+00:00",
+      "approved": false,
+      "vetoed": [
+        "COP"
+      ],
+      "risk_budget": 78
+    },
+    "cash_discipline": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-08-13T13:52:11.261687+00:00",
+      "cash_pct": 19.1
+    },
+    "execution": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-08-13T13:52:11.261892+00:00",
+      "decisions": 2,
+      "executed": 2,
+      "dry_run": true
     },
     "supabase_publish": {
       "status": "OK",
       "message": "",
-      "ts": "2026-08-11T13:58:10.652052+00:00"
+      "ts": "2026-08-13T13:52:11.281789+00:00"
     }
   },
-  "alerts": []
+  "alerts": [
+    "[DEGRADED] decision_validation: 1 rejected, 0 clamped, 0 skipped by guardrails"
+  ]
 }
