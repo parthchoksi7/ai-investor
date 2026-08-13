@@ -698,9 +698,19 @@
       "Free cash flow conversion deteriorates materially (below 80% of net income) due to capex escalation or working capital issues",
       "Management loses confidence and announces a strategic review, asset sale, or dividend return that signals the business is being managed for cash extraction rather than growth"
     ],
-    "status": "open",
-    "actual_return": null,
-    "thesis_correct": null
+    "status": "closed",
+    "actual_return": -0.0837,
+    "thesis_correct": false,
+    "exits": [
+      {
+        "date": "2026-08-13",
+        "run_id": "20260813-134928",
+        "exit_price": 102.31,
+        "avg_price": 111.65,
+        "realized_return": -0.0837,
+        "full_exit": true
+      }
+    ]
   },
   {
     "trade_id": "6085abe0-e8a1-4bab-945f-2bedcb39a0ee",
@@ -902,6 +912,66 @@
       "Dividend cut or flat guidance on dividend growth, indicating cash flow stress or loss of management confidence",
       "Market share losses in top 5 franchises (Remicade, Imbruvica, Darzalex, Xeljanz, Talquetamab) to competitors that persist across 2+ quarters",
       "Two or more Phase 3 failures in oncology pipeline (late 2024-2025 timeframe), leaving insufficient growth catalysts"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "75e35eca-a2e0-4ce5-9ddf-7679f4eb11d2",
+    "run_id": "20260813-134928",
+    "date": "2026-08-13",
+    "ticker": "EBAY",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "eBay is re-rating lower on near-term macro uncertainty, but management's focus on take-rate expansion, payment monetization, and AI-driven buyer/seller matching creates a multi-year cash flow acceleration that the market is discounting into a 21x multiple\u2014leaving 25-35% upside as execution de-risks and catalysts compress the valuation gap.",
+    "anti_thesis": "eBay is a structurally declining marketplace losing GMV share to Amazon, Temu, and Shopify while its core buyer base ages and shrinks; take-rate expansion is a monetization squeeze on a shrinking pie, not a growth story, and at 21x earnings the market is already pricing execution perfection on initiatives (payments, AI, luxury) that have shown limited measurable impact after years of investment. The payment monetization narrative is largely played out\u2014Managed Payments launched in 2018 and reached near-full adoption by 2022, meaning incremental 150 bps upside is speculative arithmetic, not a near-term catalyst. If GMV continues its multi-year decline trajectory even modestly, FCF CAGR of 8-12% is mathematically implausible without unsustainable cost-cutting, and the multiple compresses simultaneously.",
+    "catalysts": [
+      "Manage-out-to-in: Q1-Q2 2025 earnings reacceleration as macro normalization and holiday carryover effect lift GMV; beats on take-rate expansion (even flat GMV + 30-50 bps rate lift = mid-single-digit revenue growth and 200+ bps operating margin expansion)",
+      "Payment monetization acceleration: Q2-Q3 2025 earnings call highlighting eBay Managed Payments adoption >85% and take-rate contribution visible in reconciliation (~50-75 bps incremental by end-2025); analyst models may require repricing upward if payments RUn exceeds 100 bps earlier than expected",
+      "AI/search wins quantified: Category-specific AI matching tools (seller optimization, buyer discovery) drive repeat buyer frequency +2-3%; if disclosed in earnings or at investor day, suggests a 100-150 bps secular uplift in take-rate independent of macro",
+      "M&A or partnership catalyst: eBay acquiring or deeply integrating a high-margin vertical (luxury authentication, logistics, fintech rails) signals management's commitment to rotation away from commoditized core; reprices growth narrative",
+      "Activist or special committee review: If activist accumulates stake or activist-friendly board member drives capital allocation review, forced discussion of share buybacks, dividend initiation, or strategic transaction could unlock shareholder value and shift sentiment from 'decline story' to 'yield + optionality'",
+      "2026 guidance reset: If management raises multi-year take-rate or FCF guidance at 2025 investor day on the back of payment/AI initiatives, market would likely re-rate forward multiple from 17-18x to 19-21x"
+    ],
+    "confidence": 6,
+    "expected_return": 0.0,
+    "invalidates_if": [
+      "eBay GMV declines >12% YoY in any quarter of 2025-26 without corresponding take-rate expansion of >50 bps\u2014signals competitive structural loss and FCF outlook deteriorates",
+      "Management guides to take-rate decline or stagnation; would imply payment monetization and mix shift are not materializing, removing bull case underpinning",
+      "Free cash flow margin contracts (current ~20.5% operating margin + ~D&A) rather than expands in 2025-26 on cost inefficiency or capex/investment increases without ROIC support",
+      "Activist exit or board capitulation to activist demands without clear value-creation plan; signals uncertainty around management and strategy, re-rates multiple lower on execution risk",
+      "Regulatory crackdown on payments, seller protections, or marketplace liability that raises compliance costs or reduces take-rate optionality by >100 bps",
+      "Temu or another low-cost competitor gains >15% incremental US market share in eBay's core categories; would signal competitive moat erosion and require fundamental business model reset"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "06951e0c-9a80-43eb-8c17-17e619163ab6",
+    "run_id": "20260813-134928",
+    "date": "2026-08-13",
+    "ticker": "CVX",
+    "action": "BUY",
+    "target_weight": 0.09,
+    "thesis": "CVX is undervalued on a normalized FCF yield basis as balance sheet deleverage creates optionality for accelerated shareholder returns and M&A, while energy transition investments position it as a consolidator in a structurally tighter oil market.",
+    "anti_thesis": "CVX's entire capital-return thesis is hostage to oil prices remaining above ~$70/bbl, yet Brent is structurally pressured by OPEC+ spare capacity, rising non-OPEC supply (Guyana, Brazil, US shale), and a softening demand outlook driven by EV adoption acceleration and potential recession \u2014 any sustained move below $65/bbl collapses FCF yield, forces buyback tapering, and exposes the valuation as expensive on trough earnings. The deleverage story is largely already priced at a pipeline score of 80/100, meaning the market has already credited CVX for balance sheet improvement, leaving little margin of safety if execution disappoints. Additionally, the Hess acquisition integration risk (pending Exxon arbitration over Guyana pre-emption rights) represents a material unresolved liability that could destroy the single most valuable growth asset in the bull case.",
+    "catalysts": [
+      "Q3/Q4 2026 earnings confirming sustained or higher FCF generation + debt paydown acceleration (targets sub-0.5x net debt-to-EBITDA)",
+      "Announcement of accelerated $10B+ annual buyback program funded by disciplined capex and operational cash flow",
+      "Acquisition or JV announcement in energy transition (hydrogen, carbon capture, renewables) demonstrating strategic optionality",
+      "Oil price spike (supply disruption, geopolitical tension) expanding FCF pool and magnifying capital return capacity",
+      "Dividend growth acceleration or special dividend once net debt reaches strategic floor (signaling confidence in oil price sustainability)"
+    ],
+    "confidence": 6,
+    "expected_return": 0.1,
+    "invalidates_if": [
+      "Net debt-to-EBITDA stalls above 0.8x and management signals debt reduction is complete; thesis requires ongoing deleverage flexibility",
+      "CVX announces major capex expansion (>$10B annually) into renewables or hydrogen at returns below WACC",
+      "Oil prices fall below $55/bbl and stay there for 2+ quarters; thesis assumes oil $65-75+ band maintains",
+      "Q3 2026 FCF misses by >15% vs. management guidance or prior quarter run rate",
+      "Dividend is cut or held flat for 2+ years despite improving balance sheet"
     ],
     "status": "open",
     "actual_return": null,
