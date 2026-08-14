@@ -36,14 +36,25 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Restore fundamentals + provider + raw-history cache
+      - name: Restore provider + raw-history cache
         id: cache-restore
         uses: actions/cache/restore@v5
         with:
+          # fundamentals_cache.json is deliberately NOT in this list. It's git-tracked
+          # (committed below) — a SECOND, independent GH-Actions-private cache copy of
+          # it can silently go stale relative to `main` (e.g. after the cloud routine's
+          # rare degraded-fallback path commits a fresher one per ROUTINE_DAILY_CYCLE.md)
+          # and this restore step runs AFTER checkout, unconditionally overwriting
+          # whatever the fresh git checkout just gave it. Before fundamentals_cache.json
+          # was committed by this workflow that clobber was harmless (discarded with the
+          # ephemeral runner); once it started being committed (2026-08-13 fix below), a
+          # stale cache-restore would have silently REVERTED the git-committed data under
+          # an innocuous "chore: market snapshot" commit. `actions/checkout` is now this
+          # file's single, non-conflicting source of truth — the other three files below
+          # have no such git alternative (gitignored), so they still need this cache.
           # Anchored so the save step below (which MUST list the identical paths to
           # round-trip the same cache) can't drift from this list independently.
           path: &cache_paths |
-            fundamentals_cache.json
             provider_cache.json
             raw_history_store.json
             fetch_progress.json
@@ -68,7 +79,7 @@ jobs:
           UNIVERSE_EXPANDED: ${{ vars.UNIVERSE_EXPANDED || 'false' }}
         run: python fetch_snapshot.py
 
-      - name: Save fundamentals + provider + raw-history cache
+      - name: Save provider + raw-history cache
         # Explicit save (not the combined actions/cache action's implicit post-save,
         # which the maintainers say "does not work as intended" for this — see
         # https://github.com/actions/cache/tree/main/save#always-save-cache) so the
@@ -97,7 +108,14 @@ jobs:
           # forecasts_scored.jsonl + agent_scorecards.json: Stage D moved long-horizon
           # forecast maturation onto this plane (full history lives here) — without
           # committing them, every GH-plane score_matured result is silently lost.
-          git add market_snapshot.json factor_history.jsonl data_quality_report.json data_quality_history.jsonl research_dossier.json events.jsonl forecasts_scored.jsonl agent_scorecards.json
+          # fundamentals_cache.json is intentionally TRACKED (.gitignore's own note)
+          # and ROUTINE_DAILY_CYCLE.md already commits it from the cloud plane — this
+          # workflow modifies it too (fetch_snapshot.py -> get_all_fundamentals) but
+          # never staged it, so every run left a permanently dirty tracked file in the
+          # checkout. Harmless on its own, but it turned a routine push race into a
+          # hard failure the one time `git pull --rebase` below hit a dirty tree
+          # (2026-08-13 incident) — committing it here removes the trigger.
+          git add market_snapshot.json factor_history.jsonl data_quality_report.json data_quality_history.jsonl research_dossier.json events.jsonl forecasts_scored.jsonl agent_scorecards.json fundamentals_cache.json
           # Only commit if the file actually changed
           git diff --staged --quiet && echo "No changes to commit" || \
             git commit -m "chore: market snapshot [skip ci]"
@@ -107,11 +125,43 @@ jobs:
         # (pipeline_digest, the EOD publish, a concurrent market_data retry) lands on
         # main first. Rebase-and-retry so a benign push race doesn't drop the snapshot
         # + factor_history + data_quality artifacts (same durability lesson as the
-        # routine STEP 5 push). Nothing else rewrites these files, so the rebase is safe.
+        # routine STEP 5 push). fundamentals_cache.json is the one file in the
+        # whitelist above with a second independent committer (the cloud routine's
+        # rare degraded-fallback path, ROUTINE_DAILY_CYCLE.md:280/378) — a genuine
+        # content conflict there is low-probability and, if it ever fires, fails this
+        # attempt cleanly (see the explicit error messages below); it does not corrupt
+        # anything, since a fresh `actions/checkout` on the next scheduled run is
+        # unaffected by this run's conflicted state.
         run: |
           for i in 1 2 3; do
             git push && exit 0
             echo "push rejected (attempt $i) — rebasing on origin/main and retrying"
-            git pull --rebase origin main || exit 1
+            # `git pull --rebase` refuses to run against a dirty working tree — a
+            # 2026-08-13 incident hit exactly this (fundamentals_cache.json modified
+            # but not yet committed) and turned a benign, self-healing push race into
+            # a hard run failure. That specific trigger is fixed above (the commit
+            # step now stages fundamentals_cache.json, and market_data.py's write is
+            # now conditional so most runs never even dirty it), but stash-and-restore
+            # around the rebase here too, so ANY future stray local diff can't
+            # reintroduce the same failure mode. `git stash push -u` is a safe no-op
+            # ("No local changes to save") when the tree is already clean, so this
+            # never fires spuriously on the common path.
+            before=$(git stash list | wc -l)
+            git stash push -u -m "push-retry-$i"
+            after=$(git stash list | wc -l)
+            if ! git pull --rebase origin main; then
+              echo "::error::rebase failed (likely a real content conflict, not just a dirty tree) — aborting so the next scheduled run starts clean"
+              git rebase --abort 2>/dev/null || true
+              exit 1
+            fi
+            if [ "$after" -gt "$before" ]; then
+              # An explicit failure message here, not a silent abort under bash's
+              # default -e: a pop conflict means the rebase changed the same lines
+              # the stash holds (e.g. two planes both touching fundamentals_cache.json
+              # — a known, low-probability, and safely-recoverable residual risk: this
+              # run's push simply fails clean, and the NEXT run starts from a fresh
+              # `actions/checkout`, unaffected by this runner's conflicted state).
+              git stash pop || { echo "::error::stash pop conflicted after rebase — this run's push is abandoned; the next scheduled run starts from a clean checkout"; exit 1; }
+            fi
           done
           git push

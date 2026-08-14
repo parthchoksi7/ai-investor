@@ -13,6 +13,85 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — `market_data.yml`'s push-retry could turn a benign push race into a hard failure on a dirty working tree
+
+Found live-verifying the PARA fix below: the dispatched confirmation run's data-fetch
+step succeeded cleanly (`min history depth: 204 bars`, full universe — the PARA fix
+confirmed working), but the run still reported failure. Root cause was unrelated to
+PARA: another process pushed to `main` first, and the existing push-retry's
+`git pull --rebase origin main` refuses to run against a dirty working tree —
+`fundamentals_cache.json` is git-tracked (`.gitignore`'s own note: "intentionally
+TRACKED... the cloud routine commits them via explicit git add") and was rewritten
+*unconditionally* on every call by `market_data.get_all_fundamentals()` — even a full
+weekly-cache hit with zero new fetches — but this workflow's commit step never staged
+it, so every run left it permanently dirty. That's harmless on its own — it only bites
+when a push race *also* happens to land in the same run, at which point
+`git pull --rebase` errors out (`cannot pull with rebase: You have unstaged changes`)
+and the retry's `|| exit 1` aborts the whole push, discarding that run's otherwise-good
+snapshot. (No real damage done today: `origin/main` already had a fresh, healthy
+snapshot from whichever run won the race.) **Not a novel diagnosis** — an automated
+run-health-review process had already independently found and root-caused this exact
+bug twice before, on 2026-08-03 and again 2026-08-04 (`run_health_reviews/2026-08-0{3,4}-*.md`),
+both times recommending this same fix but deferred under a standing
+diagnosis-only governance rule for that process.
+
+- **`fix(workflow)` `fundamentals_cache.json` added to the commit whitelist** — matches
+  what `ROUTINE_DAILY_CYCLE.md` already does from the cloud plane. **This is the fix
+  that actually and reliably resolves the incident** — keeps the working tree clean
+  going into the push/rebase step regardless of how often the file changes.
+- **`fix(market_data)` `get_all_fundamentals()` write is now conditional** — skips the
+  `os.replace` entirely when no ticker's weekly cache entry actually expired. A real
+  optimization (removes needless disk I/O and git churn on a full cache hit, for every
+  caller), but corrected from an earlier draft of this note that overstated it as "the
+  root-cause fix": with a 7-day TTL spread across a ~175-ticker staggered universe, at
+  least one entry crosses its boundary on most days, so `changed=True` — and the file
+  gets rewritten — far more often than "occasionally." The whitelist fix above is what
+  actually closes the incident; this is a genuine but secondary efficiency win.
+- **`fix(workflow)` a second, more serious bug found reviewing the fix above:
+  `actions/cache/restore` was unconditionally overwriting the freshly-checked-out git
+  copy of `fundamentals_cache.json` with a stale GH-Actions-private cache copy, on
+  every run — invisible before this diff (the file was never committed, so the clobber
+  was discarded with the ephemeral runner), but once the whitelist fix above started
+  committing it, a stale cache-restore would have silently REVERTED the cloud routine's
+  fresher data under an innocuous `chore: market snapshot` commit, with zero indication
+  anything went wrong.** Fixed by removing `fundamentals_cache.json` from the GH-Actions
+  cache path list entirely — `actions/checkout` is now its single, non-conflicting
+  source of truth (the other three cache files have no git alternative — they stay
+  gitignored, still cached). Caught by two independent parallel review passes before
+  shipping, not by the first single-pass review.
+- **`fix(workflow)` push-retry now stashes-and-restores around the rebase** — robust to
+  ANY future stray local diff reintroducing the dirty-tree failure mode, not just this
+  one file. `git stash push -u` is a safe no-op on an already-clean tree. A hard rebase
+  failure (a real content conflict, distinct from a dirty tree) now aborts the rebase
+  and exits with an explicit `::error::` before ever attempting to pop a stash into a
+  mid-conflict tree; a `stash pop` conflict after a clean rebase also fails loud with
+  its own explicit message — neither path silently dies under bash's default `-e`.
+- **Acknowledged residual risk, not engineered away:** `fundamentals_cache.json` still
+  has two independent COMMITTERS in principle (this workflow + the cloud routine's rare
+  MCP-degraded-fallback path, confirmed via `market_data.py:893` — the cloud routine
+  does NOT touch this file in normal operation, only when `market_snapshot.json` is
+  missing/stale). A genuine content conflict between the two commits is low-probability
+  and, if it ever happens, fails safe: this run's push is abandoned cleanly (the
+  explicit errors above), and the next scheduled run starts from a fresh
+  `actions/checkout`, unaffected. Not worth a custom merge driver for a rare,
+  already-safely-recoverable edge case. (This is a different, narrower risk than the
+  cache-restore clobber fixed above — that was a silent, guaranteed-on-staleness
+  overwrite; this is a rare, loud, self-healing conflict.)
+
+> **QA:** full `pytest` green (same 2 pre-existing unrelated `TestHistoryStoreFreshnessRecheck`
+> failures); 870/872 (+2 new: `TestFundamentalsCacheConditionalWrite` — a full cache hit
+> leaves the file's mtime untouched, a real new fetch still writes; the "untouched" case
+> verified to actually fail without the fix by temporarily reverting just that hunk and
+> re-running). Ruff clean, workflow YAML parses. The stash-count-diff logic (skip pop on
+> a no-op stash, capture + restore on a real one, restore untracked files too, and abandon
+> a real stash cleanly on a hard rebase conflict without attempting a pop) verified
+> directly in a scratch git repo across all cases before shipping. Three rounds of
+> `/code-review` (the first two `high`, single-pass; the third a parallel multi-angle pass)
+> before commit: fixed an unguarded `stash pop`, corrected an overstated "root cause"
+> claim, and — most importantly — two independent reviewers in the third round caught the
+> cache-restore clobber bug above, which the first two passes both missed. Workflow +
+> data-fetch-layer change only — no order/qty/idempotency code touched.
+
 ### Fixed — `market_data.yml` was failing 3-5 out of 4 daily runs, replaying the identical poisoned expansion batch on every attempt
 
 Investigating a run of user-reported failures (2026-08-10: 3/4 runs failed; 2026-08-11:

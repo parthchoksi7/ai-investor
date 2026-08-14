@@ -7370,6 +7370,41 @@ class TestExpansionThinTickerGuard:
         assert "THINX" not in snap["prices"]
 
 
+class TestFundamentalsCacheConditionalWrite:
+    """2026-08-03/04 (run_health_reviews) + 2026-08-13 incident: get_all_fundamentals
+    used to rewrite fundamentals_cache.json on EVERY call, even a full weekly-cache
+    hit with zero new fetches — leaving a permanently dirty git-tracked file that
+    turned a benign market_data.yml push race into a hard `git pull --rebase`
+    failure twice before this was fixed at the source."""
+
+    def test_full_cache_hit_does_not_touch_the_file(self, tmp_path, monkeypatch):
+        import market_data as md
+        import os
+        monkeypatch.chdir(tmp_path)
+        today = date.today().isoformat()
+        with open(md.FUNDAMENTALS_CACHE, "w") as f:
+            import json
+            json.dump({"AAPL": {"data": {"gross_margin": 0.4}, "fetched": today}}, f)
+        mtime_before = os.path.getmtime(md.FUNDAMENTALS_CACHE)
+
+        def fail_if_called(ticker):
+            raise AssertionError("should not re-fetch a fresh cache entry")
+
+        monkeypatch.setattr(md, "_fetch_fundamentals", fail_if_called)
+        result = md.get_all_fundamentals(["AAPL"])
+        assert result == {"AAPL": {"gross_margin": 0.4}}
+        assert os.path.getmtime(md.FUNDAMENTALS_CACHE) == mtime_before
+
+    def test_a_real_new_fetch_still_writes(self, tmp_path, monkeypatch):
+        import market_data as md
+        import os
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(md, "_fetch_fundamentals", lambda ticker: {"gross_margin": 0.5})
+        result = md.get_all_fundamentals(["NEWCO"])
+        assert result == {"NEWCO": {"gross_margin": 0.5}}
+        assert os.path.isfile(md.FUNDAMENTALS_CACHE)
+
+
 class TestDataQualityClassifier:
     def test_clean_snapshot_is_ok(self):
         from data_quality import classify_data_quality, OK

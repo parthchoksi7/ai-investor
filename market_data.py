@@ -250,6 +250,7 @@ def get_all_fundamentals(tickers: list[str]) -> dict:
     week_ago = (date.today() - timedelta(days=7)).isoformat()
     today    = date.today().isoformat()
     result   = {}
+    changed  = False
 
     for ticker in tickers:
         entry = cache.get(ticker, {})
@@ -259,13 +260,26 @@ def get_all_fundamentals(tickers: list[str]) -> dict:
             data = _fetch_fundamentals(ticker)
             cache[ticker] = {"data": data, "fetched": today}
             result[ticker] = data
+            changed = True
 
-    tmp = FUNDAMENTALS_CACHE + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(cache, f)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, FUNDAMENTALS_CACHE)
+    # 2026-08-03/04 run-health-review recurrence, 2026-08-13 incident: the old
+    # unconditional rewrite touched fundamentals_cache.json on EVERY call — even a
+    # full weekly-cache hit with zero new fetches — leaving a permanently dirty
+    # git-tracked file that turned a benign push race into a hard `git pull --rebase`
+    # failure. Skipping the write when nothing changed is a genuine efficiency win
+    # for every caller, but is NOT what actually closes the incident: with a 7-day
+    # TTL spread across a ~175-ticker staggered universe, at least one entry crosses
+    # its boundary on most days, so `changed` is True (and the file rewritten) far
+    # more often than "occasionally." The reliable fix is market_data.yml's commit
+    # step now staging this file, so a write here — conditional or not — no longer
+    # leaves the working tree dirty going into the push/rebase step.
+    if changed:
+        tmp = FUNDAMENTALS_CACHE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(cache, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, FUNDAMENTALS_CACHE)
 
     return result
 
