@@ -1,15 +1,15 @@
 {
-  "date": "2026-08-17",
-  "data_date": "2026-08-17",
-  "generated_at": "2026-08-17T13:46:54.612523+00:00",
+  "date": "2026-08-18",
+  "data_date": "2026-08-18",
+  "generated_at": "2026-08-18T10:03:06.578026+00:00",
   "status": "DEGRADED",
   "data_quality_score": 85,
-  "strategy_shift_ok": false,
-  "expected_universe": 177,
-  "fetched_universe": 174,
+  "strategy_shift_ok": true,
+  "expected_universe": 102,
+  "fetched_universe": 102,
   "metrics": {
     "universe_fetched_pct": {
-      "value": 98.3,
+      "value": 100.0,
       "status": "OK",
       "degraded_below": 95.0,
       "abort_below": 80.0
@@ -21,19 +21,19 @@
       "abort_below": 22
     },
     "fundamental_coverage_pct": {
-      "value": 72.9,
-      "status": "DEGRADED",
+      "value": 96.1,
+      "status": "OK",
       "degraded_below": 80.0,
       "abort_below": null
     },
     "nan_inf_count": {
-      "value": 0,
-      "status": "OK",
+      "value": 30,
+      "status": "DEGRADED",
       "degraded_below": null,
       "abort_below": null
     },
     "valuation_coverage_pct": {
-      "value": 70.7,
+      "value": 88.2,
       "status": "OK",
       "degraded_below": null,
       "abort_below": null,
@@ -41,21 +41,21 @@
     }
   },
   "breaches": [
-    "fundamental_coverage_pct DEGRADED: 72.9 < 80.0"
+    "nan_inf_count DEGRADED: 30 non-finite numeric value(s)"
   ],
   "cik_map_ok": true,
   "price_outlier_count": 2,
-  "hash": "76c3388aa3ca9d05",
+  "hash": "e7f4c6ff79517dfa",
   "event_digest": {
     "chunks": 4,
     "chunks_ok": 4,
     "parse_success_rate": 1.0,
-    "raw_events": 30,
+    "raw_events": 29,
     "capped": false,
     "chunks_available": 4,
     "max_chunks": 15,
-    "as_of": "2026-08-17",
-    "events_written": 28,
-    "events_deduped": 1
+    "as_of": "2026-08-18",
+    "events_written": 27,
+    "events_deduped": 2
   }
 }
