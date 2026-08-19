@@ -1,62 +1,59 @@
 {
-  "date": "2026-08-18",
-  "data_date": "2026-08-18",
-  "generated_at": "2026-08-18T13:51:44.054763+00:00",
-  "status": "DEGRADED",
-  "data_quality_score": 70,
-  "strategy_shift_ok": false,
-  "expected_universe": 177,
-  "fetched_universe": 174,
+  "date": "2026-08-19",
+  "data_date": "2026-08-19",
+  "generated_at": "2026-08-19T10:04:08.243068+00:00",
+  "status": "OK",
+  "data_quality_score": 100,
+  "strategy_shift_ok": true,
+  "expected_universe": 102,
+  "fetched_universe": 102,
   "metrics": {
     "universe_fetched_pct": {
-      "value": 98.3,
+      "value": 100.0,
       "status": "OK",
       "degraded_below": 95.0,
       "abort_below": 80.0
     },
     "min_history_depth": {
-      "value": 204,
+      "value": 205,
       "status": "OK",
       "degraded_below": 60,
       "abort_below": 22
     },
     "fundamental_coverage_pct": {
-      "value": 74.0,
-      "status": "DEGRADED",
+      "value": 96.1,
+      "status": "OK",
       "degraded_below": 80.0,
       "abort_below": null
     },
     "nan_inf_count": {
-      "value": 42,
-      "status": "DEGRADED",
+      "value": 0,
+      "status": "OK",
       "degraded_below": null,
       "abort_below": null
     },
     "valuation_coverage_pct": {
-      "value": 69.5,
+      "value": 93.1,
       "status": "OK",
       "degraded_below": null,
       "abort_below": null,
       "informational": true
     }
   },
-  "breaches": [
-    "fundamental_coverage_pct DEGRADED: 74.0 < 80.0",
-    "nan_inf_count DEGRADED: 42 non-finite numeric value(s)"
-  ],
+  "breaches": [],
   "cik_map_ok": true,
   "price_outlier_count": 2,
-  "hash": "4485837147589ecb",
+  "hash": "ba62210472e35288",
   "event_digest": {
     "chunks": 4,
     "chunks_ok": 4,
     "parse_success_rate": 1.0,
-    "raw_events": 25,
+    "raw_events": 21,
     "capped": false,
     "chunks_available": 4,
     "max_chunks": 15,
-    "as_of": "2026-08-18",
-    "events_written": 21,
+    "as_of": "2026-08-19",
+    "events_written": 20,
     "events_deduped": 0
   }
 }
