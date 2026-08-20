@@ -2063,7 +2063,7 @@ class TestEnforceSectorLimits:
             {"ticker": "MS",  "action": "BUY", "target_weight": 0.10},
             {"ticker": "JPM", "action": "BUY", "target_weight": 0.10},  # → 30% Financials
         ]
-        kept, rejected = enforce_sector_limits(
+        kept, rejected, _clamped = enforce_sector_limits(
             decisions, self._empty_portfolio(), sectors=self.SECTORS)
         assert {d["ticker"] for d in kept} == {"GS", "MS"}
         assert [d["ticker"] for d in rejected] == ["JPM"]
@@ -2076,7 +2076,7 @@ class TestEnforceSectorLimits:
             {"ticker": "MS",  "action": "BUY", "target_weight": 0.10},
             {"ticker": "XOM", "action": "BUY", "target_weight": 0.10},  # Energy, fine
         ]
-        kept, rejected = enforce_sector_limits(
+        kept, rejected, _clamped = enforce_sector_limits(
             decisions, self._empty_portfolio(), sectors=self.SECTORS)
         assert {d["ticker"] for d in kept} == {"GS", "MS", "XOM"}
         assert rejected == []
@@ -2086,7 +2086,7 @@ class TestEnforceSectorLimits:
         portfolio = {"total_value": 1000.0, "cash": 800.0,
                      "positions": [{"symbol": "BAC", "market_value": 200.0}]}  # 20%
         decisions = [{"ticker": "GS", "action": "BUY", "target_weight": 0.10}]  # → 30%
-        kept, rejected = enforce_sector_limits(
+        kept, rejected, _clamped = enforce_sector_limits(
             decisions, portfolio, sectors=self.SECTORS)
         assert kept == []
         assert [d["ticker"] for d in rejected] == ["GS"]
@@ -2101,7 +2101,7 @@ class TestEnforceSectorLimits:
             {"ticker": "GS",  "action": "BUY",  "target_weight": 0.10},
             {"ticker": "BAC", "action": "SELL", "target_weight": 0.0},
         ]
-        kept, rejected = enforce_sector_limits(
+        kept, rejected, _clamped = enforce_sector_limits(
             decisions, portfolio, sectors=self.SECTORS)
         assert {d["ticker"] for d in kept} == {"GS", "BAC"}
         assert rejected == []
@@ -2111,7 +2111,7 @@ class TestEnforceSectorLimits:
         portfolio = {"total_value": 1000.0, "cash": 0.0,
                      "positions": [{"symbol": "BAC", "market_value": 300.0}]}  # 30% over cap
         decisions = [{"ticker": "BAC", "action": "SELL", "target_weight": 0.0}]
-        kept, rejected = enforce_sector_limits(
+        kept, rejected, _clamped = enforce_sector_limits(
             decisions, portfolio, sectors=self.SECTORS)
         assert [d["ticker"] for d in kept] == ["BAC"]
         assert rejected == []
@@ -2122,7 +2122,7 @@ class TestEnforceSectorLimits:
             {"ticker": "XOM", "action": "BUY", "target_weight": 0.10},  # Energy
             {"ticker": "GS",  "action": "BUY", "target_weight": 0.10},  # Financials
         ]
-        kept, _ = enforce_sector_limits(
+        kept, _, _clamped = enforce_sector_limits(
             decisions, self._empty_portfolio(), sectors=self.SECTORS)
         assert [d["ticker"] for d in kept] == ["XOM", "GS"]
 
@@ -2135,7 +2135,7 @@ class TestEnforceSectorLimits:
             {"ticker": "AVGO", "action": "BUY", "target_weight": 0.10},
             {"ticker": "AMD",  "action": "BUY", "target_weight": 0.10},  # → 30% Tech
         ]
-        kept, rejected = enforce_sector_limits(decisions, self._empty_portfolio())
+        kept, rejected, _clamped = enforce_sector_limits(decisions, self._empty_portfolio())
         assert {d["ticker"] for d in kept} == {"NVDA", "AVGO"}
         assert [d["ticker"] for d in rejected] == ["AMD"]
 
@@ -2597,6 +2597,209 @@ class TestCroCorrelationInjection:
         decisions = [{"ticker": "A", "action": "BUY", "target_weight": 0.10}]
         analysis.run_chief_risk_officer(decisions, portfolio, {}, history=None)
         assert "HIGHEST PAIRWISE CORRELATIONS" not in captured["user_msg"]
+
+
+class TestCroSizeVetoRemediation:
+    """Aug 19 2026 remediation, second pass. The CRO must know the mandate limits
+    WITHOUT being turned into a size gate: it runs BEFORE the guard chain, so a
+    CRO rejection is a hard drop that the downstream clamp can never undo. A CRO
+    told to reject over-cap proposals would delete exactly the trades the clamp
+    exists to rescue — the two halves of the fix cancelling out."""
+
+    def _capture(self, monkeypatch, decisions, portfolio, history=None):
+        import analysis
+        captured = {}
+        def _fake_call(model, system, user_msg, max_tokens=600):
+            captured["system"] = system
+            captured["user_msg"] = user_msg
+            return '{"approved": true, "risk_budget_used": 30, "rejected_tickers": []}', "end_turn"
+        monkeypatch.setattr(analysis, "_call", _fake_call)
+        analysis.run_chief_risk_officer(decisions, portfolio, {}, history=history)
+        return captured
+
+    def test_system_prompt_tells_cro_not_to_veto_on_size(self, monkeypatch):
+        cap = self._capture(
+            monkeypatch,
+            [{"ticker": "A", "action": "BUY", "target_weight": 0.10}],
+            {"total_value": 1000.0, "cash": 1000.0, "positions": []})
+        sys_p = cap["system"]
+        assert "CLAMPS an oversized BUY" in sys_p
+        assert "Do NOT reject a trade merely because its proposed SIZE" in sys_p
+        # The limits are still present as CONTEXT for risk judgment.
+        assert "25% of portfolio" in sys_p and "10% of portfolio" in sys_p
+
+    def test_system_prompt_does_not_make_cash_a_rejection_trigger(self, monkeypatch):
+        # IPS Appendix A: cash is observability-only, "never force deployment".
+        # A CRO that vetoes on cash could veto the very BUYs that reduce it.
+        cap = self._capture(
+            monkeypatch,
+            [{"ticker": "A", "action": "BUY", "target_weight": 0.10}],
+            {"total_value": 1000.0, "cash": 1000.0, "positions": []})
+        assert "TARGETS, not rejection triggers" in cap["system"]
+
+    def test_drift_above_cap_is_not_presented_as_a_breach_to_reject(self, monkeypatch):
+        """IPS §6.1: an existing sector above the cap from appreciation is
+        compliant. The live book (Financials 25.06%) would otherwise print a
+        reject marker every single run, with no Financials BUY proposed."""
+        portfolio = {"total_value": 1000.0, "cash": 740.0, "positions": [
+            {"symbol": "JPM", "market_value": 130.0},
+            {"symbol": "GS",  "market_value": 130.0}]}   # Financials 26%
+        cap = self._capture(
+            monkeypatch,
+            [{"ticker": "MSFT", "action": "BUY", "target_weight": 0.05}],
+            portfolio)
+        msg = cap["user_msg"]
+        assert "Financials: 26.0%" in msg
+        assert "do not veto for size" in msg
+        assert "reject the" not in msg          # no rejection instruction anywhere
+
+    def test_unknown_pseudo_sector_is_never_marked_a_breach(self, monkeypatch):
+        """Jul 8 2026: an UNKNOWN bucket pools unrelated unmapped names — it
+        dilutes rather than measures, so it can never be a real concentration."""
+        import guardrails
+        assert "ZZZZ" not in guardrails.SECTOR_MAP and "YYYY" not in guardrails.SECTOR_MAP
+        portfolio = {"total_value": 1000.0, "cash": 400.0, "positions": [
+            {"symbol": "ZZZZ", "market_value": 300.0},
+            {"symbol": "YYYY", "market_value": 300.0}]}   # UNKNOWN 60%
+        cap = self._capture(
+            monkeypatch, [{"ticker": "MSFT", "action": "BUY", "target_weight": 0.05}],
+            portfolio)
+        msg = cap["user_msg"]
+        assert "UNKNOWN: 60.0%" in msg
+        assert "unmapped names — not a sector" in msg
+        assert "above the 25% cap" not in msg.split("UNKNOWN")[1].split(chr(10))[0]
+
+    def test_cro_sees_the_effective_post_clamp_weight_not_the_raw_target(self, monkeypatch):
+        """Finding (2nd pass): asking the CRO to assess a 9.0% COP / 27.4% Energy
+        book for a trade that executes at 6.6% / 25.0% is a risk opinion on a
+        portfolio that will never exist."""
+        # Energy at 18% → a 9% COP add is clamped to 7%.
+        portfolio = {"total_value": 1000.0, "cash": 820.0, "positions": [
+            {"symbol": "CVX", "market_value": 90.0},
+            {"symbol": "EOG", "market_value": 90.0}]}
+        cap = self._capture(
+            monkeypatch, [{"ticker": "COP", "action": "BUY", "target_weight": 0.09}],
+            portfolio)
+        msg = cap["user_msg"]
+        assert "COP: 7.0%" in msg                      # effective, not 9.0%
+        assert "resized from 9.0%" in msg              # and it says so
+        assert "Energy: 25.0%" in msg                  # lands on the cap, not 27%
+
+    def test_cro_is_told_when_a_buy_will_be_dropped_entirely(self, monkeypatch):
+        # No headroom → the guard drops it. The CRO must not be told it trades.
+        portfolio = {"total_value": 1000.0, "cash": 750.0, "positions": [
+            {"symbol": "CVX", "market_value": 250.0}]}   # Energy already at 25%
+        cap = self._capture(
+            monkeypatch, [{"ticker": "COP", "action": "BUY", "target_weight": 0.09}],
+            portfolio)
+        assert "will be DROPPED, no headroom" in cap["user_msg"]
+
+    def test_system_prompt_does_not_promise_execution(self, monkeypatch):
+        cap = self._capture(
+            monkeypatch, [{"ticker": "A", "action": "BUY", "target_weight": 0.10}],
+            {"total_value": 1000.0, "cash": 1000.0, "positions": []})
+        # The old wording promised a compliant fill; the guard can also DROP.
+        assert "will reach the broker at a compliant size" not in cap["system"]
+        assert "it drops the trade instead" in cap["system"]
+
+    def test_sell_frees_headroom_before_the_effective_weight_is_computed(self, monkeypatch):
+        # Mirrors the guard's SELL-first ordering, so the CRO's view matches it.
+        portfolio = {"total_value": 1000.0, "cash": 750.0, "positions": [
+            {"symbol": "CVX", "market_value": 250.0}]}   # Energy 25%
+        cap = self._capture(monkeypatch, [
+            {"ticker": "CVX", "action": "SELL", "target_weight": 0.0},
+            {"ticker": "COP", "action": "BUY",  "target_weight": 0.09}], portfolio)
+        msg = cap["user_msg"]
+        assert "COP: 9.0%" in msg                # full size — the SELL freed room
+        assert "resized from" not in msg
+
+    def test_held_position_is_not_understated_when_its_buy_is_dropped(self, monkeypatch):
+        """Ultrareview bug_001. The guard leaves a held position at its real
+        weight when it REJECTS an add-to-holding BUY; the CRO mirror must do the
+        same. Overwriting understates the holding and — since the sector table
+        and correlation matrix both filter on w > 0.001 — can drop a genuinely
+        held name out of the CRO's view entirely. Routine under IPS §6.1, where
+        a drifted over-cap sector is compliant and expected."""
+        # Energy at 30% from drift (CVX 25% + COP 5% held) — compliant per §6.1.
+        portfolio = {"total_value": 1000.0, "cash": 700.0, "positions": [
+            {"symbol": "CVX", "market_value": 250.0},
+            {"symbol": "COP", "market_value": 50.0}]}
+        cap = self._capture(
+            monkeypatch, [{"ticker": "COP", "action": "BUY", "target_weight": 0.10}],
+            portfolio)
+        msg = cap["user_msg"]
+        assert "COP: 5.0%" in msg            # the REAL holding, not 0.0%
+        assert "Energy: 30.0%" in msg        # the REAL sector, not 25.0%
+        assert "will be DROPPED" in msg      # and the CRO is told the BUY dies
+        assert "holding unchanged" in msg
+
+    def test_partial_add_to_holding_below_current_weight_is_dropped_not_resized(self, monkeypatch):
+        # COP 8% held, other Energy 22% → clamped target 3% < 8% held, so the
+        # guard drops it ("no room to add"); COP must still read 8%, not 3%.
+        portfolio = {"total_value": 1000.0, "cash": 700.0, "positions": [
+            {"symbol": "CVX", "market_value": 220.0},
+            {"symbol": "COP", "market_value": 80.0}]}
+        cap = self._capture(
+            monkeypatch, [{"ticker": "COP", "action": "BUY", "target_weight": 0.10}],
+            portfolio)
+        msg = cap["user_msg"]
+        assert "COP: 8.0%" in msg
+        assert "resized from" not in msg     # it is dropped, not resized
+
+    def test_genuine_add_to_holding_still_resizes(self, monkeypatch):
+        # Counterfactual: headroom ABOVE the held weight is a real add and must
+        # still be shown as a resize, not suppressed by the reject-mirror fix.
+        portfolio = {"total_value": 1000.0, "cash": 850.0, "positions": [
+            {"symbol": "CVX", "market_value": 100.0},
+            {"symbol": "COP", "market_value": 50.0}]}   # Energy 15%
+        cap = self._capture(
+            monkeypatch, [{"ticker": "COP", "action": "BUY", "target_weight": 0.20}],
+            portfolio)
+        msg = cap["user_msg"]
+        assert "COP: 15.0%" in msg           # clamped to 25% − 10% CVX
+        assert "resized from 20.0%" in msg
+        assert "Energy: 25.0%" in msg
+
+    def test_projected_sector_table_is_present_and_correct(self, monkeypatch):
+        portfolio = {"total_value": 1000.0, "cash": 800.0, "positions": [
+            {"symbol": "JPM", "market_value": 200.0}]}
+        cap = self._capture(
+            monkeypatch, [{"ticker": "GS", "action": "BUY", "target_weight": 0.05}],
+            portfolio)
+        assert "PROJECTED SECTOR WEIGHTS" in cap["user_msg"]
+        assert "Financials: 25.0%" in cap["user_msg"]   # 20% held + 5% bought
+
+
+class TestSectorRejectReasonAccuracy:
+    """Finding 8: under IPS §6.1 a sector may sit above the cap from pure drift,
+    so 'no headroom left' is a routine outcome — it must not be misreported as a
+    sub-$5 notional failure, and a missing price must not be either."""
+
+    PORTFOLIO = {"total_value": 1000.0, "cash": 0.0, "positions": [
+        {"symbol": "JPM", "qty": 1.0, "market_value": 300.0}]}   # Financials 30%
+
+    def test_no_headroom_says_no_headroom(self):
+        from guardrails import enforce_sector_limits
+        _, rejected, _ = enforce_sector_limits(
+            [{"ticker": "GS", "action": "BUY", "target_weight": 0.05}],
+            self.PORTFOLIO, {"GS": {"close": 100.0}})
+        assert "no headroom left in Financials" in rejected[0]["rejected_reason"]
+        assert "minimum" not in rejected[0]["rejected_reason"]
+
+    def test_missing_price_says_missing_price(self):
+        from guardrails import enforce_sector_limits
+        portfolio = {"total_value": 1000.0, "cash": 0.0, "positions": [
+            {"symbol": "JPM", "qty": 1.0, "market_value": 200.0}]}   # 5pp headroom
+        _, rejected, _ = enforce_sector_limits(
+            [{"ticker": "GS", "action": "BUY", "target_weight": 0.10}],
+            portfolio, {})            # prices present but GS absent
+        assert "no price for GS" in rejected[0]["rejected_reason"]
+
+    def test_no_prices_at_all_says_so(self):
+        from guardrails import enforce_sector_limits
+        _, rejected, _ = enforce_sector_limits(
+            [{"ticker": "GS", "action": "BUY", "target_weight": 0.05}], self.PORTFOLIO)
+        assert "no prices available to resize" in rejected[0]["rejected_reason"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -5412,7 +5615,7 @@ class TestFeatureInteractions:
         prices = {"NVDA": {"close": 100.0}, "MRK": {"close": 50.0}}
         d, _ = g.enforce_min_holding_period(decisions, portfolio, transactions=[], today="2026-06-14")
         d, _ = g.enforce_wash_sale_reentry(d, transactions=[], today="2026-06-14")
-        d, _ = g.enforce_sector_limits(d, portfolio)
+        d, _, _ = g.enforce_sector_limits(d, portfolio)
         d, _ = g.enforce_net_edge(d, prices)
         tickers = {x["ticker"] for x in d}
         assert "NVDA" in tickers and "MRK" in tickers
@@ -9031,7 +9234,7 @@ class TestSectorFailClosed:
 
     def test_unmapped_buy_rejected(self):
         from guardrails import enforce_sector_limits
-        kept, rejected = enforce_sector_limits(
+        kept, rejected, _clamped = enforce_sector_limits(
             [{"ticker": "ZZZZ", "action": "BUY", "target_weight": 0.05}],
             self._portfolio())
         assert kept == []
@@ -9040,7 +9243,7 @@ class TestSectorFailClosed:
 
     def test_unmapped_sell_passes(self):
         from guardrails import enforce_sector_limits
-        kept, rejected = enforce_sector_limits(
+        kept, rejected, _clamped = enforce_sector_limits(
             [{"ticker": "ZZZZ", "action": "SELL", "target_weight": 0.0}],
             self._portfolio())
         assert [d["ticker"] for d in kept] == ["ZZZZ"]
@@ -9048,7 +9251,7 @@ class TestSectorFailClosed:
 
     def test_mapped_buy_still_passes(self):
         from guardrails import enforce_sector_limits
-        kept, rejected = enforce_sector_limits(
+        kept, rejected, _clamped = enforce_sector_limits(
             [{"ticker": "MSFT", "action": "BUY", "target_weight": 0.05}],
             self._portfolio())
         assert [d["ticker"] for d in kept] == ["MSFT"]
@@ -9071,7 +9274,7 @@ class TestSectorFailClosed:
             {"ticker": "CFG", "action": "BUY", "target_weight": 0.09,
              "source_of_capital": "MS"},
         ]
-        kept, rejected = enforce_sector_limits(decisions, portfolio)
+        kept, rejected, _clamped = enforce_sector_limits(decisions, portfolio)
         assert kept == []
         assert {r["ticker"] for r in rejected} == {"CB", "CFG"}
         assert all("Financials" in r["rejected_reason"] for r in rejected)
@@ -9093,9 +9296,192 @@ class TestSectorFailClosed:
             {"ticker": "CB",  "action": "BUY", "target_weight": 0.09},
             {"ticker": "CFG", "action": "BUY", "target_weight": 0.09},
         ]
-        kept, rejected = enforce_sector_limits(decisions, portfolio)
+        kept, rejected, _clamped = enforce_sector_limits(decisions, portfolio)
         assert rejected == []
         assert len(kept) == 4
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Aug 19 2026 replay — enforce_sector_limits CLAMPS an oversized BUY to the
+# remaining sector headroom instead of dropping it.
+#
+# The live Wed Aug 19 2026 rebalance (run 20260819-134906) proposed BUY COP 9%
+# and BUY REGN 9%, both cash-funded. Energy stood at 18.39% and Health Care at
+# 19.66%, so each 9% add breached the 25% cap by ~2-4pp. Both were rejected
+# OUTRIGHT and the run placed ZERO orders — leaving 18.1% cash idle for the
+# 34th consecutive run — even though 6.6% COP and 5.3% REGN were fully
+# compliant. COP had been proposed at exactly 9% and rejected three weeks
+# running (Aug 5, Aug 13, Aug 19), the BUY-side twin of the Jun 25-Jul 2
+# V/JNJ/JPM loop. The book below is the verbatim portfolio_snapshot from that
+# run's agent_log.json; prices are that day's market_snapshot closes.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSectorClampAug19Replay:
+    """The exact Aug 19 2026 book: an over-cap BUY is resized to the headroom,
+    qty is recomputed at the clamped weight, and the resize is reported."""
+
+    TOTAL  = 528.0813949525
+    PRICES = {"COP": {"close": 129.72}, "REGN": {"close": 810.24},
+              "EOG": {"close": 150.76}, "XOM": {"close": 118.0}}
+
+    def _portfolio(self):
+        return {
+            "total_value": self.TOTAL, "cash": 95.32,
+            "positions": [
+                {"symbol": "PLD",  "qty": 0.305908, "market_value": 42.938776},
+                {"symbol": "EOG",  "qty": 0.31977,  "market_value": 48.208525},
+                {"symbol": "JNJ",  "qty": 0.178711, "market_value": 49.155354},
+                {"symbol": "VRTX", "qty": 0.101027, "market_value": 54.663689},
+                {"symbol": "AXP",  "qty": 0.119992, "market_value": 40.757083},
+                {"symbol": "CB",   "qty": 0.128512, "market_value": 44.511416},
+                {"symbol": "CFG",  "qty": 0.643275, "market_value": 47.055566},
+                {"symbol": "ABNB", "qty": 0.303888, "market_value": 56.445677},
+                {"symbol": "CVX",  "qty": 0.237135, "market_value": 48.919765},
+            ],
+        }
+
+    def _decisions(self):
+        # Verbatim from that run's portfolio_manager_proposed.
+        return [
+            {"ticker": "COP",  "action": "BUY", "target_weight": 0.09,
+             "source_of_capital": "cash", "expected_return": 0.10, "qty": 0.366384},
+            {"ticker": "REGN", "action": "BUY", "target_weight": 0.09,
+             "source_of_capital": "cash", "expected_return": 0.10, "qty": 0.058658},
+        ]
+
+    def test_both_buys_survive_at_clamped_size(self):
+        from guardrails import enforce_sector_limits
+        kept, rejected, clamped = enforce_sector_limits(
+            self._decisions(), self._portfolio(), self.PRICES)
+        # THE regression: the live run kept nothing and traded $0.
+        assert rejected == []
+        assert {d["ticker"] for d in kept} == {"COP", "REGN"}
+        assert {d["ticker"] for d in clamped} == {"COP", "REGN"}
+
+    def test_clamped_weights_land_exactly_on_the_cap(self):
+        from guardrails import enforce_sector_limits, MAX_SECTOR_WEIGHT
+        kept, _, _ = enforce_sector_limits(
+            self._decisions(), self._portfolio(), self.PRICES)
+        by = {d["ticker"]: d for d in kept}
+        energy_used = (48.208525 + 48.919765) / self.TOTAL      # 18.39%
+        health_used = (49.155354 + 54.663689) / self.TOTAL      # 19.66%
+        assert by["COP"]["target_weight"]  == pytest.approx(MAX_SECTOR_WEIGHT - energy_used)
+        assert by["REGN"]["target_weight"] == pytest.approx(MAX_SECTOR_WEIGHT - health_used)
+        # Sanity against the hand-computed figures in the post-mortem.
+        assert by["COP"]["target_weight"]  == pytest.approx(0.0661, abs=1e-4)
+        assert by["REGN"]["target_weight"] == pytest.approx(0.0534, abs=1e-4)
+
+    def test_qty_is_recomputed_at_the_clamped_weight(self):
+        # A clamp that leaves the oversized qty in place changes nothing at
+        # execution time — the cap would be breached AT THE BROKER.
+        from guardrails import enforce_sector_limits
+        kept, _, _ = enforce_sector_limits(
+            self._decisions(), self._portfolio(), self.PRICES)
+        by = {d["ticker"]: d for d in kept}
+        assert by["COP"]["qty"]  != pytest.approx(0.366384)   # the proposed qty
+        assert by["REGN"]["qty"] != pytest.approx(0.058658)
+        assert by["COP"]["qty"] * 129.72 == pytest.approx(
+            by["COP"]["target_weight"] * self.TOTAL, abs=0.01)
+        assert by["REGN"]["qty"] * 810.24 == pytest.approx(
+            by["REGN"]["target_weight"] * self.TOTAL, abs=0.01)
+
+    def test_post_trade_sectors_never_exceed_the_cap(self):
+        from guardrails import enforce_sector_limits, sector_of, MAX_SECTOR_WEIGHT
+        portfolio = self._portfolio()
+        kept, _, _ = enforce_sector_limits(
+            self._decisions(), portfolio, self.PRICES)
+        proj = {p["symbol"]: p["market_value"] / self.TOTAL
+                for p in portfolio["positions"]}
+        for d in kept:
+            proj[d["ticker"]] = d["target_weight"]
+        by_sector: dict[str, float] = {}
+        for t, w in proj.items():
+            by_sector[sector_of(t)] = by_sector.get(sector_of(t), 0.0) + w
+        for sec, w in by_sector.items():
+            # Financials sits at 25.06% from pure DRIFT — caps are entry-time
+            # only (ratified IPS position), so an untouched sector may exceed
+            # the cap. Only sectors this run BOUGHT into are constrained.
+            if sec in {sector_of(d["ticker"]) for d in kept}:
+                assert w <= MAX_SECTOR_WEIGHT + 1e-9, f"{sec} at {w:.2%}"
+
+    def test_clamp_is_reported_as_an_intervention(self):
+        # A silent clamp would hide the PM sizing error that caused it.
+        from guardrails import enforce_sector_limits
+        _, _, clamped = enforce_sector_limits(
+            self._decisions(), self._portfolio(), self.PRICES)
+        for c in clamped:
+            assert "clamped_reason" in c
+            assert "clamped to" in c["clamped_reason"]
+            assert "qty recomputed" in c["clamped_reason"]
+
+    def test_clamped_sizes_still_clear_the_net_edge_floor(self):
+        # The clamp must not simply move the rejection to the next guard.
+        from guardrails import enforce_sector_limits, enforce_net_edge
+        kept, _, _ = enforce_sector_limits(
+            self._decisions(), self._portfolio(), self.PRICES)
+        survivors, ne_rejected = enforce_net_edge(kept, self.PRICES)
+        assert ne_rejected == []
+        assert len(survivors) == 2
+
+    def test_without_prices_falls_back_to_reject(self):
+        # qty cannot be recomputed → degrade to the strictly-safer legacy path.
+        from guardrails import enforce_sector_limits
+        kept, rejected, clamped = enforce_sector_limits(
+            self._decisions(), self._portfolio())
+        assert kept == [] and clamped == []
+        assert {d["ticker"] for d in rejected} == {"COP", "REGN"}
+
+    def test_second_same_sector_buy_sees_no_headroom_after_a_clamp(self):
+        # COP clamps to the full Energy headroom, so a following Energy BUY has
+        # exactly 0% left and must be rejected, not clamped to zero.
+        from guardrails import enforce_sector_limits
+        decisions = self._decisions() + [
+            {"ticker": "XOM", "action": "BUY", "target_weight": 0.05}]
+        kept, rejected, clamped = enforce_sector_limits(
+            decisions, self._portfolio(), self.PRICES)
+        assert [d["ticker"] for d in rejected] == ["XOM"]
+        assert {d["ticker"] for d in clamped} == {"COP", "REGN"}
+        assert "XOM" not in {d["ticker"] for d in kept}
+
+    def test_headroom_below_min_notional_is_rejected_not_clamped(self):
+        # Energy at 24.9% leaves ~$0.53 of headroom on this book — below the $5
+        # minimum, so the clamp is not placeable and the BUY is dropped.
+        from guardrails import enforce_sector_limits
+        portfolio = self._portfolio()
+        portfolio["positions"] = [
+            {"symbol": "EOG", "qty": 1.0, "market_value": 0.249 * self.TOTAL}]
+        kept, rejected, clamped = enforce_sector_limits(
+            [{"ticker": "COP", "action": "BUY", "target_weight": 0.09}],
+            portfolio, self.PRICES)
+        assert kept == [] and clamped == []
+        assert len(rejected) == 1
+        assert "not placeable" in rejected[0]["rejected_reason"]
+
+    def test_held_name_with_no_room_to_add_is_rejected(self):
+        # A BUY whose clamped target lands at/below the position's CURRENT
+        # weight yields qty 0 — reject rather than emit a no-op order.
+        from guardrails import enforce_sector_limits
+        portfolio = self._portfolio()
+        portfolio["positions"] = [
+            {"symbol": "EOG", "qty": 1.0, "market_value": 0.15 * self.TOTAL},
+            {"symbol": "COP", "qty": 1.0, "market_value": 0.12 * self.TOTAL},
+        ]
+        kept, rejected, clamped = enforce_sector_limits(
+            [{"ticker": "COP", "action": "BUY", "target_weight": 0.20}],
+            portfolio, self.PRICES)
+        assert kept == [] and clamped == []
+        assert len(rejected) == 1
+
+    def test_sells_and_under_cap_buys_are_untouched_by_the_clamp_path(self):
+        from guardrails import enforce_sector_limits
+        decisions = [
+            {"ticker": "ABNB", "action": "SELL", "target_weight": 0.0},
+            {"ticker": "COP",  "action": "BUY",  "target_weight": 0.03},
+        ]
+        kept, rejected, clamped = enforce_sector_limits(
+            decisions, self._portfolio(), self.PRICES)
+        assert rejected == [] and clamped == []
+        assert [d["target_weight"] for d in kept] == [0.0, 0.03]
 
 
 class TestCapitalDependency:
@@ -9893,6 +10279,10 @@ class TestRunDailyCycleSmoke:
             "portfolio_manager_proposed": list(decisions),
             "portfolio_manager_parsed_ok": True,
             "cro": {"approved": True, "rejected_tickers": []},
+            # Mirrors what analysis.get_trade_decisions returns: the post-CRO
+            # list under both keys; main.py overwrites `final_decisions` with
+            # the post-guard-chain set.
+            "post_cro_decisions": list(decisions),
             "final_decisions": list(decisions),
         }
 
@@ -10093,3 +10483,125 @@ class TestRunDailyCycleSmoke:
         dv = _j.loads((tmp_path / "system_health.json").read_text())["checks"]["decision_validation"]
         assert any(r.get("ticker") == "ZZZZ" and "unmapped" in r.get("reason", "")
                    for r in dv.get("rejected", []))
+
+    # ── Aug 19 2026 remediation — end-to-end through run_daily_cycle ─────────
+
+    def test_oversized_buy_is_clamped_not_dropped_end_to_end(self, monkeypatch, tmp_path):
+        """The Aug 19 2026 failure, driven through the REAL guard chain: a BUY
+        that overshoots the sector cap reaches pending_decisions.json resized to
+        the headroom, instead of the run placing nothing at all."""
+        import json as _j
+        # JPM 20% of a $500 book → Financials has 5pp (=$25) of headroom left.
+        portfolio = {"cash": 400.0, "total_value": 500.0, "positions": [
+            {"symbol": "JPM", "qty": 0.5, "avg_price": 200.0, "available_qty": 0.5,
+             "current_price": 200.0, "market_value": 100.0, "unrealized_pnl": 0.0}]}
+        decisions = [{"ticker": "GS", "action": "BUY", "target_weight": 0.10,
+                      "source_of_capital": "cash", "expected_return": 0.10,
+                      "rationale": "oversized — must clamp, not drop"}]
+        self._run(monkeypatch, tmp_path, decisions, portfolio=portfolio)
+
+        pending = _j.loads((tmp_path / "pending_decisions.json").read_text())
+        assert [d["ticker"] for d in pending["decisions"]] == ["GS"]
+        assert pending["decisions"][0]["target_weight"] == pytest.approx(0.05)
+        assert pending["decisions"][0]["qty"] > 0
+        # qty must track the CLAMPED weight, not the proposed one.
+        assert pending["decisions"][0]["qty"] * 130.0 == pytest.approx(25.0, abs=0.01)
+
+        dv = _j.loads((tmp_path / "system_health.json").read_text())["checks"]["decision_validation"]
+        assert dv["status"] == "DEGRADED"          # a clamp is still an intervention
+        assert any(m.get("ticker") == "GS" and "clamped to" in m.get("reason", "")
+                   for m in dv.get("modified", []))
+        assert dv["passed"] == 1                   # survived the FULL chain
+
+    def test_passed_count_reflects_the_full_guard_chain(self, monkeypatch, tmp_path):
+        """Aug 19 2026: health reported 'passed: 2, rejected: 2' on a run that
+        placed zero orders — `passed` was validate_decisions' count alone and
+        was never decremented by the downstream guards."""
+        import json as _j
+        # Financials already AT the 25% cap → no headroom, so the BUY is
+        # rejected by the sector guard AFTER clearing validate_decisions.
+        portfolio = {"cash": 375.0, "total_value": 500.0, "positions": [
+            {"symbol": "JPM", "qty": 0.625, "avg_price": 200.0, "available_qty": 0.625,
+             "current_price": 200.0, "market_value": 125.0, "unrealized_pnl": 0.0}]}
+        decisions = [{"ticker": "GS", "action": "BUY", "target_weight": 0.10,
+                      "source_of_capital": "cash", "expected_return": 0.10,
+                      "rationale": "no headroom — must reject"}]
+        self._run(monkeypatch, tmp_path, decisions, portfolio=portfolio)
+
+        pending = _j.loads((tmp_path / "pending_decisions.json").read_text())
+        assert pending["decisions"] == []
+        dv = _j.loads((tmp_path / "system_health.json").read_text())["checks"]["decision_validation"]
+        assert dv["passed"] == 0                   # was 1 before the fix
+        assert any(r.get("ticker") == "GS" for r in dv.get("rejected", []))
+
+    def test_passed_count_excludes_holds(self, monkeypatch, tmp_path):
+        """Finding 7: validate_decisions returns early on HOLD without counting
+        it, so a post-chain `len(decisions)` would swap an undercount for an
+        overcount of things that place no order."""
+        import json as _j
+        decisions = [
+            {"ticker": "MSFT", "action": "BUY", "target_weight": 0.05,
+             "source_of_capital": "cash", "expected_return": 0.10, "rationale": "x"},
+            {"ticker": "JPM", "action": "HOLD", "target_weight": 0.20,
+             "rationale": "no order placed"},
+        ]
+        self._run(monkeypatch, tmp_path, decisions)
+        dv = _j.loads((tmp_path / "system_health.json").read_text())["checks"]["decision_validation"]
+        assert dv["passed"] == 1                   # the BUY only, not the HOLD
+
+    def test_post_cro_decisions_is_not_contaminated_by_the_pm_backstop(self, monkeypatch, tmp_path):
+        """Ultrareview bug_003. analysis.py handed `post_cro_decisions` the SAME
+        list object as `decisions`, and main.py then calls apply_pm_backstop(),
+        which appends 3-signal auto-exit SELLs IN PLACE — so the agent log
+        recorded a backstop SELL as though the agent pipeline had produced it.
+        The backstop fires in practice (Aug 5 / Aug 13 2026 both auto-exited
+        PLD), and the field exists precisely to record agent intent."""
+        import json as _j
+        portfolio = {"cash": 400.0, "total_value": 500.0, "positions": [
+            {"symbol": "JPM", "qty": 0.5, "avg_price": 200.0, "available_qty": 0.5,
+             "current_price": 200.0, "market_value": 100.0, "unrealized_pnl": 0.0}]}
+        # 3 agreeing signals on JPM → apply_pm_backstop appends an auto-exit SELL
+        # that the PM never proposed and the CRO never saw.
+        pipeline_state = self._pipeline_state([])
+        pipeline_state["position_reviews"] = {
+            "JPM": {"hold_score": 3, "remaining_alpha": "LOW",
+                    "recommended_action": "EXIT"}}
+        pipeline_state["devils_advocate"] = {
+            "JPM": {"bear_case": "stub bear", "recommend_reject": True}}
+        self._run(monkeypatch, tmp_path, [], portfolio=portfolio,
+                  pipeline_state=pipeline_state)
+
+        row = _j.loads((tmp_path / "agent_log.json").read_text())[-1]
+        # The backstop did fire — otherwise this test proves nothing.
+        assert any(d.get("ticker") == "JPM" and d.get("action") == "SELL"
+                   for d in row["final_decisions"]), "backstop did not fire"
+        # ...but agent INTENT must stay empty: the PM proposed nothing.
+        assert row["post_cro_decisions"] == []
+
+    def test_final_decisions_carries_a_vintage_stamp(self, monkeypatch, tmp_path):
+        """Finding 6: the key's meaning changed on 2026-08-19, so longitudinal
+        consumers must be able to partition rather than pool two definitions."""
+        import json as _j
+        self._run(monkeypatch, tmp_path, [])
+        row = _j.loads((tmp_path / "agent_log.json").read_text())[-1]
+        assert row["final_decisions_vintage"] == "post_guard_chain"
+
+    def test_agent_log_final_decisions_is_post_guard_chain(self, monkeypatch, tmp_path):
+        """The agent log is the year-end audit substrate: `final_decisions` must
+        be what actually reached the broker. Aug 19 2026 recorded COP+REGN as
+        'final' on a zero-order day because analysis.py wrote the post-CRO list."""
+        import json as _j
+        portfolio = {"cash": 375.0, "total_value": 500.0, "positions": [
+            {"symbol": "JPM", "qty": 0.625, "avg_price": 200.0, "available_qty": 0.625,
+             "current_price": 200.0, "market_value": 125.0, "unrealized_pnl": 0.0}]}
+        decisions = [{"ticker": "GS", "action": "BUY", "target_weight": 0.10,
+                      "source_of_capital": "cash", "expected_return": 0.10,
+                      "rationale": "rejected downstream"}]
+        self._run(monkeypatch, tmp_path, decisions, portfolio=portfolio)
+
+        log = _j.loads((tmp_path / "agent_log.json").read_text())
+        row = log[-1]
+        assert row["final_decisions"] == []                     # nothing traded
+        assert [d["ticker"] for d in row["post_cro_decisions"]] == ["GS"]  # intent kept
+        pending = _j.loads((tmp_path / "pending_decisions.json").read_text())
+        assert row["final_decisions"] == pending["decisions"]    # log agrees with envelope

@@ -189,8 +189,10 @@ DRY_RUN=true                # set false to actually execute
 - **Long-only:** no shorts, options, leverage, crypto, derivatives
 - **Universe:** publicly traded common stocks, ADRs
 - **Holdings:** 8–15 positions
-- **Max position:** 10% of portfolio
-- **Max sector:** 25% of portfolio
+- **Max position:** 10% of portfolio (entry-time; see IPS §6.1)
+- **Max sector:** 25% of portfolio — **enforced at entry only** (IPS §6.1): an over-cap BUY is
+  clamped to the remaining headroom (dropped only if unplaceable); drift above a cap from price
+  appreciation is surfaced, never auto-trimmed
 - **Cash target:** 0–10%
 - **Horizon:** 9–12 months primary (IPS §7; policy v2.0 — was 1–3 months pre-Phase-5)
 - **Cadence:** decisions ONCE A WEEK (Wednesday rebalance; Thu/Fri catch-up); other days run only the SELL-only risk_watch safety net
@@ -332,6 +334,70 @@ The pipeline aborts before running any agents if either condition is true:
 This prevents the silent all-50 quant score failure mode where agents run but produce no trades because they have no quantitative signal. When aborted, `system_health.json` is written immediately and the alert fires.
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
+
+## Changelog — Aug 19 2026 (Aug 19 rebalance post-mortem — sector cap clamps · CRO gets its limits)
+
+Post-mortem of the **Wed Aug 19 2026 rebalance** (`20260819-134906`). The run completed with
+every control firing correctly and **zero orders placed** — but it should have traded. The PM
+proposed BUY COP 9% / BUY REGN 9%; Energy sat at 18.39% and Health Care at 19.66%, so each 9%
+add overshot the 25% cap by 2–4pp and both were **rejected outright**, leaving 18.1% cash idle
+for the 34th consecutive run when **6.6% COP and 5.3% REGN were fully compliant** (~$63 of legal
+deployment forgone). COP had been proposed at exactly 9% and rejected three weeks running
+(Aug 5 / Aug 13 / Aug 19) — the BUY-side twin of the Jun 25–Jul 2 V/JNJ/JPM loop. Owner decision:
+caps bind at **entry only** (IPS §6.1) — drift is surfaced, never force-trimmed.
+
+| Change | Why it mattered |
+|--------|-----------------|
+| `fix(guardrails)` **`enforce_sector_limits` CLAMPS instead of dropping** — an over-cap BUY is resized to the remaining headroom with `qty` **recomputed** at the clamped weight; dropped only when unplaceable (no headroom / no room to add / notional < $5). Returns `(kept, rejected, clamped)`; `prices=None` degrades to the strictly-safer legacy reject. Clamps land in `validation_report["modified"]` → health stays DEGRADED. | A BUY sized past the cap is a *sizing* error, not a bad idea. Rejecting a fixable size discards a fully-researched thesis and strands capital — three weeks running for COP. Recomputing qty is not optional: a clamped weight with the oversized qty breaches the cap **at the broker**. |
+| `fix(analysis)` **the CRO is told the limits — and told it is NOT the size gate** — `_CRO_SYSTEM` gains the mandate limits as risk CONTEXT plus a pre-computed projected **sector-weight table**, with three explicit boundaries: never veto on **size** (clamped downstream), never veto on **drift** (compliant per IPS §6.1), and cash/holdings are targets not rejection triggers. Its veto is redirected to what caps cannot express (correlation clusters, factor/theme stacking, tail risk). | Agent 7 computed "COP 9.0% + CVX 9.3% + EOG 9.1% = ~27.4%", called it "not yet a rejection threshold — below 30%", and approved a two-sector breach; its prompt contained **no numeric limits at all**. But the first fix over-corrected: the CRO runs **upstream** of the guard chain, so a CRO instructed to reject over-cap proposals would hard-drop exactly the trades the new clamp exists to rescue — the two halves of this batch cancelling out — and would fire on drift every run (Financials 25.06%), where `approved=false` with no named ticker reads as a **full veto**. Caught by `/code-review high` before merge. |
+| `fix(main)` **`decision_validation.passed` is recomputed post-chain** | `passed` was `validate_decisions`' count alone and was never decremented by the eight downstream guards — health recorded "passed: 2, rejected: 2" for a run that placed zero orders. |
+| `fix(analysis/main)` **`agent_log.final_decisions` is now the post-guard set**, with the agent pipeline's intent preserved as `post_cro_decisions` | The year-end audit substrate recorded COP+REGN as "final" on a zero-order day. `calibration.log_decisions` and `deliberation_stats` read this key as "what the system actually traded" and were silently reading *intent*. (`log_pm_forecasts` deliberately scores `portfolio_manager_proposed` to avoid survivorship bias — unaffected.) |
+| `docs(ips)` **§6.1 — caps bind at ENTRY, not continuously** (owner decision) + Appendix B v1.3 | A forced trim in a CA top-bracket taxable account realizes ~54% ST tax *because* the position worked, and fights the min-hold / tax-aware-hold anti-churn rules. New BUYs into an over-cap sector stay blocked, so concentration can never be *increased* by a decision. Live at adoption: Financials 25.06%, ABNB 10.69%, VRTX 10.35% — all compliant. Formally closes the 2026-07-09 ~35%-financials exception (aged out as designed). Review trigger: 35% sector / 15% single name. |
+
+> **QA:** full `pytest` green (**884**, +14: `TestSectorClampAug19Replay` — 11 tests seeded with the
+> verbatim Aug 19 book and that day's closes, covering clamp arithmetic, qty recomputation, the
+> net-edge floor after clamping, the no-`prices` fallback, second-same-sector-BUY exhaustion, the
+> sub-$5 and no-room-to-add reject paths; plus 3 end-to-end `TestRunDailyCycleSmoke` cases for the
+> clamp, the `passed` recount, and the post-guard agent log). Ruff F821/F823 gate clean. Existing
+> `TestEnforceSectorLimits` / `TestSectorFailClosed` pass **unchanged** — they call without
+> `prices`, which exercises the legacy reject path as genuine fallback coverage.
+> **Two `/code-review high` passes were run pre-commit (§7.0), 13 findings total, all fixed.**
+> Pass 1 (8 findings) caught two critical *self-inflicted* ones: the first CRO prompt ordered
+> rejection on any cap breach, which (a) contradicted the §6.1 drift policy shipped in the same
+> batch — Financials 25.06% would have fired a ⛔ every run, and `approved=false` with no named
+> ticker reads as a **full veto** — and (b) ran UPSTREAM of the guard chain, so it would have
+> hard-dropped exactly the trades the new clamp exists to rescue. **The two halves of this batch
+> cancelled each other out until the review caught it.** Pass 2 (5 findings) caught the follow-on:
+> the CRO was told to "assess the clamped size" while still being shown the PM's *raw* target, and
+> a BUY clamped to zero vanished from its view entirely. Both fixed — the CRO now sees effective
+> post-clamp weights, labelled `[resized from X]` / `[will be DROPPED, no headroom]`.
+> Also fixed across the two passes: `passed` excluding HOLDs, a `final_decisions_vintage` stamp on
+> both the agent log and the `pm_selected` calibration rows (so the meaning change is partitionable,
+> not pooled), accurate sector-reject reasons, `DEPLOYMENT.md` §2.6, and MANUAL_TODO **#22** — a
+> pre-existing **P1**: the routine's stale-price re-quote computes an ABSOLUTE qty while
+> `_compute_qty` returns a DELTA, so an add-to-holding BUY can be placed on top of the position on
+> a stale-price day. Coverage: `TestSectorClampAug19Replay` (11), `TestCroSizeVetoRemediation` (9),
+> `TestSectorRejectReasonAccuracy` (3), 5 end-to-end `TestRunDailyCycleSmoke` cases.
+> A third pass (`/code-review ultra`, multi-agent cloud) found 2 more, both nits, both in
+> code this batch introduced, both fixed: (1) `post_cro_decisions` was handed the **same list
+> object** as `decisions`, and `apply_pm_backstop` appends 3-signal auto-exit SELLs **in place**
+> — so the audit field created to record *agent intent* was contaminated with backstop SELLs on
+> every run the override fires (it fired Aug 5 and Aug 13); now a `list()` copy. (2) The CRO's
+> effective-weight mirror replicated only the guard's ACCEPT branch — on a REJECT the guard
+> leaves a held position at its real weight, so overwriting understated a holding and could drop
+> it out of the >0.1% sector/correlation filters entirely (routine under §6.1 drift); the mirror
+> now honors reject semantics, and `risk_lines` enumerates the union of projected holdings and
+> dropped proposals so a killed BUY never silently vanishes.
+> Total **902** (+32).
+> **⚠ Two pre-existing failures on `main`, unrelated to this batch:**
+> `TestHistoryStoreFreshnessRecheck::test_stale_same_day_cache_entry_is_refetched` and
+> `::test_genuinely_fresh_same_day_cache_entry_is_not_refetched` — date-sensitive `market_data`
+> fixtures pinned to 2026-07-30/31 (same class of time-bomb as the Jun 14 timezone-flaky test).
+> Verified failing on a clean `origin/main` checkout; needs its own fix.
+> **No live-routine sync required** (neither routine prompt changed). A full e2e `DRY_RUN main.py`
+> was **not** run — a weekend run preflight-aborts on the stale snapshot and a weekday run would
+> overwrite `pending_decisions.json` (§7.1 trading-day hazard); validation is the Aug-19 replay
+> suite plus the `run_daily_cycle()` smoke path instead.
 
 ## Changelog — Jul 9 2026 (Jul 8 rebalance post-mortem — sector cap made real · atomic rotations · regression nets)
 

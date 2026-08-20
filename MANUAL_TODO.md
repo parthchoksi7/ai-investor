@@ -22,6 +22,8 @@ reading the body. "Verified" means checked against a real artifact/API in this r
 
 | # | Item | Status |
 |---|------|--------|
+| 22 | **Re-quote qty mismatch: absolute vs delta** (routine STEP 4 vs `_compute_qty`) | 🔴 **OPEN — P1** — can over-buy an add-to-holding BUY on a stale-price day |
+| 21b | **35%-financials breach — CLOSED**, aged out as designed (Financials 25.06% on 2026-08-19) | ✅ **CLOSED** — superseded by IPS §6.1 (entry-time caps) |
 | 20 | **Re-sync BOTH routine prompts** (Jul 9 hardening: STEP 2 dep-verify, STEP 3 no-source-edit rule) | ✅ **DONE** — verified byte-for-byte |
 | 21 | **35%-financials breach — age-out watch** | ⬜ **MONITOR** — documented deviation; no action unless it persists past ~Aug 4 |
 | 0 | Daily routine prompt sync | ✅ **DONE** — verified byte-for-byte |
@@ -56,6 +58,36 @@ Debian-managed PyJWT; STEP 3 (daily) / the dep-install block (EOD) both carry th
 **"never edit/commit a .py source file"** rule (Jul 8 the routine hot-fixed `main.py` mid-run and
 committed it to `main`, bypassing the §7.0 review gate). `updated_at` 2026-07-10T02:5x; daily
 `next_run_at` 2026-07-10T13:45:00Z, EOD `next_run_at` 2026-07-10T20:04Z.
+
+## 🆕 PENDING (2026-08-19) — Aug 19 rebalance post-mortem follow-ups
+
+### [ ] 22. Re-quote qty mismatch — ABSOLUTE vs DELTA (P1, execution-path) — **owner decision + routine sync**
+Surfaced by `/code-review high` during the Aug 19 sector-clamp remediation. **Pre-existing —
+not introduced by that batch — and it affects every BUY that ADDS to an existing holding, not
+just clamped ones.**
+
+- `execute._compute_qty()` returns a **DELTA** for a held name:
+  `(target_weight × total_value − current_market_value) ÷ price`.
+- The routine's stale-price re-quote (`ROUTINE_DAILY_CYCLE.md` STEP 4, the P0-1 path) recomputes
+  an **ABSOLUTE** quantity: `target_weight × total_value ÷ live_price`.
+
+When `decision["price_as_of"] != today` the routine re-quotes, and an add-to-holding BUY is
+placed at the **full target size on top of the position already held** — roughly doubling the
+intended add and, for a clamped BUY, breaching the sector cap at the broker. It fires only on a
+stale-price day, which is why it has not been observed live.
+
+**Options:** (a) make the routine re-quote delta-aware (needs the held qty, which
+`mcp_portfolio.json` already carries) — correct but requires a live-routine sync; (b) have
+`main.py` stamp an explicit `sizing_basis: "delta"` on each decision and have the routine honor
+it; (c) skip the re-quote for add-to-holding BUYs and let them execute at the stamped qty.
+Recommend **(a)**. Until it is fixed, a stale-price day is the one path where the sector cap can
+be exceeded at the broker — noted in the `enforce_sector_limits` docstring.
+
+### [x] 21b. 35%-financials age-out watch — **CLOSED 2026-08-19**
+Resolved as designed: Financials measured **25.06%** on 2026-08-19 (down from ~35%), entirely via
+min-hold expiries with no forced trim. Superseded by the new **IPS §6.1** (caps bind at entry;
+drift is compliant and never auto-trimmed), which makes the residual 0.06pp a non-issue rather
+than a deviation. No further action.
 
 ## 🆕 PENDING (2026-07-09) — Jul 8 rebalance post-mortem follow-ups
 

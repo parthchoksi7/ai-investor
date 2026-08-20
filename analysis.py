@@ -220,13 +220,40 @@ You are the Chief Risk Officer.
 You are independent from the Portfolio Manager.
 Your objective is portfolio survival.
 
-Evaluate:
-- Concentration risk
-- Factor exposure
-- Correlation risk
-- Drawdown risk
-- Sector exposure
-- Theme exposure
+MANDATE LIMITS (from the IPS) — context for your risk judgment:
+- Max position:   10% of portfolio      - Max sector: 25% of portfolio
+- Holdings:       8-15 positions         - Cash target: 0-10%
+- Long-only. No shorts, options, leverage, crypto, derivatives.
+
+WHO ENFORCES WHAT. The position and sector caps are enforced AFTER you, by a
+deterministic guard you cannot see and do not need to replicate. That guard
+CLAMPS an oversized BUY down to the remaining sector headroom; if no usable
+headroom is left it drops the trade instead. Either way the size question is
+already settled before any order is placed.
+
+The weights you are shown are ALREADY the post-clamp (effective) weights — a
+resized or to-be-dropped BUY is labelled as such. This has three consequences:
+1. Do NOT reject a trade merely because its proposed SIZE exceeds a cap. Size is
+   not your control, and rejecting it destroys a position that would otherwise
+   have executed legally at a smaller weight. Assess what is actually shown.
+2. Do NOT reject because an EXISTING holding or sector already sits above a cap.
+   Caps bind at entry (IPS §6.1): drift from price appreciation is compliant by
+   policy and is never force-trimmed. Only a decision may not INCREASE it.
+3. Cash and holdings-count are TARGETS, not rejection triggers. High cash is
+   never a reason to veto — and never a reason to wave a bad trade through.
+
+Your veto exists for RISK the caps cannot express — that is the whole job:
+- Correlation risk — several names that are one bet (the caps count sectors, not
+  co-movement; three 8% names correlated at 0.9 is a 24% position, not three)
+- Concentration that is technically compliant but genuinely unsafe
+- Factor / theme exposure stacking across nominally different sectors
+- Drawdown risk and tail scenarios
+- A thesis that does not survive the Devil's Advocate case
+
+Be precise about your own thresholds. If you identify a risk, do not then talk
+yourself out of it by inventing a looser bar than the one you just applied
+("+0.87 correlation across the whole sector, but it stays under 30%, so fine").
+Either the risk is real and you name the ticker, or it is not and you say so.
 
 You may reject any trade.
 
@@ -1249,28 +1276,109 @@ def run_chief_risk_officer(
         scope_instruction = ("\nAlso list in rejected_tickers any proposed ticker "
                              "not in VETTED CANDIDATES (un-researched — reject on scope).")
 
-    # Project resulting portfolio after proposed trades
+    # Project resulting portfolio after proposed trades.
+    #
+    # BUYs are projected at their EFFECTIVE weight — what enforce_sector_limits
+    # will actually let through — not the PM's raw target. Showing the raw target
+    # would tell the CRO to assess a 9.0% COP / 27.4% Energy book for a trade that
+    # executes at 6.6% / 25.0%, i.e. ask for a risk opinion on a portfolio that
+    # will never exist. This mirrors the guard's WEIGHT arithmetic only (headroom
+    # after SELLs); the guard's remaining drop conditions are qty/price-level
+    # (unmapped sector, sub-$5 notional, no room to add) and are surfaced to the
+    # CRO as "may be dropped", never as a promise the trade will execute.
+    from guardrails import sector_of as _sector_of, MAX_SECTOR_WEIGHT as _MSW
     projected: dict[str, float] = {}
     for p in portfolio["positions"]:
         weight = (p["market_value"] / total) if total else 0
         projected[p["symbol"]] = weight
+    for d in decisions:                      # SELLs first — they free headroom
+        if str(d.get("action", "")).upper() == "SELL":
+            projected[d["ticker"]] = d.get("target_weight", 0)
+    # ticker -> (proposed, effective, currently_held)
+    _clamped_view: dict[str, tuple[float, float, float]] = {}
     for d in decisions:
-        if d.get("action") == "BUY":
-            projected[d["ticker"]] = d.get("target_weight", 0)
-        elif d.get("action") == "SELL":
-            projected[d["ticker"]] = d.get("target_weight", 0)
+        if str(d.get("action", "")).upper() != "BUY":
+            continue
+        _tk  = d["ticker"]
+        _tw  = float(d.get("target_weight", 0) or 0)
+        _sec = _sector_of(_tk)
+        _held = projected.get(_tk, 0.0)          # current weight (post-SELL)
+        _used = sum(w for t, w in projected.items()
+                    if _sector_of(t) == _sec and t != _tk)
+        _eff = _tw if _sec == "UNKNOWN" else min(_tw, max(_MSW - _used, 0.0))
+        # Mirror the guard's REJECT semantics, not just its accept branch. When
+        # the clamped target sits at or below what is already held, _compute_qty
+        # returns 0 and enforce_sector_limits drops the BUY *without touching the
+        # projection* — the position stays at its real weight. Overwriting here
+        # would UNDERSTATE a held name and, since the sector table and the
+        # correlation matrix both filter on w > 0.001, could drop a genuinely
+        # held position out of the CRO's view entirely. Routine under IPS §6.1,
+        # where a drifted over-cap sector is compliant and expected.
+        if _eff <= _held + 1e-9:
+            _clamped_view[_tk] = (_tw, 0.0, _held)   # dropped; holding unchanged
+            continue
+        if _eff < _tw - 1e-9:
+            _clamped_view[_tk] = (_tw, _eff, _held)
+        projected[_tk] = _eff
 
     # Risk lines per ticker
+    # Enumerate the UNION of projected holdings and clamped/dropped proposals. A
+    # BUY the guard will drop is never written into `projected` (that is the
+    # point — it leaves a held name at its real weight, and a not-held name
+    # absent), but it MUST still appear here: otherwise a proposal the guard
+    # kills silently vanishes from the CRO's view and it cannot tell "not
+    # proposed" from "proposed and killed".
+    _view = {t: projected.get(t, 0.0) for t in (set(projected) | set(_clamped_view))}
     risk_lines = []
-    for ticker, weight in sorted(projected.items(), key=lambda x: -x[1]):
-        if weight > 0.001:
+    for ticker, weight in sorted(_view.items(), key=lambda x: -x[1]):
+        if weight > 0.001 or ticker in _clamped_view:
             s = quant_scores.get(ticker, {})
+            _note = ""
+            if ticker in _clamped_view:
+                _prop, _eff, _hld = _clamped_view[ticker]
+                if _eff > 0:
+                    _note = f"  [resized from {_prop:.1%} to fit the sector cap]"
+                elif _hld > 0:
+                    _note = (f"  [proposed {_prop:.1%} — will be DROPPED, already at "
+                             f"or above the cap-limited target; holding unchanged]")
+                else:
+                    _note = f"  [proposed {_prop:.1%} — will be DROPPED, no headroom]"
             risk_lines.append(
                 f"  {ticker}: {weight:.1%} | vol={s.get('volatility','?')}% "
-                f"beta={s.get('beta','?')}"
+                f"beta={s.get('beta','?')}{_note}"
             )
 
     corr_block = _correlation_block(projected, history)
+
+    # Projected post-trade SECTOR weights, pre-computed against the same
+    # SECTOR_MAP the deterministic guard uses. The CRO is told the hard 25% cap
+    # in its system prompt; handing it the arithmetic (rather than asking it to
+    # sum nine position weights by eye) makes the breach check mechanical.
+    # Aug 19 2026: the CRO summed correctly and approved a 27.4% / 29% book
+    # anyway — the table is here so a breach is impossible to overlook, and the
+    # ⛔ marker states the verdict rather than leaving it to inference.
+    _sec_proj: dict[str, float] = {}
+    for _t, _w in projected.items():
+        if _w > 0.001:
+            _sec_proj[_sector_of(_t)] = _sec_proj.get(_sector_of(_t), 0.0) + _w
+    _sec_lines = []
+    for _s, _w in sorted(_sec_proj.items(), key=lambda x: -x[1]):
+        # UNKNOWN is a pseudo-sector (unmapped tickers pooled together), NOT a
+        # real concentration — never label it a cap breach. The Jul 8 2026
+        # fail-closed fix exists precisely because an UNKNOWN bucket dilutes
+        # rather than measures; a BUY of an unmapped name is rejected upstream.
+        if _s == "UNKNOWN":
+            _sec_lines.append(f"  {_s}: {_w:.1%}  (unmapped names — not a sector)")
+        elif _w > _MSW + 1e-9:
+            _sec_lines.append(
+                f"  {_s}: {_w:.1%}  ⚠ above the {_MSW:.0%} cap — any BUY here is "
+                f"CLAMPED to the headroom downstream (or dropped if none is left). "
+                f"Existing drift is compliant per IPS §6.1; do not veto for size")
+        else:
+            _sec_lines.append(f"  {_s}: {_w:.1%}")
+    sector_block = ("PROJECTED SECTOR WEIGHTS (post-trade, 25% cap — enforced "
+                    "downstream by clamping, not by your veto):\n"
+                    + chr(10).join(_sec_lines)) if _sec_lines else ""
 
     user_msg = f"""\
 PROPOSED TRADES:
@@ -1279,6 +1387,7 @@ PROPOSED TRADES:
 
 PROJECTED PORTFOLIO (post-trade weights):
 {chr(10).join(risk_lines)}
+{(chr(10) + sector_block) if sector_block else ''}
 {(chr(10) + corr_block) if corr_block else ''}
 
 CURRENT CASH: ${portfolio['cash']:,.2f} ({portfolio['cash']/total*100:.1f}%)
@@ -1291,7 +1400,10 @@ Output JSON:
   "rejected_tickers": [],
   "reasoning": "brief explanation"
 }}
-Set approved=false only for severe concentration / correlation risks that could cause catastrophic loss.{scope_instruction}"""
+Set approved=false, or name tickers in rejected_tickers, for severe correlation /
+concentration / tail risks that could cause catastrophic loss. Do NOT reject for
+position or sector SIZE alone — that is clamped downstream, and a size veto
+destroys a trade that would have executed legally at a smaller weight.{scope_instruction}"""
 
     result = _safe_call(
         MODEL_SMART, _CRO_SYSTEM, user_msg,
@@ -1509,6 +1621,21 @@ def get_trade_decisions(
         "portfolio_manager_raw": pm_meta.get("raw", ""),
         "portfolio_manager_parsed_ok": pm_meta.get("parsed_ok", True),
         "cro": risk,
+        # POST-CRO, PRE-GUARD-CHAIN. These are the CRO-approved decisions as they
+        # leave the agent pipeline; main.py's deterministic guards (turnover,
+        # capital-dependency, sector cap, net-edge) run afterwards and can reject
+        # or resize any of them. main.py overwrites `final_decisions` with the
+        # list that actually reached the broker — do NOT read that key here as
+        # the traded set (Aug 19 2026: the agent log recorded COP+REGN as "final"
+        # on a day the run placed zero orders).
+        # COPY, not the live reference: main.py calls apply_pm_backstop(decisions)
+        # immediately after this returns, which APPENDS 3-signal auto-exit SELLs
+        # in place (main.py:118/130). Sharing the list would let those backstop
+        # SELLs appear in the agent log as though the agent pipeline had produced
+        # them — defeating the exact audit purpose this field exists for. (The
+        # backstop fires in practice: Aug 5 and Aug 13 2026 both auto-exited PLD.)
+        "post_cro_decisions": list(decisions),
+        # Provisional — overwritten by main.py with the post-guard-chain list.
         "final_decisions": decisions,
     }
     return decisions, pipeline_state
