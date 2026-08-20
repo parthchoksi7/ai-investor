@@ -212,7 +212,7 @@ If `_safe_call()` fails, ALL trades must be blocked — not approved. Verify thi
 ### 2.6 Validation gate (guardrails.py)
 All LLM trade output passes through `guardrails.validate_decisions()` in `main.py` — after qty pre-computation, before `pending_decisions.json` is written. It enforces: action whitelist, `BLOCKED_TICKERS`, ticker ∈ analyzed candidates ∪ holdings, same-ticker BUY+SELL conflict rejection, `target_weight` clamp to [0, 0.10] **with qty recompute**, BUY notional ≤ 12% of portfolio (SELLs exempt — full exits of overweight positions must never be blocked), $5 minimum notional, and the good-faith-violation guard (no SELL within 2 trading days of a broker-accepted BUY, unless the kill switch is active). Interventions are recorded under the `decision_validation` health check (DEGRADED → alert.yml).
 
-Immediately after, `guardrails.enforce_sector_limits()` applies the **25% sector cap** as a code control (it previously lived only in the PM prompt). It uses a static `SECTOR_MAP` (the data layer carries no sector field), rejects the marginal BUY that pushes a sector's projected post-trade weight over 25%, applies SELLs first so a same-sector exit frees budget, and counts existing holdings. Its rejections fold into the same `decision_validation` health check. SELLs are never blocked by the sector cap.
+Immediately after, `guardrails.enforce_sector_limits()` applies the **25% sector cap** as a code control (it previously lived only in the PM prompt). It uses a static `SECTOR_MAP` (the data layer carries no sector field), applies SELLs first so a same-sector exit frees budget, and counts existing holdings. A BUY that pushes a sector's projected post-trade weight over 25% is **CLAMPED to the remaining headroom with `qty` recomputed** (Aug 19 2026), not dropped; it is rejected only when the clamp is unplaceable — unmapped sector (fail-closed), no headroom left, no room to add to an existing holding, notional below the $5 minimum, or no `prices` passed (in which case the guard degrades to the legacy reject). It returns `(kept, rejected, clamped)`; rejections and clamps both fold into the `decision_validation` health check (clamps as `modified`, so a resize still shows DEGRADED). SELLs are never blocked by the sector cap. Caps bind at **entry only** (IPS §6.1) — a sector already above 25% from price drift is compliant and is never auto-trimmed.
 
 For any change to `guardrails.py` or its call site:
 - [ ] Gate still runs AFTER qty pre-computation (notional rules need qty) and BEFORE the `pending_decisions.json` dump
@@ -220,6 +220,9 @@ For any change to `guardrails.py` or its call site:
 - [ ] SELLs are still exempt from the BUY notional cap
 - [ ] SELLs are still exempt from the sector cap (full exits must never be blocked)
 - [ ] `enforce_sector_limits` still runs AFTER `validate_decisions` (so weight clamps/conflicts are resolved first)
+- [ ] A sector-cap **clamp still recomputes `qty`** at the clamped weight — a clamped weight with the oversized qty is a no-op at execution
+- [ ] Clamps are still reported as `modified` (health DEGRADED) — a silent resize hides the PM sizing error that caused it
+- [ ] The CRO is still told NOT to veto on size or on drift (it runs UPSTREAM of this guard, so a CRO size-veto hard-drops what the clamp would have rescued)
 - [ ] `TestValidateDecisions` and `TestEnforceSectorLimits` in `test_pipeline.py` pass; new rules get new cases
 - [ ] PM system prompt still says "0.00–0.10" and "Max sector: 25%" (the gate is defense in depth, not a license to relax the prompt)
 

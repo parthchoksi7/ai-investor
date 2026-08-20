@@ -438,7 +438,10 @@ def run_daily_cycle():
 
     # Sector cap (25%) — a code-level control (the limit otherwise lives only in
     # the PM prompt). Runs after turnover filtering so it sees the post-turnover set.
-    decisions, sector_rejected = enforce_sector_limits(decisions, portfolio)
+    # `prices` lets the guard CLAMP an oversized BUY to the remaining headroom and
+    # recompute qty, instead of dropping the position outright (Aug 19 2026).
+    decisions, sector_rejected, sector_clamped = enforce_sector_limits(
+        decisions, portfolio, market_data["prices"])
 
     # Net-edge gate (#6) — reject a BUY whose expected return, after round-trip
     # cost + CA short-term tax, falls below the floor. No-op until the PM emits an
@@ -469,6 +472,25 @@ def run_daily_cycle():
         validation_report["rejected"].append(
             {"ticker": r.get("ticker", "?"), "action": r.get("action", "?"),
              "reason": r.get("rejected_reason", "turnover/sector/net-edge guard")})
+
+    # A sector clamp is a resize, not a drop — it belongs in "modified" alongside
+    # validate_decisions' weight clamp. Recording it keeps health DEGRADED: the PM
+    # proposing a size the cap cannot hold is a signal, even though the trade
+    # survives at the compliant size.
+    for m in sector_clamped:
+        validation_report["modified"].append(
+            {"ticker": m.get("ticker", "?"), "action": m.get("action", "?"),
+             "reason": m.get("clamped_reason", "sector-cap clamp")})
+
+    # `passed` is recomputed against the decisions that survived the FULL chain.
+    # validate_decisions increments it for its own rule set only, so before this
+    # line a run whose every decision was later rejected still reported
+    # "passed: 2, rejected: 2" (Aug 19 2026 — 0 trades actually placed).
+    # HOLDs are excluded to match validate_decisions' own convention (it returns
+    # early on HOLD without incrementing) — otherwise the "accuracy" fix would
+    # trade an undercount for an overcount of non-orders.
+    validation_report["passed"] = sum(
+        1 for _d in decisions if str(_d.get("action", "")).upper() != "HOLD")
 
     _interventions = (validation_report["rejected"] + validation_report["modified"]
                       + validation_report["skipped"])
@@ -631,6 +653,21 @@ def run_daily_cycle():
     # can report how often the gate drops a BUY (validates it isn't silently
     # starving the book; a live gate with zero measured effect is its own risk).
     pipeline_state["net_edge_rejected"] = len(netedge_rejected)
+    # The agent log is the year-end audit substrate, so `final_decisions` must be
+    # the set that actually survived the FULL guard chain — not the post-CRO list
+    # analysis.py provisionally wrote (kept alongside as `post_cro_decisions`).
+    # calibration.log_decisions and deliberation_stats both read this key as "what
+    # the system actually chose to trade"; before this line they read the agent
+    # pipeline's intent instead.
+    pipeline_state["final_decisions"] = decisions
+    # Vintage stamp: this key's MEANING changed on 2026-08-19 (post-CRO →
+    # post-guard-chain). Rows written before that date carry the agent pipeline's
+    # intent, not the traded set, so any longitudinal consumer
+    # (calibration.log_decisions' pm_selected flag, deliberation_stats) must
+    # partition on this stamp rather than pooling the two definitions — the same
+    # confound `formula_version` was introduced to fix in the forecast ledger.
+    # Absent stamp ⇒ pre-2026-08-19 ⇒ post-CRO vintage.
+    pipeline_state["final_decisions_vintage"] = "post_guard_chain"
     record_run(run_id, pipeline_state)
     print(f"   📋 Agent log written (run_id={run_id})")
 

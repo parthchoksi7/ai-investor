@@ -201,6 +201,12 @@ def log_decisions(run_id: str, date_str: str, pipeline_state: dict,
     vetoed   = set((pipeline_state.get("cro", {}) or {}).get("rejected_tickers", []) or [])
     selected = {d.get("ticker") for d in (pipeline_state.get("final_decisions", []) or [])
                 if str(d.get("action", "")).upper() == "BUY"}
+    # `final_decisions` changed meaning on 2026-08-19 (post-CRO intent →
+    # post-guard-chain traded set), so `pm_selected` rows written before and after
+    # measure different things. Stamp the vintage on every row so a longitudinal
+    # consumer can PARTITION instead of pooling two definitions — the same
+    # confound `formula_version` was introduced to fix. Absent ⇒ "post_cro".
+    _fd_vintage = pipeline_state.get("final_decisions_vintage", "post_cro")
     candidates = pipeline_state.get("candidates", []) or []
 
     rows = []
@@ -215,11 +221,14 @@ def log_decisions(run_id: str, date_str: str, pipeline_state: dict,
         }
         for agent, val in flags.items():
             for h in horizons:
-                rows.append({
+                _row = {
                     "run_id": run_id, "date": date_str, "agent": agent, "field": "flag",
                     "ticker": t, "value": float(val), "signal_close": float(signal_close),
                     "horizon_days": int(h), "schema": SCHEMA_VERSION,
-                })
+                }
+                if agent == "pm_selected":
+                    _row["final_decisions_vintage"] = _fd_vintage
+                rows.append(_row)
     if rows:
         _append_jsonl(path, rows)
     return len(rows)

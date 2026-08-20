@@ -13,6 +13,61 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — the sector cap dropped oversized BUYs instead of resizing them; the CRO was never told the limits it guards
+
+Post-mortem of the **Wed Aug 19 2026 rebalance** (run `20260819-134906`). The run
+completed "cleanly" — every control fired, nothing unsafe happened, zero orders were
+placed — but it should have traded. The Portfolio Manager proposed BUY COP 9% and BUY
+REGN 9%; Energy stood at 18.39% and Health Care at 19.66%, so each 9% add overshot the
+25% cap by 2–4pp and **both were rejected outright**. Cash sat at 18.1% for the 34th
+consecutive run while **6.6% COP and 5.3% REGN were fully compliant** — about **$63 of
+legal deployment left idle**. COP had been proposed at exactly 9% and rejected three
+weeks running (Aug 5, Aug 13, Aug 19): the BUY-side twin of the Jun 25–Jul 2
+V/JNJ/JPM loop.
+
+- **`enforce_sector_limits` now CLAMPS, not drops.** An over-cap BUY is resized to the
+  remaining sector headroom and its `qty` is **recomputed** at the clamped weight (a
+  clamp that leaves the oversized qty in place breaches the cap *at the broker*). A
+  position is dropped only when the clamp is unplaceable — no headroom, no room to add
+  to an existing holding, or notional below the $5 minimum. Clamps are reported as
+  interventions (`validation_report["modified"]` → health DEGRADED), never silently:
+  a PM proposing an impossible size is still a signal. Verified the clamped sizes clear
+  the net-edge floor rather than just moving the rejection to the next guard.
+- **The CRO now knows the numbers — but is explicitly NOT a size gate.** `_CRO_SYSTEM`
+  stated "evaluate sector exposure" while containing **no numeric limits at all**, and
+  its user message carried none either — so on Aug 19 Agent 7 computed "COP 9.0% +
+  CVX 9.3% + EOG 9.1% = ~27.4%", declared "not yet a rejection threshold — combined
+  weight stays below 30%", and approved a book breaching the mandate on two sectors.
+  It invented a threshold because it was never given one. It now receives the mandate
+  limits plus a pre-computed projected sector table, with three explicit boundaries:
+  do not veto on **size** (the clamp handles that, and the CRO runs *upstream* of it —
+  a size veto would delete the very trades the clamp exists to rescue), do not veto on
+  **drift** (compliant per IPS §6.1), and cash/holdings-count are targets, never
+  rejection triggers. Its veto is redirected to what caps genuinely cannot express:
+  correlation clusters, factor/theme stacking, tail risk. The closing instruction no
+  longer steers approval toward "only catastrophic loss".
+- **Two audit-record bugs.** `decision_validation.passed` was `validate_decisions`'
+  count alone, never decremented by the eight downstream guards — health recorded
+  "passed: 2, rejected: 2" for a run that placed nothing; it is now recomputed against
+  the decisions that survived the full chain. And `agent_log.json`'s `final_decisions`
+  was written pre-guard-chain, so the year-end audit substrate recorded COP+REGN as
+  "final" on a zero-order day; it is now the post-guard set, with the agent pipeline's
+  intent preserved alongside as `post_cro_decisions`. `calibration.log_decisions` and
+  `deliberation_stats` read this key as "what the system actually traded" and were
+  silently reading intent instead.
+
+### Changed — sector and position caps are formally entry-time constraints (IPS §6.1, owner decision)
+
+Drift above a cap through price appreciation is **surfaced, never auto-trimmed**. A
+forced trim in a CA top-bracket taxable account realizes ~54% short-term tax precisely
+*because* the position worked, and fights the same min-hold and tax-aware-hold rules
+built to suppress that churn. New BUYs into an over-cap sector remain blocked, so
+concentration can never be *increased* by a decision. Live at adoption: Financials
+25.06%, ABNB 10.69%, VRTX 10.35% — all compliant under this policy. Bounded by a
+review trigger at 35% sector / 15% single name. This also formally closes the
+2026-07-09 ~35%-financials exception, which aged out exactly as designed.
+
+
 ### Fixed — `market_data.yml`'s push-retry could turn a benign push race into a hard failure on a dirty working tree
 
 Found live-verifying the PARA fix below: the dispatched confirmation run's data-fetch

@@ -276,17 +276,46 @@ def sector_of(ticker: str) -> str:
 def enforce_sector_limits(
     decisions: list[dict],
     portfolio: dict,
+    prices: dict | None = None,
     sectors: dict[str, str] | None = None,
     max_sector_weight: float = MAX_SECTOR_WEIGHT,
-) -> tuple[list[dict], list[dict]]:
-    """Reject BUYs that would push any sector over max_sector_weight.
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Size BUYs down to the remaining sector headroom; reject only what cannot fit.
 
-    Returns (kept, rejected). Rejected entries are the original decision dicts
-    annotated with a `rejected_reason`. The projected post-trade weight of a
-    traded name is its `target_weight` (the PM's target is an absolute weight,
-    not an increment); untouched holdings keep their current weight. SELLs are
-    applied first so a same-sector exit frees budget for a later BUY — even when
-    decisions arrive BUY-first. Decision order is otherwise preserved.
+    Returns (kept, rejected, clamped). Rejected entries are the original decision
+    dicts annotated with a `rejected_reason`; clamped entries are the RESIZED
+    dicts annotated with a `clamped_reason` (they also appear in `kept`). The
+    projected post-trade weight of a traded name is its `target_weight` (the PM's
+    target is an absolute weight, not an increment); untouched holdings keep their
+    current weight. SELLs are applied first so a same-sector exit frees budget for
+    a later BUY — even when decisions arrive BUY-first. Decision order is
+    otherwise preserved.
+
+    CLAMP, DON'T DROP (Aug 19 2026). A BUY sized past the cap is a *sizing* error,
+    not a bad idea. That rebalance rejected COP (Energy 18.4% + 9% = 27.4%) and
+    REGN (Health Care 19.7% + 9% = 28.7%) outright and traded NOTHING — leaving
+    18.1% cash idle for the 34th consecutive run — when 6.6% COP and 5.3% REGN
+    were both fully compliant. COP had been proposed at exactly 9% and rejected
+    three weeks running. Clamping keeps the researched thesis at the largest
+    legal size; only a position with no usable headroom left is dropped.
+
+    A clamp is reported as an intervention (health DEGRADED via
+    validation_report["modified"]), never silently — the PM proposing an
+    impossible size is still a signal worth surfacing.
+
+    `prices` is required to clamp: the pre-computed `qty` came from the oversized
+    weight and MUST be recomputed, or the clamp changes nothing at execution time.
+    When `prices` is None the guard falls back to the strictly-safer legacy
+    behavior — reject outright.
+
+    KNOWN GAP (pre-existing, not introduced here): `_compute_qty` returns a DELTA
+    for an already-held name, but the routine's stale-price re-quote path
+    (ROUTINE_DAILY_CYCLE.md STEP 4, P0-1) recomputes an ABSOLUTE
+    `target_weight x total_value / live_price`. For a BUY that ADDS to an existing
+    holding those disagree, and a re-quote would place the full target on top of
+    the position. That affects every add-to-holding BUY, clamped or not; it fires
+    only when `price_as_of != today`. Tracked as MANUAL_TODO #22 — do not assume
+    the recomputed qty here survives a re-quote unchanged.
 
     FAIL-CLOSED on unmapped tickers: a BUY whose sector resolves to "UNKNOWN"
     is rejected outright — its concentration cannot be risk-checked, and the
@@ -320,9 +349,11 @@ def enforce_sector_limits(
         return sum(w for t, w in proj.items()
                    if sec_of(t) == sec and t != exclude)
 
-    kept, rejected = [], []
+    kept, rejected, clamped = [], [], []
     # Pass 2: evaluate BUYs in original order; accepted BUYs accrue into proj
-    # so a second BUY in the same sector sees the first one's weight.
+    # so a second BUY in the same sector sees the first one's weight (and a
+    # clamped BUY accrues at its CLAMPED weight, so the next same-sector name
+    # correctly sees zero headroom left).
     for d in decisions:
         action = str(d.get("action", "")).upper()
         if action != "BUY":
@@ -337,17 +368,55 @@ def enforce_sector_limits(
             rejected.append({**d, "rejected_reason": reason})
             print(f"   🚫 SECTOR REJECT: BUY {ticker} — {reason}")
             continue
-        projected = sector_weight(sec, exclude=ticker) + tw
+        used      = sector_weight(sec, exclude=ticker)
+        projected = used + tw
         if projected > max_sector_weight + 1e-9:
-            reason = (f"{sec} sector would be {projected:.0%} > "
-                      f"{max_sector_weight:.0%} cap")
-            rejected.append({**d, "rejected_reason": reason})
-            print(f"   🚫 SECTOR REJECT: BUY {ticker} — {reason}")
+            allowed = max_sector_weight - used
+            # Recompute qty at the clamped weight. _compute_qty returns 0.0 for a
+            # BUY whose target is at/below the position's current weight, which
+            # correctly turns "no room to add" into a reject rather than a
+            # placeable no-op order.
+            new_qty  = (_compute_qty(allowed, "BUY", ticker, portfolio, prices)
+                        if prices is not None and allowed > 0 else 0.0)
+            price    = float((prices or {}).get(ticker, {}).get("close", 0) or 0)
+            notional = new_qty * price
+            if new_qty <= 0 or notional < MIN_ORDER_NOTIONAL:
+                reason = (f"{sec} sector would be {projected:.0%} > "
+                          f"{max_sector_weight:.0%} cap")
+                # Name the ACTUAL cause. Under IPS §6.1 a sector may sit above the
+                # cap from pure drift, so "no headroom left" is a routine outcome
+                # and must not be misreported as a sub-minimum notional.
+                if prices is None:
+                    reason += "; no prices available to resize — rejected outright"
+                elif allowed <= 0:
+                    reason += (f"; no headroom left in {sec} "
+                               f"({used:.1%} already allocated) — nothing to clamp to")
+                elif price <= 0:
+                    reason += f"; no price for {ticker} — cannot size a clamped order"
+                elif new_qty <= 0:
+                    reason += (f"; already at or above the clamped target "
+                               f"{allowed:.1%} — no room to add")
+                else:
+                    reason += (f"; clamp to {allowed:.1%} not placeable "
+                               f"(notional ${notional:.2f} < "
+                               f"${MIN_ORDER_NOTIONAL:.2f} minimum)")
+                rejected.append({**d, "rejected_reason": reason})
+                print(f"   🚫 SECTOR REJECT: BUY {ticker} — {reason}")
+                continue
+            reason = (f"target_weight {tw:.1%} clamped to {allowed:.1%} to fit "
+                      f"{sec} headroom ({used:.1%} of the {max_sector_weight:.0%} "
+                      f"cap already allocated), qty recomputed")
+            d = {**d, "target_weight": allowed, "qty": new_qty}
+            clamped.append({**d, "clamped_reason": reason})
+            print(f"   ⚠️  SECTOR CLAMP: BUY {ticker} "
+                  f"{tw:.1%} → {allowed:.1%} ({sec} cap)")
+            proj[ticker] = allowed
+            kept.append(d)
             continue
         proj[ticker] = tw
         kept.append(d)
 
-    return kept, rejected
+    return kept, rejected, clamped
 
 
 def _trading_days_since(buy_date: str, today: str) -> int:

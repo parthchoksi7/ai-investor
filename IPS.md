@@ -186,7 +186,7 @@ the system holds (no new BUYs) rather than continuing to trade against its own v
 |-----------|-------|---------|
 | **Holdings count** | 8–15 positions | PM target; monitored |
 | **Max position** | **10%** of portfolio | `guardrails.py` clamp, qty recomputed |
-| **Max sector** | **25%** of portfolio | `enforce_sector_limits` (SELLs applied before BUYs) |
+| **Max sector** | **25%** of portfolio, **enforced at entry** (§6.1) | `enforce_sector_limits` — SELLs applied before BUYs; an over-cap BUY is **clamped to the remaining headroom**, and dropped only when the clamp is unplaceable |
 | **Cash target** | **0–10%** (discipline flag > 15% idle) | Observability only — cash is a position; never force deployment |
 | **Concentration** | Correlation-aware — five correlated names is one bet; CRO receives the return-correlation matrix | CRO review |
 
@@ -206,6 +206,38 @@ the system holds (no new BUYs) rather than continuing to trade against its own v
 > mechanical re-deployment rule is adopted, or the defensive posture is made permanent policy.
 > Hard backstop regardless of evidence-clock progress: **no later than the Q1 2027 quarterly
 > review.** See MANUAL_TODO.md #18 for the options considered.
+
+### 6.1 Position and sector caps bind at ENTRY, not continuously (owner decision, 2026-08-19)
+
+The 10% position cap and 25% sector cap are **entry-time constraints**: they are evaluated
+against the projected post-trade weight of any name the system is *buying*, and they are not
+re-enforced against a book that drifts past them through price appreciation alone. A holding
+that grows to 11%, or a sector that drifts to 26%, is **not** a breach requiring a trim.
+
+**Rationale.** This is a California top-bracket taxable account: a forced trim realizes a
+short-term gain taxed at ~54%, and it does so *because the position worked*. Continuous
+enforcement would systematically sell winners early, fight the 30-day min-hold and tax-aware-hold
+rules that exist to suppress exactly that churn, and convert a risk control into a
+tax-generating rebalancing engine. The caps exist to stop the system from *building* a
+concentrated bet; they are not a mandate to dismantle one the market built.
+
+**What this means in practice:**
+- New BUYs into an over-cap sector are blocked (or clamped to zero headroom) — the concentration
+  can never be *increased* by a decision.
+- Drift above a cap is surfaced, not corrected: it is visible in the PM's sector block and the
+  CRO's projected-weight table each rebalance.
+- The PM may still propose a discretionary trim on investment merit; nothing here blocks that.
+  What is ruled out is an *automatic* trim triggered solely by crossing the line.
+- Risk exits are unaffected — the −25% single-name stop (§7.6) and the kill switch never defer
+  to this section.
+
+**Live at adoption:** Financials 25.06%, ABNB 10.69%, VRTX 10.35% — all from appreciation, none
+from a decision. Under this policy these are compliant, not deviations, and the 2026-07-09
+exception below (~35% financials) is now formally closed: it aged out as designed.
+
+**Review trigger:** if any single sector drifts past **35%**, or a single name past **15%**, the
+next Quarterly Investment Review (§11) must explicitly decide whether to trim, re-affirm, or
+adopt a tolerance band with a mechanical rule. Drift is tolerated; unbounded drift is not.
 
 > **⚠ Ratified interim exception — sector cap (owner-approved 2026-07-09).** The Jul 8 2026
 > rebalance left the book at **~35% financials** (MS + AXP + CFG + CB) against the 25% cap.
@@ -432,3 +464,5 @@ tax:
 | 1.1 | 2026-07-05 | Ratified the cash-target exception (§6) as an intentional, time-bound deviation with a review trigger, rather than an unaddressed gap | The book had drifted to ~63% cash / 4 holdings against the 0–10%/8–15 target; owner directed ratifying the defensive posture until the evidence clock (post formula-version-partition fix) has a real reading, rather than relaxing a guardrail on faith | Owner |
 | 1.1 | 2026-07-05 | Corrected §4/Appendix A single-name stop-loss description from "daily-close" to the mechanism as implemented (morning evaluation via `risk_watch.py` on a live MCP quote) | The stop was described as evaluated at the 4 PM close, but the EOD routine places no orders — the live implementation evaluates each trading morning instead. Doc corrected to match code rather than code changed to match doc | Owner |
 | 1.2 | 2026-07-09 | Ratified the §6 sector-cap exception (~35% financials from the Jul 8 rebalance) as a bounded, self-healing deviation to age out, not force-trim | The SECTOR_MAP hole let orphaned expansion-name BUYs breach the 25% cap; the cap is now fixed (full-universe + fail-closed) and blocks new financial BUYs, so the book self-corrects as min-holds expire — a taxable trim would violate the anti-churn min-hold policy for no risk benefit | Owner |
+| 1.3 | 2026-08-19 | Added §6.1: position and sector caps bind at **entry**, not continuously — drift above a cap is surfaced, never auto-trimmed. Closes the 1.2 exception (aged out as designed) | A forced trim in a CA top-bracket taxable account realizes ~54% short-term tax precisely because the position worked, and fights the min-hold / tax-aware-hold anti-churn rules. The caps exist to stop the system *building* concentration, not to dismantle what appreciation created. Bounded by a 35%-sector / 15%-name review trigger | Owner |
+| 1.3 | 2026-08-19 | §6 Max-sector control amended: an over-cap BUY is **clamped to the remaining headroom** rather than rejected outright | The Aug 19 2026 rebalance rejected two fully-researched BUYs for being 2–4pp oversized and traded nothing, leaving 18.1% cash idle for the 34th consecutive run when 6.6% / 5.3% positions were compliant. Rejecting a fixable *size* discards the thesis; clamping enforces the same cap while preserving the decision | Owner |
