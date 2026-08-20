@@ -1294,34 +1294,55 @@ def run_chief_risk_officer(
     for d in decisions:                      # SELLs first — they free headroom
         if str(d.get("action", "")).upper() == "SELL":
             projected[d["ticker"]] = d.get("target_weight", 0)
-    _clamped_view: dict[str, tuple[float, float]] = {}   # ticker -> (proposed, effective)
+    # ticker -> (proposed, effective, currently_held)
+    _clamped_view: dict[str, tuple[float, float, float]] = {}
     for d in decisions:
         if str(d.get("action", "")).upper() != "BUY":
             continue
         _tk  = d["ticker"]
         _tw  = float(d.get("target_weight", 0) or 0)
         _sec = _sector_of(_tk)
+        _held = projected.get(_tk, 0.0)          # current weight (post-SELL)
         _used = sum(w for t, w in projected.items()
                     if _sector_of(t) == _sec and t != _tk)
         _eff = _tw if _sec == "UNKNOWN" else min(_tw, max(_MSW - _used, 0.0))
+        # Mirror the guard's REJECT semantics, not just its accept branch. When
+        # the clamped target sits at or below what is already held, _compute_qty
+        # returns 0 and enforce_sector_limits drops the BUY *without touching the
+        # projection* — the position stays at its real weight. Overwriting here
+        # would UNDERSTATE a held name and, since the sector table and the
+        # correlation matrix both filter on w > 0.001, could drop a genuinely
+        # held position out of the CRO's view entirely. Routine under IPS §6.1,
+        # where a drifted over-cap sector is compliant and expected.
+        if _eff <= _held + 1e-9:
+            _clamped_view[_tk] = (_tw, 0.0, _held)   # dropped; holding unchanged
+            continue
         if _eff < _tw - 1e-9:
-            _clamped_view[_tk] = (_tw, _eff)
+            _clamped_view[_tk] = (_tw, _eff, _held)
         projected[_tk] = _eff
 
     # Risk lines per ticker
+    # Enumerate the UNION of projected holdings and clamped/dropped proposals. A
+    # BUY the guard will drop is never written into `projected` (that is the
+    # point — it leaves a held name at its real weight, and a not-held name
+    # absent), but it MUST still appear here: otherwise a proposal the guard
+    # kills silently vanishes from the CRO's view and it cannot tell "not
+    # proposed" from "proposed and killed".
+    _view = {t: projected.get(t, 0.0) for t in (set(projected) | set(_clamped_view))}
     risk_lines = []
-    for ticker, weight in sorted(projected.items(), key=lambda x: -x[1]):
-        # A BUY clamped to zero (no headroom) has weight 0 but MUST still appear —
-        # otherwise a proposal the guard will drop silently vanishes from the CRO's
-        # view, and it cannot tell "not proposed" from "proposed and killed".
+    for ticker, weight in sorted(_view.items(), key=lambda x: -x[1]):
         if weight > 0.001 or ticker in _clamped_view:
             s = quant_scores.get(ticker, {})
             _note = ""
             if ticker in _clamped_view:
-                _prop, _eff = _clamped_view[ticker]
-                _note = (f"  [resized from {_prop:.1%} to fit the sector cap]"
-                         if _eff > 0 else
-                         f"  [proposed {_prop:.1%} — will be DROPPED, no headroom]")
+                _prop, _eff, _hld = _clamped_view[ticker]
+                if _eff > 0:
+                    _note = f"  [resized from {_prop:.1%} to fit the sector cap]"
+                elif _hld > 0:
+                    _note = (f"  [proposed {_prop:.1%} — will be DROPPED, already at "
+                             f"or above the cap-limited target; holding unchanged]")
+                else:
+                    _note = f"  [proposed {_prop:.1%} — will be DROPPED, no headroom]"
             risk_lines.append(
                 f"  {ticker}: {weight:.1%} | vol={s.get('volatility','?')}% "
                 f"beta={s.get('beta','?')}{_note}"
@@ -1607,7 +1628,13 @@ def get_trade_decisions(
         # list that actually reached the broker — do NOT read that key here as
         # the traded set (Aug 19 2026: the agent log recorded COP+REGN as "final"
         # on a day the run placed zero orders).
-        "post_cro_decisions": decisions,
+        # COPY, not the live reference: main.py calls apply_pm_backstop(decisions)
+        # immediately after this returns, which APPENDS 3-signal auto-exit SELLs
+        # in place (main.py:118/130). Sharing the list would let those backstop
+        # SELLs appear in the agent log as though the agent pipeline had produced
+        # them — defeating the exact audit purpose this field exists for. (The
+        # backstop fires in practice: Aug 5 and Aug 13 2026 both auto-exited PLD.)
+        "post_cro_decisions": list(decisions),
         # Provisional — overwritten by main.py with the post-guard-chain list.
         "final_decisions": decisions,
     }

@@ -378,7 +378,17 @@ caps bind at **entry only** (IPS §6.1) — drift is surfaced, never force-trimm
 > `_compute_qty` returns a DELTA, so an add-to-holding BUY can be placed on top of the position on
 > a stale-price day. Coverage: `TestSectorClampAug19Replay` (11), `TestCroSizeVetoRemediation` (9),
 > `TestSectorRejectReasonAccuracy` (3), 5 end-to-end `TestRunDailyCycleSmoke` cases.
-> Total **898** (+28).
+> A third pass (`/code-review ultra`, multi-agent cloud) found 2 more, both nits, both in
+> code this batch introduced, both fixed: (1) `post_cro_decisions` was handed the **same list
+> object** as `decisions`, and `apply_pm_backstop` appends 3-signal auto-exit SELLs **in place**
+> — so the audit field created to record *agent intent* was contaminated with backstop SELLs on
+> every run the override fires (it fired Aug 5 and Aug 13); now a `list()` copy. (2) The CRO's
+> effective-weight mirror replicated only the guard's ACCEPT branch — on a REJECT the guard
+> leaves a held position at its real weight, so overwriting understated a holding and could drop
+> it out of the >0.1% sector/correlation filters entirely (routine under §6.1 drift); the mirror
+> now honors reject semantics, and `risk_lines` enumerates the union of projected holdings and
+> dropped proposals so a killed BUY never silently vanishes.
+> Total **902** (+32).
 > **⚠ Two pre-existing failures on `main`, unrelated to this batch:**
 > `TestHistoryStoreFreshnessRecheck::test_stale_same_day_cache_entry_is_refetched` and
 > `::test_genuinely_fresh_same_day_cache_entry_is_not_refetched` — date-sensitive `market_data`

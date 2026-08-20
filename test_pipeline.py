@@ -2713,6 +2713,53 @@ class TestCroSizeVetoRemediation:
         assert "COP: 9.0%" in msg                # full size — the SELL freed room
         assert "resized from" not in msg
 
+    def test_held_position_is_not_understated_when_its_buy_is_dropped(self, monkeypatch):
+        """Ultrareview bug_001. The guard leaves a held position at its real
+        weight when it REJECTS an add-to-holding BUY; the CRO mirror must do the
+        same. Overwriting understates the holding and — since the sector table
+        and correlation matrix both filter on w > 0.001 — can drop a genuinely
+        held name out of the CRO's view entirely. Routine under IPS §6.1, where
+        a drifted over-cap sector is compliant and expected."""
+        # Energy at 30% from drift (CVX 25% + COP 5% held) — compliant per §6.1.
+        portfolio = {"total_value": 1000.0, "cash": 700.0, "positions": [
+            {"symbol": "CVX", "market_value": 250.0},
+            {"symbol": "COP", "market_value": 50.0}]}
+        cap = self._capture(
+            monkeypatch, [{"ticker": "COP", "action": "BUY", "target_weight": 0.10}],
+            portfolio)
+        msg = cap["user_msg"]
+        assert "COP: 5.0%" in msg            # the REAL holding, not 0.0%
+        assert "Energy: 30.0%" in msg        # the REAL sector, not 25.0%
+        assert "will be DROPPED" in msg      # and the CRO is told the BUY dies
+        assert "holding unchanged" in msg
+
+    def test_partial_add_to_holding_below_current_weight_is_dropped_not_resized(self, monkeypatch):
+        # COP 8% held, other Energy 22% → clamped target 3% < 8% held, so the
+        # guard drops it ("no room to add"); COP must still read 8%, not 3%.
+        portfolio = {"total_value": 1000.0, "cash": 700.0, "positions": [
+            {"symbol": "CVX", "market_value": 220.0},
+            {"symbol": "COP", "market_value": 80.0}]}
+        cap = self._capture(
+            monkeypatch, [{"ticker": "COP", "action": "BUY", "target_weight": 0.10}],
+            portfolio)
+        msg = cap["user_msg"]
+        assert "COP: 8.0%" in msg
+        assert "resized from" not in msg     # it is dropped, not resized
+
+    def test_genuine_add_to_holding_still_resizes(self, monkeypatch):
+        # Counterfactual: headroom ABOVE the held weight is a real add and must
+        # still be shown as a resize, not suppressed by the reject-mirror fix.
+        portfolio = {"total_value": 1000.0, "cash": 850.0, "positions": [
+            {"symbol": "CVX", "market_value": 100.0},
+            {"symbol": "COP", "market_value": 50.0}]}   # Energy 15%
+        cap = self._capture(
+            monkeypatch, [{"ticker": "COP", "action": "BUY", "target_weight": 0.20}],
+            portfolio)
+        msg = cap["user_msg"]
+        assert "COP: 15.0%" in msg           # clamped to 25% − 10% CVX
+        assert "resized from 20.0%" in msg
+        assert "Energy: 25.0%" in msg
+
     def test_projected_sector_table_is_present_and_correct(self, monkeypatch):
         portfolio = {"total_value": 1000.0, "cash": 800.0, "positions": [
             {"symbol": "JPM", "market_value": 200.0}]}
@@ -10501,6 +10548,35 @@ class TestRunDailyCycleSmoke:
         self._run(monkeypatch, tmp_path, decisions)
         dv = _j.loads((tmp_path / "system_health.json").read_text())["checks"]["decision_validation"]
         assert dv["passed"] == 1                   # the BUY only, not the HOLD
+
+    def test_post_cro_decisions_is_not_contaminated_by_the_pm_backstop(self, monkeypatch, tmp_path):
+        """Ultrareview bug_003. analysis.py handed `post_cro_decisions` the SAME
+        list object as `decisions`, and main.py then calls apply_pm_backstop(),
+        which appends 3-signal auto-exit SELLs IN PLACE — so the agent log
+        recorded a backstop SELL as though the agent pipeline had produced it.
+        The backstop fires in practice (Aug 5 / Aug 13 2026 both auto-exited
+        PLD), and the field exists precisely to record agent intent."""
+        import json as _j
+        portfolio = {"cash": 400.0, "total_value": 500.0, "positions": [
+            {"symbol": "JPM", "qty": 0.5, "avg_price": 200.0, "available_qty": 0.5,
+             "current_price": 200.0, "market_value": 100.0, "unrealized_pnl": 0.0}]}
+        # 3 agreeing signals on JPM → apply_pm_backstop appends an auto-exit SELL
+        # that the PM never proposed and the CRO never saw.
+        pipeline_state = self._pipeline_state([])
+        pipeline_state["position_reviews"] = {
+            "JPM": {"hold_score": 3, "remaining_alpha": "LOW",
+                    "recommended_action": "EXIT"}}
+        pipeline_state["devils_advocate"] = {
+            "JPM": {"bear_case": "stub bear", "recommend_reject": True}}
+        self._run(monkeypatch, tmp_path, [], portfolio=portfolio,
+                  pipeline_state=pipeline_state)
+
+        row = _j.loads((tmp_path / "agent_log.json").read_text())[-1]
+        # The backstop did fire — otherwise this test proves nothing.
+        assert any(d.get("ticker") == "JPM" and d.get("action") == "SELL"
+                   for d in row["final_decisions"]), "backstop did not fire"
+        # ...but agent INTENT must stay empty: the PM proposed nothing.
+        assert row["post_cro_decisions"] == []
 
     def test_final_decisions_carries_a_vintage_stamp(self, monkeypatch, tmp_path):
         """Finding 6: the key's meaning changed on 2026-08-19, so longitudinal
