@@ -133,7 +133,7 @@ def seed():
     client.table("trades").upsert(trade_rows).execute()
     print(f"  ✓ trades: {len(trade_rows)} orders")
 
-    print("Done. Visit /api/performance to verify.")
+    print("Done. Visit /work/ai-investor to verify.")
 
 
 if __name__ == "__main__":
