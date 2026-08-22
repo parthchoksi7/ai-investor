@@ -203,11 +203,112 @@ def compute_valuation_score(fundamentals: dict | None) -> dict:
     }
 
 
+# ── Beta estimation windows ──────────────────────────────────────────────────
+# `beta` (63 sessions, unshrunk) is the LEGACY estimate. It is kept byte-identical
+# because it is stamped into factor_history.jsonl and rendered into the CRO's risk
+# block, so changing it in place would silently break the comparability of both.
+#
+# It is also far too short to be a beta. Over the live 100-name universe the 63-day
+# estimate ranges −1.01 to +5.01 — values that are estimation error, not market
+# sensitivity. Screening on it is measurably destructive: in the backtest harness a
+# 0.5–0.95 band applied to the RAW 63-day estimate returned −7.93% after-tax alpha
+# at 5.27x turnover, versus +1.41% for the identical band applied to the shrunk
+# long-window estimate.
+#
+# `beta_stable` is the estimate any beta-targeting logic should consume: a
+# 252-session window with Blume shrinkage toward the market. Shrinkage is not a
+# nicety — the cross-sectional dispersion of SAMPLE betas is systematically wider
+# than the dispersion of TRUE betas, so a raw estimate overstates how far a name
+# sits from 1.0, and a band drawn on raw estimates chases that error every rebalance.
+BETA_STABLE_WINDOW   = 252   # sessions of returns to use when enough history exists
+BETA_STABLE_MIN_BARS = 120   # below this the long-window estimate is not offered
+BETA_SHORT_MIN_BARS  = 22    # fallback floor: shrink the short-window estimate instead
+BLUME_SLOPE          = 0.67  # β_adj = 0.67·β_raw + 0.33·1.0 (Blume 1971/1975)
+BLUME_INTERCEPT      = 0.33
+
+
+def _ols_beta(asset_ret: list[float], mkt_ret: list[float]) -> float | None:
+    """Cov/Var beta over the overlapping tail of two return series.
+
+    None when the sample is too short, the market series has no variance, or the
+    result is non-finite — the same fail-quiet contract compute_risk_metrics uses
+    for a degenerate price series.
+    """
+    n = min(len(asset_ret), len(mkt_ret))
+    if n < 3:
+        return None
+    a, m = asset_ret[-n:], mkt_ret[-n:]
+    mean_a, mean_m = _mean(a), _mean(m)
+    cov = sum((x - mean_a) * (y - mean_m) for x, y in zip(a, m)) / (n - 1)
+    var = _variance(m)
+    if var <= 0:
+        return None
+    beta = cov / var
+    return beta if math.isfinite(beta) else None
+
+
+def shrink_beta(raw: float | None) -> float | None:
+    """Blume shrinkage of a sample beta toward the market beta of 1.0."""
+    if raw is None or not math.isfinite(raw):
+        return None
+    return BLUME_SLOPE * raw + BLUME_INTERCEPT
+
+
+def _degenerate_closes(closes: list[float]) -> bool:
+    """A close series unusable for returns: non-finite or non-positive anywhere.
+
+    A 0.0 close raises ZeroDivisionError out of the return computation; a NaN
+    silently poisons every downstream statistic and, once, the Supabase publish
+    itself. Screen the series, not just the result.
+    """
+    return any((not math.isfinite(c)) or c <= 0 for c in closes)
+
+
+def _date_joined_returns(history: list[dict],
+                         spy_history: list[dict]) -> tuple[list[float], list[float]]:
+    """Daily returns for asset and market over their COMMON bar dates.
+
+    Index-tail alignment (the house convention the legacy 63-day beta uses) silently
+    regresses mismatched pairs whenever a ticker is missing bars inside the window —
+    a halt, a late listing, a provider gap — biasing beta toward the shrink target
+    while still reporting a full-length window. `beta_stable` is the estimate meant
+    to drive sizing, so it joins on the bar date instead.
+
+    Returns two equal-length, date-ordered series (empty when the overlap is too thin).
+    """
+    a_by_date = {b["date"]: float(b["close"]) for b in history if "date" in b}
+    m_by_date = {b["date"]: float(b["close"]) for b in spy_history if "date" in b}
+    common = sorted(set(a_by_date) & set(m_by_date))
+    if len(common) < 3:
+        return [], []
+    a = [a_by_date[d] for d in common]
+    m = [m_by_date[d] for d in common]
+    if _degenerate_closes(a) or _degenerate_closes(m):
+        return [], []
+    a_ret = [(a[i] - a[i - 1]) / a[i - 1] for i in range(1, len(a))]
+    m_ret = [(m[i] - m[i - 1]) / m[i - 1] for i in range(1, len(m))]
+    return a_ret, m_ret
+
+
+def _risk_metrics_unavailable() -> dict:
+    """The 'no usable risk metrics' shape, shared by every early return below so
+    the key set never drifts between the available and unavailable paths."""
+    return {"volatility": None, "beta": None,
+            "volatility_score": 50, "volatility_available": False,
+            "beta_stable": None, "beta_stable_raw": None,
+            "beta_stable_window": 0, "beta_stable_available": False,
+            "beta_stable_basis": None}
+
+
 def compute_risk_metrics(history: list[dict], spy_history: list[dict]) -> dict:
-    """Returns annualized volatility, beta vs SPY, and a risk score (higher = lower risk)."""
+    """Returns annualized volatility, beta vs SPY, and a risk score (higher = lower risk).
+
+    Also returns `beta_stable` — the long-window, Blume-shrunk beta. It is ADDITIVE:
+    no caller reads it yet, `composite_score` does not consume it, and
+    FORMULA_VERSION is deliberately unchanged.
+    """
     if len(history) < 22:
-        return {"volatility": None, "beta": None,
-                "volatility_score": 50, "volatility_available": False}
+        return _risk_metrics_unavailable()
 
     closes = [float(d["close"]) for d in history]
     # A non-finite or non-positive close (a NaN/None/0 that slipped into the
@@ -217,21 +318,25 @@ def compute_risk_metrics(history: list[dict], spy_history: list[dict]) -> dict:
     # are not JSON compliant"). Treat a degenerate price series as "volatility
     # unavailable" so it is dropped from the honest composite rather than blended
     # in or emitted as NaN.
-    if any((not math.isfinite(c)) or c <= 0 for c in closes):
-        return {"volatility": None, "beta": None,
-                "volatility_score": 50, "volatility_available": False}
+    if _degenerate_closes(closes):
+        return _risk_metrics_unavailable()
 
     daily_ret = [(closes[i] - closes[i - 1]) / closes[i - 1] for i in range(1, len(closes))]
     recent = daily_ret[-63:]  # 3-month window
 
     vol = _stdev(recent) * math.sqrt(252) * 100  # annualized %
     if not math.isfinite(vol):  # belt-and-suspenders: never let a NaN vol escape
-        return {"volatility": None, "beta": None,
-                "volatility_score": 50, "volatility_available": False}
+        return _risk_metrics_unavailable()
 
     beta = None
-    if spy_history and len(spy_history) >= 22:
-        spy_closes = [float(d["close"]) for d in spy_history]
+    beta_stable = beta_stable_raw = beta_stable_basis = None
+    beta_stable_window = 0
+    spy_closes = [float(d["close"]) for d in spy_history] if spy_history else []
+    # SPY gets the SAME screen the asset series gets above. Without it a 0.0 SPY
+    # close raises ZeroDivisionError straight out of score_all_tickers — the one
+    # degenerate case that does NOT already degrade to None (a NaN does, via the
+    # spy_var > 0 test). Fail quiet, like every other degenerate-data path here.
+    if len(spy_closes) >= 22 and not _degenerate_closes(spy_closes):
         spy_ret = [(spy_closes[i] - spy_closes[i - 1]) / spy_closes[i - 1] for i in range(1, len(spy_closes))]
         n = min(len(recent), len(spy_ret))
         sr, mr = recent[-n:], spy_ret[-n:]
@@ -241,6 +346,33 @@ def compute_risk_metrics(history: list[dict], spy_history: list[dict]) -> dict:
             spy_var = _variance(mr)
             beta = round(cov / spy_var, 2) if spy_var > 0 else None
 
+        # beta_stable — long window + Blume shrinkage, over DATE-JOINED returns (not
+        # `recent`, which is truncated to 63 by design for the vol score, and not
+        # index-tail-aligned, which mismatches pairs when bars are missing).
+        a_ret, m_ret = _date_joined_returns(history, spy_history)
+        overlap = len(a_ret)
+        if overlap >= BETA_STABLE_MIN_BARS:
+            window = min(BETA_STABLE_WINDOW, overlap)
+            basis = "long"
+        elif overlap >= BETA_SHORT_MIN_BARS:
+            # Still computed — a young or thinly-covered ticker should degrade toward
+            # the market rather than vanish from beta-aware sizing. But it is NOT
+            # marked available: a 22–119 session estimate is shorter than the 63-day
+            # beta this whole change exists to condemn, and a consumer gating on
+            # `beta_stable_available` must never be handed one. Under
+            # UNIVERSE_EXPANDED, expansion names ship at 63-bar tails and land here.
+            window = overlap
+            basis = "short"
+        else:
+            window = 0
+            basis = None
+        if window >= 3:
+            beta_stable_raw = _ols_beta(a_ret[-window:], m_ret[-window:])
+            beta_stable = shrink_beta(beta_stable_raw)
+            if beta_stable is not None:
+                beta_stable_window = window
+                beta_stable_basis = basis
+
     # Normalize 15%–80% annualized vol range to 100→0 score
     vol_score = max(0.0, min(100.0, 100.0 - (vol - 15.0) * (100.0 / 65.0)))
 
@@ -249,6 +381,11 @@ def compute_risk_metrics(history: list[dict], spy_history: list[dict]) -> dict:
         "beta": beta,
         "volatility_score": round(vol_score, 1),
         "volatility_available": True,
+        "beta_stable": round(beta_stable, 3) if beta_stable is not None else None,
+        "beta_stable_raw": round(beta_stable_raw, 3) if beta_stable_raw is not None else None,
+        "beta_stable_window": beta_stable_window,
+        "beta_stable_basis": beta_stable_basis,
+        "beta_stable_available": beta_stable is not None and beta_stable_basis == "long",
     }
 
 
@@ -361,7 +498,7 @@ _FACTOR_HISTORY_FIELDS = (
     "quality_score", "quality_available",
     "valuation_score", "valuation_available",
     "volatility_score", "volatility_available",
-    "beta",
+    "beta", "beta_stable", "beta_stable_window", "beta_stable_basis",
 )
 
 

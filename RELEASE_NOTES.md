@@ -13,6 +13,75 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Added — `beta_stable`: a beta estimate that is actually usable (Phase 1 of the beta/alpha split)
+
+Groundwork for separating the **beta decision** from the **alpha decision**. Research
+found the 4-factor composite correlates **−0.653** with beta across the universe
+(Spearman −0.592, n=100): the names it rates best average **−0.04** beta, the names it
+rates worst average **+2.41**. The live book inherited that as a **−0.17** stocks-only
+beta — an unintentional short-market position nothing measured. Fixing it needs a beta
+estimate worth targeting, and the existing one is not.
+
+- **`quant_engine.beta_stable`** — a 252-session (history-capped) beta with **Blume
+  shrinkage** (`0.67·β + 0.33`), plus `beta_stable_raw`, `beta_stable_window`,
+  `beta_stable_basis` and `beta_stable_available`. Returns are **date-joined**, not
+  index-tail-aligned: a ticker missing bars inside the window would otherwise regress
+  systematically mismatched pairs, biasing beta toward the shrink target while still
+  reporting a full-length window.
+- **`beta_stable_available` means "long basis", never merely "computed".** A 22–119
+  session estimate is still calculated and exposed as `beta_stable_basis: "short"` —
+  so a consumer can opt into graceful degradation — but it does **not** satisfy
+  `beta_stable_available`, because a 22-session estimate is shorter than the 63-session
+  beta this change exists to condemn. On the live universe this is not a corner case:
+  **72 of 174 names carry a short basis**, leaving 102 genuinely sizable (38 of them in
+  a 0.5–0.95 band). Under `UNIVERSE_EXPANDED`, expansion names ship at 63-bar tails and
+  land here by construction.
+- **A `0.0` SPY close no longer raises.** `spy_closes` now gets the same finite-and-
+  positive screen the asset series already had; previously it divided straight through
+  to a `ZeroDivisionError` out of `score_all_tickers`. (A NaN already degraded to
+  `beta: None` via the `spy_var > 0` test — only an exact zero crashed.)
+- **The legacy 63-session `beta` is deliberately untouched** — it is stamped into
+  `factor_history.jsonl` and rendered into the CRO risk block, so changing it in place
+  would silently break the comparability of both.
+- **Why shrinkage is not optional.** The cross-sectional dispersion of *sample* betas is
+  systematically wider than that of *true* betas. On the live universe the raw 63-day
+  estimate spans −1.01 to +5.01 and calls **31.4%** of names negative-beta; the shrunk
+  long-window estimate calls **8%** negative and centres at a median of **+0.70**. In
+  the backtest harness a 0.5–0.95 band on the **raw** estimate returned **−7.93%**
+  after-tax alpha at 5.27× turnover, versus **+1.41%** for the same band on the shrunk
+  one — screening on the short estimate chases estimation error every rebalance.
+- **Zero behavior change, verified on live data.** No caller reads the new field,
+  `FACTOR_WEIGHTS` does not contain it, and `FORMULA_VERSION` is deliberately **not**
+  bumped — no evidence clock resets. An A/B of the committed `quant_engine.py` against
+  the patched one over the full committed snapshot found **0 differences across 174
+  tickers × 14 fields** (composite, every sub-score and availability flag, and the
+  legacy beta). The one observable side effect is intentional: `beta_stable`,
+  `beta_stable_window` and `beta_stable_basis` join `_FACTOR_HISTORY_FIELDS` so the time
+  series starts accumulating now rather than at the merge date of the phase that
+  consumes it.
+- **Review.** `/code-review high` raised 4 findings, all fixed. Two were self-inflicted
+  and material: the short-window fallback was flagging 22-session estimates as
+  `available` (the exact error this change exists to prevent), and the test guarding the
+  headline "zero behavior change" claim was **tautological** — `_corr_series` derives its
+  market path from the seed alone, so the two scoring runs it compared had byte-identical
+  inputs and it would have passed even if `beta_stable` *were* wired into the composite.
+
+### Fixed — two date-pinned tests had quietly stopped testing anything
+
+`TestHistoryStoreFreshnessRecheck`'s two cases were failing on `main`, unrelated to any
+recent change. Both fixtures were pinned to 2026-07-30/31, but production measures the
+branch under test against the **real** `date.today()` — the store stamp comparison in
+`market_data.get_market_snapshot` and `is_history_dead`'s `CARRY_FORWARD_MAX_DAYS`
+ceiling. Once those dates aged past the ceiling the seeded entry stopped being seen as
+"cached today" at all, so the refetch happened for the wrong reason and the assertions
+decayed into a time bomb — the same class as the Jun 14 2026 timezone-flaky test.
+
+Fixture dates are now **derived** from the current date via the same
+`market_calendar` helpers production uses (so they track real holidays and weekends
+instead of assuming consecutive days), and the pair is self-guarding: if the store stamp
+ever stops being recognized as today's, the no-refetch case is the one that breaks.
+
+
 ### Fixed — the sector cap dropped oversized BUYs instead of resizing them; the CRO was never told the limits it guards
 
 Post-mortem of the **Wed Aug 19 2026 rebalance** (run `20260819-134906`). The run

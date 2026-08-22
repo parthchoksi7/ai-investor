@@ -443,6 +443,266 @@ class TestRiskMetrics:
         assert "volatility" not in scores["BAD"]["factors_used"]
 
 
+
+
+# ── quant_engine beta_stable (Phase 1: long-window + Blume shrinkage) ─────────
+
+class TestBetaStable:
+    """`beta_stable` is the estimate beta-TARGETING logic must consume; the legacy
+    63-session `beta` stays byte-identical because factor_history and the CRO risk
+    block already depend on it.
+
+    The regression that matters here is the ZERO-CHANGE claim, and it is asserted
+    against an inline reimplementation of the legacy formula (a real oracle) rather
+    than against committed snapshot values — pinning to committed data is exactly
+    the time-bomb pattern that silently disabled TestHistoryStoreFreshnessRecheck.
+    """
+
+    def _corr_series(self, n, beta, seed=7):
+        """A market series and an asset series with a known population beta.
+
+        Deterministic LCG rather than `random` so the fixture is seed-stable across
+        interpreter versions (the repo has already been bitten by a stdlib change —
+        statistics.stdev on Python 3.11).
+        """
+        x = seed
+        mkt, asset = [100.0], [100.0]
+        for _ in range(n):
+            x = (1103515245 * x + 12345) % (1 << 31)
+            r = ((x / (1 << 31)) - 0.5) * 0.02          # market return, ±1%
+            x = (1103515245 * x + 12345) % (1 << 31)
+            idio = ((x / (1 << 31)) - 0.5) * 0.001      # small idiosyncratic noise
+            mkt.append(mkt[-1] * (1 + r))
+            asset.append(asset[-1] * (1 + beta * r + idio))
+        return _make_history(asset), _make_history(mkt)
+
+    def _legacy_beta(self, history, spy_history):
+        """Verbatim reimplementation of the pre-Phase-1 63-session beta."""
+        from quant_engine import _mean, _variance
+        closes = [float(d["close"]) for d in history]
+        daily = [(closes[i] - closes[i - 1]) / closes[i - 1] for i in range(1, len(closes))]
+        recent = daily[-63:]
+        if not spy_history or len(spy_history) < 22:
+            return None
+        sc = [float(d["close"]) for d in spy_history]
+        sr_all = [(sc[i] - sc[i - 1]) / sc[i - 1] for i in range(1, len(sc))]
+        n = min(len(recent), len(sr_all))
+        sr, mr = recent[-n:], sr_all[-n:]
+        if n <= 2:
+            return None
+        ms, mm = _mean(sr), _mean(mr)
+        cov = sum((s - ms) * (mk - mm) for s, mk in zip(sr, mr)) / (n - 1)
+        var = _variance(mr)
+        return round(cov / var, 2) if var > 0 else None
+
+    # ── the zero-change guarantee ────────────────────────────────────────────
+
+    def test_legacy_beta_is_unchanged_by_phase_1(self):
+        from quant_engine import compute_risk_metrics
+        for beta in (0.3, 1.0, 1.8, -0.6):
+            asset, mkt = self._corr_series(260, beta)
+            r = compute_risk_metrics(asset, mkt)
+            assert r["beta"] == self._legacy_beta(asset, mkt), f"legacy beta drifted at {beta}"
+
+    def test_composite_does_not_consume_beta_stable(self):
+        """FORMULA_VERSION is deliberately NOT bumped in Phase 1 — proof is that the
+        composite never reads the new field.
+
+        The two market series must GENUINELY differ. `_corr_series` derives the
+        market path from the seed alone, so re-calling it with a different `beta`
+        returns a byte-identical market — the first version of this test did exactly
+        that, which made it tautological: it would have passed even if beta_stable
+        WERE wired into the composite. Caught in review.
+        """
+        from quant_engine import score_all_tickers, FACTOR_WEIGHTS, FORMULA_VERSION
+        asset, mkt  = self._corr_series(260, 1.2, seed=7)
+        _a2,   mkt2 = self._corr_series(260, 1.2, seed=99)
+        assert mkt2 != mkt, "fixture bug: the two market series must actually differ"
+
+        s1 = score_all_tickers({"history": {"A": asset, "SPY": mkt},  "fundamentals": {}})
+        s2 = score_all_tickers({"history": {"A": asset, "SPY": mkt2}, "fundamentals": {}})
+
+        assert "beta_stable" not in FACTOR_WEIGHTS
+        assert s1["A"]["formula_version"] == FORMULA_VERSION == "2.3-valuation-ttm"
+        # The new field genuinely moved — so the inputs really were different ...
+        assert s1["A"]["beta_stable"] != s2["A"]["beta_stable"]
+        # ... while nothing the composite reads moved at all.
+        for k in ("momentum_score", "quality_score", "valuation_score",
+                  "volatility_score", "composite_score", "factors_used"):
+            assert s1["A"][k] == s2["A"][k], f"{k} moved when only the market changed"
+
+    # ── shrinkage math ───────────────────────────────────────────────────────
+
+    def test_shrink_beta_pulls_toward_one(self):
+        from quant_engine import shrink_beta
+        assert shrink_beta(1.0) == pytest.approx(1.0)
+        assert shrink_beta(2.0) == pytest.approx(0.67 * 2.0 + 0.33)
+        assert shrink_beta(-1.0) == pytest.approx(0.67 * -1.0 + 0.33)
+        # a wild raw estimate is pulled a long way in
+        assert shrink_beta(5.01) == pytest.approx(3.687, abs=1e-3)
+
+    def test_shrink_beta_rejects_degenerate(self):
+        from quant_engine import shrink_beta
+        assert shrink_beta(None) is None
+        assert shrink_beta(float("nan")) is None
+        assert shrink_beta(float("inf")) is None
+
+    def test_ols_beta_recovers_known_slope(self):
+        from quant_engine import _ols_beta
+        asset, mkt = self._corr_series(260, 1.5)
+        ac = [float(d["close"]) for d in asset]
+        mc = [float(d["close"]) for d in mkt]
+        ar = [(ac[i] - ac[i - 1]) / ac[i - 1] for i in range(1, len(ac))]
+        mr = [(mc[i] - mc[i - 1]) / mc[i - 1] for i in range(1, len(mc))]
+        assert _ols_beta(ar, mr) == pytest.approx(1.5, abs=0.05)
+
+    def test_ols_beta_none_on_degenerate_market(self):
+        from quant_engine import _ols_beta
+        assert _ols_beta([0.01] * 50, [0.0] * 50) is None   # zero market variance
+        assert _ols_beta([0.01, 0.02], [0.01, 0.02]) is None  # sample too short
+
+    # ── window selection ─────────────────────────────────────────────────────
+
+    def test_long_window_used_when_history_allows(self):
+        from quant_engine import compute_risk_metrics, BETA_STABLE_WINDOW
+        asset, mkt = self._corr_series(300, 1.4)
+        r = compute_risk_metrics(asset, mkt)
+        assert r["beta_stable_available"] is True
+        assert r["beta_stable_window"] == BETA_STABLE_WINDOW
+        assert r["beta_stable"] == pytest.approx(0.67 * r["beta_stable_raw"] + 0.33, abs=1e-3)
+
+    def test_short_window_is_computed_but_NOT_marked_available(self):
+        """A 22–119 session estimate is shorter than the 63-day beta this change
+        exists to condemn, so it must never satisfy `beta_stable_available` — but it
+        is still computed, so a consumer that deliberately wants graceful degradation
+        can opt in via `beta_stable_basis`. Under UNIVERSE_EXPANDED, expansion names
+        ship at 63-bar tails and land exactly here."""
+        from quant_engine import compute_risk_metrics, BETA_STABLE_MIN_BARS
+        asset, mkt = self._corr_series(60, 1.4)          # < BETA_STABLE_MIN_BARS
+        r = compute_risk_metrics(asset, mkt)
+        assert r["beta_stable_available"] is False
+        assert r["beta_stable_basis"] == "short"
+        assert r["beta_stable"] is not None
+        assert 0 < r["beta_stable_window"] < BETA_STABLE_MIN_BARS
+        assert r["beta_stable"] == pytest.approx(0.67 * r["beta_stable_raw"] + 0.33, abs=1e-3)
+
+    def test_available_requires_the_long_basis(self):
+        from quant_engine import compute_risk_metrics, BETA_STABLE_MIN_BARS
+        asset, mkt = self._corr_series(BETA_STABLE_MIN_BARS + 5, 1.1)
+        r = compute_risk_metrics(asset, mkt)
+        assert r["beta_stable_basis"] == "long"
+        assert r["beta_stable_available"] is True
+
+    # ── degenerate market data must fail quiet, not raise ────────────────────
+
+    def test_zero_spy_close_does_not_raise(self):
+        """A 0.0 SPY close used to divide straight through to ZeroDivisionError out
+        of score_all_tickers — the one degenerate case that did NOT already degrade
+        to None (a NaN does, via the spy_var > 0 test)."""
+        import math
+        from quant_engine import compute_risk_metrics, score_all_tickers
+        asset, mkt = self._corr_series(200, 1.0)
+        mkt[50]["close"] = 0.0
+        r = compute_risk_metrics(asset, mkt)
+        assert r["beta"] is None
+        assert r["beta_stable_available"] is False
+        assert r["volatility_available"] is True          # the asset itself is fine
+        scores = score_all_tickers({"history": {"A": asset, "SPY": mkt}, "fundamentals": {}})
+        assert math.isfinite(scores["A"]["composite_score"])
+
+    def test_nan_spy_close_does_not_raise(self):
+        from quant_engine import compute_risk_metrics
+        asset, mkt = self._corr_series(200, 1.0)
+        mkt[50]["close"] = float("nan")
+        r = compute_risk_metrics(asset, mkt)
+        assert r["beta"] is None
+        assert r["beta_stable_available"] is False
+
+    # ── date alignment ───────────────────────────────────────────────────────
+
+    def test_beta_stable_joins_on_date_not_index(self):
+        """A ticker missing bars inside the window must not regress mismatched
+        pairs. Index-tail alignment (the legacy convention) skews the estimate;
+        the date join recovers the true slope."""
+        from quant_engine import compute_risk_metrics, _ols_beta, _date_joined_returns
+        true_beta = 1.6
+        asset, mkt = self._corr_series(300, true_beta)
+        gapped = [b for i, b in enumerate(asset) if not (120 <= i < 170)]   # 50 bars gone
+
+        a_ret, m_ret = _date_joined_returns(gapped, mkt)
+        joined = _ols_beta(a_ret, m_ret)
+
+        # what index-tail alignment would have produced on the same inputs
+        gc = [float(b["close"]) for b in gapped]
+        mc = [float(b["close"]) for b in mkt]
+        gr = [(gc[i] - gc[i - 1]) / gc[i - 1] for i in range(1, len(gc))]
+        mr = [(mc[i] - mc[i - 1]) / mc[i - 1] for i in range(1, len(mc))]
+        n = min(len(gr), len(mr))
+        misaligned = _ols_beta(gr[-n:], mr[-n:])
+
+        assert abs(joined - true_beta) < abs(misaligned - true_beta), (
+            f"date join ({joined:.3f}) should beat index alignment "
+            f"({misaligned:.3f}) against true beta {true_beta}")
+        r = compute_risk_metrics(gapped, mkt)
+        assert r["beta_stable_raw"] == pytest.approx(joined, abs=1e-3)  # field is 3dp
+
+    def test_beta_stable_uses_more_data_than_legacy_beta(self):
+        """The whole point: 63 sessions is not enough to estimate a beta."""
+        from quant_engine import compute_risk_metrics
+        asset, mkt = self._corr_series(300, 1.4)
+        r = compute_risk_metrics(asset, mkt)
+        assert r["beta_stable_window"] > 63
+
+    # ── unavailable paths keep the full key set ──────────────────────────────
+
+    def test_no_spy_history_leaves_beta_stable_unavailable(self):
+        from quant_engine import compute_risk_metrics
+        r = compute_risk_metrics(_flat(100.0, 50), [])
+        assert r["beta_stable"] is None
+        assert r["beta_stable_available"] is False
+        assert r["beta_stable_window"] == 0
+
+    def test_degenerate_series_returns_full_key_set(self):
+        from quant_engine import compute_risk_metrics
+        bad = _flat(100.0, 40)
+        bad[10]["close"] = float("nan")
+        r = compute_risk_metrics(bad, _flat(100.0, 40))
+        for k in ("volatility", "beta", "volatility_score", "volatility_available",
+                  "beta_stable", "beta_stable_raw", "beta_stable_window",
+                  "beta_stable_basis", "beta_stable_available"):
+            assert k in r, f"missing {k} on the unavailable path"
+        assert r["beta_stable_available"] is False
+
+    def test_too_short_history_gives_no_beta_stable(self):
+        from quant_engine import compute_risk_metrics, BETA_SHORT_MIN_BARS
+        asset, mkt = self._corr_series(30, 1.0)
+        # 22 bars -> 21 returns, one below the BETA_SHORT_MIN_BARS floor of 22.
+        r = compute_risk_metrics(asset[:22], mkt[:22])
+        assert BETA_SHORT_MIN_BARS == 22
+        assert r["beta_stable"] is None
+        assert r["beta_stable_basis"] is None
+        assert r["beta_stable_available"] is False
+        # At the floor an estimate exists (boundary is inclusive) but is still NOT
+        # available — 22 sessions is a "short" basis, never a sizing input.
+        r_at = compute_risk_metrics(asset[:23], mkt[:23])
+        assert r_at["beta_stable"] is not None
+        assert r_at["beta_stable_basis"] == "short"
+        assert r_at["beta_stable_available"] is False
+        assert r_at["beta_stable_window"] == BETA_SHORT_MIN_BARS
+
+    def test_factor_history_carries_beta_stable(self, tmp_path, monkeypatch):
+        """Start the beta_stable time series now so Phase 3/4 inherit history."""
+        from quant_engine import score_all_tickers, log_factor_history
+        monkeypatch.chdir(tmp_path)
+        asset, mkt = self._corr_series(260, 1.1)
+        scores = score_all_tickers({"history": {"A": asset, "SPY": mkt}, "fundamentals": {}})
+        log_factor_history(scores, as_of="2026-08-22")
+        rows = [json.loads(x) for x in open("factor_history.jsonl") if x.strip()]
+        row = next(r for r in rows if r["ticker"] == "A")
+        assert row["beta_stable"] is not None
+        assert row["beta_stable_window"] > 63
+
+
 # ── quant_engine.score_all_tickers ───────────────────────────────────────────
 
 class TestScoreAllTickers:
@@ -7420,7 +7680,19 @@ class TestHistoryStoreFreshnessRecheck:
     """The market_data.py sweep must not trust a same-day 'fetched today' stamp
     when the cached entry's own last bar is older than expected — otherwise an
     early run that beat Polygon's EOD finalization poisons every later run that
-    day (the exact 2026-07-31 bug: SPY locked at 7/29's close all day)."""
+    day (the exact 2026-07-31 bug: SPY locked at 7/29's close all day).
+
+    Fixture dates are DERIVED from the current date, never pinned. Production
+    measures both branches under test against the real `date.today()`:
+    `already_fetched_today` compares the store stamp to today (market_data.py),
+    and is_history_dead ages the last bar against today under a
+    CARRY_FORWARD_MAX_DAYS ceiling. Pinned dates (originally 2026-07-30/31)
+    therefore stop exercising the freshness branch once they age past that
+    ceiling — the refetch then happens for the wrong reason (entry not seen as
+    today's at all, history judged dead) and the assertions decay into a
+    time-bomb. The pair below is self-guarding: if the store stamp ever stops
+    being recognized as today's, the no-refetch test is the one that breaks.
+    """
 
     def _bar(self, iso_date, close):
         from datetime import datetime, timezone
@@ -7429,23 +7701,23 @@ class TestHistoryStoreFreshnessRecheck:
         return {"date": ms, "open": close, "high": close, "low": close,
                 "close": close, "volume": 1}
 
-    def test_stale_same_day_cache_entry_is_refetched(self, tmp_path, monkeypatch):
-        import market_data as md
-        monkeypatch.chdir(tmp_path)
-        # Seed the store as if an early run today already cached SPY, but one
-        # bar short of what's expected by now.
-        md._save_history_store({
-            "SPY": {"date": "2026-07-31", "history": [self._bar("2026-07-29", 729.46)]},
-        })
-        monkeypatch.setattr("market_calendar.most_recent_complete_trading_day",
-                             lambda: date(2026, 7, 30))
-        refetched = {"called": False}
+    def _recent_sessions(self, n=2):
+        """The last `n` complete NYSE sessions relative to now, oldest first.
 
-        def fake_history(ticker, days=210):
-            refetched["called"] = True
-            return [self._bar("2026-07-29", 729.46), self._bar("2026-07-30", 741.69)]
+        Uses the same market_calendar helpers production does, so the fixture
+        tracks real holidays/weekends instead of assuming consecutive days.
+        """
+        from datetime import timedelta
+        from market_calendar import most_recent_complete_trading_day, is_trading_day
+        sessions = [most_recent_complete_trading_day()]
+        while len(sessions) < n:
+            d = sessions[-1] - timedelta(days=1)
+            while not is_trading_day(d):
+                d -= timedelta(days=1)
+            sessions.append(d)
+        return list(reversed(sessions))
 
-        monkeypatch.setattr(md, "get_extended_history", fake_history)
+    def _stub_universe(self, md, monkeypatch):
         monkeypatch.setattr(md, "get_news_summary", lambda: [])
         monkeypatch.setattr(md, "get_ticker_news", lambda t, limit=5: [])
         monkeypatch.setattr(md, "get_all_fundamentals", lambda tickers: {})
@@ -7453,6 +7725,28 @@ class TestHistoryStoreFreshnessRecheck:
         monkeypatch.setattr(universe, "get_active_universe", lambda coverage_ok=True: ["SPY"])
         monkeypatch.setattr(universe, "CORE_UNIVERSE", ["SPY"])
         monkeypatch.setattr(md, "SP500_HOLDINGS", {})
+
+    def test_stale_same_day_cache_entry_is_refetched(self, tmp_path, monkeypatch):
+        import market_data as md
+        monkeypatch.chdir(tmp_path)
+        prev_session, expected = self._recent_sessions(2)
+        # Seed the store as if an early run today already cached SPY, but one
+        # bar short of what's expected by now.
+        md._save_history_store({
+            "SPY": {"date": date.today().isoformat(),
+                    "history": [self._bar(prev_session.isoformat(), 729.46)]},
+        })
+        monkeypatch.setattr("market_calendar.most_recent_complete_trading_day",
+                             lambda: expected)
+        refetched = {"called": False}
+
+        def fake_history(ticker, days=210):
+            refetched["called"] = True
+            return [self._bar(prev_session.isoformat(), 729.46),
+                    self._bar(expected.isoformat(), 741.69)]
+
+        monkeypatch.setattr(md, "get_extended_history", fake_history)
+        self._stub_universe(md, monkeypatch)
         snap = md.get_market_snapshot(force=True)
         assert refetched["called"] is True
         assert snap["prices"]["SPY"]["close"] == 741.69
@@ -7460,25 +7754,21 @@ class TestHistoryStoreFreshnessRecheck:
     def test_genuinely_fresh_same_day_cache_entry_is_not_refetched(self, tmp_path, monkeypatch):
         import market_data as md
         monkeypatch.chdir(tmp_path)
+        _prev_session, expected = self._recent_sessions(2)
         md._save_history_store({
-            "SPY": {"date": "2026-07-31", "history": [self._bar("2026-07-30", 741.69)]},
+            "SPY": {"date": date.today().isoformat(),
+                    "history": [self._bar(expected.isoformat(), 741.69)]},
         })
         monkeypatch.setattr("market_calendar.most_recent_complete_trading_day",
-                             lambda: date(2026, 7, 30))
+                             lambda: expected)
         refetched = {"called": False}
 
         def fake_history(ticker, days=210):
             refetched["called"] = True
-            return [self._bar("2026-07-30", 741.69)]
+            return [self._bar(expected.isoformat(), 741.69)]
 
         monkeypatch.setattr(md, "get_extended_history", fake_history)
-        monkeypatch.setattr(md, "get_news_summary", lambda: [])
-        monkeypatch.setattr(md, "get_ticker_news", lambda t, limit=5: [])
-        monkeypatch.setattr(md, "get_all_fundamentals", lambda tickers: {})
-        import universe
-        monkeypatch.setattr(universe, "get_active_universe", lambda coverage_ok=True: ["SPY"])
-        monkeypatch.setattr(universe, "CORE_UNIVERSE", ["SPY"])
-        monkeypatch.setattr(md, "SP500_HOLDINGS", {})
+        self._stub_universe(md, monkeypatch)
         snap = md.get_market_snapshot(force=True)
         assert refetched["called"] is False
         assert snap["prices"]["SPY"]["close"] == 741.69
