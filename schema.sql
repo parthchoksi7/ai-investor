@@ -10,6 +10,8 @@ create table public.portfolio_snapshots (
   cumulative_return_pct     numeric     default 0,
   spy_close                 numeric,
   spy_cumulative_return_pct numeric,
+  qqq_close                 numeric,     -- Nasdaq 100 benchmark (mirrors spy_close)
+  qqq_cumulative_return_pct numeric,     -- Nasdaq 100 TOTAL return (%) vs inception
   drawdown_pct              numeric     default 0,
   regime                    text,
   run_id                    text,

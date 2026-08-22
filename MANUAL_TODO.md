@@ -22,6 +22,7 @@ reading the body. "Verified" means checked against a real artifact/API in this r
 
 | # | Item | Status |
 |---|------|--------|
+| 23 | **Nasdaq 100 benchmark migration + backfill** | ✅ **DONE (2026-08-22)** — migration run by owner, 54 rows backfilled and verified |
 | 22 | **Re-quote qty mismatch: absolute vs delta** (routine STEP 4 vs `_compute_qty`) | 🔴 **OPEN — P1** — can over-buy an add-to-holding BUY on a stale-price day |
 | 21b | **35%-financials breach — CLOSED**, aged out as designed (Financials 25.06% on 2026-08-19) | ✅ **CLOSED** — superseded by IPS §6.1 (entry-time caps) |
 | 20 | **Re-sync BOTH routine prompts** (Jul 9 hardening: STEP 2 dep-verify, STEP 3 no-source-edit rule) | ✅ **DONE** — verified byte-for-byte |
@@ -58,6 +59,35 @@ Debian-managed PyJWT; STEP 3 (daily) / the dep-install block (EOD) both carry th
 **"never edit/commit a .py source file"** rule (Jul 8 the routine hot-fixed `main.py` mid-run and
 committed it to `main`, bypassing the §7.0 review gate). `updated_at` 2026-07-10T02:5x; daily
 `next_run_at` 2026-07-10T13:45:00Z, EOD `next_run_at` 2026-07-10T20:04Z.
+
+## 🆕 PENDING (2026-08-22) — Nasdaq 100 benchmark
+
+### [x] 23. Run `migrations/2026-08-22_add_qqq_benchmark.sql` — **DONE 2026-08-22**
+_Migration applied by the owner in the Supabase SQL Editor; `backfill_qqq.py` then wrote 54 rows
+(2026-08-11 left NULL, matching its NULL `spy_close`). Verified: inception baseline = 0.00%,
+no core field disturbed, re-run is idempotent._
+Adds `qqq_close` and `qqq_cumulative_return_pct` to `portfolio_snapshots` so the dashboard can
+benchmark against the Nasdaq 100 alongside the S&P 500. The service key can read and write rows
+over PostgREST but **cannot run DDL**, so this one statement has to be pasted into the Supabase
+SQL Editor by hand. It is `add column if not exists` — safe to re-run.
+
+```sql
+alter table public.portfolio_snapshots
+  add column if not exists qqq_close                 numeric,
+  add column if not exists qqq_cumulative_return_pct numeric;
+```
+
+**Then, in this repo:**
+
+```bash
+./venv/bin/python backfill_qqq.py --dry-run   # review the plan
+./venv/bin/python backfill_qqq.py             # write 54 historical rows
+```
+
+**Nothing breaks while this sits undone.** `publish.py` catches the missing-column error, drops
+the two QQQ keys, and republishes the row without them (printing which migration to run).
+`PerformanceChart` only draws a series the data actually contains, so the site renders the S&P 500
+line alone and the "vs Nasdaq 100" stat card shows "—" until the columns exist and are backfilled.
 
 ## 🆕 PENDING (2026-08-19) — Aug 19 rebalance post-mortem follow-ups
 

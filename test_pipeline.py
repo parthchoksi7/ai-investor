@@ -1553,15 +1553,15 @@ class TestPublishSpyDataSource:
         try:
             if "publish" in sys.modules:
                 del sys.modules["publish"]
-            from publish import _fetch_spy_from_snapshot
-            return _fetch_spy_from_snapshot()
+            from publish import _fetch_benchmark_from_snapshot
+            return _fetch_benchmark_from_snapshot("SPY")
         finally:
             os.chdir(orig)
             if "publish" in sys.modules:
                 del sys.modules["publish"]
 
     def _et_today(self):
-        # publish._fetch_spy_from_snapshot uses ET; the test's "today" must match
+        # publish._fetch_benchmark_from_snapshot uses ET; the test's "today" must match
         # it or the snapshot reads as stale during the ET/PT date-straddle window
         # (~9pm–midnight Pacific), making this test fail ~3 hours every day.
         from datetime import datetime
@@ -1636,8 +1636,8 @@ class TestPublishSpyPriority:
             today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
             (tmp_path / "market_snapshot.json").write_text(json.dumps(
                 {"date": today, "prices": {"SPY": {"close": snapshot_spy}}}))
-        monkeypatch.setattr(publish, "_fetch_spy_prev_close",
-                             lambda key: live_spy)
+        monkeypatch.setattr(publish, "_fetch_benchmark_prev_close",
+                             lambda ticker, key: live_spy if ticker == "SPY" else None)
         fake_client = _FakeSupabaseClient()
         import supabase
         monkeypatch.setattr(supabase, "create_client", lambda *a, **k: fake_client)
@@ -1659,7 +1659,7 @@ class TestPublishSpyPriority:
 
 
 class TestSpyPrevCloseFreshness:
-    """publish._fetch_spy_prev_close must validate the returned bar's own date
+    """publish._fetch_benchmark_prev_close must validate the returned bar's own date
     against market_calendar.most_recent_complete_trading_day(), not accept
     whatever Polygon's "prev" endpoint returns unconditionally.
 
@@ -1709,7 +1709,7 @@ class TestSpyPrevCloseFreshness:
         monkeypatch.setattr("market_calendar.most_recent_complete_trading_day",
                              lambda: date(2026, 8, 5))
         calls = self._mock_urlopen(monkeypatch, [self._bar(769.79, "2026-08-05")])
-        result = publish._fetch_spy_prev_close("fake-key")
+        result = publish._fetch_benchmark_prev_close("SPY", "fake-key")
         assert result == 769.79
         assert calls["n"] == 1  # no retry needed
 
@@ -1723,7 +1723,7 @@ class TestSpyPrevCloseFreshness:
             self._bar(771.33, "2026-08-04"),
             self._bar(769.79, "2026-08-05"),
         ])
-        result = publish._fetch_spy_prev_close("fake-key", max_retries=3, retry_delay=0)
+        result = publish._fetch_benchmark_prev_close("SPY", "fake-key", max_retries=3, retry_delay=0)
         assert result == 769.79
         assert calls["n"] == 3
 
@@ -1735,7 +1735,7 @@ class TestSpyPrevCloseFreshness:
         monkeypatch.setattr("market_calendar.most_recent_complete_trading_day",
                              lambda: date(2026, 8, 5))
         calls = self._mock_urlopen(monkeypatch, [self._bar(771.33, "2026-08-04")])
-        result = publish._fetch_spy_prev_close("fake-key", max_retries=3, retry_delay=0)
+        result = publish._fetch_benchmark_prev_close("SPY", "fake-key", max_retries=3, retry_delay=0)
         assert result is None
         assert calls["n"] == 3
 
@@ -1747,7 +1747,7 @@ class TestSpyPrevCloseFreshness:
         monkeypatch.setattr("market_calendar.most_recent_complete_trading_day",
                              lambda: date(2026, 8, 4))
         calls = self._mock_urlopen(monkeypatch, [self._bar(771.33, "2026-08-04")])
-        result = publish._fetch_spy_prev_close("fake-key")
+        result = publish._fetch_benchmark_prev_close("SPY", "fake-key")
         assert result == 771.33
         assert calls["n"] == 1
 

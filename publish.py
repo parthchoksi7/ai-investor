@@ -59,8 +59,8 @@ def _load(path: str, default):
     return default
 
 
-def _fetch_spy_from_snapshot() -> float | None:
-    """Read SPY's latest price from market_snapshot.json (committed daily by market_data.yml).
+def _fetch_benchmark_from_snapshot(ticker: str = "SPY") -> float | None:
+    """Read a benchmark's latest price from market_snapshot.json (committed daily by market_data.yml).
 
     Fallback only, used when a live Polygon call is unavailable. The snapshot is
     fetched pre-market (7-8:30 AM ET) and never refreshed later in the day, so by
@@ -70,7 +70,9 @@ def _fetch_spy_from_snapshot() -> float | None:
     2026-07-30 stamped the PRIOR day's close as "today's" spy_close because this
     was tried first and always "succeeded" (fresh file, stale price inside it).
 
-    Returns None if the file is missing, stale (not dated today), or SPY is absent.
+    Returns None if the file is missing, stale (not dated today), or the ticker
+    is absent. `fetch_snapshot.py` requests benchmarks=("SPY", "QQQ"), so both
+    the S&P 500 and Nasdaq 100 proxies are present in a healthy snapshot.
     """
     try:
         snap = _load("market_snapshot.json", {})
@@ -78,15 +80,16 @@ def _fetch_spy_from_snapshot() -> float | None:
         today = datetime.now(_ET).strftime("%Y-%m-%d")
         if snap_date != today:
             return None
-        spy = snap.get("prices", {}).get("SPY", {})
-        close = float(spy.get("close", 0))
+        bar = snap.get("prices", {}).get(ticker, {})
+        close = float(bar.get("close", 0))
         return close if close > 0 else None
     except Exception:
         return None
 
 
-def _fetch_spy_prev_close(polygon_key: str, max_retries: int = 3, retry_delay: float = 20.0) -> float | None:
-    """Fetch SPY's most recently completed session close from Polygon.
+def _fetch_benchmark_prev_close(ticker: str, polygon_key: str, max_retries: int = 3,
+                                retry_delay: float = 20.0) -> float | None:
+    """Fetch a benchmark's most recently completed session close from Polygon.
 
     Found live: 2026-07-31 through 2026-08-05 published one trading day stale
     despite the 07-31 "call live Polygon first" fix (34775c4). Root cause: that
@@ -102,12 +105,12 @@ def _fetch_spy_prev_close(polygon_key: str, max_retries: int = 3, retry_delay: f
     with a bounded backoff (Polygon typically finalizes within ~1 minute of
     close) rather than accepted. If it's still stale after all retries, this
     returns None so the caller falls through to the snapshot fallback (or, if
-    that's stale too, leaves the row's spy_close untouched this run) instead of
-    writing a value already known to be wrong.
+    that's stale too, leaves the row's <ticker>_close untouched this run) instead
+    of writing a value already known to be wrong.
     """
     from market_calendar import most_recent_complete_trading_day
     expected = most_recent_complete_trading_day()
-    url = f"https://api.polygon.io/v2/aggs/ticker/SPY/prev?adjusted=true&apiKey={polygon_key}"
+    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev?adjusted=true&apiKey={polygon_key}"
     for attempt in range(max_retries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "ai-investor/1.0"})
@@ -129,44 +132,61 @@ def _fetch_spy_prev_close(polygon_key: str, max_retries: int = 3, retry_delay: f
     return None
 
 
-# A4 — SPY total-return gross-up. The portfolio curve is dividend-inclusive
-# (dividends land as account cash), so the dashboard must benchmark against SPY
+# A4 — benchmark total-return gross-up. The portfolio curve is dividend-inclusive
+# (dividends land as account cash), so the dashboard must benchmark against
 # TOTAL return, not price return, or it flatters the portfolio by ~the dividend
 # yield. The snapshot carries only raw closes, so we add the accrued dividend as
-# a documented gross-up (~1.25%/yr pro-rated by days since inception). Written
-# into the existing spy_cumulative_return_pct column — no schema change.
+# a documented gross-up, pro-rated by days since inception. Written into the
+# *_cumulative_return_pct columns.
+#
+# SPY ~1.25%/yr (S&P 500). QQQ ~0.45%/yr — the Nasdaq 100 is growth-heavy and
+# pays materially less, so it gets its own rate rather than borrowing SPY's;
+# using 1.25% for QQQ would hand the Nasdaq benchmark ~0.8%/yr of return it
+# never paid, which biases the comparison AGAINST the portfolio.
 SPY_DIVIDEND_YIELD = 0.0125
+QQQ_DIVIDEND_YIELD = 0.0045
+
+BENCHMARK_DIVIDEND_YIELD = {"SPY": SPY_DIVIDEND_YIELD, "QQQ": QQQ_DIVIDEND_YIELD}
 
 
-def _get_spy_cumulative(supabase_client, spy_close: float | None,
-                        today: str | None = None) -> float | None:
-    """SPY cumulative TOTAL return (%) vs inception (first row with a non-null
-    spy_close). Price return from closes + a dividend gross-up by days elapsed."""
-    if spy_close is None:
+def _get_benchmark_cumulative(supabase_client, ticker: str, close: float | None,
+                              today: str | None = None) -> float | None:
+    """Benchmark cumulative TOTAL return (%) vs inception (first row with a
+    non-null <ticker>_close). Price return from closes + a dividend gross-up by
+    days elapsed.
+
+    NOTE the inception row is resolved per-benchmark. SPY and QQQ share the same
+    inception date today (both backfilled from 2026-06-08), but keying off each
+    column's own first non-null row means a benchmark added later still baselines
+    correctly instead of silently inheriting SPY's start date.
+    """
+    if close is None:
         return None
+    col = f"{ticker.lower()}_close"
+    div_yield = BENCHMARK_DIVIDEND_YIELD.get(ticker.upper(), 0.0)
     try:
         resp = (
             supabase_client.table("portfolio_snapshots")
-            .select("spy_close, date")
-            .not_.is_("spy_close", "null")
+            .select(f"{col}, date")
+            .not_.is_(col, "null")
             .order("date", desc=False)
             .limit(1)
             .execute()
         )
         rows = resp.data or []
         if not rows:
-            return 0.0  # this is the first snapshot with SPY data — baseline = 0%
-        inception_spy = float(rows[0]["spy_close"])
-        if inception_spy <= 0:
+            return 0.0  # first snapshot with this benchmark's data — baseline = 0%
+        inception = float(rows[0][col])
+        if inception <= 0:
             return None
-        price_ret = (spy_close - inception_spy) / inception_spy
+        price_ret = (close - inception) / inception
         # Dividend gross-up by days since inception (total-return basis).
         div = 0.0
         try:
             from datetime import date as _date
             d0 = _date.fromisoformat(str(rows[0].get("date"))[:10])
             d1 = _date.fromisoformat(str(today)[:10]) if today else datetime.now(_ET).date()
-            div = SPY_DIVIDEND_YIELD * max(0, (d1 - d0).days) / 365.0
+            div = div_yield * max(0, (d1 - d0).days) / 365.0
         except (ValueError, TypeError):
             div = 0.0
         return round((price_ret + div) * 100, 4)
@@ -314,7 +334,7 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     peak      = float(peak_data.get("peak", total_value))
     drawdown  = max(0.0, (peak - total_value) / peak * 100) if peak > 0 else 0.0
 
-    # ── SPY benchmark ──────────────────────────────────────────────────────────
+    # ── Benchmarks: SPY (S&P 500) + QQQ (Nasdaq 100) ───────────────────────────
     # Prefer a LIVE Polygon "prev" call over market_snapshot.json. "prev" means
     # "the most recently completed session relative to right now" — called
     # pre-market that's correctly yesterday's close (matches what the snapshot
@@ -323,10 +343,19 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     # have (found live: the old snapshot-first order stamped every EOD publish
     # from ~7/6-7/30 with the PRIOR day's close). Snapshot is the fallback only,
     # for when Polygon itself is unreachable (e.g. no key, or a transient error).
+    #
+    # QQQ is fetched the same way and on the same schedule as SPY so the two
+    # benchmark curves stay aligned to each other: if one is a session stale the
+    # other is too, and the dashboard never shows the portfolio measured against
+    # two different as-of dates.
     polygon_key = os.getenv("POLYGON_API_KEY")
-    spy_close = _fetch_spy_prev_close(polygon_key) if polygon_key else None
-    if spy_close is None:
-        spy_close = _fetch_spy_from_snapshot()
+
+    def _benchmark_close(ticker: str) -> float | None:
+        close = _fetch_benchmark_prev_close(ticker, polygon_key) if polygon_key else None
+        return close if close is not None else _fetch_benchmark_from_snapshot(ticker)
+
+    spy_close = _benchmark_close("SPY")
+    qqq_close = _benchmark_close("QQQ")
 
     # ── Upsert portfolio snapshot ──────────────────────────────────────────────
     # When GitHub Actions publishes a snapshot committed after midnight UTC,
@@ -337,9 +366,10 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
         today = snapshot_written_at[:10]
     else:
         today = datetime.now(_ET).strftime("%Y-%m-%d")  # ET matches the rest of the pipeline
-    # SPY cumulative on a TOTAL-return basis (A4) — needs `today` for the dividend
-    # gross-up, so it is computed after the date is resolved.
-    spy_cumulative = _get_spy_cumulative(client, spy_close, today=today)
+    # Benchmark cumulatives on a TOTAL-return basis (A4) — need `today` for the
+    # dividend gross-up, so they are computed after the date is resolved.
+    spy_cumulative = _get_benchmark_cumulative(client, "SPY", spy_close, today=today)
+    qqq_cumulative = _get_benchmark_cumulative(client, "QQQ", qqq_close, today=today)
     cumulative_return = round((total_value - STARTING_CAPITAL) / STARTING_CAPITAL * 100, 4)
 
     snapshot_row: dict = {
@@ -377,6 +407,10 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
         snapshot_row["spy_close"] = round(spy_close, 4)
     if spy_cumulative is not None:
         snapshot_row["spy_cumulative_return_pct"] = spy_cumulative
+    if qqq_close is not None:
+        snapshot_row["qqq_close"] = round(qqq_close, 4)
+    if qqq_cumulative is not None:
+        snapshot_row["qqq_cumulative_return_pct"] = qqq_cumulative
 
     # A4: net exposure (point-in-time) + realized beta (trailing, best-effort).
     # net_exposure is exact from this snapshot; realized_beta needs a return
@@ -393,26 +427,38 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     except Exception as e:
         print(f"   ⚠ realized_beta skipped: {str(e)[:120]}")
 
-    # Defensive against deploy ordering: if the A4 migration
-    # (migrations/2026-06-14_add_exposure_beta.sql) has not been run yet, the new
-    # columns don't exist and the upsert would error. Retry once without the
-    # optional A4 keys so a missing migration degrades the dashboard rather than
-    # breaking the publish entirely.
-    _A4_KEYS = ("net_exposure", "realized_beta")
+    # Defensive against deploy ordering: a migration-gated column that has not
+    # been created yet doesn't exist, and the upsert errors on the whole row.
+    # Retry without whichever optional group the error names, so a migration the
+    # owner hasn't run degrades the dashboard rather than breaking the publish.
+    _OPTIONAL_GROUPS = (
+        (("net_exposure", "realized_beta"),
+         "net_exposure/realized_beta", "migrations/2026-06-14_add_exposure_beta.sql"),
+        (("qqq_close", "qqq_cumulative_return_pct"),
+         "qqq_close/qqq_cumulative_return_pct", "migrations/2026-08-22_add_qqq_benchmark.sql"),
+    )
     snapshot_row = _sanitize(snapshot_row)
-    try:
-        client.table("portfolio_snapshots").upsert(snapshot_row).execute()
-    except Exception as e:
-        if any(k in str(e) for k in _A4_KEYS) and any(k in snapshot_row for k in _A4_KEYS):
-            for k in _A4_KEYS:
-                snapshot_row.pop(k, None)
-            print("   ⚠ net_exposure/realized_beta columns missing — run "
-                  "migrations/2026-06-14_add_exposure_beta.sql. Publishing without them.")
+    for attempt in range(len(_OPTIONAL_GROUPS) + 1):
+        try:
             client.table("portfolio_snapshots").upsert(snapshot_row).execute()
-        else:
-            raise
+            break
+        except Exception as e:
+            msg = str(e)
+            hit = next(
+                (g for g in _OPTIONAL_GROUPS
+                 if any(k in msg for k in g[0]) and any(k in snapshot_row for k in g[0])),
+                None,
+            )
+            if hit is None:
+                raise
+            keys, label, migration = hit
+            for k in keys:
+                snapshot_row.pop(k, None)
+            print(f"   ⚠ {label} columns missing — run {migration}. "
+                  "Publishing without them.")
     print(f"   📊 Snapshot published: value=${total_value:,.2f} return={cumulative_return:+.2f}%"
-          + (f" spy={spy_cumulative:+.2f}%" if spy_cumulative is not None else ""))
+          + (f" spy={spy_cumulative:+.2f}%" if spy_cumulative is not None else "")
+          + (f" qqq={qqq_cumulative:+.2f}%" if qqq_cumulative is not None else ""))
 
     # ── Upsert positions (atomic: upsert current, then delete stale) ─────────
     # Avoids the delete-all + insert pattern which leaves the table empty if
