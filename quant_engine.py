@@ -82,7 +82,7 @@ FACTOR_WEIGHTS = {
 # a valuation-score bucket boundary), so this is a real signal change, not a
 # cosmetic one — evidence clock resets again. FACTOR_WEIGHTS and
 # `compute_valuation_score`'s formula are unchanged.
-FORMULA_VERSION = "2.3-valuation-ttm"
+FORMULA_VERSION = "3.0-beta-neutral"
 
 
 def _mean(values: list) -> float:
@@ -445,8 +445,108 @@ def compute_return_correlations(
     return pairs[:top_n]
 
 
-def score_all_tickers(market_data: dict) -> dict:
-    """Returns {ticker: score_dict} for all tickers that have price history."""
+# ── Phase 2: cross-sectional beta neutralization ─────────────────────────────
+# The composite was never meant to express a market-exposure view, but it did:
+# measured 2026-08-22 on the live universe, composite_score correlated -0.653 with
+# beta (Spearman -0.592, n=100), with mean beta running monotonically from +2.41 in
+# the worst-rated quintile to -0.04 in the best. Half the factor weight drives it
+# (volatility_score rho=-0.737, valuation_score rho=-0.471), and the live book
+# inherited a -0.17 stocks-only beta nobody chose.
+#
+# The fix is to regress the composite on beta cross-sectionally each run and keep the
+# RESIDUAL — the part of the score not explained by market sensitivity. This strips
+# exactly the beta channel without re-deriving any sub-score formula, and leaves every
+# factor's other information intact.
+#
+# Deliberately NOT a per-name beta screen. A 0.5-0.95 band on the raw 63-session beta
+# was the worst arm measured in the backtest harness (-7.93% after-tax alpha, 5.27x
+# turnover) because a hard cutoff amplifies estimation error at the boundary. A linear
+# adjustment is far gentler: a noisy beta yields a noisy but unbiased correction, and
+# the errors partially wash out cross-sectionally.
+#
+# HONEST SCOPE: this removes an unintentional bet. It does not add alpha. The
+# composite's measured IC is -0.201 and insignificant; neutralizing a signal with no
+# demonstrated edge yields a signal with no demonstrated edge — just without a hidden
+# short-market position attached.
+BETA_NEUTRALIZE = True
+
+# Below this many usable (composite, beta) pairs the fit is not trustworthy and the
+# run degrades to the raw composite rather than applying a noisy correction.
+MIN_NEUTRALIZE_NAMES = 20
+
+# Benchmarks are excluded from the fit: SPY is beta 1.0 by construction and would
+# anchor the regression on a point that is not a candidate.
+_NEUTRALIZE_EXCLUDE = ("SPY", "QQQ")
+
+
+def _ols_fit(xs: list[float], ys: list[float]) -> tuple[float, float] | None:
+    """Least-squares intercept/slope of ys on xs. None when degenerate."""
+    n = len(xs)
+    if n < 3:
+        return None
+    mx, my = _mean(xs), _mean(ys)
+    sxx = sum((x - mx) ** 2 for x in xs)
+    if sxx <= 0:                      # no cross-sectional spread in beta
+        return None
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+    intercept = my - slope * mx
+    if not (math.isfinite(slope) and math.isfinite(intercept)):
+        return None
+    return intercept, slope
+
+
+def neutralize_beta(scores: dict, min_names: int = MIN_NEUTRALIZE_NAMES) -> dict:
+    """Strip the cross-sectional beta loading from every composite_score, in place.
+
+    Preserves the pre-neutralization value as `composite_raw` and flags each ticker
+    with `beta_neutralized`, so the change is auditable per-name and the evidence
+    ledger can partition on it.
+
+    Uses `beta_stable` (long-window, Blume-shrunk) for BOTH the fit and the
+    adjustment, at whatever basis is available. A short-basis estimate is noisier,
+    but excluding those names would apply the correction to only part of the universe
+    and leave two incomparable populations in one ranking — worse than a slightly
+    noisy correction applied uniformly.
+
+    Residuals are re-centred on the fitted sample's mean so the output keeps the
+    familiar 0-100 scale, then clamped to that range.
+    """
+    usable = [(t, s) for t, s in scores.items()
+              if t not in _NEUTRALIZE_EXCLUDE
+              and isinstance(s.get("composite_score"), (int, float))
+              and isinstance(s.get("beta_stable"), (int, float))]
+
+    fit = _ols_fit([s["beta_stable"] for _, s in usable],
+                   [s["composite_score"] for _, s in usable]) if len(usable) >= min_names else None
+
+    if fit is None:
+        for s in scores.values():
+            s.setdefault("composite_raw", s.get("composite_score"))
+            s["beta_neutralized"] = False
+        return scores
+
+    intercept, slope = fit
+    centre = _mean([s["composite_score"] for _, s in usable])
+    for t, s in scores.items():
+        s["composite_raw"] = s.get("composite_score")
+        beta = s.get("beta_stable")
+        if t in _NEUTRALIZE_EXCLUDE or not isinstance(beta, (int, float)) \
+                or not isinstance(s.get("composite_score"), (int, float)):
+            s["beta_neutralized"] = False
+            continue
+        residual = s["composite_score"] - (intercept + slope * beta)
+        s["composite_score"] = round(max(0.0, min(100.0, residual + centre)), 1)
+        s["beta_neutralized"] = True
+    return scores
+
+
+def score_all_tickers(market_data: dict, beta_neutralize: bool | None = None) -> dict:
+    """Returns {ticker: score_dict} for all tickers that have price history.
+
+    `beta_neutralize` defaults to the module-level BETA_NEUTRALIZE. It is a parameter
+    so the backtest harness can run neutralized and un-neutralized arms against the
+    identical scoring path, rather than an A/B across two code versions.
+    """
     spy_history = market_data.get("history", {}).get("SPY", [])
     scores = {}
 
@@ -488,6 +588,13 @@ def score_all_tickers(market_data: dict) -> dict:
             **risk,
         }
 
+    if BETA_NEUTRALIZE if beta_neutralize is None else beta_neutralize:
+        neutralize_beta(scores)
+    else:
+        for s in scores.values():
+            s["composite_raw"] = s.get("composite_score")
+            s["beta_neutralized"] = False
+
     return scores
 
 
@@ -499,6 +606,7 @@ _FACTOR_HISTORY_FIELDS = (
     "valuation_score", "valuation_available",
     "volatility_score", "volatility_available",
     "beta", "beta_stable", "beta_stable_window", "beta_stable_basis",
+    "composite_raw", "beta_neutralized",
 )
 
 
