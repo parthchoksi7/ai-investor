@@ -1,8 +1,9 @@
 # Plan — Separate the beta decision from the alpha decision
 
-**Status:** PHASE 1 SHIPPED (2026-08-22, PR #37). Phases 2–7 pending; Phase 2 now gated
-only on the Wed 2026-08-26 rebalance observation — the B2 coverage blocker was diagnosed
-2026-08-22 as a measurement artifact and lifted (see §4).
+**Status:** PHASE 1 SHIPPED (2026-08-22, PR #37). **PHASE 2 BUILT AND VALIDATED
+2026-08-22 — held on branch `feat/phase2-beta-neutral`, NOT merged.** The harness says
+it must not ship alone; Phases 2 and 3 are now a single unit (see §5). The B2 coverage
+blocker was diagnosed 2026-08-22 as a measurement artifact and lifted (see §4).
 **Type:** deterministic signal-layer + guard-chain change → touches the live
 candidate-selection composite and portfolio construction → **`FORMULA_VERSION` bump at
 Phase 2** and **`/code-review ultra`** for Phases 3, 4, 6, 7.
@@ -129,23 +130,57 @@ Zero behavior change verified on live data — **0 differences across 174 ticker
 fields**. `FORMULA_VERSION` deliberately unchanged; no evidence clock reset.
 `beta_stable` joins `_FACTOR_HISTORY_FIELDS` so the series accumulates from now.
 
-### Phase 2 — neutralize the beta channel · risk: selection · gated on the Aug 26 rebalance
+### Phase 2 — neutralize the beta channel · risk: selection · ⚠ BUILT, HELD — must ship with Phase 3
 
-Cross-sectionally regress `composite_score` on `beta_stable` each run; keep the residual
-as the score. Strips exactly the beta channel without re-deriving any sub-score formula.
+Cross-sectionally regress `composite_score` on `beta_stable` each run and keep the residual.
+Strips exactly the beta channel without re-deriving any sub-score formula.
+`FORMULA_VERSION` → `3.0-beta-neutral`. Built on `feat/phase2-beta-neutral` (commit
+`71ffb45`), 931 tests green, **not merged**.
 
-Rejected alternatives: dropping volatility from selection (leaves valuation's −0.471
-leak); bucketed ranking within beta terciles (same effect, more moving parts).
+**The mechanism works.** Acceptance gate passed with room, on the live snapshot:
 
-**Honest claim: this removes a −5.5pp/yr unintentional bet. It does not add alpha.**
-Neutralizing a signal with no measured edge produces a signal with no measured edge —
-just without the hidden short-beta position attached.
+| | Raw (2.3) | Neutralized (3.0) |
+|---|---|---|
+| ρ(composite, `beta_stable`) | −0.647 | **+0.000** |
+| Spearman | −0.554 | +0.032 |
+| ρ vs legacy 63-session beta | −0.591 | +0.006 |
+| Mean-beta spread across quintiles | 1.18 | **0.19** |
 
-**Gate:** `|ρ(composite, beta_stable)| ≤ 0.15` on the live snapshot (from −0.653);
-quintile mean-beta spread collapses from 2.45 to under 0.5.
+**But it must not ship alone.** Across four arms on one consistent 205-session snapshot,
+neutralization raises raw return almost entirely by raising **beta**, not by adding skill:
 
-**Cost:** `FORMULA_VERSION` → 3.0, resetting the evidence clock a **fifth** time
-(2.0 → 2.1 → 2.2 → 2.3 → 3.0). See §7 — this must be the last for twelve months.
+| Arm | Return | Realized beta | Jensen α | Δα |
+|---|---|---|---|---|
+| top13 eqwt 252d | 14.27 → **24.57** | 0.15 → **1.48** | +12.84 → +10.50 | **−2.34** |
+| top10 eqwt 252d | 14.24 → **26.45** | −0.08 → **1.49** | +15.00 → +12.28 | **−2.72** |
+| top13 eqwt 63d | 10.83 → 8.74 | 0.14 → 1.21 | +9.50 → −2.77 | **−12.27** |
+| live shape 21d | 4.00 → 6.62 | −0.11 → 0.73 | +5.05 → −0.32 | **−5.37** |
+
+Beta-adjusted alpha **falls in every arm**. Return/vol falls in 3 of 4 (1.57 → 1.20 on the
+headline arm) and max drawdown roughly **doubles** (−5.01% → −11.24%). SPY rose 9.51% over
+the window, so a beta-1.5 book earns ~14.3% from beta alone before any stock selection.
+
+**Why it overshoots — the subtle part.** *Zero correlation is not a beta-controlled
+portfolio.* Neutralizing makes the ranking orthogonal to beta **across the whole universe**,
+but places no constraint on the **tail** — and the selection *is* a tail. Verified live:
+top-13 mean `beta_stable` moves 0.26 → **1.13** (universe mean 0.82), and realized portfolio
+beta lands at **1.48**. Nothing in Phase 2 targets a *level*.
+
+**Consequence for sequencing:** Phase 2 alone swaps an unintended **−0.14** beta for an
+unintended **+1.48** — both outside the owner's chosen 0.6–0.8 band — and spends the
+`FORMULA_VERSION` reset measuring a book that is still not at target. **Phases 2 and 3 now
+ship together as one unit and are evaluated as a pair.** The band in Phase 3 is what turns
+"beta is no longer accidental" into "beta is 0.6–0.8 on purpose."
+
+**Harness sanity check:** the no-selection control (equal-weight the whole universe) is
+byte-identical under both modes (+0.00pp), as it must be since it never reads the score.
+
+**Honest scope, unchanged:** this removes an unintentional bet; it does not add alpha. The
+composite's measured IC is −0.201 and insignificant.
+
+**Regime caveat:** one window, and a *rising* one. A low-beta book beats a high-beta book in
+a flat or falling market — the raw arms' apparent advantage here is the mirror image of the
+neutralized arms' apparent advantage. Neither is established across regimes.
 
 ### Phase 3 — the deterministic core producer · risk: selection
 
@@ -232,6 +267,10 @@ or **2.3% of the book**, spent purely on reorganizing it.
 3. **B1 before Phase 3** — the core producer makes add-to-holding BUYs routine, promoting
    the re-quote bug from P1 to P0. Needs a routines-UI sync, so it has owner lead time.
 4. **Phase 5 before Phase 6** — never ship a controller before its input.
+5. **Phase 2 and Phase 3 ship together** — added 2026-08-22 after the Phase 2 harness run.
+   Phase 2 alone leaves portfolio beta uncontrolled at ~1.48; Phase 3's band is what sets the
+   level. Shipping Phase 2 by itself would burn the evidence-clock reset on a book that is
+   still not at the target exposure.
 
 ---
 
