@@ -13,6 +13,10 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+---
+
+## [2026-08-22] — beta_stable · 4 new review seats  ·  ~09:15 PT  ·  main (PR #37)
+
 ### Added — `beta_stable`: a beta estimate that is actually usable (Phase 1 of the beta/alpha split)
 
 Groundwork for separating the **beta decision** from the **alpha decision**. Research

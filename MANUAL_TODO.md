@@ -23,6 +23,8 @@ reading the body. "Verified" means checked against a real artifact/API in this r
 | # | Item | Status |
 |---|------|--------|
 | 23 | **Nasdaq 100 benchmark migration + backfill** | ✅ **DONE (2026-08-22)** — migration run by owner, 54 rows backfilled and verified |
+| 25 | **Reset `portfolio_peak.json` on the $500→$1,000 deposit** | 🟡 **AWAITING DECISION** — do before funding, not after |
+| 24 | **Fundamental coverage below the 80% floor** (`data_quality_report.json`, 72.9% on 2026-08-21) | 🔴 **OPEN — blocks Phase 2 of `PLAN_BETA_ALPHA_SPLIT.md`** |
 | 22 | **Re-quote qty mismatch: absolute vs delta** (routine STEP 4 vs `_compute_qty`) | 🔴 **OPEN — P1** — can over-buy an add-to-holding BUY on a stale-price day |
 | 21b | **35%-financials breach — CLOSED**, aged out as designed (Financials 25.06% on 2026-08-19) | ✅ **CLOSED** — superseded by IPS §6.1 (entry-time caps) |
 | 20 | **Re-sync BOTH routine prompts** (Jul 9 hardening: STEP 2 dep-verify, STEP 3 no-source-edit rule) | ✅ **DONE** — verified byte-for-byte |
@@ -59,6 +61,39 @@ Debian-managed PyJWT; STEP 3 (daily) / the dep-install block (EOD) both carry th
 **"never edit/commit a .py source file"** rule (Jul 8 the routine hot-fixed `main.py` mid-run and
 committed it to `main`, bypassing the §7.0 review gate). `updated_at` 2026-07-10T02:5x; daily
 `next_run_at` 2026-07-10T13:45:00Z, EOD `next_run_at` 2026-07-10T20:04Z.
+
+## 🆕 OPEN (2026-08-22) — beta/alpha split prerequisites
+
+See `PLAN_BETA_ALPHA_SPLIT.md` for the full plan this feeds. Phase 1
+(`beta_stable`) shipped in PR #37; Phases 2–7 are gated on the two items below.
+
+### [ ] 24. Fundamental coverage below the 80% floor — **investigation, not owner-only**
+`data_quality_report.json` (2026-08-21): `fundamental_coverage_pct` = **72.9%**, status
+`DEGRADED`, `strategy_shift_ok: false`. Below this floor the quality + valuation factors
+cannot fully express in `score_all_tickers` — renormalization silently drops them for
+roughly a quarter of the universe. **Blocks Phase 2** of the beta/alpha split (a
+composite-vs-beta re-weight cannot be honestly measured on a crippled composite) and
+should be resolved before drawing any conclusion from `pipeline_digest.md`'s coverage
+trend line.
+
+Not necessarily a regression — `pipeline_digest.md` has shown readings as low as 44.6%
+that turned out to be partial-run artifacts, not real collapses (see the SEC EDGAR
+User-Agent incident, MANUAL_TODO history and `.claude/skills/data_steward/SKILL.md`).
+**Verify before fixing:** confirm whether this is a genuine SEC EDGAR / FMP coverage
+regression or a measurement artifact (e.g. a run captured mid-sweep) before changing
+anything. Route through `data_steward` — its whole discipline is not quarantining a
+number until an independent source confirms it's real (the ORCL "P0-3" misdiagnosis,
+item 9 below, is the cautionary tale).
+
+### [ ] 25. Reset `portfolio_peak.json` when funding $500 → $1,000 — **owner action, timing-sensitive**
+`portfolio_peak.json` currently reads `{"peak": 528.0813949525, "updated": "2026-08-19"}`.
+It tracks raw `total_value`, so a **deposit inflates the peak** — a $500 deposit would
+read as a new ~$1,028 peak, and the kill-switch drawdown math `(peak − current) / peak`
+then measures from a number that includes deposited cash, not performance (documented
+limitation, CLAUDE.md "Known Limitations"). **Deposit first, then edit
+`portfolio_peak.json`** and set `"peak"` to the post-deposit `total_value` — Manual
+Execution Runbook Scenario C. Doing this after a run has already recomputed drawdown
+against the inflated peak risks a false kill-switch trip blocking all BUYs.
 
 ## 🆕 PENDING (2026-08-22) — Nasdaq 100 benchmark
 

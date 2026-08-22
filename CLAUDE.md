@@ -335,6 +335,41 @@ This prevents the silent all-50 quant score failure mode where agents run but pr
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
 
+## Changelog — Aug 22 2026 (Phase 1 of the beta/alpha split — `beta_stable` · 4 new review seats)
+
+Owner-directed deep-research finding, acted on same day. The 4-factor composite
+correlates **−0.653** with beta across the universe (Spearman −0.592, n=100) — the names
+it rates best average −0.04 beta, the names it rates worst average +2.41. Half the factor
+weight drives it (`volatility_score` ρ=−0.737, `valuation_score` ρ=−0.471), and the live
+book inherited an unintentional **−0.14 portfolio beta**. Full plan:
+**[`PLAN_BETA_ALPHA_SPLIT.md`](PLAN_BETA_ALPHA_SPLIT.md)**. Owner decisions: maximum
+after-tax dollars; single names only (no index ETFs); target portfolio beta **0.6–0.8**;
+automatic LLM-sleeve reduction permitted with a floor; capital increasing $500 → $1,000.
+
+| Change | Why it mattered |
+|--------|-----------------|
+| `feat(quant)` **`beta_stable`** — a 252-session, Blume-shrunk beta over date-joined returns, plus `beta_stable_basis`/`beta_stable_available`. Phase 1 of 7 — deliberately inert, `FORMULA_VERSION` unchanged. | The legacy 63-session `beta` spans −1.01 to +5.01 across the universe; screening on it is measurably destructive (a raw 0.5–0.95 band returned −7.93% after-tax alpha at 5.27× turnover vs +1.41% for the shrunk version). Phase 3 (a beta-targeted core) needs an estimate worth targeting first. |
+| `docs(skills)` **4 new review seats** — `tax_strategist`, `chief_risk_officer`, `data_steward`, `ips_steward` — plus revisions to the existing five, each grounded in this repo's real incident history rather than generic priors. | `portfolio_manager`'s own text said "you answer to the Chief Risk Officer" while no such reviewer existed; nobody owned realization timing despite the account's stated after-tax objective; the Aug 19 batch's self-contradiction (CRO prompt vs the §6.1 policy shipped alongside it) had no seat whose job was to catch exactly that. |
+| `docs(todo)` **MANUAL_TODO #24/#25** — coverage-floor investigation (blocks Phase 2) and the portfolio-peak reset owed on the $500→$1,000 deposit. | Both are real open items that predate this batch but had no tracked owner; #25 in particular is a silent kill-switch mis-arm if missed. |
+
+> **QA:** full `pytest` green (**921**, +17 `TestBetaStable`, 2 repaired — see below). Ruff
+> F821/F823 clean. `/code-review high` run pre-commit per §7.0: 4 findings, all fixed —
+> two self-inflicted and material (the short-window fallback was flagging 22-session
+> estimates as `available`, the exact error this change exists to prevent; the test
+> guarding the headline "zero behavior change" claim was **tautological** — its two
+> market fixtures were byte-identical, so it would have passed even if `beta_stable`
+> *were* wired into the composite). Zero-behavior-change re-verified after fixes: **0
+> differences across 174 tickers × 14 fields** on the live snapshot. Also fixed
+> `TestHistoryStoreFreshnessRecheck` — two date-pinned tests (2026-07-30/31) had aged
+> past `CARRY_FORWARD_MAX_DAYS` and silently stopped exercising the branch under test;
+> fixture dates now derive from `market_calendar` like production does. **No live-routine
+> sync required** (neither routine prompt changed). No `DRY_RUN main.py` — weekend, stale
+> snapshot would preflight-abort, and it would overwrite `pending_decisions.json`.
+> **Sequencing constraint:** nothing from Phases 2–7 ships before the Wed 2026-08-26
+> rebalance — `last_rebalance.json` shows Aug 19 executed with `"tickers": []`, so the
+> sector cap clamp (PR #36, merged Aug 20) has never fired live and that observation must
+> not be confounded. PR #37, merged same day.
+
 ## Changelog — Aug 19 2026 (Aug 19 rebalance post-mortem — sector cap clamps · CRO gets its limits)
 
 Post-mortem of the **Wed Aug 19 2026 rebalance** (`20260819-134906`). The run completed with
