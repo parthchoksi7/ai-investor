@@ -1,7 +1,7 @@
 # Plan — Separate the beta decision from the alpha decision
 
-**Status:** PHASE 1 SHIPPED (2026-08-22, PR #37). **PHASE 2 BUILT AND VALIDATED
-2026-08-22 — held on branch `feat/phase2-beta-neutral`, NOT merged.** The harness says
+**Status:** PHASE 1 SHIPPED (2026-08-22, PR #37). **PHASES 2 AND 3 BUILT 2026-08-22 —
+held on branches `feat/phase2-beta-neutral` and `feat/phase3-core-builder`, NOT merged.** The harness says
 it must not ship alone; Phases 2 and 3 are now a single unit (see §5). The B2 coverage
 blocker was diagnosed 2026-08-22 as a measurement artifact and lifted (see §4).
 **Type:** deterministic signal-layer + guard-chain change → touches the live
@@ -182,22 +182,62 @@ composite's measured IC is −0.201 and insignificant.
 a flat or falling market — the raw arms' apparent advantage here is the mirror image of the
 neutralized arms' apparent advantage. Neither is established across regimes.
 
-### Phase 3 — the deterministic core producer · risk: selection
+### Phase 3 — the deterministic core producer · risk: selection · ⚠ BUILT, HELD
 
-New `core_builder.py`: a **producer**, not a guard. Proposes 13 names at equal weight
-≈7.7%, drawn from the neutralized ranking, subject to projected portfolio beta **0.6–0.8**
-on `beta_stable` **with cash at beta 0**. Emits ordinary decisions carrying `layer: "core"`
-and runs before the LLM sleeve.
+`core_builder.py` — a **producer**, not a guard. 13 names at equal weight, drawn from the
+neutralized ranking, steered so **portfolio** beta lands in 0.60–0.80 on `beta_stable` with
+cash counted at 0. Emits decisions carrying `layer: "core"` in the PM's own shape. Built on
+`feat/phase3-core-builder` (`3f1b89a`), 953 tests green, **not merged**, not yet wired into
+`main.py` (that lands with Phase 4).
 
-**13 names at 7.7% is already legal** under the existing 8–15 holdings and 10%
-max-position mandate. The 18.1% idle cash is a choice, not a constraint.
+**Two separate controls, deliberately not collapsed.** `TARGET_INVESTED_PCT` (0.97) and the
+beta band are independent parameters. Folding deployment into the band is the exact
+conflation this plan exists to undo — and it does not work at these levels anyway:
+post-neutralization the universe mean `beta_stable` is ~0.82, so a **0.60 beta floor alone
+permits ~27% cash, MORE than the 18.1% the book already carries.** The deployment target has
+to be its own control or the cash-drag problem survives the fix.
 
-Because cash carries beta 0, a beta **floor is arithmetically a cash ceiling** — the
-control that 29 consecutive DEGRADED `cash_discipline` runs never delivered
-(`main.cash_discipline_status` is observability only and says so in its docstring).
+**Selection is score-first, steering second.** Take the top N by composite, then swap the
+minimum number of names to bring portfolio beta into the band. The reverse — filter to a beta
+band, then rank within it — is a per-name beta *screen*, the worst arm ever measured here.
+Live: 13 names, portfolio beta **+0.774**, 5 swaps, **worst rank used 19 of 99**. Steering is
+cheap in rank.
 
-Core names are exempt from rank-drift selling. They sell only on the −25% risk stop,
-delisting, annual reconstitution, or a tax-loss harvest.
+**The band governs PORTFOLIO beta, not the names' mean.** Caught during the dry run: at 97%
+invested a names-mean of 0.60 is a portfolio beta of 0.58, so steering the wrong one lets the
+book sit outside the band while every name looks compliant. Verified by regression — at 75%
+invested the selector correctly picks *higher*-beta names (mean 1.013) to land the portfolio
+at 0.760.
+
+#### ⚠ Open risk: ex-ante `beta_stable` did not deliver the realized beta
+
+At the harness's single rebalance, `select_core` produced a basket with portfolio beta
+**+0.791** on `beta_stable` — correctly in band. The **realized forward beta of that same
+basket was +0.239.**
+
+The code does what it is specified to do; what is unvalidated is the *specification's
+premise* — that targeting a shrunk ex-ante beta delivers that beta in practice. This data
+cannot settle it: 79 forward sessions, one draw, and realized beta on 79 observations is
+itself very noisy. Directionally the band still moves the right way (baseline arms realized
+0.05–0.06 against this arm's 0.23). **Treat the band as a monitored target, not a guarantee,
+and measure realized portfolio beta forward once live.**
+
+#### ⚠ The harness cannot validate Phase 3 on this snapshot
+
+`beta_stable_available` requires a 120-bar overlap, so with a 205-bar snapshot the band can
+only bind after a ~125-bar warmup — leaving **80 sessions**, far too short for a verdict.
+
+The first attempt silently proved nothing and is worth recording as a harness trap: with
+`rebalance_days=252` on a 205-session window there is exactly **one** rebalance, and it lands
+at the warmup boundary (day 63) when **zero** names have long-basis beta. `select_core`
+returned nothing, the arm fell back to plain top-N, and the result was **byte-identical to
+Phase 2 alone** — a passing-looking comparison that tested nothing. Caught by noticing the
+identity and re-run at warmup 125.
+
+On the resulting 80-session window every arm trailed SPY (+7.26%): P0 baseline +4.96%,
+P2-only +5.30%, P3-only +6.02%, P2+P3 +3.57%. **No weight should be put on that ordering** —
+it is 80 days on survivors, and the arms' realized betas (0.05–1.02) differ more than their
+returns do.
 
 ### Phase 4 — the beta band guard · risk: selection
 
