@@ -846,6 +846,235 @@ class TestBetaNeutralize:
         assert FORMULA_VERSION == "3.0-beta-neutral"
 
 
+
+
+# ── core_builder (Phase 3: the deterministic core producer) ──────────────────
+
+class TestCoreBuilder:
+    """The core producer: best-scoring names steered into a PORTFOLIO beta band,
+    at an explicitly separate deployment target."""
+
+    def _mk(self, comp, beta, avail=True):
+        return {"composite_score": comp, "beta_stable": beta,
+                "beta_stable_available": avail,
+                "data_available": True, "momentum_available": True}
+
+    def _universe(self, n=40):
+        """Composite descends with rank; beta deliberately ANTI-correlated with it,
+        so the naive top-N overshoots the band and steering has real work to do."""
+        s = {}
+        for i in range(n):
+            s[f"T{i:02d}"] = self._mk(90.0 - i, 1.8 - i * (1.6 / (n - 1)))
+        return s
+
+    # ── selection + steering ─────────────────────────────────────────────────
+
+    def test_naive_topn_would_miss_the_band_and_steering_fixes_it(self):
+        import core_builder as cb
+        s = self._universe()
+        naive = sorted(s.items(), key=lambda x: x[1]["composite_score"], reverse=True)[:13]
+        naive_port = sum(v["beta_stable"] for _, v in naive) / 13 * cb.TARGET_INVESTED_PCT
+        assert naive_port > cb.BETA_HI, "fixture must overshoot or the test proves nothing"
+
+        sel = cb.select_core(s, n_holdings=13)
+        assert sel["in_band"] is True
+        assert cb.BETA_LO <= sel["portfolio_beta"] <= cb.BETA_HI
+        assert sel["swaps"] > 0
+        assert len(sel["tickers"]) == 13
+
+    def test_band_governs_portfolio_beta_not_the_names_mean(self):
+        """At a lower deployment target the selection must pick HIGHER-beta names to
+        land the same portfolio beta — cash counts at 0."""
+        import core_builder as cb
+        s = self._universe(n=60)
+        full = cb.select_core(s, n_holdings=13, target_invested=1.00)
+        part = cb.select_core(s, n_holdings=13, target_invested=0.60)
+        assert full["in_band"] and part["in_band"]
+        assert part["mean_beta"] > full["mean_beta"], (
+            "a less-invested book needs higher-beta names for the same portfolio beta")
+
+    def test_steering_prefers_the_better_ranked_fixer(self):
+        """The property that makes steering rank-cheap, tested directly.
+
+        Asserting a numeric `worst_rank` bound only measures how adversarial the
+        fixture is: beta's correlation with rank decides how far down you MUST reach,
+        so a threshold there is a fixture property, not an algorithm property. What
+        the algorithm actually guarantees is that when several pool names would fix
+        the band, it takes the BEST-RANKED one. That is what this pins.
+        """
+        import core_builder as cb
+        s = {}
+        # 13 names just ABOVE the band, so exactly ONE swap is needed and sufficient:
+        # 0.86 * 0.97 = 0.834 (out of band); after one swap the mean is 0.80 -> 0.78.
+        for i in range(13):
+            s[f"HI{i:02d}"] = self._mk(90.0 - i, 0.86)
+        # Two identical fixers, very different ranks. Either alone reaches the band.
+        s["GOOD"] = self._mk(70.0, 0.20)     # better rank
+        s["BAD"]  = self._mk(10.0, 0.20)     # much worse rank, same beta
+        sel = cb.select_core(s, n_holdings=13)
+        assert sel["swaps"] == 1, "fixture must need exactly one swap or it proves nothing"
+        assert sel["in_band"] is True
+        assert "GOOD" in sel["tickers"], "must take the better-ranked of two equal fixers"
+        assert "BAD" not in sel["tickers"]
+
+    def test_steering_stops_once_in_band(self):
+        """It must not keep swapping past the band chasing the midpoint — every extra
+        swap is rank given away for nothing."""
+        import core_builder as cb
+        s = {}
+        for i in range(40):
+            jitter = ((i * 37) % 11 - 5) * 0.12
+            s[f"T{i:02d}"] = self._mk(90.0 - i, max(0.05, 1.6 - i * 0.02 + jitter))
+        sel = cb.select_core(s, n_holdings=13)
+        assert sel["in_band"] is True
+        # the last swap is the one that entered the band: removing any chosen name
+        # and re-running must not produce a strictly better-ranked in-band basket
+        assert sel["swaps"] < 40, "steering should converge, not exhaust the pool"
+
+    def test_already_in_band_makes_no_swaps(self):
+        import core_builder as cb
+        s = {f"T{i:02d}": self._mk(90.0 - i, 0.72) for i in range(30)}
+        sel = cb.select_core(s, n_holdings=13)
+        assert sel["swaps"] == 0
+        assert sel["in_band"] is True
+
+    def test_infeasible_band_returns_out_of_band_not_garbage(self):
+        """Every name high-beta → the band cannot be reached. Report it honestly
+        rather than silently returning a non-compliant basket as if it complied."""
+        import core_builder as cb
+        s = {f"T{i:02d}": self._mk(90.0 - i, 2.5) for i in range(30)}
+        sel = cb.select_core(s, n_holdings=13)
+        assert len(sel["tickers"]) == 13
+        assert sel["in_band"] is False
+
+    # ── eligibility ──────────────────────────────────────────────────────────
+
+    def test_short_basis_beta_is_never_sized_on(self):
+        """A 22-119 session estimate is shorter than the 63-day beta this plan exists
+        to condemn — it must not reach position sizing."""
+        import core_builder as cb
+        s = self._universe(n=20)
+        for i in range(10, 20):
+            s[f"T{i:02d}"]["beta_stable_available"] = False
+        sel = cb.select_core(s, n_holdings=13)
+        assert sel["tickers"] == []
+        assert "eligible" in sel and sel["eligible"] == 10
+
+    def test_blocked_and_benchmark_tickers_excluded(self):
+        import core_builder as cb
+        s = self._universe()
+        s["TSLA"] = self._mk(99.0, 0.7)
+        s["SPY"]  = self._mk(99.0, 1.0)
+        s["QQQ"]  = self._mk(99.0, 1.1)
+        sel = cb.select_core(s, n_holdings=13)
+        for t in ("TSLA", "SPY", "QQQ"):
+            assert t not in sel["tickers"], f"{t} must never enter the core"
+
+    def test_explicit_exclude_is_honoured(self):
+        """Ticker disjointness: a name the sleeve holds must not be taken by the core."""
+        import core_builder as cb
+        s = self._universe()
+        sel = cb.select_core(s, n_holdings=13, exclude={"T00", "T01"})
+        assert "T00" not in sel["tickers"] and "T01" not in sel["tickers"]
+
+    def test_too_few_eligible_names_declines_to_build(self):
+        import core_builder as cb
+        s = self._universe(n=5)
+        sel = cb.select_core(s, n_holdings=13)
+        assert sel["tickers"] == []
+        assert "reason" in sel
+
+    # ── portfolio beta ───────────────────────────────────────────────────────
+
+    def test_portfolio_beta_counts_cash_at_zero(self):
+        import core_builder as cb
+        betas = {"A": 1.0, "B": 1.0}
+        assert cb.portfolio_beta({"A": 0.5, "B": 0.5}, betas) == pytest.approx(1.0)
+        # only 60% deployed -> 40% cash at beta 0
+        assert cb.portfolio_beta({"A": 0.3, "B": 0.3}, betas) == pytest.approx(0.6)
+
+    def test_portfolio_beta_treats_unknown_ticker_as_zero(self):
+        import core_builder as cb
+        assert cb.portfolio_beta({"A": 1.0}, {}) == pytest.approx(0.0)
+
+    # ── decisions ────────────────────────────────────────────────────────────
+
+    def test_plan_trades_only_buys_the_shortfall(self):
+        import core_builder as cb
+        s = self._universe()
+        pf = {"total_value": 1000.0,
+              "positions": [{"symbol": "T00", "qty": 1, "market_value": 500.0}]}
+        dec = cb.plan_core_trades(["T00", "T01", "T02"], pf, s)
+        tickers = [d["ticker"] for d in dec]
+        assert "T00" not in tickers, "already far above target weight — no BUY"
+        assert set(tickers) == {"T01", "T02"}
+        assert all(d["action"] == "BUY" and d["layer"] == "core" for d in dec)
+
+    def test_plan_trades_respects_the_position_cap(self):
+        import core_builder as cb
+        s = self._universe()
+        pf = {"total_value": 1000.0, "positions": []}
+        dec = cb.plan_core_trades(["A", "B"], pf, s, target_invested=0.97, max_weight=0.10)
+        assert all(d["target_weight"] <= 0.10 + 1e-9 for d in dec)
+
+    def test_plan_trades_never_touches_a_non_core_holding(self):
+        """One layer must never silently trade another layer's position."""
+        import core_builder as cb
+        s = self._universe()
+        pf = {"total_value": 1000.0,
+              "positions": [{"symbol": "SLEEVE", "qty": 1, "market_value": 200.0}]}
+        dec = cb.plan_core_trades(["T00", "T01"], pf, s)
+        assert "SLEEVE" not in [d["ticker"] for d in dec]
+
+    def test_plan_trades_empty_target_is_a_no_op(self):
+        import core_builder as cb
+        assert cb.plan_core_trades([], {"total_value": 1000.0, "positions": []}, {}) == []
+
+    # ── reconstitution ───────────────────────────────────────────────────────
+
+    def test_no_core_yet_triggers_construction(self):
+        import core_builder as cb
+        due, why = cb.should_reconstitute({"tickers": [], "constituted": None})
+        assert due is True and "no core" in why
+
+    def test_intact_core_is_left_alone(self):
+        import core_builder as cb
+        st = {"tickers": ["A"], "constituted": date.today().isoformat(), "breach_streak": 0}
+        due, why = cb.should_reconstitute(st)
+        assert due is False and why == "core intact"
+
+    def test_annual_reconstitution(self):
+        import core_builder as cb
+        old = (date.today() - timedelta(days=cb.RECONSTITUTE_AFTER_DAYS + 1)).isoformat()
+        due, why = cb.should_reconstitute({"tickers": ["A"], "constituted": old})
+        assert due is True and "annual" in why
+
+    def test_single_breach_is_tolerated_but_a_streak_is_not(self):
+        """Rank drift must not churn the core; a persistent band breach must."""
+        import core_builder as cb
+        st = {"tickers": ["A"], "constituted": date.today().isoformat(), "breach_streak": 0}
+        assert cb.should_reconstitute(st, band_breached=True)[0] is False
+        st["breach_streak"] = cb.BREACH_PATIENCE - 1
+        assert cb.should_reconstitute(st, band_breached=True)[0] is True
+
+    def test_unparseable_constitution_date_rebuilds(self):
+        import core_builder as cb
+        due, _ = cb.should_reconstitute({"tickers": ["A"], "constituted": "not-a-date"})
+        assert due is True
+
+    # ── state ────────────────────────────────────────────────────────────────
+
+    def test_state_roundtrip_and_corruption_safety(self, tmp_path, monkeypatch):
+        import core_builder as cb
+        monkeypatch.chdir(tmp_path)
+        cb.save_core_state({"tickers": ["A", "B"], "constituted": "2026-08-22",
+                            "breach_streak": 0})
+        assert cb.load_core_state()["tickers"] == ["A", "B"]
+        open(cb.CORE_STATE_FILE, "w").write("{not json")
+        assert cb.load_core_state() == {"tickers": [], "constituted": None,
+                                        "breach_streak": 0}
+
+
 # ── quant_engine.score_all_tickers ───────────────────────────────────────────
 
 class TestScoreAllTickers:
