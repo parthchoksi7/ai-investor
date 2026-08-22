@@ -129,7 +129,7 @@ Zero behavior change verified on live data — **0 differences across 174 ticker
 fields**. `FORMULA_VERSION` deliberately unchanged; no evidence clock reset.
 `beta_stable` joins `_FACTOR_HISTORY_FIELDS` so the series accumulates from now.
 
-### Phase 2 — neutralize the beta channel · risk: selection · gated on B2
+### Phase 2 — neutralize the beta channel · risk: selection · gated on the Aug 26 rebalance
 
 Cross-sectionally regress `composite_score` on `beta_stable` each run; keep the residual
 as the score. Strips exactly the beta channel without re-deriving any sub-score formula.
