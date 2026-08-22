@@ -24,7 +24,7 @@ reading the body. "Verified" means checked against a real artifact/API in this r
 |---|------|--------|
 | 23 | **Nasdaq 100 benchmark migration + backfill** | ✅ **DONE (2026-08-22)** — migration run by owner, 54 rows backfilled and verified |
 | 25 | **Reset `portfolio_peak.json` on the $500→$1,000 deposit** | 🟡 **AWAITING DECISION** — do before funding, not after |
-| 24 | **Fundamental coverage below the 80% floor** (`data_quality_report.json`, 72.9% on 2026-08-21) | 🔴 **OPEN — blocks Phase 2 of `PLAN_BETA_ALPHA_SPLIT.md`** |
+| 24 | **Coverage "regression" DIAGNOSED — not a data failure** (universe-gate oscillation + rotating-batch metric) | 🟡 **OPEN — 2 defects to fix; does NOT block Phase 2** |
 | 22 | **Re-quote qty mismatch: absolute vs delta** (routine STEP 4 vs `_compute_qty`) | 🔴 **OPEN — P1** — can over-buy an add-to-holding BUY on a stale-price day |
 | 21b | **35%-financials breach — CLOSED**, aged out as designed (Financials 25.06% on 2026-08-19) | ✅ **CLOSED** — superseded by IPS §6.1 (entry-time caps) |
 | 20 | **Re-sync BOTH routine prompts** (Jul 9 hardening: STEP 2 dep-verify, STEP 3 no-source-edit rule) | ✅ **DONE** — verified byte-for-byte |
@@ -67,23 +67,92 @@ committed it to `main`, bypassing the §7.0 review gate). `updated_at` 2026-07-1
 See `PLAN_BETA_ALPHA_SPLIT.md` for the full plan this feeds. Phase 1
 (`beta_stable`) shipped in PR #37; Phases 2–7 are gated on the two items below.
 
-### [ ] 24. Fundamental coverage below the 80% floor — **investigation, not owner-only**
-`data_quality_report.json` (2026-08-21): `fundamental_coverage_pct` = **72.9%**, status
-`DEGRADED`, `strategy_shift_ok: false`. Below this floor the quality + valuation factors
-cannot fully express in `score_all_tickers` — renormalization silently drops them for
-roughly a quarter of the universe. **Blocks Phase 2** of the beta/alpha split (a
-composite-vs-beta re-weight cannot be honestly measured on a crippled composite) and
-should be resolved before drawing any conclusion from `pipeline_digest.md`'s coverage
-trend line.
+### [ ] 24. Coverage "regression" — DIAGNOSED 2026-08-22, two defects to fix — **not owner-only**
 
-Not necessarily a regression — `pipeline_digest.md` has shown readings as low as 44.6%
-that turned out to be partial-run artifacts, not real collapses (see the SEC EDGAR
-User-Agent incident, MANUAL_TODO history and `.claude/skills/data_steward/SKILL.md`).
-**Verify before fixing:** confirm whether this is a genuine SEC EDGAR / FMP coverage
-regression or a measurement artifact (e.g. a run captured mid-sweep) before changing
-anything. Route through `data_steward` — its whole discipline is not quarantining a
-number until an independent source confirms it's real (the ORCL "P0-3" misdiagnosis,
-item 9 below, is the cautionary tale).
+**Original symptom:** `data_quality_report.json` read `fundamental_coverage_pct` **72.9%**,
+`status: DEGRADED`, `strategy_shift_ok: false` — apparently a coverage collapse blocking
+Phase 2 of `PLAN_BETA_ALPHA_SPLIT.md`.
+
+**It is not a coverage collapse.** Verified against `data_quality_history.jsonl` (119 rows),
+four same-day committed snapshots, and the live GH Actions log for run `32486847810`:
+
+| Time (UTC) | `universe_expanded` | names | coverage | status |
+|---|---|---|---|---|
+| ~10:1x | False | 102 | **96.1%** | OK |
+| ~11:4x | True | 174 | 79.7% | DEGRADED |
+| ~13:1x | False | 102 | **96.1%** | OK |
+| ~13:5x | True | 174 | 72.9% | DEGRADED |
+
+Core-universe coverage is **96.0%** (96/100 names carry real margin/leverage fields) — healthy
+and consistent with the post-SEC-User-Agent-fix level. The 72.9% headline is a *blended*
+number over a universe that only exists on alternate runs, and it is simply **the last run
+of the day**, which is the one that lands in `data_quality_report.json`.
+
+**Defect 1 — the universe gate is an oscillator with no hysteresis.**
+`market_data._prior_coverage_ok()` reads the previously-**committed snapshot's**
+`data_quality.coverage_ok`. Its docstring says "yesterday's fundamental-coverage verdict",
+but `market_data.yml` fires **4 crons a day** (09:00/11:00/12:00/12:30 UTC) and each run
+commits a new `market_snapshot.json` — so it actually reads the *previous run's* verdict.
+`universe.get_active_universe(coverage_ok=...)` then flips: expanded → coverage below floor
+→ next run contracts to core → coverage above floor → next run expands. A stable 2-cycle.
+
+> **Trading-path consequence (the part that matters).** The candidate set the Portfolio
+> Manager sees is **non-deterministic** — 102 or 174 names depending on which cron last
+> committed before the 9:45 AM ET (13:45 UTC) routine. Aug 19 got the core snapshot
+> (13:12 commit; the expanded 13:53 commit landed *after* the routine) — correct **by luck
+> of cron timing, with roughly a 10-minute margin**. If GH Actions runs faster on any given
+> day the routine consumes the expanded snapshot instead, putting ~41 momentum+vol-only
+> names into the candidate pool — precisely what `get_active_universe`'s own docstring says
+> the gate exists to prevent, and doubly bad given those two factors are the beta-loaded
+> ones (`PLAN_BETA_ALPHA_SPLIT.md` §2).
+
+**Defect 2 — coverage is measured over a moving target, so the gate can never re-open.**
+`_compute_fundamental_coverage(all_tickers, ...)` measures over *this run's* `all_tickers` =
+core(102) + the **rotating 75-name expansion batch** (log: `batch 75/288 ... cursor=150`,
+advancing to 225). A given expansion name is only enriched when it is simultaneously (a) in
+the current batch **and** (b) in today's alternate-day 50/50 group — roughly 1 run in 8 —
+while its cache entry expires on a **2-day TTL**. Enrichment cannot keep pace with the
+rotation, so the batch's own coverage sits near **44.6%** (33/74 verified on commit
+`3f6cd25`) and the blend is pinned. Five days of evidence, zero convergence:
+
+    8/17: 79.7 / 72.9   8/18: 78.2 / 74.0   8/19: 79.7 / 72.9
+    8/20: 78.2 / 74.0   8/21: 79.7 / 72.9
+
+A sweep genuinely filling in would climb. This is a limit cycle.
+
+**Ruled out (verified, not assumed):**
+- *Not* a cache-persistence failure — GH Actions log shows `Cache restored successfully`,
+  2 MB, key `fundamentals-v2-Linux-233`, then `Cache saved with key: ...-234`.
+- *Not* absent EDGAR data — the uncovered names are large US filers (LVS, MAA, MCO, MDLZ,
+  MET, MGM, MKC, MMM) that certainly file, and they are **clustered in cursor order**,
+  which is a sweep position, not a data gap.
+- *Not* a `min_depth` or universe-fetch problem — 205 bars, 98.3–100% fetched throughout.
+
+**Still unverified:** what happened on **2026-08-14**, when an expanded run dropped from the
+94.4–95.8% it had sustained all of 8/13 to 44.6%, and core runs then read 45.1% (the ~50%
+signature of a cold enrichment cache). The cache restores correctly *now*, so whatever
+invalidated it has passed; CI logs for that date may have aged out. Recorded as unexplained
+rather than guessed — the ORCL misdiagnosis (item 9) is the cautionary precedent.
+
+**Impact on Phase 2:** **does not block it.** Phase 2's re-weight is measured on the core
+universe, which is at 96.0%. The 80% floor should be evaluated against core coverage, not
+against a rotating-batch blend.
+
+**Fix options (needs a decision, not yet implemented):**
+1. **Latch the universe decision once per calendar day** (read the first snapshot of the day,
+   or stamp the decision) — smallest change, kills the oscillation, makes the routine's
+   candidate set deterministic.
+2. **Add hysteresis** — expand at ≥80%, contract only below ~70% — standard control fix.
+3. **Gate on CORE-universe coverage** (arguably most correct): the gate's real question is
+   "is the fundamentals pipeline healthy?", which is a property of the core universe, not of
+   how far an in-progress expansion sweep has got. Blending sweep progress into the gate is
+   what created the loop.
+4. Separately, align the coverage **denominator** with what is actually enrichable, or widen
+   the TTL / batch interaction so a name can be refreshed while it is in-batch.
+
+⚠ **Do not ship any of these before the Wed 2026-08-26 rebalance** — it is the sector clamp's
+first live fire (`PLAN_BETA_ALPHA_SPLIT.md` §6) and must not be confounded. Option 1 or 3
+would change which universe that run sees.
 
 ### [ ] 25. Reset `portfolio_peak.json` when funding $500 → $1,000 — **owner action, timing-sensitive**
 `portfolio_peak.json` currently reads `{"peak": 528.0813949525, "updated": "2026-08-19"}`.

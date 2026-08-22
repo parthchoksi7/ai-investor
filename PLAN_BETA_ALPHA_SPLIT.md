@@ -1,7 +1,8 @@
 # Plan — Separate the beta decision from the alpha decision
 
-**Status:** PHASE 1 SHIPPED (2026-08-22, PR #37). Phases 2–7 pending; Phase 2 gated on
-the fundamental-coverage floor (B2) and on the Wed 2026-08-26 rebalance observation.
+**Status:** PHASE 1 SHIPPED (2026-08-22, PR #37). Phases 2–7 pending; Phase 2 now gated
+only on the Wed 2026-08-26 rebalance observation — the B2 coverage blocker was diagnosed
+2026-08-22 as a measurement artifact and lifted (see §4).
 **Type:** deterministic signal-layer + guard-chain change → touches the live
 candidate-selection composite and portfolio construction → **`FORMULA_VERSION` bump at
 Phase 2** and **`/code-review ultra`** for Phases 3, 4, 6, 7.
@@ -100,7 +101,7 @@ estimate — never as a per-name gate.**
 | # | Issue | Status |
 |---|---|---|
 | **B1** | `ROUTINE_DAILY_CYCLE.md` line ~304 computes an **absolute** share count on a stale-price re-quote while `execute._compute_qty` returns a **delta**. P1 today; becomes **P0** once the core producer makes add-to-holding BUYs routine. Requires a **live-routine sync**. | 🔴 OPEN — MANUAL_TODO **#22** |
-| **B2** | Fundamental coverage **72.9%** vs the 80% floor; `data_quality_report.json` reads `strategy_shift_ok: false`. Quality + valuation cannot fully express, so any measurement of a re-weight measures a crippled composite. | 🔴 OPEN — MANUAL_TODO **#24** |
+| **B2** | ~~Fundamental coverage 72.9% vs the 80% floor~~ — **DIAGNOSED 2026-08-22: not a coverage failure.** Core-universe coverage is **96.0%**; the 72.9% is a blended reading over a rotating expansion batch, produced by a universe-gate oscillation (`_prior_coverage_ok` reads the previous *run*, not the previous *day*, across 4 daily crons). **No longer blocks Phase 2** — the re-weight is measured on the core universe. Two real defects remain to fix (gate hysteresis + coverage denominator), plus a **non-determinism risk on the trading path**: the routine's candidate set is 102 or 174 names depending on cron jitter, with a ~10-minute margin. | 🟡 OPEN (downgraded) — MANUAL_TODO **#24** |
 | **B3** | Two date-pinned tests (`TestHistoryStoreFreshnessRecheck`) had silently stopped exercising the branch under test. | ✅ FIXED 2026-08-22 (PR #37) |
 
 ---
@@ -227,7 +228,7 @@ or **2.3% of the book**, spent purely on reorganizing it.
    `last_rebalance.json` shows Aug 19 executed with `"tickers": []`; the sector clamp
    (PR #36, merged 2026-08-20) has **never fired live**. Aug 26 is its first real test and
    must not be confounded. Phase 1 was safe on this basis — it changes no decision.
-2. **B2 before Phase 2** — a re-weight cannot be fairly measured below the coverage floor.
+2. ~~**B2 before Phase 2**~~ — **lifted 2026-08-22.** The floor breach was a measurement artifact, not a data failure; core coverage is 96.0% and Phase 2 is measured there. B2's two real defects are independent of Phase 2 and can land after Wednesday.
 3. **B1 before Phase 3** — the core producer makes add-to-holding BUYs routine, promoting
    the re-quote bug from P1 to P0. Needs a routines-UI sync, so it has owner lead time.
 4. **Phase 5 before Phase 6** — never ship a controller before its input.
