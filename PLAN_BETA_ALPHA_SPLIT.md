@@ -1,9 +1,11 @@
 # Plan — Separate the beta decision from the alpha decision
 
-**Status:** PHASE 1 SHIPPED (2026-08-22, PR #37). **PHASES 2 AND 3 BUILT 2026-08-22 —
-held on branches `feat/phase2-beta-neutral` and `feat/phase3-core-builder`, NOT merged.** The harness says
-it must not ship alone; Phases 2 and 3 are now a single unit (see §5). The B2 coverage
-blocker was diagnosed 2026-08-22 as a measurement artifact and lifted (see §4).
+**Status:** PHASE 1 SHIPPED (2026-08-22, PR #37). **PHASES 2 AND 3 BUILT AND THEN
+STOPPED — do not merge.** A 501-session backtest (4.4× the prior window) shows every
+selection arm losing to simply equal-weighting the universe, and to SPY, with negative
+Jensen alpha throughout. See **§5a — the result that stopped the plan**. The beta
+*diagnosis* stands; the beta *fix* does not earn its place. The B2 coverage blocker was
+separately diagnosed as a measurement artifact and lifted (see §4).
 **Type:** deterministic signal-layer + guard-chain change → touches the live
 candidate-selection composite and portfolio construction → **`FORMULA_VERSION` bump at
 Phase 2** and **`/code-review ultra`** for Phases 3, 4, 6, 7.
@@ -104,6 +106,55 @@ estimate — never as a per-name gate.**
 | **B1** | `ROUTINE_DAILY_CYCLE.md` line ~304 computes an **absolute** share count on a stale-price re-quote while `execute._compute_qty` returns a **delta**. P1 today; becomes **P0** once the core producer makes add-to-holding BUYs routine. Requires a **live-routine sync**. | 🔴 OPEN — MANUAL_TODO **#22** |
 | **B2** | ~~Fundamental coverage 72.9% vs the 80% floor~~ — **DIAGNOSED 2026-08-22: not a coverage failure.** Core-universe coverage is **96.0%**; the 72.9% is a blended reading over a rotating expansion batch, produced by a universe-gate oscillation (`_prior_coverage_ok` reads the previous *run*, not the previous *day*, across 4 daily crons). **No longer blocks Phase 2** — the re-weight is measured on the core universe. Two real defects remain to fix (gate hysteresis + coverage denominator), plus a **non-determinism risk on the trading path**: the routine's candidate set is 102 or 174 names depending on cron jitter, with a ~10-minute margin. | 🟡 OPEN (downgraded) — MANUAL_TODO **#24** |
 | **B3** | Two date-pinned tests (`TestHistoryStoreFreshnessRecheck`) had silently stopped exercising the branch under test. | ✅ FIXED 2026-08-22 (PR #37) |
+
+---
+
+## 5a. ⛔ The result that stopped the plan (2026-08-22)
+
+Phases 2 and 3 were built, then tested on a **501-session** archive
+(`fetch_backtest_history.py`, 174 tickers, 2024-08-22 → 2026-08-21) instead of the
+85 usable sessions the committed snapshot allows. The conclusion reversed.
+
+**Primary run — no fundamentals, so no look-ahead, annual rebalance:**
+
+| Arm | Return | Beta | Jensen α |
+|---|---|---|---|
+| P0 baseline — top13, 80% invested | −0.24% | 0.29 | −9.53% |
+| P2 only — neutralized | +16.78% | 0.87 | −11.07% |
+| P3 only — band, no neutralization | −2.98% | 0.42 | −16.60% |
+| **P2+P3 — the target design** | **+4.43%** | 0.67 | **−17.00%** |
+| **CONTROL — equal-weight the universe** | **+35.08%** | 0.92 | **+5.41%** |
+| SPY | +32.09% | 1.00 | 0.00% |
+
+**Every selection arm loses to owning everything equally, and to SPY.** Jensen alpha is
+negative for every selection arm and positive for the no-selection control. The ordering
+is unchanged at 63-day rebalancing and with today's fundamentals applied — three panels,
+same answer.
+
+This **reverses** what the 85-session window appeared to show, where the selection arms
+looked like they carried alpha (+12.84, +15.00 Jensen). On 4.4× the data they carry
+deeply negative alpha. It is consistent with `agent_scorecards.json` reporting composite
+IC **−0.201**, which was the signal all along.
+
+**Phase 2 is not worthless.** It improves enormously on the raw composite (+16.78% vs
+−0.24%), so neutralization does fix something real — it just does not clear the bar that
+matters. **Phase 3's band actively costs** (+4.43% vs +16.78% for Phase 2 alone): partly
+mechanical (0.67 beta in a market that rose 32%) and partly worse names after steering.
+
+**What survives:** the diagnosis. ρ(composite, beta) = −0.653 is a property of the
+scoring code, verifiable by reading it, and it is still true. What does not survive is
+the assumption that fixing it would improve returns.
+
+**Caveats, stated not buried:** the universe is today's survivors, which inflates every
+arm and the bottom-13 control most (its +111% is a *diagnostic*, not a strategy — beta
+1.73, and the names that went bankrupt are absent). One rising regime. The *relative*
+comparison is far more robust than the levels: every arm draws from the same universe
+with the same costs and CA taxes.
+
+**Implication for the plan:** Phases 4–7 are built on top of a selection layer that the
+evidence says subtracts value. They should not be built until that is resolved. The
+evidence-backed direction is broad equal-weight — investable at $1,000 ($5.64/position
+across 172 names against a $5 minimum; comfortable as a 30–50 name subset).
 
 ---
 
