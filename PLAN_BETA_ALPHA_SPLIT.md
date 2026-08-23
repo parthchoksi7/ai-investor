@@ -3,7 +3,7 @@
 **Status:** PHASE 1 SHIPPED (2026-08-22, PR #37). **PHASES 2 AND 3 BUILT AND THEN
 STOPPED — do not merge.** A 501-session backtest (4.4× the prior window) shows every
 selection arm losing to simply equal-weighting the universe, and to SPY, with negative
-Jensen alpha throughout. See **§5a — the result that stopped the plan**. The beta
+Jensen alpha throughout. See **§5a** (the result) and **§5b** (its validation, which corrects §5a's framing). The beta
 *diagnosis* stands; the beta *fix* does not earn its place. The B2 coverage blocker was
 separately diagnosed as a measurement artifact and lifted (see §4).
 **Type:** deterministic signal-layer + guard-chain change → touches the live
@@ -157,6 +157,83 @@ evidence-backed direction is broad equal-weight — investable at $1,000 ($5.64/
 across 172 names against a $5 minimum; comfortable as a 30–50 name subset).
 
 ---
+
+## 5b. Validation of §5a (2026-08-23) — one claim held, one did not
+
+§5a's stop decision rested on a single window and a single rebalance frequency. Three
+falsification checks were run against it. **The stop decision survives; the reasoning
+given for it was partly overstated and is corrected here.**
+
+### ✅ Holds — after tax, equal-weight beats every selection arm at every frequency
+
+| Arm (after tax) | reb 63 | reb 126 | reb 252 |
+|---|---|---|---|
+| P0 baseline top13, 80% inv | +4.52% | +5.20% | −0.24% |
+| P2 neutralized | +18.41% | +28.60% | +15.97% |
+| P2+P3 neutral + band | +6.62% | +10.91% | +3.56% |
+| **CONTROL equal-weight** | **+31.11%** | **+32.23%** | **+32.55%** |
+| SPY | | | +32.09% |
+
+Robust across all three frequencies, and equal-weight is remarkably *insensitive* to
+them (31–32.5% at 0.57–0.80× turnover) because equal-weighting 172 names is
+substantially buy-and-hold.
+
+**The dominant term is tax on turnover, not stock selection.** P2 at 63 days earns
++39.52% gross and keeps **+18.41%** — 21pp surrendered to turnover. Equal-weight
+surrenders ~3pp. That is the whole story, and it is a restatement of what
+`deliberation_stats.json` already said: every realized lot to date is short-term.
+
+### ❌ Does NOT hold — the gross ordering is unstable across time
+
+Split-sample on Jensen α, 63-day rebalance:
+
+* **H1:** P2 neutralized > P2+P3 > equal-weight > P0
+* **H2:** equal-weight > P2 neutralized > P0 > P2+P3
+
+**Ordering stable: False.** In the first half equal-weight ranked *third* with α −0.60%
+while P2 led at +2.30%. So "selection subtracts value" is supported **after tax**, and the
+*magnitude* of the effect is not established. §5a's framing — that every arm loses to
+equal-weight — was true of the 252-day panel it quoted and overstated as a general claim.
+
+### ✅ Holds — the band is consistently the worst design
+
+Up/down capture (share of SPY's move caught, ratio > 1 = more upside than downside):
+
+| Arm | up | down | ratio |
+|---|---|---|---|
+| P2 neutralized | 0.956 | 0.894 | **1.07** |
+| CONTROL equal-weight | 0.908 | 0.854 | 1.06 |
+| P0 baseline | 0.304 | 0.320 | 0.95 |
+| **P2+P3 band** | 0.481 | 0.527 | **0.91** |
+
+**Phase 3's band captures more downside than upside** — the one shape you never want. It
+also posts negative α in *both* split halves (−0.59%, −6.93%) and the worst after-tax
+result at two of three frequencies. This is the most robust negative finding in the study.
+
+### Survivorship sensitivity — the gap is real but not enormous
+
+Equal-weight holds every survivor, so it is the arm most inflated by the missing
+bankrupt names. After tax the gap to the best selection arm is **3.95pp**, and each
+delisted-to-zero name costs equal-weight 0.56pp:
+
+    wipeout rate    0%      2%      4%      5%
+    eqwt after   32.55%  30.86%  28.60%  27.47%
+    still ahead    yes     yes    tie      no
+
+The gap closes at ~**4.1%** of the universe wiped out over two years. For large-cap US
+names that would be unusually high — mergers dominate and exit at a premium, not zero.
+So the conclusion survives a plausible bias, with a margin that is real but not large.
+
+### Corrected bottom line
+
+**Do not ship Phases 2 or 3.** Phase 3 is affirmatively bad. Phase 2 loses to
+equal-weight after tax at every frequency, though the gross evidence is mixed.
+
+But note what equal-weight actually *is*: **+32.55% against SPY's +32.09%.** It does not
+beat the market — it matches it, by owning most of it and barely trading. The honest
+reading is not "equal-weight is a great strategy"; it is **"selection costs 15–30pp after
+tax versus not selecting, and the tax on turnover is the dominant term."**
+
 
 ## 5. Phases
 
