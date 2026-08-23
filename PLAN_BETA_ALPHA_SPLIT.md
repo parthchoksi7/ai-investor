@@ -235,6 +235,63 @@ reading is not "equal-weight is a great strategy"; it is **"selection costs 15�
 tax versus not selecting, and the tax on turnover is the dominant term."**
 
 
+---
+
+## 5c. Two more measured results, and what the objective change does to the verdict (2026-08-23)
+
+### Basket size: below ~100 names, "equal weight" is a coin flip, not an index
+
+Three *random* draws at each size, same rules, no stock-picking involved — so this measures
+only "does a smaller basket still behave like the market?"
+
+| Names held | $100 becomes | Spread between luckiest and unluckiest draw | $/position on $1,000 |
+|---|---|---|---|
+| 15 | $138.24 | **$21** | $64.67 |
+| 30 | $142.81 | **$16** | $32.33 |
+| 50 | $133.75 | $16 | $19.40 |
+| 100 | $131.72 | $6 | $9.70 |
+| 172 | $132.55 | **$0** | $5.64 |
+
+At 30 names the two-year outcome swings **16 points on which 30 you happened to hold.** That
+is luck, not strategy. Roughly **100+ names** are needed before the result is dependable —
+which rules out the tempting shortcut of a small hand-held "index-like" basket.
+
+### The account's own return cannot settle the experiment's question
+
+A ~13-stock portfolio drifts about **10%/yr** from the index purely from being concentrated.
+For an edge to stand out from that noise:
+
+| Real edge | Years of account history needed |
+|---|---|
+| 3%/yr | ~44 |
+| 5%/yr | ~16 |
+| 12%/yr | ~3 |
+
+The per-name **predictions** carry far more information: ~174 scored weekly, **24,965 rows
+in `forecasts.jsonl` against 52 trades in the account's entire life.** Any decision rule
+built on account return alone is satisfied by luck long before it is satisfied by skill.
+This is the reasoning behind [`SCALE_DECISION_RULE.md`](SCALE_DECISION_RULE.md).
+
+### ⚠ The objective changed on 2026-08-23 — and it changes this verdict
+
+Everything in §5a and §5b was measured under the assumption that this account's job is to
+**maximise after-tax return**. It is not (see CLAUDE.md → Purpose). Its job is to answer
+**"can AI beat SPY/QQQ?"**, and the owner intends to scale it if it works.
+
+| | Verdict under "maximise return" | Verdict under "answer the question" |
+|---|---|---|
+| **Phase 2** — strip the beta bias out of scoring | Don't ship — it doesn't earn more | **Worth shipping** — not for return, but because the bias is a *confound*. While the score is 65% "how calm is this stock", a win cannot be attributed to stock-picking at all. |
+| **Phase 3** — beta band at 0.6–0.8 | Don't ship — actively harmful | **Still don't ship, and the target is wrong too.** 0.6–0.8 was chosen to protect an account whose return does not matter. To beat SPY you must take *comparable* risk — the target should be **~1.0**, or a win is merely a smaller bet. |
+| **Broad equal-weight** | The winner | **Not a candidate.** It is the benchmark. |
+
+**Phases 4–7 remain stopped.** They were designed to split capital between a deterministic
+"core" and an LLM "sleeve" under the old objective. In an experiment whose entire purpose is
+to test the LLM, that split does not make sense as designed.
+
+**Interaction with the freeze:** `SCALE_DECISION_RULE.md` §6 freezes `FORMULA_VERSION`
+during the measurement window, and Phase 2 changes the formula. So Phase 2 ships **before**
+the clock starts, or not during it at all.
+
 ## 5. Phases
 
 Risk class = what changes if the phase is wrong. **none** → no decision or order can

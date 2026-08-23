@@ -4,6 +4,34 @@
 
 A fully automated daily equity trading system. Every weekday at 9:45 AM ET, a scheduled Claude Code routine runs a 7-agent investment pipeline, executes trades on a dedicated Robinhood Agentic account, and commits the trade log to GitHub. No human input required.
 
+### ⚠ Purpose — read this before optimising anything (added 2026-08-23)
+
+**This account is an EXPERIMENT, not the owner's investment vehicle.** Its single question
+is: **can AI beat SPY and QQQ?** The owner already holds the large majority of their equity
+exposure in index funds and individual holdings outside this system. The ~$500 (going to
+$1,000) here is roughly **0.1% of their net worth**.
+
+Three consequences that change what "a good change" means:
+
+1. **Never propose index funds, synthetic index baskets, or "own the market and stop
+   trading" as a strategy for this account.** Those are the *benchmark being measured
+   against*, not candidate strategies. (A 2026-08-22 analysis reached that recommendation
+   before the purpose was understood — it was useless advice: the owner already does that
+   with the serious money.)
+2. **Optimise for a clean, transferable ANSWER, not for this account's return.** Confounds
+   are the enemy. A scoring signal that is secretly a market-exposure bet means the
+   experiment measures "does low risk beat the market" rather than "can AI pick stocks" —
+   which is exactly the flaw found in `PLAN_BETA_ALPHA_SPLIT.md` §2. Removing a confound is
+   valuable even when it does not improve returns.
+3. **The intent is to SCALE.** If it works, the owner will move money in from their
+   Robinhood account. That makes turnover tax central rather than trivial: the measured
+   harness case earned +39.52% gross and kept only +18.41%, which is ~$21,000 of tax on a
+   $100k book. **A design that only looks good before tax is not a scalable result.**
+
+The go/no-go rule for that scaling decision — written before results exist, so it cannot be
+moved afterwards — is **[`SCALE_DECISION_RULE.md`](SCALE_DECISION_RULE.md)**. It also
+freezes `FORMULA_VERSION` during any measurement window.
+
 ## Architecture
 
 ```
