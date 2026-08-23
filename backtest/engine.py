@@ -30,6 +30,34 @@ def load_snapshot(path: str = "market_snapshot.json") -> dict:
         return json.load(f)
 
 
+def load_archive_snapshot(archive_path: str = "backtest_history.json",
+                          fundamentals: dict | None = None) -> dict:
+    """A snapshot-shaped dict backed by the long OHLCV archive.
+
+    The committed `market_snapshot.json` is capped at ~210 bars, which leaves only
+    ~85 usable sessions once Phase 3's 125-bar beta warmup is paid — too short for a
+    verdict on anything. `fetch_backtest_history.py` builds a ~2-year archive; this
+    adapts it to the shape `run_backtest` already consumes.
+
+    ⚠ FUNDAMENTALS ARE LOOK-AHEAD OVER A LONG WINDOW. Pass `fundamentals` only with
+    that understood: they are TODAY's values applied to every historical day, so the
+    quality and valuation sub-scores (0.60 of FACTOR_WEIGHTS) see data that did not
+    exist at the simulated decision time. Over a 210-bar window that is a modest
+    distortion; over two years it is a serious one. `None` (the default) runs the
+    momentum + volatility composite with NO look-ahead at all — the honest primary,
+    and still fully able to answer a question about BETA, since volatility is the
+    dominant beta channel (rho -0.737 vs beta).
+    """
+    with open(archive_path) as f:
+        arch = json.load(f)
+    hist = arch.get("history") or {}
+    if not hist:
+        raise ValueError(f"{archive_path} holds no history — run fetch_backtest_history.py")
+    return {"history": hist, "fundamentals": fundamentals or {},
+            "_archive_fetched_at": arch.get("fetched_at"),
+            "_fundamentals_lookahead": bool(fundamentals)}
+
+
 def _build_index(history: dict) -> dict:
     """Per ticker: sorted bars + a date→bar map, so a slice up to day t is cheap."""
     idx = {}
