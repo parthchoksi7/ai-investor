@@ -75,3 +75,10 @@ eval/
 # commit/claim/publish path. Portfolio data for the $500 demo account is public
 # by design; the sensitive values (account number, API keys, routine IDs, MCP
 # connector UUID) are redacted in code/docs instead.
+
+# backtest_history.json — long OHLCV archive for the harness. Large, fully
+# regenerable via fetch_backtest_history.py, and carries nothing the live path
+# needs (the routine reads market_snapshot.json). Research tooling only.
+backtest_history.json
+backtest_history.json.tmp
+backtest_history.json.lock
