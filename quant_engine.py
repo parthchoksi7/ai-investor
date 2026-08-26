@@ -543,6 +543,11 @@ def neutralize_beta(scores: dict, min_names: int = MIN_NEUTRALIZE_NAMES) -> dict
         # same partition key — FORMULA_VERSION exists precisely so an IC analyzer can
         # group by it, and raw vs neutralized moves reach 22 points on live data. Stamp
         # a distinct key so the two populations can never be averaged together (P0-2).
+        print(f"   ⚠ beta-neutralization DEGRADED: only {len(usable)} usable name(s) "
+              f"(need {min_names}) or no cross-sectional beta spread — emitting RAW "
+              f"composites stamped '{FORMULA_VERSION + RAW_VARIANT_SUFFIX}'. Scores carry "
+              f"the market-exposure bias 3.0 exists to remove, and this run does NOT join "
+              f"the frozen measurement window.")
         for s in scores.values():
             s.setdefault("composite_raw", s.get("composite_score"))
             s["beta_neutralized"] = False
@@ -566,8 +571,13 @@ def neutralize_beta(scores: dict, min_names: int = MIN_NEUTRALIZE_NAMES) -> dict
         beta = s.get("beta_stable")
         if t in _NEUTRALIZE_EXCLUDE or not isinstance(beta, (int, float)) \
                 or not isinstance(s.get("composite_score"), (int, float)):
+            # Skipped individually (benchmark, or no usable beta) — its composite is RAW,
+            # so it must carry the raw partition key for the same P0-2 reason the whole
+            # degrade path does. A per-ticker skip is not a smaller version of the
+            # problem; one raw row pooled into a neutralized IC is still a corrupted IC.
             s["beta_neutralized"] = False
             s["neutralize_fit"] = None
+            s["formula_version"] = FORMULA_VERSION + RAW_VARIANT_SUFFIX
             continue
         residual = s["composite_score"] - (intercept + slope * beta)
         s["composite_score"] = round(max(0.0, min(100.0, residual + centre)), 1)

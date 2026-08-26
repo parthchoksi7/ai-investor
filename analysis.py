@@ -1069,8 +1069,14 @@ def run_portfolio_manager(
         # is actually "no data" (renormalized OUT of the composite, never blended).
         val_disp = (s.get("valuation_score", "?")
                     if s.get("valuation_available", False) else "N/A")
+        # cmp is the BETA-NEUTRALIZED residual post-3.0, not the weighted average of the
+        # sub-scores beside it. The PM is the agent that actually places trades, so an
+        # unlabelled cmp here is worse than anywhere else: it invites "check" arithmetic
+        # that will not reconcile. Labelled per-ticker because a run can legitimately mix
+        # neutralized and raw rows (a name with no usable beta is skipped).
+        cmp_label = "cmp*" if s.get("beta_neutralized") else "cmp"
         quant_lines.append(
-            f"  {t}: cmp={s.get('composite_score','?')} mom={s.get('momentum_score','?')} "
+            f"  {t}: {cmp_label}={s.get('composite_score','?')} mom={s.get('momentum_score','?')} "
             f"q={s.get('quality_score','?')} val={val_disp} "
             f"vol={s.get('volatility','?')}% beta={s.get('beta','?')} | {buy_tag}"
         )
@@ -1154,7 +1160,11 @@ CURRENT PORTFOLIO:
 
 QUANT SCORES (top candidates — each tagged ✓ BUY-eligible or ⛔ NOT buyable;
 a ⛔ BUY is guaranteed-rejected by the guard chain, so never propose one — pick
-from the ✓ names instead):
+from the ✓ names instead).
+`cmp*` = composite AFTER beta-neutralization: the part of the score NOT explained by
+how much the name moves with the market. It is deliberately NOT the weighted average
+of the mom/q/val/vol figures beside it — do not try to reconcile them. Plain `cmp`
+(no asterisk) means that name was scored raw, because it has no usable beta estimate:
 {chr(10).join(quant_lines)}
 {(dossier_block + chr(10)) if dossier_block else ''}
 RESEARCH & DEVIL'S ADVOCATE:

@@ -15,12 +15,18 @@ def quant_momentum_vol(scores: dict,
     Mirrors the live universe rules (≤10% per name, long-only, exclude benchmarks)
     and the honest composite (momentum + inverse-vol when fundamentals are absent).
     """
+    # Gate on composite_RAW, not the live composite. `min_composite` is an ABSOLUTE
+    # threshold, but the beta-neutralized composite is a RE-CENTRED residual — applying
+    # the same cut-off to both arms silently changes how many names are eligible (149 vs
+    # 145 measured), which conflates the effect of neutralization with a change in
+    # portfolio breadth in exactly the A/B `--raw` exists to run. Raw is identical across
+    # arms by construction, so the eligible set is too, and only the RANKING differs.
     ranked = sorted(
         ((t, s) for t, s in scores.items()
          if t not in ("SPY", "QQQ")
          and s.get("data_available")
          and s.get("momentum_available")
-         and s.get("composite_score", 0) >= min_composite),
+         and (s.get("composite_raw", s.get("composite_score", 0)) or 0) >= min_composite),
         key=lambda x: x[1].get("composite_score", 0),
         reverse=True,
     )[:top_n]

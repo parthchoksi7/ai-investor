@@ -63,6 +63,7 @@ def build_report(result: dict) -> dict:
 
     spy_total = bench["total_return"] if bench else None
 
+    import quant_engine
     from quant_engine import FORMULA_VERSION
     coverage = result.get("fundamental_coverage_pct")
 
@@ -87,7 +88,11 @@ def build_report(result: dict) -> dict:
     return {
         "strategy":  strat,
         "spy":       bench,
-        "formula_version":             FORMULA_VERSION,
+        # Reflects the arm actually run: a --raw backtest scores un-neutralized and must
+        # not be labelled with the neutralized version, or the two arms are
+        # indistinguishable in saved reports.
+        "formula_version":             (FORMULA_VERSION if quant_engine.BETA_NEUTRALIZE
+                                        else FORMULA_VERSION + quant_engine.RAW_VARIANT_SUFFIX),
         "fundamental_coverage_pct":    coverage,
         "alpha_total_return":          round(strat["total_return"] - spy_total, 4) if spy_total is not None else None,
         "realized_gain":               round(st + lt, 2),
