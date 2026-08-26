@@ -363,6 +363,38 @@ This prevents the silent all-50 quant score failure mode where agents run but pr
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
 
+## Changelog — Aug 26 2026 (the sector clamp fires in production — Aug 19 replayed, fixed)
+
+The Wed **2026-08-26** rebalance (`20260826-134806`) was the first live firing of the
+sector clamp shipped in PR #36 on Aug 20. It had never actually run: the Aug 19 rebalance
+executed with `"tickers": []`, so the fix sat unexercised for a week.
+
+**It reproduced the Aug 19 failure exactly, and resolved it correctly.**
+
+| Stage | REGN target weight |
+|---|---|
+| Portfolio Manager proposed | **9.0%** |
+| After CRO | 9.0% |
+| **After `enforce_sector_limits`** | **5.22%** — clamped to Health Care headroom, not rejected |
+
+On Aug 19 this same situation produced **zero orders**: REGN 9% and COP 9% each overshot
+the 25% sector cap by 2–4pp and were **dropped outright**, leaving ~$63 of fully compliant
+deployment undone for the third consecutive week. Today REGN executed at the largest
+compliant size.
+
+The run also completed a real rotation — **SELL CFG → BUY V funded by CFG** — confirming
+`enforce_capital_dependency` holds the funding chain together (the Jul 8 failure was
+orphaned BUYs executing after their funding SELLs were rejected). COP was dropped by the
+CRO upstream, before the guard chain.
+
+`decision_validation` = DEGRADED (`0 rejected, 1 clamped, 0 skipped`) is the clamp
+announcing itself, exactly as designed — a PM proposing an impossible size is still signal.
+Every other check returned OK: data quality, all seven agents, execution, reconciliation,
+cash discipline. Snapshot was the **expanded** 173-ticker universe (see MANUAL_TODO #24 —
+the universe-gate oscillation means which one is consumed is currently not deterministic).
+
+**No code changed.** This entry records a verification, not a fix.
+
 ## Changelog — Aug 22 2026 (Phase 1 of the beta/alpha split — `beta_stable` · 4 new review seats)
 
 Owner-directed deep-research finding, acted on same day. The 4-factor composite

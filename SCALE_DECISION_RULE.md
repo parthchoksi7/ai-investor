@@ -1,6 +1,7 @@
 # Scale Decision Rule — when to move real money into the agentic account
 
-**Status: DRAFT — proposed 2026-08-23, not yet adopted. Thresholds are the owner's to set.**
+**Status: ADOPTED 2026-08-26.** Thresholds below are now binding. Changing any of them
+requires saying so explicitly and restarting the measurement window.
 
 **Purpose.** The owner intends to transfer money from their Robinhood account into the
 agentic account **if the experiment works**. This document defines what "works" means,
@@ -69,10 +70,19 @@ never there is not.
 
 ### Gate 1 · The predictions work (the gate with real statistical power)
 
-- The primary ranking signal reaches **IC ≥ 0.08**
-- with **n_effective ≥ 400** independent observations
-- and a confidence interval that **excludes zero**
-- measured **entirely within one `FORMULA_VERSION`** — no mixing across scoring changes
+**Two routes, either one satisfies the gate.** A single threshold forced a bad choice: 0.08
+is decidable in ~1.3 years but is better than most professional quant funds achieve, so it
+might never be reached; 0.03 is realistic but takes ~9 years. Two routes remove the choice —
+a strong signal earns a fast decision, a modest one still counts but must prove itself longer.
+
+| Route | Signal (IC) | Independent observations | ≈ time |
+|---|---|---|---|
+| **Fast** | ≥ **0.08** | ≥ **400** | ~1.3 years |
+| **Slow** | ≥ **0.05** | ≥ **1,600** | ~3.4 years |
+
+Either route additionally requires:
+- a confidence interval that **excludes zero**, and
+- measurement **entirely within one `FORMULA_VERSION`** — no mixing across scoring changes.
 
 *Source: `agent_scorecards.json`, the existing `stage_c_readiness.py` machinery.
 Note this is a stricter bar than that file's current `MIN_N_EFFECTIVE = 30` /
@@ -111,12 +121,18 @@ can use.
 
 Passing the gates once buys a **first** transfer, not a full commitment.
 
+Caps are expressed as a **share of net worth**, not fixed dollars, so they stay sensible as
+net worth changes rather than quietly becoming too large or too small.
+
 | Stage | Trigger | Maximum in the agentic account |
 |---|---|---|
-| 0 · today | — | $1,000 |
-| 1 | All four gates pass | **$10,000** (~1.2% of net worth) |
-| 2 | Gates still pass 12 months later, *at the larger size* | **$50,000** (~6%) |
+| 0 · today | — | **$500** (current actual balance; a planned increase to $1,000 has not been made) |
+| 1 | All four gates pass | **1% of net worth** (~$8,000 today) |
+| 2 | Gates still pass 12 months later, *at the larger size* | **5% of net worth** (~$40,000) |
 | 3 | Gates still pass 12 further months | Owner's decision, fresh review |
+
+Worst realistic case at stage 2: trailing the index by 10%/yr for two years on ~$40,000 is
+about **$8,000** worse off than simply holding — roughly 1% of net worth. Bad, not damaging.
 
 Re-checking at each size matters: an edge can be real at $1,000 and evaporate at $50,000
 through costs, slippage, or simply because the earlier result was luck that hadn't yet
@@ -149,11 +165,25 @@ The measurement is only valid if the thing being measured stops changing:
 
 ---
 
-## 7. Owner decisions still required
+## 7. Decisions taken (2026-08-26)
 
-1. **The IC threshold.** 0.08 is proposed. Lower it and you decide faster but risk scaling
-   on noise; raise it and you will likely never scale.
-2. **The stage caps.** $10k / $50k proposed as ~1.2% and ~6% of net worth.
-3. **The kill horizon.** 24 months proposed.
-4. **Whether Gate 2's benchmark is SPY, QQQ, or both.** QQQ is the harder bar and the
-   stated ambition; SPY is the more standard comparison.
+1. **Signal threshold — two routes** (§3 Gate 1). Rationale: the risk is lopsided. A false
+   positive moves real money into noise and costs years plus confidence; a false negative
+   just means carrying on with what already works. The bar leans strict.
+2. **Stage caps — 1% then 5% of net worth**, re-checked at each size. An edge can be real at
+   $500 and vanish at $40,000; the re-check is the point of staging, not a formality.
+3. **Kill horizon — 24 months**, plus a **12-month machinery check**. That check is *not* a
+   chance to move thresholds — it verifies the plumbing still works (data flowing, forecasts
+   scoring, nothing silently broken). This project has form: a coverage figure once looked
+   like a crisis and was a broken measurement, and two safety checks passed for weeks
+   without testing anything. Reaching month 24 to find the last year measured nothing would
+   be the worst outcome available.
+4. **Benchmark — SPY is the gate; QQQ is reported alongside.** QQQ is a bet on technology as
+   much as a higher bar: requiring it would mean failing in a year tech runs hot despite
+   genuine skill, and passing in a year tech falls without any. SPY is the honest "did
+   picking stocks beat owning stocks" test.
+
+   **Open, and able to override this:** the true benchmark is whatever the transferred money
+   would otherwise have been invested in. If the Robinhood holdings earmarked for transfer
+   are mostly QQQ, then QQQ is the real opportunity cost and becomes the gate. Owner to
+   confirm; until confirmed, SPY stands.
