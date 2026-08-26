@@ -443,8 +443,14 @@ def _fmt_scores(scores: dict) -> str:
     # case on free-tier Polygon) — labelling that "50" would imply a real read.
     quality = scores.get('quality_score', '?') if scores.get('quality_available', True) else "N/A"
     val     = scores.get('valuation_score', '?') if scores.get('valuation_available', True) else "N/A"
+    # After FORMULA_VERSION 3.0 the composite is the BETA-NEUTRALIZED residual, not the
+    # weighted average of the sub-scores printed next to it. Rendering them adjacent
+    # without saying so invites the model to "check" the arithmetic and conclude the data
+    # is broken — the same defect class as printing a fabricated val=50 (fixed Jun 2026).
+    _neutralized = scores.get("beta_neutralized")
+    _comp_label = "composite(beta-neutral)" if _neutralized else "composite"
     return (
-        f"composite={scores.get('composite_score','?')} "
+        f"{_comp_label}={scores.get('composite_score','?')} "
         f"mom={scores.get('momentum_score','?')} "
         f"quality={quality} "
         f"val={val} "

@@ -82,6 +82,20 @@ FACTOR_WEIGHTS = {
 # a valuation-score bucket boundary), so this is a real signal change, not a
 # cosmetic one — evidence clock resets again. FACTOR_WEIGHTS and
 # `compute_valuation_score`'s formula are unchanged.
+#
+# 3.0-beta-neutral (2026-08-26): the composite is now cross-sectionally regressed on
+# `beta_stable` each run and the RESIDUAL is kept — see `neutralize_beta` below. The
+# raw composite correlated **-0.653** with beta across the universe (Spearman -0.592,
+# n=100, measured 2026-08-22): the names it rated best averaged -0.04 beta, the names
+# it rated worst +2.41. Half the factor weight drove it (volatility_score rho=-0.737,
+# valuation_score rho=-0.471), and the live book inherited a -0.17 stocks-only beta
+# nobody chose. That is a market-exposure bet wearing a stock-selection costume, and
+# it made the account's central question — "can AI pick stocks?" — unanswerable, since
+# any win could equally have been "low-risk names had a good year". Removing it is a
+# MEASUREMENT fix, not a return fix: the backtest is explicit that neutralization does
+# not earn more (PLAN_BETA_ALPHA_SPLIT.md §5a/§5b). Evidence clock resets, and per
+# SCALE_DECISION_RULE.md §6 this is intended to be the LAST reset for 12 months —
+# FORMULA_VERSION is frozen for the measurement window that starts here.
 FORMULA_VERSION = "3.0-beta-neutral"
 
 
@@ -474,6 +488,11 @@ BETA_NEUTRALIZE = True
 # run degrades to the raw composite rather than applying a noisy correction.
 MIN_NEUTRALIZE_NAMES = 20
 
+# Appended to FORMULA_VERSION whenever a run emits RAW composites (neutralization off, or
+# degraded for too few names / no beta spread). Raw and neutralized scores are different
+# populations and must never be pooled by an IC analyzer grouping on formula_version.
+RAW_VARIANT_SUFFIX = "~raw"
+
 # Benchmarks are excluded from the fit: SPY is beta 1.0 by construction and would
 # anchor the regression on a point that is not a candidate.
 _NEUTRALIZE_EXCLUDE = ("SPY", "QQQ")
@@ -520,23 +539,40 @@ def neutralize_beta(scores: dict, min_names: int = MIN_NEUTRALIZE_NAMES) -> dict
                    [s["composite_score"] for _, s in usable]) if len(usable) >= min_names else None
 
     if fit is None:
+        # DEGRADED: raw composites. They must NOT pool with neutralized ones under the
+        # same partition key — FORMULA_VERSION exists precisely so an IC analyzer can
+        # group by it, and raw vs neutralized moves reach 22 points on live data. Stamp
+        # a distinct key so the two populations can never be averaged together (P0-2).
         for s in scores.values():
             s.setdefault("composite_raw", s.get("composite_score"))
             s["beta_neutralized"] = False
+            s["neutralize_fit"] = None
+            s["formula_version"] = FORMULA_VERSION + RAW_VARIANT_SUFFIX
         return scores
 
     intercept, slope = fit
     centre = _mean([s["composite_score"] for _, s in usable])
+    # The fit is CROSS-SECTIONAL, so a ticker's neutralized score depends on which other
+    # tickers were scored in the same batch. That is inherent to neutralization, but it
+    # means two planes scoring different universes on the same day produce different
+    # numbers for the same ticker (reproduced: the slimmed committed snapshot moves ABNB
+    # 79.3 -> 76.9 versus the full-depth GH Actions run). Stamping the fit makes any such
+    # divergence DETECTABLE downstream instead of silently corrupting the ledger, because
+    # factor_history.jsonl is written by one plane while the trade is decided on another.
+    fit_stamp = {"intercept": round(intercept, 6), "slope": round(slope, 6),
+                 "n_fit": len(usable), "centre": round(centre, 4)}
     for t, s in scores.items():
-        s["composite_raw"] = s.get("composite_score")
+        s.setdefault("composite_raw", s.get("composite_score"))
         beta = s.get("beta_stable")
         if t in _NEUTRALIZE_EXCLUDE or not isinstance(beta, (int, float)) \
                 or not isinstance(s.get("composite_score"), (int, float)):
             s["beta_neutralized"] = False
+            s["neutralize_fit"] = None
             continue
         residual = s["composite_score"] - (intercept + slope * beta)
         s["composite_score"] = round(max(0.0, min(100.0, residual + centre)), 1)
         s["beta_neutralized"] = True
+        s["neutralize_fit"] = fit_stamp
     return scores
 
 
@@ -592,8 +628,10 @@ def score_all_tickers(market_data: dict, beta_neutralize: bool | None = None) ->
         neutralize_beta(scores)
     else:
         for s in scores.values():
-            s["composite_raw"] = s.get("composite_score")
+            s.setdefault("composite_raw", s.get("composite_score"))
             s["beta_neutralized"] = False
+            s["neutralize_fit"] = None
+            s["formula_version"] = FORMULA_VERSION + RAW_VARIANT_SUFFIX
 
     return scores
 
@@ -606,7 +644,7 @@ _FACTOR_HISTORY_FIELDS = (
     "valuation_score", "valuation_available",
     "volatility_score", "volatility_available",
     "beta", "beta_stable", "beta_stable_window", "beta_stable_basis",
-    "composite_raw", "beta_neutralized",
+    "composite_raw", "beta_neutralized", "neutralize_fit",
 )
 
 

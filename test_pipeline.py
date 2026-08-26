@@ -828,17 +828,78 @@ class TestBetaNeutralize:
 
     # ── wiring ───────────────────────────────────────────────────────────────
 
-    def test_score_all_tickers_flag_toggles_it(self):
+    def _wired_universe(self, n=40):
+        """A universe big enough to clear MIN_NEUTRALIZE_NAMES with real beta spread,
+        built from PRICE HISTORY so it exercises the whole scoring path rather than
+        hand-written score dicts."""
+        md = {"history": {}, "fundamentals": {}}
+        md["history"]["SPY"] = _trend(100.0, 118.0, 300)
+        for i in range(n):
+            # alternate steep/shallow trends so composite and beta both vary
+            end = 100.0 + (40.0 if i % 2 else 8.0) + i * 0.6
+            md["history"][f"T{i:02d}"] = _trend(100.0, end, 300)
+        return md
+
+    def test_neutralization_is_actually_wired_into_score_all_tickers(self):
+        """The production call site must really run.
+
+        The previous version of this test used a ONE-TICKER universe — below
+        MIN_NEUTRALIZE_NAMES, so both branches degraded to the raw composite and the
+        assertion was that they matched. A mutation test proved it worthless: replacing
+        the call site with `if False:` still passed the whole suite. Caught in review.
+        """
         from quant_engine import score_all_tickers
-        hist = _trend(100.0, 130.0, 260)
-        spy  = _trend(100.0, 115.0, 260)
-        md = {"history": {"A": hist, "SPY": spy}, "fundamentals": {}}
+        md = self._wired_universe()
         on  = score_all_tickers(md, beta_neutralize=True)
         off = score_all_tickers(md, beta_neutralize=False)
-        assert off["A"]["beta_neutralized"] is False
-        assert off["A"]["composite_raw"] == off["A"]["composite_score"]
-        # single-name universe is below MIN_NEUTRALIZE_NAMES, so ON also degrades
-        assert on["A"]["composite_score"] == off["A"]["composite_score"]
+
+        assert any(on[t]["beta_neutralized"] for t in on if t != "SPY"), \
+            "neutralization never fired — the call site is not wired"
+        moved = [t for t in on if t != "SPY"
+                 and on[t]["composite_score"] != off[t]["composite_score"]]
+        assert moved, "ON and OFF produced identical composites — the call site is dead"
+        # and the raw value is preserved on both paths
+        for t in moved:
+            assert on[t]["composite_raw"] == off[t]["composite_score"]
+
+    def test_raw_and_neutralized_never_share_a_partition_key(self):
+        """FORMULA_VERSION is the key an IC analyzer groups by. Raw and neutralized are
+        different populations (live moves reach 22 points) and pooling them corrupts the
+        very measurement this change exists to protect (P0-2)."""
+        from quant_engine import score_all_tickers, FORMULA_VERSION, RAW_VARIANT_SUFFIX
+        md = self._wired_universe()
+        on  = score_all_tickers(md, beta_neutralize=True)
+        off = score_all_tickers(md, beta_neutralize=False)
+        assert on["T00"]["formula_version"] == FORMULA_VERSION
+        assert off["T00"]["formula_version"] == FORMULA_VERSION + RAW_VARIANT_SUFFIX
+        assert on["T00"]["formula_version"] != off["T00"]["formula_version"]
+
+    def test_degraded_run_also_gets_the_raw_partition_key(self):
+        """Too few names to fit -> raw composites -> must carry the raw key too."""
+        from quant_engine import score_all_tickers, FORMULA_VERSION, RAW_VARIANT_SUFFIX
+        md = {"history": {"SPY": _trend(100.0, 118.0, 300),
+                          "A": _trend(100.0, 130.0, 300)}, "fundamentals": {}}
+        s = score_all_tickers(md, beta_neutralize=True)
+        assert s["A"]["beta_neutralized"] is False
+        assert s["A"]["formula_version"].endswith(RAW_VARIANT_SUFFIX)
+        assert s["A"]["formula_version"] != FORMULA_VERSION
+
+    def test_fit_is_stamped_so_cross_plane_divergence_is_detectable(self):
+        """The fit is cross-sectional, so a ticker's score depends on which OTHER tickers
+        were in the batch. factor_history.jsonl is written by the GH Actions plane on the
+        full universe while the trade is decided on the slimmed snapshot — stamping the
+        fit makes that divergence visible instead of silently corrupting the ledger."""
+        from quant_engine import score_all_tickers
+        big = score_all_tickers(self._wired_universe(40), beta_neutralize=True)
+        small = score_all_tickers(self._wired_universe(25), beta_neutralize=True)
+        f_big, f_small = big["T00"]["neutralize_fit"], small["T00"]["neutralize_fit"]
+        assert f_big and f_small
+        assert f_big["n_fit"] != f_small["n_fit"], "n_fit must record the batch size"
+        for k in ("intercept", "slope", "centre"):
+            assert k in f_big
+        # the same ticker really does score differently on a different universe —
+        # this is inherent to neutralization; the stamp is what makes it auditable
+        assert big["T00"]["composite_score"] != small["T00"]["composite_score"]
 
     def test_formula_version_bumped(self):
         """Phase 2 is a real signal change and MUST reset the evidence clock."""
@@ -862,7 +923,14 @@ class TestScoreAllTickers:
         scores = score_all_tickers(market_data)
         s = scores["AAPL"]
         assert set(s["factors_used"]) == {"momentum", "quality", "valuation", "volatility"}
-        assert s["formula_version"] == FORMULA_VERSION
+        # This fixture is a 2-ticker universe, below MIN_NEUTRALIZE_NAMES, so the run
+        # degrades to RAW composites and correctly carries the raw partition suffix.
+        # The weight formula under test is unaffected — it is the pre-neutralization
+        # composite either way, which is exactly what composite_raw preserves.
+        from quant_engine import RAW_VARIANT_SUFFIX
+        assert s["formula_version"] == FORMULA_VERSION + RAW_VARIANT_SUFFIX
+        assert s["beta_neutralized"] is False
+        assert s["composite_raw"] == s["composite_score"]
         expected = (
             s["momentum_score"]    * FACTOR_WEIGHTS["momentum"]
             + s["quality_score"]   * FACTOR_WEIGHTS["quality"]

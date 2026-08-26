@@ -13,6 +13,43 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Changed — the stock score no longer smuggles in a bet on the market (`FORMULA_VERSION` 3.0)
+
+The scoring formula rated stocks out of 100, and that score turned out to be dominated by
+one thing: **how much the stock moves when the market moves.** The correlation was
+**−0.653**, meaning roughly **43% of the variation in the score** was explained by market
+sensitivity alone. The names it rated best barely moved with the market (average −0.04); the
+names it rated worst moved more than twice as hard (+2.41). Half the scoring weight caused
+it. The live account inherited a **−0.17** market sensitivity that nobody chose.
+
+For an account whose entire purpose is to answer *"can AI pick stocks?"*, that made the
+question unanswerable — a good year could equally have meant "calm stocks did well." The
+composite is now cross-sectionally regressed against `beta_stable` each run and the residual
+kept, so the ranking carries no market-exposure view. Verified on the live snapshot: the
+correlation goes from **−0.565 to −0.000**.
+
+- **This is a measurement fix, not a return fix, and the numbers say so plainly.** A
+  501-session backtest found neutralization does *not* earn more after tax — see
+  `PLAN_BETA_ALPHA_SPLIT.md` §5a/§5b, which also records where that finding is soft (the
+  ranking of approaches is unstable between the two halves of the window). It ships because
+  it removes a confound, which is the thing this account exists to avoid.
+- **Phase 3 (a target band for market exposure) is NOT shipping**, and its 0.6–0.8 target
+  was wrong twice over: it tested as the worst design measured (it caught more of the
+  market's falls than its rises), and the target itself was chosen under the assumption that
+  this account's return matters, which it does not. Left on `feat/phase3-core-builder`.
+- **Left at market sensitivity ~0.87** on the long backtest — close enough to the market
+  that comparing against SPY is a fair fight, without needing Phase 3's band mechanism.
+- `composite_raw` and `beta_neutralized` are recorded per ticker, so every score remains
+  auditable back to its pre-adjustment value.
+- Degrades safely: below 20 usable names, or with no spread in market sensitivity to
+  regress against, it returns the raw composite untouched.
+
+**This is intended to be the last scoring change for 12 months.** `SCALE_DECISION_RULE.md`
+(adopted 2026-08-26) freezes `FORMULA_VERSION` for the measurement window that starts here —
+the formula has been changed four times before and every change restarted the clock, which
+is precisely why nothing has ever reached a conclusion.
+
+
 ---
 
 ## [2026-08-22] — beta_stable · 4 new review seats  ·  ~09:15 PT  ·  main (PR #37)
