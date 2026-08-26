@@ -766,9 +766,19 @@
       "Consensus EPS estimates for 2024-2025 are cut >10% within a single quarter without corresponding multiple compression offsetting",
       "Federal Reserve signals prolonged lower-for-longer rate environment forcing structural NIM reset expectations below 350bp"
     ],
-    "status": "open",
-    "actual_return": null,
-    "thesis_correct": null
+    "status": "closed",
+    "actual_return": 0.0017,
+    "thesis_correct": false,
+    "exits": [
+      {
+        "date": "2026-08-26",
+        "run_id": "20260826-134806",
+        "exit_price": 69.83,
+        "avg_price": 69.71,
+        "realized_return": 0.0017,
+        "full_exit": true
+      }
+    ]
   },
   {
     "trade_id": "ebf327de-75cb-4617-917b-d8283099da58",
@@ -972,6 +982,97 @@
       "Oil prices fall below $55/bbl and stay there for 2+ quarters; thesis assumes oil $65-75+ band maintains",
       "Q3 2026 FCF misses by >15% vs. management guidance or prior quarter run rate",
       "Dividend is cut or held flat for 2+ years despite improving balance sheet"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "a2aadde5-8edc-4f0b-8d9f-808096f7c28e",
+    "run_id": "20260826-134806",
+    "date": "2026-08-26",
+    "ticker": "CFG",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "CFG's cyclical NIM expansion and credit normalization thesis remains intact with asymmetric risk/reward as rate cut expectations ease, positioning the stock to re-rate higher when the market stops pricing terminal rate declines.",
+    "anti_thesis": "CFG's NIM expansion thesis is highly rate-path-dependent, but deposit repricing pressure is asymmetric\u2014if rates stay higher longer, deposit betas continue rising and erode the very NIM floor the bull case relies on, while loan growth slows as borrowers retrench. CFG has a heavier exposure to variable-rate commercial loans and a deposit base that proved vulnerable during the 2023 regional banking stress, meaning competitive deposit pricing wars could compress spreads regardless of Fed direction. With a valuation score of 70/100 implying only modest cheapness, there is insufficient margin of safety if earnings estimates require even one downward revision.",
+    "catalysts": [
+      "Q4 2024 or Q1 2025 earnings beat driven by better-than-expected NIM hold (if deposit beta remains contained)",
+      "Fed hawkish pivot or extended pause in rate cuts\u2014even signaling a higher terminal rate floor re-rates regional banks materially",
+      "Credit stability confirmation via lower-than-modeled loan loss reserve releases or charge-off rates, supporting earnings sustainability",
+      "Positive operating leverage as rate pressures abate and CFG demonstrates cost discipline (management guidance on 2025 efficiency ratio)",
+      "Analyst estimate revisions upward when consensus capitulates on rate cut cycle timing"
+    ],
+    "confidence": 6,
+    "expected_return": 0.02,
+    "invalidates_if": [
+      "Fed cuts by >100bps in next 12 months with no recession offset\u2014destroys NIM thesis",
+      "Credit cycle inflects sharply with unemployment >5.5% and net loan growth turns negative",
+      "Deposit base shrinks materially (>3% quarterly decline) signaling loss of franchise stickiness",
+      "Guidance revision downward on 2025 NII projections, indicating management lost confidence in margin sustainability",
+      "Regional banking stress reappears (deposit flight, funding stress) forcing deleveraging"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "5d949963-c6b7-4b53-9c71-f12db95e4b4a",
+    "run_id": "20260826-134806",
+    "date": "2026-08-26",
+    "ticker": "V",
+    "action": "BUY",
+    "target_weight": 0.085,
+    "thesis": "Visa is a defensive-quality compounder unfairly depressed by AI disruption panic, with structural payment flow growth, pricing power, and margin expansion creating a multi-year compounding opportunity as macro uncertainty fades.",
+    "anti_thesis": "Visa's moat narrative obscures a structurally vulnerable revenue model: interchange fees face coordinated regulatory assault across the US, EU, and Australia simultaneously, while real-time payment rails (FedNow, UPI, PIX) are being mandated by governments precisely to bypass the card networks. The duopoly framing is comforting but the actual competitive threat is not Mastercard\u2014it's governments and central banks building alternative infrastructure that Visa cannot acquire or lobby its way out of. If interchange compression reaches US markets at EU-levels, margin expansion goes sharply into reverse and the entire compounding thesis collapses.",
+    "catalysts": [
+      "Q3 2026 earnings (Oct 27) beat with raised FY27 guidance driven by international volume acceleration and merchant services mix gains",
+      "Cross-border travel recovery and international payment flows (geopolitical stabilization, China reopening dynamics) drive transaction growth acceleration to 10%+",
+      "Activist investor Pershing Square increases stake or publicly articulates thesis, forcing sell-side upgrades and retail re-rating",
+      "Visa introduces or announces higher-margin services (AI fraud detection, embedded finance, real-time settlement) expanding TAM and EPS accretion",
+      "Competitive pressure evidence (e.g., Mastercard stumbles on pricing power, fintech partnerships) validates Visa's duopoly resilience",
+      "Federal antitrust settlement or ruling favorable to payment networks vs. big tech",
+      "Multiple expansion as rotation out of AI mega-caps into quality compounders accelerates through H2 2026"
+    ],
+    "confidence": 7,
+    "expected_return": 0.12,
+    "invalidates_if": [
+      "Q3 2026 earnings miss consensus EPS expectations or FY27 guidance reduced materially",
+      "Transaction growth declines YoY for two consecutive quarters despite macro improvement",
+      "Operating margins contract below 58% and management guidance suggests structural pressure rather than temporary mix effects",
+      "Major payment processor (Stripe, Square, Adyen) announces proprietary network or crypto integration capturing >5% of volumes",
+      "Antitrust settlement requires >15% reduction in merchant fee economics",
+      "Pershing Square reverses course or sells stake within 12 months without public explanation",
+      "Mastercard outperforms on earnings growth and margins for 2+ consecutive quarters, suggesting Visa lost pricing power"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "43c0c454-7895-446e-aaf9-97d30a78252f",
+    "run_id": "20260826-134806",
+    "date": "2026-08-26",
+    "ticker": "REGN",
+    "action": "BUY",
+    "target_weight": 0.0521891668008794,
+    "thesis": "REGN's valuation has overcorrected on a single failed Phase 3 trial; the company's diversified pipeline, market leadership in ophthalmology/oncology, and 24% stock momentum suggest litigation risk is priced in while near-term catalysts remain underappreciated.",
+    "anti_thesis": "EYLEA's ophthalmology moat is already eroding faster than bulls acknowledge \u2014 biosimilar entrants (Mylan/Biocon's aflibercept) are gaining formulary access and payer pressure is compressing net pricing, threatening the >$4B revenue engine that funds the entire pipeline narrative. If EYLEA revenue declines at even 8-12% annually rather than the assumed <5% CAGR headwind, the FCF base supporting R&D and buybacks collapses, forcing capital allocation trade-offs that slow pipeline progression precisely when Fianlimab's failure demands more shots on goal. The bull thesis requires simultaneously resolving litigation overhang, retaining ophthalmology pricing power, and delivering multiple Phase 2/3 readouts positively \u2014 each independently uncertain, together implausibly optimistic.",
+    "catalysts": [
+      "Settlement or dismissal of securities litigation (removes overhang, typical 12-18 month timeline)",
+      "Positive readout from any of 10+ Phase 2/3 trials in 2026-2027 (eyecare, oncology, inflammation programs)",
+      "EYLEA biosimilar competition data showing pricing resilience or market share retention (ophthalmology moat validation)",
+      "Management commentary on pipeline advancement at upcoming conferences (restores credibility post-Fianlimab)",
+      "Analyst upgrades triggered by risk-adjusted probability weighting of remaining pipeline vs. single-asset failure"
+    ],
+    "confidence": 7,
+    "expected_return": 0.1,
+    "invalidates_if": [
+      "Multiple Phase 2/3 trials fail in next 12 months (suggests systemic pipeline problems, not single-asset issue)",
+      "Litigation settlement + damages exceed $5B or involve equity issuance (permanent shareholder dilution)",
+      "EYLEA U.S. sales decline >10% YoY in 2026 (indicates loss of moat, not temporary trial-driven repricing)",
+      "Credit rating downgrade or inability to access capital markets (liquidity stress during litigation)",
+      "Regeneron restates prior financial statements related to Fianlimab trial reporting (criminal exposure)"
     ],
     "status": "open",
     "actual_return": null,

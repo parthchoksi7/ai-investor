@@ -1,11 +1,49 @@
 {
-  "run_id": "20260825-134826",
-  "date": "2026-08-25",
-  "mode": "risk_watch",
-  "generated_at": "2026-08-25T13:48:26.993845+00:00",
+  "run_id": "20260826-134806",
+  "date": "2026-08-26",
+  "mode": "rebalance",
+  "generated_at": "2026-08-26T13:48:06.716653+00:00",
   "policy_version": "2.0-phase5-weekly",
-  "data_quality": null,
-  "execution_started_at": null,
-  "executed_at": "2026-08-25T13:49:07.658756+00:00",
-  "decisions": []
+  "data_quality": {
+    "data_quality_score": 100,
+    "data_quality_status": "OK",
+    "data_quality_hash": "2eadbb3ce02c06e2"
+  },
+  "execution_started_at": "2026-08-26T13:51:19.939861+00:00",
+  "executed_at": null,
+  "decisions": [
+    {
+      "ticker": "CFG",
+      "action": "SELL",
+      "target_weight": 0.0,
+      "source_of_capital": "CFG",
+      "expected_return": 0.02,
+      "rationale": "REDUCE flagged, alpha=MEDIUM weak, free Financials near cap",
+      "qty": 0.643275,
+      "price_as_of": "2026-08-26",
+      "sizing_price": 69.83
+    },
+    {
+      "ticker": "V",
+      "action": "BUY",
+      "target_weight": 0.085,
+      "source_of_capital": "CFG",
+      "expected_return": 0.12,
+      "rationale": "Top persist 86.6, quality compounder, beats CFG on all quant dims",
+      "qty": 0.116078,
+      "price_as_of": "2026-08-26",
+      "sizing_price": 384.14
+    },
+    {
+      "ticker": "REGN",
+      "action": "BUY",
+      "target_weight": 0.0521891668008794,
+      "source_of_capital": "cash",
+      "expected_return": 0.1,
+      "rationale": "HC headroom, mom=95.2, litigation priced in, pipeline optionality",
+      "qty": 0.032845,
+      "price_as_of": "2026-08-26",
+      "sizing_price": 833.56
+    }
+  ]
 }
