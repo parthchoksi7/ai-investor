@@ -2,7 +2,7 @@
   "schema": "dossier-1.0",
   "as_of": "2026-08-26",
   "price_as_of": "2026-08-26",
-  "generated_at": "2026-08-26T13:18:14",
+  "generated_at": "2026-08-26T14:01:55",
   "built_from_days": [
     "2026-08-18",
     "2026-08-19",
@@ -12,9 +12,66 @@
     "2026-08-25",
     "2026-08-26"
   ],
-  "n_tickers": 100,
+  "n_tickers": 171,
   "formula_version": "2.3-valuation-ttm",
   "tickers": {
+    "A": {
+      "ticker": "A",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 154.77,
+        "change_pct": 0.87
+      },
+      "factors": {
+        "momentum": 100.0,
+        "quality": 70.0,
+        "valuation": 50,
+        "volatility": 56.0,
+        "composite": 71.3,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 70.54,
+        "composite_7d_std": 1.63,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 13
+      },
+      "fundamentals": {
+        "gross_margin": 0.5243,
+        "operating_margin": 0.2129
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.1224,
+        "ret_63d": 0.3449,
+        "ret_126d": 0.2441,
+        "vol_ann": 43.6,
+        "beta": 0.52,
+        "max_dd_126d": -0.1161
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": null,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "volatility"
+        ]
+      }
+    },
     "AAPL": {
       "ticker": "AAPL",
       "as_of": "2026-08-26",
@@ -42,7 +99,7 @@
         "composite_7d_std": 1.28,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -54
+        "rank_chg_7d": -49
       },
       "fundamentals": {
         "gross_margin": 0.4865,
@@ -64,6 +121,12 @@
           "date": "2026-08-26",
           "type": "other",
           "summary": "Berkshire Hathaway allocated ~30% of $358B portfolio to Apple and Alphabet under new CEO Greg Abel.",
+          "url": null
+        },
+        {
+          "date": "2026-08-26",
+          "type": "other",
+          "summary": "AAPL is ~15% of Berkshire Hathaway's $358B portfolio under Greg Abel; ~30% invested in Apple and Alphabet for AI.",
           "url": null
         },
         {
@@ -112,12 +175,6 @@
           "date": "2026-08-17",
           "type": "macro",
           "summary": "Trump Administration signaled opposition to Apple sourcing memory chips from China, preferring U.S. or allied manufacturers",
-          "url": null
-        },
-        {
-          "date": "2026-08-17",
-          "type": "legal_regulatory",
-          "summary": "Trump Administration signaled opposition to Apple sourcing memory chips from China, preferring U.S. or allied manufacturers.",
           "url": null
         }
       ],
@@ -213,6 +270,12 @@
           "url": null
         },
         {
+          "date": "2026-08-26",
+          "type": "other",
+          "summary": "Billionaire Ken Griffin's Citadel increased stake in AbbVie by 547% in Q2, adding 2.7M shares (~$798M).",
+          "url": null
+        },
+        {
           "date": "2026-08-24",
           "type": "other",
           "summary": "Billionaire Ken Griffin increased stake through Citadel; transitioning Humira sales to Skyrizi, Rinvoq",
@@ -252,12 +315,6 @@
           "date": "2026-07-15",
           "type": "earnings",
           "summary": "Nxera Pharma (ABBV) to announce 2Q 2026 earnings results and host webinar on August 7, 2026.",
-          "url": null
-        },
-        {
-          "date": "2026-07-07",
-          "type": "other",
-          "summary": "iShares Core High Dividend ETF (HDV) gained over 15% YTD, outperforming S&P 500's 9%, with significant energy and healthcare exposure.",
           "url": null
         }
       ],
@@ -418,6 +475,122 @@
       },
       "since_entry": null
     },
+    "ABT": {
+      "ticker": "ABT",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 116.13,
+        "change_pct": -0.46
+      },
+      "factors": {
+        "momentum": 92.5,
+        "quality": 76.7,
+        "valuation": 50,
+        "volatility": 73.1,
+        "composite": 78.7,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 75.24,
+        "composite_7d_std": 5.03,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 138
+      },
+      "fundamentals": {
+        "gross_margin": 0.5642,
+        "operating_margin": 0.1817,
+        "debt_to_equity": 0.245
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.1114,
+        "ret_63d": 0.3399,
+        "ret_126d": 0.0135,
+        "vol_ann": 32.5,
+        "beta": -0.39,
+        "max_dd_126d": -0.2904
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": null,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "volatility"
+        ]
+      }
+    },
+    "ACN": {
+      "ticker": "ACN",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 186.93,
+        "change_pct": 0.21
+      },
+      "factors": {
+        "momentum": 62.5,
+        "quality": 63.3,
+        "valuation": 50,
+        "volatility": 29.7,
+        "composite": 51.9,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 48.96,
+        "composite_7d_std": 8.31,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -61
+      },
+      "fundamentals": {
+        "gross_margin": 0.3191,
+        "operating_margin": 0.1468,
+        "debt_to_equity": 0.0
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.2134,
+        "ret_63d": 0.0561,
+        "ret_126d": -0.0498,
+        "vol_ann": 60.7,
+        "beta": -0.7,
+        "max_dd_126d": -0.4212
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": null,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "volatility"
+        ]
+      }
+    },
     "ADBE": {
       "ticker": "ADBE",
       "as_of": "2026-08-26",
@@ -445,7 +618,7 @@
         "composite_7d_std": 1.82,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 3
+        "rank_chg_7d": 4
       },
       "fundamentals": {
         "gross_margin": 0.8912,
@@ -549,6 +722,781 @@
         ]
       }
     },
+    "ADI": {
+      "ticker": "ADI",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 373.66,
+        "change_pct": 0.67
+      },
+      "factors": {
+        "momentum": 48.9,
+        "quality": 90.0,
+        "valuation": 50,
+        "volatility": 56.0,
+        "composite": 70.4,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 59.47,
+        "composite_7d_std": 7.65,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 111
+      },
+      "fundamentals": {
+        "gross_margin": 0.6147,
+        "operating_margin": 0.2661,
+        "debt_to_equity": 0.0
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0048,
+        "ret_63d": -0.1102,
+        "ret_126d": 0.0493,
+        "vol_ann": 43.6,
+        "beta": 2.11,
+        "max_dd_126d": -0.2068
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": null,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "volatility"
+        ]
+      }
+    },
+    "ADM": {
+      "ticker": "ADM",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 79.16,
+        "change_pct": 1.28
+      },
+      "factors": {
+        "momentum": 55.5,
+        "quality": 48.3,
+        "valuation": 70.0,
+        "volatility": 80.4,
+        "composite": 62.8,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 64.96,
+        "composite_7d_std": 1.99,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -33
+      },
+      "fundamentals": {
+        "gross_margin": 0.0627,
+        "operating_margin": 0.0156,
+        "debt_to_equity": 0.3347,
+        "_eps_diluted_ttm": 3.65,
+        "_shares_diluted": 485000000.0,
+        "_fcf_ttm": 1677000000.0,
+        "_total_debt": 7604000000.0,
+        "_cash": 1060000000.0,
+        "_as_of_filing": "2026-02-17",
+        "pe_ratio": 21.69,
+        "fcf_yield": 0.0437
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0484,
+        "ret_63d": 0.0147,
+        "ret_126d": 0.1638,
+        "vol_ann": 27.7,
+        "beta": -0.01,
+        "max_dd_126d": -0.1229
+      },
+      "data_quality": {
+        "fundamentals_age_days": 190,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "ADP": {
+      "ticker": "ADP",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 282.78,
+        "change_pct": -0.08
+      },
+      "factors": {
+        "momentum": 100.0,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 75.4,
+        "composite": 84.6,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 77.66,
+        "composite_7d_std": 8.48,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 200
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.109,
+        "ret_63d": 0.2951,
+        "ret_126d": 0.3749,
+        "vol_ann": 31.0,
+        "beta": -0.51,
+        "max_dd_126d": -0.1655
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "ADSK": {
+      "ticker": "ADSK",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 251.21,
+        "change_pct": -1.26
+      },
+      "factors": {
+        "momentum": 89.8,
+        "quality": 76.7,
+        "valuation": 43.3,
+        "volatility": 53.7,
+        "composite": 64.6,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 62.43,
+        "composite_7d_std": 1.74,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 47
+      },
+      "fundamentals": {
+        "gross_margin": 0.9098,
+        "operating_margin": 0.219,
+        "debt_to_equity": 0.821,
+        "_eps_diluted_ttm": 6.85,
+        "_shares_diluted": 212000000.0,
+        "_fcf_ttm": 2729000000.0,
+        "_total_debt": 2500000000.0,
+        "_cash": 2671000000.0,
+        "_ebitda_ttm": 1938000000.0,
+        "_as_of_filing": "2026-03-03",
+        "pe_ratio": 36.67,
+        "fcf_yield": 0.0512,
+        "ev_ebitda": 27.39
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.112,
+        "ret_63d": 0.0545,
+        "ret_126d": 0.1372,
+        "vol_ann": 45.1,
+        "beta": -0.31,
+        "max_dd_126d": -0.2893
+      },
+      "data_quality": {
+        "fundamentals_age_days": 176,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "AEE": {
+      "ticker": "AEE",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 106.83,
+        "change_pct": -0.31
+      },
+      "factors": {
+        "momentum": 23.3,
+        "quality": 60.0,
+        "valuation": 50.0,
+        "volatility": 90.7,
+        "composite": 59.7,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 62.57,
+        "composite_7d_std": 1.96,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -55
+      },
+      "fundamentals": {
+        "operating_margin": 0.2303,
+        "debt_to_equity": 1.45,
+        "_eps_diluted_ttm": 5.68,
+        "_shares_diluted": 278700000.0,
+        "_fcf_ttm": -1400000000.0,
+        "_total_debt": 20588000000.0,
+        "_cash": 12000000.0,
+        "_ebitda_ttm": 3836000000.0,
+        "_as_of_filing": "2026-02-18",
+        "pe_ratio": 18.81,
+        "fcf_yield": -0.047,
+        "ev_ebitda": 13.13
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0471,
+        "ret_63d": -0.0378,
+        "ret_126d": -0.0399,
+        "vol_ann": 21.0,
+        "beta": -0.47,
+        "max_dd_126d": -0.103
+      },
+      "data_quality": {
+        "fundamentals_age_days": 189,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "AEP": {
+      "ticker": "AEP",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 122.77,
+        "change_pct": 0.65
+      },
+      "factors": {
+        "momentum": 15.0,
+        "quality": 60.0,
+        "valuation": 70.0,
+        "volatility": 90.8,
+        "composite": 63.5,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 64.89,
+        "composite_7d_std": 2.18,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -119
+      },
+      "fundamentals": {
+        "operating_margin": 0.2431,
+        "debt_to_equity": 1.5198,
+        "_eps_diluted_ttm": 6.77,
+        "_shares_diluted": 547054104.0,
+        "_fcf_ttm": 2595000000.0,
+        "_total_debt": 52258000000.0,
+        "_cash": 306000000.0,
+        "_as_of_filing": "2026-02-12",
+        "pe_ratio": 18.13,
+        "fcf_yield": 0.0386
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.081,
+        "ret_63d": -0.0621,
+        "ret_126d": -0.0727,
+        "vol_ann": 21.0,
+        "beta": -0.29,
+        "max_dd_126d": -0.128
+      },
+      "data_quality": {
+        "fundamentals_age_days": 195,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "AFL": {
+      "ticker": "AFL",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 116.18,
+        "change_pct": -1.71
+      },
+      "factors": {
+        "momentum": 43.6,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 91.9,
+        "composite": 73.8,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 78.36,
+        "composite_7d_std": 3.55,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -89
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.082,
+        "ret_63d": -0.0055,
+        "ret_126d": 0.0331,
+        "vol_ann": 20.3,
+        "beta": -0.64,
+        "max_dd_126d": -0.1041
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "AIG": {
+      "ticker": "AIG",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 76.88999938964844,
+        "change_pct": 0.67
+      },
+      "factors": {
+        "momentum": 48.8,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 89.1,
+        "composite": 74.0,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 73.47,
+        "composite_7d_std": 7.5,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -94
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0487,
+        "ret_63d": 0.0283,
+        "ret_126d": -0.0286,
+        "vol_ann": 22.1,
+        "beta": 0.33,
+        "max_dd_126d": -0.1004
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "AJG": {
+      "ticker": "AJG",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 268.51,
+        "change_pct": -1.28
+      },
+      "factors": {
+        "momentum": 94.0,
+        "quality": 70.0,
+        "valuation": 30.0,
+        "volatility": 71.8,
+        "composite": 64.0,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 62.81,
+        "composite_7d_std": 1.34,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 31
+      },
+      "fundamentals": {
+        "debt_to_equity": 0.552,
+        "_eps_diluted_ttm": 6.03,
+        "_shares_diluted": 256700000.0,
+        "_total_debt": 13475000000.0,
+        "_cash": 1386000000.0,
+        "_as_of_filing": "2026-02-17",
+        "pe_ratio": 44.53
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0598,
+        "ret_63d": 0.3165,
+        "ret_126d": 0.2432,
+        "vol_ann": 33.3,
+        "beta": -0.88,
+        "max_dd_126d": -0.1639
+      },
+      "data_quality": {
+        "fundamentals_age_days": 190,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "AKAM": {
+      "ticker": "AKAM",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 105.74,
+        "change_pct": 0.08
+      },
+      "factors": {
+        "momentum": 15.8,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 39.5,
+        "composite": 30.6,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 43.81,
+        "composite_7d_std": 7.6,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -44
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.063,
+        "ret_63d": -0.2866,
+        "ret_126d": 0.056,
+        "vol_ann": 54.3,
+        "beta": 1.7,
+        "max_dd_126d": -0.3443
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "ALB": {
+      "ticker": "ALB",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 133.18,
+        "change_pct": -5.89
+      },
+      "factors": {
+        "momentum": 40.0,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 49.6,
+        "composite": 46.0,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 44.81,
+        "composite_7d_std": 3.83,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 15
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.1463,
+        "ret_63d": -0.2376,
+        "ret_126d": -0.2872,
+        "vol_ann": 47.8,
+        "beta": 1.25,
+        "max_dd_126d": -0.4752
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "ALGN": {
+      "ticker": "ALGN",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 159.61,
+        "change_pct": -0.02
+      },
+      "factors": {
+        "momentum": 20.0,
+        "quality": 70.0,
+        "valuation": 60.0,
+        "volatility": 53.6,
+        "composite": 55.9,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 58.81,
+        "composite_7d_std": 2.36,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -96
+      },
+      "fundamentals": {
+        "gross_margin": 0.6719,
+        "operating_margin": 0.1353,
+        "_eps_diluted_ttm": 5.74,
+        "_shares_diluted": 71520000.0,
+        "_fcf_ttm": 633569000.0,
+        "_cash": 1102591000.0,
+        "_ebitda_ttm": 801981000.0,
+        "_as_of_filing": "2026-02-27",
+        "pe_ratio": 27.81,
+        "fcf_yield": 0.0555
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0502,
+        "ret_63d": -0.0241,
+        "ret_126d": -0.1397,
+        "vol_ann": 45.1,
+        "beta": 0.94,
+        "max_dd_126d": -0.2086
+      },
+      "data_quality": {
+        "fundamentals_age_days": 180,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "ALL": {
+      "ticker": "ALL",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 257.62,
+        "change_pct": -0.99
+      },
+      "factors": {
+        "momentum": 82.9,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 75.7,
+        "composite": 78.4,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 81.8,
+        "composite_7d_std": 3.47,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -48
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.014,
+        "ret_63d": 0.2105,
+        "ret_126d": 0.2278,
+        "vol_ann": 30.8,
+        "beta": -1.06,
+        "max_dd_126d": -0.0823
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
     "AMAT": {
       "ticker": "AMAT",
       "as_of": "2026-08-26",
@@ -576,7 +1524,7 @@
         "composite_7d_std": 0.67,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -2
+        "rank_chg_7d": -1
       },
       "fundamentals": {
         "gross_margin": 0.4867,
@@ -705,7 +1653,7 @@
         "composite_7d_std": 0.87,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -7
+        "rank_chg_7d": -5
       },
       "fundamentals": {
         "gross_margin": 0.532,
@@ -758,6 +1706,12 @@
           "url": null
         },
         {
+          "date": "2026-08-26",
+          "type": "price_target",
+          "summary": "Wall Street analysts project $1,250 price target for AMD, implying 164% upside from GPU market share gains.",
+          "url": null
+        },
+        {
           "date": "2026-08-23",
           "type": "capital_return",
           "summary": "AMD committing $10B+ in Taiwan through 2029 for advanced chip packaging and manufacturing to support 60%+ annual data center revenue growth.",
@@ -773,12 +1727,6 @@
           "date": "2026-08-23",
           "type": "capital_return",
           "summary": "AMD committing over $10 billion in Taiwan through 2029 for advanced chip packaging and manufacturing capacity expansion.",
-          "url": null
-        },
-        {
-          "date": "2026-08-23",
-          "type": "capital_return",
-          "summary": "AMD committing $10B+ in Taiwan through 2029 for advanced chip packaging and manufacturing with TSMC to support 60%+ annual data center reven",
           "url": null
         }
       ],
@@ -797,6 +1745,73 @@
       },
       "data_quality": {
         "fundamentals_age_days": 203,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "AME": {
+      "ticker": "AME",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 241.77,
+        "change_pct": -0.23
+      },
+      "factors": {
+        "momentum": 69.3,
+        "quality": 90.0,
+        "valuation": 50.0,
+        "volatility": 87.4,
+        "composite": 76.2,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 78.01,
+        "composite_7d_std": 1.79,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -54
+      },
+      "fundamentals": {
+        "operating_margin": 0.2581,
+        "debt_to_equity": 0.2148,
+        "_eps_diluted_ttm": 6.84,
+        "_shares_diluted": 229855000.0,
+        "_fcf_ttm": 1824950000.0,
+        "_total_debt": 2036174000.0,
+        "_cash": 495446000.0,
+        "_as_of_filing": "2026-02-17",
+        "pe_ratio": 35.35,
+        "fcf_yield": 0.0328
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0056,
+        "ret_63d": 0.0537,
+        "ret_126d": 0.0208,
+        "vol_ann": 23.2,
+        "beta": 0.94,
+        "max_dd_126d": -0.137
+      },
+      "data_quality": {
+        "fundamentals_age_days": 190,
         "fundamentals_stale": true,
         "factors_fresh": true,
         "coverage": [
@@ -834,7 +1849,7 @@
         "composite_7d_std": 0.12,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -30
+        "rank_chg_7d": -22
       },
       "fundamentals": {
         "gross_margin": 0.1289,
@@ -920,6 +1935,58 @@
         ]
       }
     },
+    "AMP": {
+      "ticker": "AMP",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 560.26,
+        "change_pct": -0.16
+      },
+      "factors": {
+        "momentum": 91.2,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 86.5,
+        "composite": 88.3,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 89.34,
+        "composite_7d_std": 0.54,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -3
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0414,
+        "ret_63d": 0.23,
+        "ret_126d": 0.2017,
+        "vol_ann": 23.7,
+        "beta": 0.33,
+        "max_dd_126d": -0.1162
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
     "AMT": {
       "ticker": "AMT",
       "as_of": "2026-08-26",
@@ -947,7 +2014,7 @@
         "composite_7d_std": 2.24,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 25
+        "rank_chg_7d": 31
       },
       "fundamentals": {
         "operating_margin": 0.4552,
@@ -1016,7 +2083,7 @@
         "composite_7d_std": 0.52,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -1
+        "rank_chg_7d": 2
       },
       "fundamentals": {
         "gross_margin": 0.5077,
@@ -1038,6 +2105,12 @@
           "date": "2026-08-26",
           "type": "other",
           "summary": "Recommended as long-term buy-and-hold stock; trading at lowest valuation in decade at 20x earnings",
+          "url": null
+        },
+        {
+          "date": "2026-08-26",
+          "type": "other",
+          "summary": "Bill Ackman's Pershing Square trimmed Amazon position while adding Microsoft as largest AI holding.",
           "url": null
         },
         {
@@ -1087,12 +2160,6 @@
           "type": "other",
           "summary": "Amazon trading at P/E of 21, lowest in decade; Q2 earnings showed 37% AWS growth, 243% net income increase.",
           "url": null
-        },
-        {
-          "date": "2026-08-23",
-          "type": "other",
-          "summary": "Amazon's free cash flow turned negative $7.6B despite 33% operating cash flow growth; massive AI capex driving $77B debt raise.",
-          "url": null
         }
       ],
       "earnings": {
@@ -1116,6 +2183,366 @@
           "momentum",
           "quality",
           "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "ANET": {
+      "ticker": "ANET",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 190.94,
+        "change_pct": 1.48
+      },
+      "factors": {
+        "momentum": 100.0,
+        "quality": 90.0,
+        "valuation": 10.0,
+        "volatility": 32.0,
+        "composite": 57.0,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 56.49,
+        "composite_7d_std": 0.49,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 20
+      },
+      "fundamentals": {
+        "gross_margin": 0.6406,
+        "operating_margin": 0.4282,
+        "debt_to_equity": 0.0,
+        "_eps_diluted_ttm": 3.17,
+        "_shares_diluted": 1276000000.0,
+        "_total_debt": 0.0,
+        "_cash": 2290200000.0,
+        "_ebitda_ttm": 4639600000.0,
+        "_as_of_filing": "2026-02-17",
+        "pe_ratio": 60.23,
+        "ev_ebitda": 52.02
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.1182,
+        "ret_63d": 0.2084,
+        "ret_126d": 0.4828,
+        "vol_ann": 59.2,
+        "beta": 2.47,
+        "max_dd_126d": -0.2324
+      },
+      "data_quality": {
+        "fundamentals_age_days": 190,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "AON": {
+      "ticker": "AON",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 354.83,
+        "change_pct": -1.19
+      },
+      "factors": {
+        "momentum": 73.3,
+        "quality": 70.0,
+        "valuation": 63.3,
+        "volatility": 81.2,
+        "composite": 71.6,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 71.11,
+        "composite_7d_std": 1.36,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -42
+      },
+      "fundamentals": {
+        "operating_margin": 0.2528,
+        "debt_to_equity": 1.6306,
+        "_eps_diluted_ttm": 18.13,
+        "_shares_diluted": 213900000.0,
+        "_fcf_ttm": 3248000000.0,
+        "_total_debt": 14967000000.0,
+        "_cash": 1062000000.0,
+        "_ebitda_ttm": 4844000000.0,
+        "_as_of_filing": "2026-02-13",
+        "pe_ratio": 19.57,
+        "fcf_yield": 0.0428,
+        "ev_ebitda": 18.54
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0336,
+        "ret_63d": 0.1113,
+        "ret_126d": 0.1112,
+        "vol_ann": 27.2,
+        "beta": -0.65,
+        "max_dd_126d": -0.0998
+      },
+      "data_quality": {
+        "fundamentals_age_days": 194,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "APD": {
+      "ticker": "APD",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 303.85,
+        "change_pct": -0.78
+      },
+      "factors": {
+        "momentum": 78.2,
+        "quality": 50.0,
+        "valuation": 10.0,
+        "volatility": 81.3,
+        "composite": 52.1,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 51.29,
+        "composite_7d_std": 0.58,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 10
+      },
+      "fundamentals": {
+        "gross_margin": 0.2491,
+        "operating_margin": -0.0729,
+        "debt_to_equity": 0.352,
+        "_eps_diluted_ttm": -0.22,
+        "_shares_diluted": 222800000.0,
+        "_total_debt": 3366600000.0,
+        "_cash": 980500000.0,
+        "_ebitda_ttm": 950800000.0,
+        "_as_of_filing": "2025-11-20",
+        "ev_ebitda": 73.71
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0385,
+        "ret_63d": 0.0492,
+        "ret_126d": 0.0872,
+        "vol_ann": 27.1,
+        "beta": 0.18,
+        "max_dd_126d": -0.1138
+      },
+      "data_quality": {
+        "fundamentals_age_days": 279,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "APH": {
+      "ticker": "APH",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 158.78,
+        "change_pct": 2.08
+      },
+      "factors": {
+        "momentum": 77.5,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 52.4,
+        "composite": 61.8,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 62.6,
+        "composite_7d_std": 4.72,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -40
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0636,
+        "ret_63d": 0.1377,
+        "ret_126d": 0.0481,
+        "vol_ann": 45.9,
+        "beta": 1.66,
+        "max_dd_126d": -0.2199
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "APTV": {
+      "ticker": "APTV",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 46.63,
+        "change_pct": -1.5
+      },
+      "factors": {
+        "momentum": 0.0,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 36.1,
+        "composite": 22.6,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 28.54,
+        "composite_7d_std": 9.16,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -24
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.1883,
+        "ret_63d": -0.2064,
+        "ret_126d": -0.3998,
+        "vol_ann": 56.6,
+        "beta": 0.93,
+        "max_dd_126d": -0.399
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "ARE": {
+      "ticker": "ARE",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 52.9,
+        "change_pct": -2.11
+      },
+      "factors": {
+        "momentum": 76.1,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 47.1,
+        "composite": 58.0,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 53.6,
+        "composite_7d_std": 6.44,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -18
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0294,
+        "ret_63d": 0.0914,
+        "ret_126d": -0.0153,
+        "vol_ann": 49.4,
+        "beta": 0.01,
+        "max_dd_126d": -0.2669
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
           "volatility"
         ]
       }
@@ -1371,6 +2798,58 @@
         ]
       }
     },
+    "AVY": {
+      "ticker": "AVY",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 179.95,
+        "change_pct": -2.04
+      },
+      "factors": {
+        "momentum": 86.5,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 79.5,
+        "composite": 82.1,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 77.44,
+        "composite_7d_std": 6.47,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 82
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.1038,
+        "ret_63d": 0.1261,
+        "ret_126d": -0.0886,
+        "vol_ann": 28.3,
+        "beta": 0.29,
+        "max_dd_126d": -0.2207
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
     "AXP": {
       "ticker": "AXP",
       "as_of": "2026-08-26",
@@ -1398,7 +2877,7 @@
         "composite_7d_std": 1.33,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -84
+        "rank_chg_7d": -78
       },
       "fundamentals": {
         "operating_margin": 0.0688,
@@ -1490,6 +2969,67 @@
       },
       "since_entry": null
     },
+    "AZO": {
+      "ticker": "AZO",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 3027.34,
+        "change_pct": 0.59
+      },
+      "factors": {
+        "momentum": 22.8,
+        "quality": 70.0,
+        "valuation": 50,
+        "volatility": 75.4,
+        "composite": 62.4,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 60.51,
+        "composite_7d_std": 1.4,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 4
+      },
+      "fundamentals": {
+        "gross_margin": 0.5262,
+        "operating_margin": 0.1906,
+        "_shares_diluted": 16852000.0,
+        "_total_debt": 9016477000.0,
+        "_cash": 253729000.0,
+        "_as_of_filing": "2025-10-27"
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0156,
+        "ret_63d": -0.0235,
+        "ret_126d": -0.2001,
+        "vol_ann": 31.0,
+        "beta": -0.36,
+        "max_dd_126d": -0.247
+      },
+      "data_quality": {
+        "fundamentals_age_days": 303,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "volatility"
+        ]
+      }
+    },
     "BA": {
       "ticker": "BA",
       "as_of": "2026-08-26",
@@ -1517,7 +3057,7 @@
         "composite_7d_std": 3.18,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -4
+        "rank_chg_7d": -3
       },
       "fundamentals": {
         "gross_margin": 0.0468,
@@ -1648,7 +3188,7 @@
         "composite_7d_std": 1.71,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -38
+        "rank_chg_7d": -39
       },
       "fundamentals": {
         "debt_to_equity": 2.4313,
@@ -1745,6 +3285,282 @@
       },
       "since_entry": null
     },
+    "BALL": {
+      "ticker": "BALL",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 64.08,
+        "change_pct": -0.53
+      },
+      "factors": {
+        "momentum": 72.8,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 86.5,
+        "composite": 81.4,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 75.53,
+        "composite_7d_std": 7.48,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 142
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0091,
+        "ret_63d": 0.1332,
+        "ret_126d": -0.0367,
+        "vol_ann": 23.8,
+        "beta": -0.06,
+        "max_dd_126d": -0.2161
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "BAX": {
+      "ticker": "BAX",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 26.29,
+        "change_pct": -0.76
+      },
+      "factors": {
+        "momentum": 100.0,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 57.0,
+        "composite": 73.1,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 66.11,
+        "composite_7d_std": 10.73,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 222
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.1264,
+        "ret_63d": 0.3566,
+        "ret_126d": 0.2744,
+        "vol_ann": 43.0,
+        "beta": 0.68,
+        "max_dd_126d": -0.2378
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "BBY": {
+      "ticker": "BBY",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 85.29,
+        "change_pct": -2.5
+      },
+      "factors": {
+        "momentum": 79.6,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 52.6,
+        "composite": 62.7,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 66.03,
+        "composite_7d_std": 1.91,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -106
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0357,
+        "ret_63d": 0.3491,
+        "ret_126d": 0.3596,
+        "vol_ann": 45.8,
+        "beta": 0.48,
+        "max_dd_126d": -0.1761
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "BDX": {
+      "ticker": "BDX",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 190.60499572753906,
+        "change_pct": 0.43
+      },
+      "factors": {
+        "momentum": 94.7,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 78.5,
+        "composite": 84.6,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 78.43,
+        "composite_7d_std": 9.74,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 153
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.1459,
+        "ret_63d": 0.3036,
+        "ret_126d": 0.0675,
+        "vol_ann": 29.0,
+        "beta": -0.07,
+        "max_dd_126d": -0.1928
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "BIIB": {
+      "ticker": "BIIB",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 220.77,
+        "change_pct": 1.21
+      },
+      "factors": {
+        "momentum": 96.7,
+        "quality": 90.0,
+        "valuation": 80.0,
+        "volatility": 62.4,
+        "composite": 81.6,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 80.19,
+        "composite_7d_std": 1.14,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -5
+      },
+      "fundamentals": {
+        "gross_margin": 1.1768,
+        "operating_margin": 0.2872,
+        "debt_to_equity": 0.3444,
+        "_eps_diluted_ttm": 9.3,
+        "_shares_diluted": 148400000.0,
+        "_fcf_ttm": 2422900000.0,
+        "_total_debt": 6288500000.0,
+        "_cash": 3382700000.0,
+        "_as_of_filing": "2026-02-06",
+        "pe_ratio": 23.74,
+        "fcf_yield": 0.074
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.1031,
+        "ret_63d": 0.1434,
+        "ret_126d": 0.1314,
+        "vol_ann": 39.4,
+        "beta": -0.11,
+        "max_dd_126d": -0.1139
+      },
+      "data_quality": {
+        "fundamentals_age_days": 201,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
     "BKNG": {
       "ticker": "BKNG",
       "as_of": "2026-08-26",
@@ -1835,6 +3651,58 @@
           "momentum",
           "quality",
           "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "BKR": {
+      "ticker": "BKR",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 61.82,
+        "change_pct": -0.27
+      },
+      "factors": {
+        "momentum": 60.4,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 69.5,
+        "composite": 66.1,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 69.86,
+        "composite_7d_std": 4.15,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 4
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0203,
+        "ret_63d": -0.0736,
+        "ret_126d": -0.0448,
+        "vol_ann": 34.8,
+        "beta": 0.59,
+        "max_dd_126d": -0.2424
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
           "volatility"
         ]
       }
@@ -1978,7 +3846,7 @@
         "composite_7d_std": 0.53,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -27
+        "rank_chg_7d": -28
       },
       "fundamentals": {
         "gross_margin": 0.6379,
@@ -2049,6 +3917,128 @@
         ]
       }
     },
+    "BSX": {
+      "ticker": "BSX",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 49.86,
+        "change_pct": 1.73
+      },
+      "factors": {
+        "momentum": 40.5,
+        "quality": 83.3,
+        "valuation": 70.0,
+        "volatility": 60.9,
+        "composite": 68.0,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 68.79,
+        "composite_7d_std": 0.59,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -18
+      },
+      "fundamentals": {
+        "gross_margin": 0.6901,
+        "operating_margin": 0.18,
+        "debt_to_equity": 0.1574,
+        "_eps_diluted_ttm": 2.47,
+        "_shares_diluted": 1474800000.0,
+        "_fcf_ttm": 3625000000.0,
+        "_total_debt": 4808000000.0,
+        "_cash": 539000000.0,
+        "_ebitda_ttm": 5565000000.0,
+        "_as_of_filing": "2026-02-17",
+        "pe_ratio": 20.19,
+        "fcf_yield": 0.0493,
+        "ev_ebitda": 13.98
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0956,
+        "ret_63d": -0.135,
+        "ret_126d": -0.3365,
+        "vol_ann": 40.4,
+        "beta": 0.16,
+        "max_dd_126d": -0.4453
+      },
+      "data_quality": {
+        "fundamentals_age_days": 190,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "BWA": {
+      "ticker": "BWA",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 65.1,
+        "change_pct": 1.15
+      },
+      "factors": {
+        "momentum": 58.9,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 61.2,
+        "composite": 60.3,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 64.89,
+        "composite_7d_std": 6.72,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 62
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0223,
+        "ret_63d": -0.0463,
+        "ret_126d": 0.1062,
+        "vol_ann": 40.2,
+        "beta": 1.22,
+        "max_dd_126d": -0.2001
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
     "C": {
       "ticker": "C",
       "as_of": "2026-08-26",
@@ -2076,7 +4066,7 @@
         "composite_7d_std": 1.95,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -53
+        "rank_chg_7d": -50
       },
       "fundamentals": {
         "debt_to_equity": 3.8387,
@@ -2136,6 +4126,195 @@
         ]
       }
     },
+    "CAG": {
+      "ticker": "CAG",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 16.27,
+        "change_pct": -2.4
+      },
+      "factors": {
+        "momentum": 81.2,
+        "quality": 36.7,
+        "valuation": 90.0,
+        "volatility": 69.2,
+        "composite": 64.8,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 62.64,
+        "composite_7d_std": 2.39,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 40
+      },
+      "fundamentals": {
+        "gross_margin": 0.2392,
+        "operating_margin": -0.1443,
+        "debt_to_equity": 1.1372,
+        "_eps_diluted_ttm": -4.0,
+        "_shares_diluted": 479000000.0,
+        "_fcf_ttm": 978700000.0,
+        "_total_debt": 8008200000.0,
+        "_cash": 218000000.0,
+        "_ebitda_ttm": -1232400000.0,
+        "_as_of_filing": "2026-07-15",
+        "fcf_yield": 0.1256
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0676,
+        "ret_63d": 0.2373,
+        "ret_126d": -0.1482,
+        "vol_ann": 35.0,
+        "beta": -0.41,
+        "max_dd_126d": -0.3465
+      },
+      "data_quality": {
+        "fundamentals_age_days": 42,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "CAH": {
+      "ticker": "CAH",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 237.92,
+        "change_pct": 2.39
+      },
+      "factors": {
+        "momentum": 84.7,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 86.6,
+        "composite": 85.9,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 78.04,
+        "composite_7d_std": 10.97,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 235
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0374,
+        "ret_63d": 0.1874,
+        "ret_126d": 0.0529,
+        "vol_ann": 23.7,
+        "beta": -0.26,
+        "max_dd_126d": -0.2061
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "CARR": {
+      "ticker": "CARR",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 58.52,
+        "change_pct": -2.42
+      },
+      "factors": {
+        "momentum": 9.0,
+        "quality": 60.0,
+        "valuation": 50.0,
+        "volatility": 65.5,
+        "composite": 51.2,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 52.46,
+        "composite_7d_std": 2.25,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -41
+      },
+      "fundamentals": {
+        "operating_margin": 0.0999,
+        "debt_to_equity": 0.8044,
+        "_eps_diluted_ttm": 1.53,
+        "_shares_diluted": 842800000.0,
+        "_fcf_ttm": 1686000000.0,
+        "_total_debt": 11427000000.0,
+        "_cash": 1371000000.0,
+        "_ebitda_ttm": 3088000000.0,
+        "_as_of_filing": "2026-02-05",
+        "pe_ratio": 38.25,
+        "fcf_yield": 0.0342,
+        "ev_ebitda": 19.23
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.1559,
+        "ret_63d": -0.0982,
+        "ret_126d": -0.0789,
+        "vol_ann": 37.4,
+        "beta": 1.23,
+        "max_dd_126d": -0.23
+      },
+      "data_quality": {
+        "fundamentals_age_days": 202,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
     "CAT": {
       "ticker": "CAT",
       "as_of": "2026-08-26",
@@ -2163,7 +4342,7 @@
         "composite_7d_std": 1.07,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -1
+        "rank_chg_7d": 0
       },
       "fundamentals": {
         "gross_margin": 0.0412,
@@ -2264,7 +4443,7 @@
         "composite_7d_std": 0.83,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -20
+        "rank_chg_7d": -21
       },
       "fundamentals": {
         "debt_to_equity": 0.2132,
@@ -2309,6 +4488,418 @@
         "confidence": 7
       },
       "since_entry": null
+    },
+    "CBRE": {
+      "ticker": "CBRE",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 151.74,
+        "change_pct": -0.13
+      },
+      "factors": {
+        "momentum": 86.7,
+        "quality": 50.0,
+        "valuation": 50.0,
+        "volatility": 72.1,
+        "composite": 61.0,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 58.89,
+        "composite_7d_std": 2.47,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 13
+      },
+      "fundamentals": {
+        "operating_margin": 0.0432,
+        "debt_to_equity": 0.5688,
+        "_eps_diluted_ttm": 4.36,
+        "_shares_diluted": 293859609.0,
+        "_fcf_ttm": 938000000.0,
+        "_total_debt": 5800000000.0,
+        "_cash": 1489000000.0,
+        "_as_of_filing": "2026-02-12",
+        "pe_ratio": 34.8,
+        "fcf_yield": 0.021
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0546,
+        "ret_63d": 0.1694,
+        "ret_126d": 0.0381,
+        "vol_ann": 33.2,
+        "beta": 0.29,
+        "max_dd_126d": -0.1881
+      },
+      "data_quality": {
+        "fundamentals_age_days": 195,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "CCI": {
+      "ticker": "CCI",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 76.29,
+        "change_pct": -0.14
+      },
+      "factors": {
+        "momentum": 21.8,
+        "quality": 90.0,
+        "valuation": 56.7,
+        "volatility": 69.1,
+        "composite": 66.2,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 64.66,
+        "composite_7d_std": 0.96,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 1
+      },
+      "fundamentals": {
+        "operating_margin": 0.4866,
+        "_eps_diluted_ttm": 1.97,
+        "_shares_diluted": 434000000.0,
+        "_fcf_ttm": 2406000000.0,
+        "_total_debt": 24337000000.0,
+        "_cash": 1042000000.0,
+        "_ebitda_ttm": 2663000000.0,
+        "_as_of_filing": "2026-02-23",
+        "pe_ratio": 38.73,
+        "fcf_yield": 0.0727,
+        "ev_ebitda": 21.18
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0291,
+        "ret_63d": -0.1583,
+        "ret_126d": -0.1393,
+        "vol_ann": 35.1,
+        "beta": -0.69,
+        "max_dd_126d": -0.221
+      },
+      "data_quality": {
+        "fundamentals_age_days": 184,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "CCL": {
+      "ticker": "CCL",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 26.14,
+        "change_pct": 1.67
+      },
+      "factors": {
+        "momentum": 21.0,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 57.1,
+        "composite": 43.6,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 51.46,
+        "composite_7d_std": 6.76,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -183
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0361,
+        "ret_63d": -0.0213,
+        "ret_126d": -0.173,
+        "vol_ann": 42.9,
+        "beta": 1.78,
+        "max_dd_126d": -0.2694
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "CDNS": {
+      "ticker": "CDNS",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 331.9,
+        "change_pct": 5.06
+      },
+      "factors": {
+        "momentum": 47.3,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 55.8,
+        "composite": 52.6,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 47.71,
+        "composite_7d_std": 6.35,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -47
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0198,
+        "ret_63d": -0.1306,
+        "ret_126d": 0.142,
+        "vol_ann": 43.7,
+        "beta": 1.5,
+        "max_dd_126d": -0.2469
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "CDW": {
+      "ticker": "CDW",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 142.09,
+        "change_pct": 7.23
+      },
+      "factors": {
+        "momentum": 86.7,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 37.6,
+        "composite": 56.0,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 56.27,
+        "composite_7d_std": 2.34,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 31
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0293,
+        "ret_63d": 0.3085,
+        "ret_126d": 0.1319,
+        "vol_ann": 55.6,
+        "beta": 0.88,
+        "max_dd_126d": -0.3029
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "CE": {
+      "ticker": "CE",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 44.52,
+        "change_pct": -1.63
+      },
+      "factors": {
+        "momentum": 17.0,
+        "quality": 28.3,
+        "valuation": 50.0,
+        "volatility": 59.0,
+        "composite": 39.7,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 38.84,
+        "composite_7d_std": 1.13,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 11
+      },
+      "fundamentals": {
+        "gross_margin": 0.2045,
+        "operating_margin": -0.0824,
+        "debt_to_equity": 3.1153,
+        "_eps_diluted_ttm": -10.69,
+        "_shares_diluted": 110249548.0,
+        "_fcf_ttm": 708000000.0,
+        "_total_debt": 13324000000.0,
+        "_cash": 1364000000.0,
+        "_ebitda_ttm": 143000000.0,
+        "_as_of_filing": "2026-02-24",
+        "fcf_yield": 0.1442,
+        "ev_ebitda": 117.96
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0027,
+        "ret_63d": -0.1499,
+        "ret_126d": -0.1614,
+        "vol_ann": 41.6,
+        "beta": 0.6,
+        "max_dd_126d": -0.3769
+      },
+      "data_quality": {
+        "fundamentals_age_days": 183,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "CF": {
+      "ticker": "CF",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 127.26,
+        "change_pct": -1.53
+      },
+      "factors": {
+        "momentum": 87.8,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 65.4,
+        "composite": 73.8,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 70.09,
+        "composite_7d_std": 3.48,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -24
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0624,
+        "ret_63d": 0.068,
+        "ret_126d": 0.3241,
+        "vol_ann": 37.5,
+        "beta": -0.66,
+        "max_dd_126d": -0.2575
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
     },
     "CFG": {
       "ticker": "CFG",
@@ -2383,6 +4974,435 @@
       },
       "since_entry": null
     },
+    "CHD": {
+      "ticker": "CHD",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 102.62999725341797,
+        "change_pct": 0.07
+      },
+      "factors": {
+        "momentum": 73.4,
+        "quality": 70.0,
+        "valuation": 50.0,
+        "volatility": 84.7,
+        "composite": 69.2,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 69.64,
+        "composite_7d_std": 1.38,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -59
+      },
+      "fundamentals": {
+        "gross_margin": 0.4473,
+        "operating_margin": 0.1737,
+        "debt_to_equity": 0.551,
+        "_eps_diluted_ttm": 3.12,
+        "_shares_diluted": 238200000.0,
+        "_total_debt": 2256200000.0,
+        "_cash": 254800000.0,
+        "_as_of_filing": "2026-02-12",
+        "pe_ratio": 32.89
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0302,
+        "ret_63d": 0.0503,
+        "ret_126d": -0.0034,
+        "vol_ann": 24.9,
+        "beta": 0.48,
+        "max_dd_126d": -0.1348
+      },
+      "data_quality": {
+        "fundamentals_age_days": 195,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "CHTR": {
+      "ticker": "CHTR",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 155.14,
+        "change_pct": 3.22
+      },
+      "factors": {
+        "momentum": 58.2,
+        "quality": 47.5,
+        "valuation": 90.0,
+        "volatility": 42.2,
+        "composite": 58.4,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 58.13,
+        "composite_7d_std": 0.25,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 10
+      },
+      "fundamentals": {
+        "operating_margin": 0.2357,
+        "debt_to_equity": 5.9023,
+        "_eps_diluted_ttm": 38.43,
+        "_shares_diluted": 121255667.0,
+        "_fcf_ttm": 4358000000.0,
+        "_total_debt": 94958000000.0,
+        "_cash": 509000000.0,
+        "_ebitda_ttm": 21425000000.0,
+        "_as_of_filing": "2026-01-30",
+        "pe_ratio": 4.04,
+        "fcf_yield": 0.2317,
+        "ev_ebitda": 5.29
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.1788,
+        "ret_63d": 0.0774,
+        "ret_126d": -0.3309,
+        "vol_ann": 52.5,
+        "beta": 0.32,
+        "max_dd_126d": -0.4961
+      },
+      "data_quality": {
+        "fundamentals_age_days": 208,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "CI": {
+      "ticker": "CI",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 279.32,
+        "change_pct": -0.4
+      },
+      "factors": {
+        "momentum": 48.3,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 78.3,
+        "composite": 67.0,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 57.9,
+        "composite_7d_std": 4.17,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 126
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0402,
+        "ret_63d": -0.0054,
+        "ret_126d": -0.006,
+        "vol_ann": 29.1,
+        "beta": -0.42,
+        "max_dd_126d": -0.1127
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "CL": {
+      "ticker": "CL",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 91.33,
+        "change_pct": -1.32
+      },
+      "factors": {
+        "momentum": 52.5,
+        "quality": 61.7,
+        "valuation": 50.0,
+        "volatility": 83.6,
+        "composite": 62.9,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 64.23,
+        "composite_7d_std": 1.36,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -61
+      },
+      "fundamentals": {
+        "gross_margin": 0.6011,
+        "operating_margin": 0.1622,
+        "debt_to_equity": 145.1667,
+        "_eps_diluted_ttm": 2.53,
+        "_shares_diluted": 801800000.0,
+        "_fcf_ttm": 3858000000.0,
+        "_total_debt": 7823000000.0,
+        "_cash": 1370000000.0,
+        "_ebitda_ttm": 3773000000.0,
+        "_as_of_filing": "2026-02-23",
+        "pe_ratio": 36.1,
+        "fcf_yield": 0.0527,
+        "ev_ebitda": 21.12
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0071,
+        "ret_63d": 0.0165,
+        "ret_126d": -0.0691,
+        "vol_ann": 25.7,
+        "beta": -0.51,
+        "max_dd_126d": -0.1748
+      },
+      "data_quality": {
+        "fundamentals_age_days": 184,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "CLX": {
+      "ticker": "CLX",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 104.93,
+        "change_pct": -2.09
+      },
+      "factors": {
+        "momentum": 77.0,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 68.7,
+        "composite": 71.8,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 70.89,
+        "composite_7d_std": 5.93,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 113
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0772,
+        "ret_63d": 0.0904,
+        "ret_126d": -0.1715,
+        "vol_ann": 35.3,
+        "beta": -0.06,
+        "max_dd_126d": -0.3227
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "CMCSA": {
+      "ticker": "CMCSA",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 27.1,
+        "change_pct": 0.3
+      },
+      "factors": {
+        "momentum": 60.5,
+        "quality": 70.0,
+        "valuation": 90.0,
+        "volatility": 70.2,
+        "composite": 73.6,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 72.97,
+        "composite_7d_std": 0.62,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -16
+      },
+      "fundamentals": {
+        "operating_margin": 0.1671,
+        "_eps_diluted_ttm": 3.1,
+        "_shares_diluted": 3570000000.0,
+        "_fcf_ttm": 20444000000.0,
+        "_total_debt": 6117000000.0,
+        "_cash": 7661000000.0,
+        "_ebitda_ttm": 34077000000.0,
+        "_as_of_filing": "2026-02-03",
+        "pe_ratio": 8.74,
+        "fcf_yield": 0.2113,
+        "ev_ebitda": 2.79
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.1886,
+        "ret_63d": 0.0775,
+        "ret_126d": -0.1427,
+        "vol_ann": 34.4,
+        "beta": 0.25,
+        "max_dd_126d": -0.3169
+      },
+      "data_quality": {
+        "fundamentals_age_days": 204,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "CME": {
+      "ticker": "CME",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 277.32,
+        "change_pct": -0.66
+      },
+      "factors": {
+        "momentum": 51.2,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 74.8,
+        "composite": 65.9,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 67.13,
+        "composite_7d_std": 4.62,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -114
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.086,
+        "ret_63d": -0.0185,
+        "ret_126d": -0.1307,
+        "vol_ann": 31.4,
+        "beta": -0.51,
+        "max_dd_126d": -0.3305
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
     "CMG": {
       "ticker": "CMG",
       "as_of": "2026-08-26",
@@ -2410,7 +5430,7 @@
         "composite_7d_std": 3.38,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 76
+        "rank_chg_7d": 83
       },
       "fundamentals": {
         "operating_margin": 0.1623,
@@ -2507,6 +5527,231 @@
         ]
       }
     },
+    "CMI": {
+      "ticker": "CMI",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 572.67,
+        "change_pct": 0.18
+      },
+      "factors": {
+        "momentum": 6.7,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 61.4,
+        "composite": 40.9,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 50.97,
+        "composite_7d_std": 6.21,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -80
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.1347,
+        "ret_63d": -0.1437,
+        "ret_126d": -0.0463,
+        "vol_ann": 40.1,
+        "beta": 1.47,
+        "max_dd_126d": -0.2144
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "CNC": {
+      "ticker": "CNC",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 65,
+        "change_pct": -0.99
+      },
+      "factors": {
+        "momentum": 76.0,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 61.2,
+        "composite": 66.8,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 64.77,
+        "composite_7d_std": 3.29,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 24
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0144,
+        "ret_63d": 0.1362,
+        "ret_126d": 0.5341,
+        "vol_ann": 40.2,
+        "beta": 0.22,
+        "max_dd_126d": -0.2932
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "CNP": {
+      "ticker": "CNP",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 38.93,
+        "change_pct": -0.43
+      },
+      "factors": {
+        "momentum": 8.9,
+        "quality": 60.0,
+        "valuation": 50.0,
+        "volatility": 92.1,
+        "composite": 57.9,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 59.33,
+        "composite_7d_std": 0.93,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -11
+      },
+      "fundamentals": {
+        "operating_margin": 0.2255,
+        "debt_to_equity": 1.844,
+        "_eps_diluted_ttm": 1.63,
+        "_shares_diluted": 659393000.0,
+        "_fcf_ttm": -2672000000.0,
+        "_total_debt": 22476000000.0,
+        "_cash": 639000000.0,
+        "_ebitda_ttm": 3709000000.0,
+        "_as_of_filing": "2026-02-19",
+        "pe_ratio": 23.88,
+        "fcf_yield": -0.1041,
+        "ev_ebitda": 12.81
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.1154,
+        "ret_63d": -0.0932,
+        "ret_126d": -0.0904,
+        "vol_ann": 20.1,
+        "beta": -0.43,
+        "max_dd_126d": -0.1392
+      },
+      "data_quality": {
+        "fundamentals_age_days": 188,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "COF": {
+      "ticker": "COF",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 216.24,
+        "change_pct": -0.01
+      },
+      "factors": {
+        "momentum": 87.7,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 75.0,
+        "composite": 79.8,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 79.63,
+        "composite_7d_std": 2.14,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -1
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0444,
+        "ret_63d": 0.16,
+        "ret_126d": 0.1001,
+        "vol_ann": 31.2,
+        "beta": 1.13,
+        "max_dd_126d": -0.1553
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
     "COIN": {
       "ticker": "COIN",
       "as_of": "2026-08-26",
@@ -2534,7 +5779,7 @@
         "composite_7d_std": 2.66,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 10
+        "rank_chg_7d": 11
       },
       "fundamentals": {
         "operating_margin": -0.0043,
@@ -2662,7 +5907,7 @@
         "composite_7d_std": 0.53,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -8
+        "rank_chg_7d": -7
       },
       "fundamentals": {
         "debt_to_equity": 0.2504,
@@ -2699,6 +5944,76 @@
         ]
       }
     },
+    "COR": {
+      "ticker": "COR",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 328.06,
+        "change_pct": 1.33
+      },
+      "factors": {
+        "momentum": 81.2,
+        "quality": 26.7,
+        "valuation": 70.0,
+        "volatility": 81.6,
+        "composite": 59.4,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 56.79,
+        "composite_7d_std": 2.08,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 78
+      },
+      "fundamentals": {
+        "gross_margin": 0.0357,
+        "operating_margin": 0.0082,
+        "debt_to_equity": 5.08,
+        "_eps_diluted_ttm": 13.47,
+        "_shares_diluted": 193944000.0,
+        "_fcf_ttm": 4060102000.0,
+        "_total_debt": 12002396000.0,
+        "_cash": 2815291000.0,
+        "_ebitda_ttm": 4079724000.0,
+        "_as_of_filing": "2025-11-25",
+        "pe_ratio": 24.35,
+        "fcf_yield": 0.0638,
+        "ev_ebitda": 17.85
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0543,
+        "ret_63d": 0.2115,
+        "ret_126d": -0.0997,
+        "vol_ann": 27.0,
+        "beta": -0.69,
+        "max_dd_126d": -0.3218
+      },
+      "data_quality": {
+        "fundamentals_age_days": 274,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
     "COST": {
       "ticker": "COST",
       "as_of": "2026-08-26",
@@ -2725,7 +6040,7 @@
         "composite_7d_std": 3.15,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -17
+        "rank_chg_7d": -11
       },
       "fundamentals": {
         "gross_margin": 0.1288,
@@ -2822,6 +6137,76 @@
         ]
       }
     },
+    "CPB": {
+      "ticker": "CPB",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 23.47,
+        "change_pct": -2.86
+      },
+      "factors": {
+        "momentum": 58.8,
+        "quality": 33.3,
+        "valuation": 90.0,
+        "volatility": 68.1,
+        "composite": 60.0,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 59.67,
+        "composite_7d_std": 0.86,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 7
+      },
+      "fundamentals": {
+        "gross_margin": 0.0729,
+        "operating_margin": 0.1096,
+        "debt_to_equity": 2.2027,
+        "_eps_diluted_ttm": 2.03,
+        "_shares_diluted": 299000000.0,
+        "_fcf_ttm": 671000000.0,
+        "_total_debt": 8028000000.0,
+        "_cash": 402000000.0,
+        "_ebitda_ttm": 1529000000.0,
+        "_as_of_filing": "2025-09-18",
+        "pe_ratio": 11.56,
+        "fcf_yield": 0.0956,
+        "ev_ebitda": 9.58
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0492,
+        "ret_63d": 0.1659,
+        "ret_126d": -0.1397,
+        "vol_ann": 35.7,
+        "beta": -0.21,
+        "max_dd_126d": -0.2579
+      },
+      "data_quality": {
+        "fundamentals_age_days": 342,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
     "CRM": {
       "ticker": "CRM",
       "as_of": "2026-08-26",
@@ -2849,7 +6234,7 @@
         "composite_7d_std": 1.75,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -13
+        "rank_chg_7d": -12
       },
       "fundamentals": {
         "gross_margin": 0.7768,
@@ -2978,7 +6363,7 @@
         "composite_7d_std": 1.21,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -21
+        "rank_chg_7d": -15
       },
       "fundamentals": {
         "debt_to_equity": 0.1683,
@@ -3068,6 +6453,311 @@
       },
       "data_quality": {
         "fundamentals_age_days": 174,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "CSCO": {
+      "ticker": "CSCO",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 111.11,
+        "change_pct": 0.8
+      },
+      "factors": {
+        "momentum": 53.6,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 63.7,
+        "composite": 59.9,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 62.61,
+        "composite_7d_std": 2.86,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -61
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0302,
+        "ret_63d": -0.061,
+        "ret_126d": 0.4219,
+        "vol_ann": 38.6,
+        "beta": 1.26,
+        "max_dd_126d": -0.157
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "CSX": {
+      "ticker": "CSX",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 51.51,
+        "change_pct": 0.14
+      },
+      "factors": {
+        "momentum": 80.6,
+        "quality": 80.0,
+        "valuation": 50.0,
+        "volatility": 88.9,
+        "composite": 74.8,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 74.8,
+        "composite_7d_std": 0.25,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -45
+      },
+      "fundamentals": {
+        "operating_margin": 0.3208,
+        "debt_to_equity": 0.7471,
+        "_eps_diluted_ttm": 1.72,
+        "_shares_diluted": 1859000000.0,
+        "_fcf_ttm": 2796000000.0,
+        "_total_debt": 9832000000.0,
+        "_cash": 1007000000.0,
+        "_ebitda_ttm": 6610000000.0,
+        "_as_of_filing": "2026-02-12",
+        "pe_ratio": 29.95,
+        "fcf_yield": 0.0292,
+        "ev_ebitda": 15.82
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0056,
+        "ret_63d": 0.1051,
+        "ret_126d": 0.2129,
+        "vol_ann": 22.2,
+        "beta": -0.07,
+        "max_dd_126d": -0.1158
+      },
+      "data_quality": {
+        "fundamentals_age_days": 195,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "CTAS": {
+      "ticker": "CTAS",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 204.76,
+        "change_pct": -1.27
+      },
+      "factors": {
+        "momentum": 73.8,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 75.4,
+        "composite": 74.8,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 73.74,
+        "composite_7d_std": 5.22,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 55
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0295,
+        "ret_63d": 0.1968,
+        "ret_126d": 0.0313,
+        "vol_ann": 31.0,
+        "beta": -0.45,
+        "max_dd_126d": -0.2004
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "CTVA": {
+      "ticker": "CTVA",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 83.94000244140625,
+        "change_pct": 1.07
+      },
+      "factors": {
+        "momentum": 64.2,
+        "quality": 50,
+        "valuation": 30.0,
+        "volatility": 72.3,
+        "composite": 54.2,
+        "factors_used": [
+          "momentum",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 48.99,
+        "composite_7d_std": 2.5,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 30
+      },
+      "fundamentals": {
+        "_eps_diluted_ttm": 1.52,
+        "_shares_diluted": 669800000.0,
+        "_fcf_ttm": 629000000.0,
+        "_total_debt": 0.0,
+        "_cash": 2365000000.0,
+        "pe_ratio": 55.22,
+        "fcf_yield": 0.0112
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0563,
+        "ret_63d": 0.0531,
+        "ret_126d": 0.0857,
+        "vol_ann": 33.0,
+        "beta": -0.15,
+        "max_dd_126d": -0.1655
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": null,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "CVS": {
+      "ticker": "CVS",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 92.9,
+        "change_pct": -1.29
+      },
+      "factors": {
+        "momentum": 49.9,
+        "quality": 41.7,
+        "valuation": 76.7,
+        "volatility": 81.6,
+        "composite": 61.7,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 61.2,
+        "composite_7d_std": 0.26,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -3
+      },
+      "fundamentals": {
+        "gross_margin": 0.071,
+        "operating_margin": 0.0116,
+        "debt_to_equity": 0.9486,
+        "_eps_diluted_ttm": 3.8,
+        "_shares_diluted": 1287000000.0,
+        "_fcf_ttm": 11758000000.0,
+        "_total_debt": 63481000000.0,
+        "_cash": 11329000000.0,
+        "_ebitda_ttm": 12810000000.0,
+        "_as_of_filing": "2026-02-10",
+        "pe_ratio": 24.45,
+        "fcf_yield": 0.0983,
+        "ev_ebitda": 13.4
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.1323,
+        "ret_63d": 0.0239,
+        "ret_126d": 0.2524,
+        "vol_ann": 27.0,
+        "beta": -0.02,
+        "max_dd_126d": -0.16
+      },
+      "data_quality": {
+        "fundamentals_age_days": 197,
         "fundamentals_stale": true,
         "factors_fresh": true,
         "coverage": [
@@ -3216,6 +6906,176 @@
       },
       "since_entry": null
     },
+    "D": {
+      "ticker": "D",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 66.93,
+        "change_pct": 0.48
+      },
+      "factors": {
+        "momentum": 49.5,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 95.5,
+        "composite": 78.2,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 74.97,
+        "composite_7d_std": 3.09,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 26
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0475,
+        "ret_63d": -0.0052,
+        "ret_126d": 0.05,
+        "vol_ann": 17.9,
+        "beta": -0.11,
+        "max_dd_126d": -0.071
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "DASH": {
+      "ticker": "DASH",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 233.5,
+        "change_pct": 1.94
+      },
+      "factors": {
+        "momentum": 100.0,
+        "quality": 50.0,
+        "valuation": 30.0,
+        "volatility": 53.0,
+        "composite": 53.2,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 52.13,
+        "composite_7d_std": 0.89,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 15
+      },
+      "fundamentals": {
+        "operating_margin": 0.0527,
+        "_eps_diluted_ttm": 1.91,
+        "_shares_diluted": 439345000.0,
+        "_fcf_ttm": 2595000000.0,
+        "_cash": 4424000000.0,
+        "_ebitda_ttm": 1712000000.0,
+        "_as_of_filing": "2026-02-18",
+        "pe_ratio": 122.25,
+        "fcf_yield": 0.0253
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.2665,
+        "ret_63d": 0.5162,
+        "ret_126d": 0.4205,
+        "vol_ann": 45.5,
+        "beta": 1.26,
+        "max_dd_126d": -0.2146
+      },
+      "data_quality": {
+        "fundamentals_age_days": 189,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "DD": {
+      "ticker": "DD",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 136.04,
+        "change_pct": -0.46
+      },
+      "factors": {
+        "momentum": 19.7,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 82.4,
+        "composite": 58.9,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 69.6,
+        "composite_7d_std": 5.38,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -148
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.028,
+        "ret_63d": -0.0832,
+        "ret_126d": -0.1121,
+        "vol_ann": 26.5,
+        "beta": 0.9,
+        "max_dd_126d": -0.1636
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
     "DDOG": {
       "ticker": "DDOG",
       "as_of": "2026-08-26",
@@ -3243,7 +7103,7 @@
         "composite_7d_std": 1.2,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -6
+        "rank_chg_7d": -4
       },
       "fundamentals": {
         "gross_margin": 0.7996,
@@ -3412,6 +7272,192 @@
         ]
       }
     },
+    "DELL": {
+      "ticker": "DELL",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 451.5,
+        "change_pct": 4.23
+      },
+      "factors": {
+        "momentum": 93.6,
+        "quality": 37.5,
+        "valuation": 50.0,
+        "volatility": 0.0,
+        "composite": 39.7,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 38.89,
+        "composite_7d_std": 1.86,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 3
+      },
+      "fundamentals": {
+        "gross_margin": 0.2,
+        "operating_margin": 0.0718,
+        "_eps_diluted_ttm": 12.56,
+        "_shares_diluted": 656000000.0,
+        "_fcf_ttm": 9442000000.0,
+        "_total_debt": 38711000000.0,
+        "_cash": 11578000000.0,
+        "_ebitda_ttm": 13689000000.0,
+        "_as_of_filing": "2026-03-16",
+        "pe_ratio": 35.95,
+        "fcf_yield": 0.0319,
+        "ev_ebitda": 23.62
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0576,
+        "ret_63d": 0.4799,
+        "ret_126d": 2.7694,
+        "vol_ann": 99.2,
+        "beta": 2.72,
+        "max_dd_126d": -0.2067
+      },
+      "data_quality": {
+        "fundamentals_age_days": 163,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
+    "DG": {
+      "ticker": "DG",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 122.58,
+        "change_pct": -2.19
+      },
+      "factors": {
+        "momentum": 48.2,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 67.3,
+        "composite": 60.1,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 62.83,
+        "composite_7d_std": 4.38,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -158
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0052,
+        "ret_63d": 0.1831,
+        "ret_126d": -0.2038,
+        "vol_ann": 36.3,
+        "beta": 0.28,
+        "max_dd_126d": -0.3488
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "DHI": {
+      "ticker": "DHI",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 150.8,
+        "change_pct": 1.23
+      },
+      "factors": {
+        "momentum": 57.8,
+        "quality": 25.0,
+        "valuation": 90.0,
+        "volatility": 65.9,
+        "composite": 56.4,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 54.6,
+        "composite_7d_std": 2.49,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -16
+      },
+      "fundamentals": {
+        "gross_margin": 0.0047,
+        "_eps_diluted_ttm": 10.51,
+        "_shares_diluted": 283000000.0,
+        "_fcf_ttm": 3202200000.0,
+        "_cash": 2078700000.0,
+        "_as_of_filing": "2025-11-19",
+        "pe_ratio": 14.35,
+        "fcf_yield": 0.075
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0213,
+        "ret_63d": 0.0357,
+        "ret_126d": -0.0802,
+        "vol_ann": 37.2,
+        "beta": 0.98,
+        "max_dd_126d": -0.1796
+      },
+      "data_quality": {
+        "fundamentals_age_days": 280,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
     "DHR": {
       "ticker": "DHR",
       "as_of": "2026-08-26",
@@ -3439,7 +7485,7 @@
         "composite_7d_std": 2.37,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 36
+        "rank_chg_7d": 46
       },
       "fundamentals": {
         "gross_margin": 0.5911,
@@ -3513,6 +7559,178 @@
         ]
       }
     },
+    "DIS": {
+      "ticker": "DIS",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 111.25,
+        "change_pct": 0.58
+      },
+      "factors": {
+        "momentum": 88.1,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 81.7,
+        "composite": 84.1,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 78.27,
+        "composite_7d_std": 4.91,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 37
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.1511,
+        "ret_63d": 0.0772,
+        "ret_126d": 0.049,
+        "vol_ann": 26.9,
+        "beta": 0.19,
+        "max_dd_126d": -0.1457
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "DLR": {
+      "ticker": "DLR",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 192.32,
+        "change_pct": 2.0
+      },
+      "factors": {
+        "momentum": 65.0,
+        "quality": 50,
+        "valuation": 50,
+        "volatility": 68.1,
+        "composite": 66.9,
+        "factors_used": [
+          "momentum",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 67.96,
+        "composite_7d_std": 7.56,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": 113
+      },
+      "fundamentals": {},
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": -0.0176,
+        "ret_63d": -0.007,
+        "ret_126d": 0.079,
+        "vol_ann": 35.7,
+        "beta": 0.45,
+        "max_dd_126d": -0.151
+      },
+      "data_quality": {
+        "fundamentals_age_days": null,
+        "fundamentals_stale": false,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "volatility"
+        ]
+      }
+    },
+    "DLTR": {
+      "ticker": "DLTR",
+      "as_of": "2026-08-26",
+      "price_as_of": "2026-08-26",
+      "price": {
+        "close": 134.48,
+        "change_pct": -1.66
+      },
+      "factors": {
+        "momentum": 88.5,
+        "quality": 56.7,
+        "valuation": 70.0,
+        "volatility": 45.6,
+        "composite": 62.0,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "2.3-valuation-ttm"
+      },
+      "persistence": {
+        "composite_7d_mean": 61.61,
+        "composite_7d_std": 0.48,
+        "n": 7,
+        "formula_version": "2.3-valuation-ttm",
+        "rank_chg_7d": -4
+      },
+      "fundamentals": {
+        "gross_margin": 0.3632,
+        "operating_margin": 0.0852,
+        "debt_to_equity": 0.6476,
+        "_eps_diluted_ttm": 6.37,
+        "_shares_diluted": 197400000.0,
+        "_fcf_ttm": 1318500000.0,
+        "_total_debt": 2932600000.0,
+        "_cash": 1007300000.0,
+        "_as_of_filing": "2026-03-16",
+        "pe_ratio": 21.11,
+        "fcf_yield": 0.0497
+      },
+      "events": [],
+      "earnings": {
+        "next_date": null,
+        "days_until": null,
+        "imminent": false
+      },
+      "history_summary": {
+        "ret_21d": 0.0712,
+        "ret_63d": 0.4352,
+        "ret_126d": 0.021,
+        "vol_ann": 50.3,
+        "beta": 0.47,
+        "max_dd_126d": -0.3203
+      },
+      "data_quality": {
+        "fundamentals_age_days": 163,
+        "fundamentals_stale": true,
+        "factors_fresh": true,
+        "coverage": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ]
+      }
+    },
     "EBAY": {
       "ticker": "EBAY",
       "as_of": "2026-08-26",
@@ -3540,7 +7758,7 @@
         "composite_7d_std": 0.86,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -32
+        "rank_chg_7d": -26
       },
       "fundamentals": {
         "gross_margin": 0.7145,
@@ -3617,7 +7835,7 @@
         "composite_7d_std": 0.37,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -8
+        "rank_chg_7d": -9
       },
       "fundamentals": {
         "operating_margin": 0.2821,
@@ -3693,7 +7911,7 @@
         "composite_7d_std": 1.02,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -17
+        "rank_chg_7d": -18
       },
       "fundamentals": {
         "gross_margin": 0.0796,
@@ -3801,7 +8019,7 @@
         "composite_7d_std": 0.36,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -27
+        "rank_chg_7d": -25
       },
       "fundamentals": {
         "operating_margin": 0.2515,
@@ -3891,7 +8109,7 @@
         "composite_7d_std": 2.3,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -73
+        "rank_chg_7d": -70
       },
       "fundamentals": {
         "gross_margin": 0.3544,
@@ -3990,7 +8208,7 @@
         "composite_7d_std": 4.02,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -6
+        "rank_chg_7d": -8
       },
       "fundamentals": {
         "gross_margin": 0.2014,
@@ -4088,7 +8306,7 @@
         "composite_7d_std": 1.05,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -18
+        "rank_chg_7d": -13
       },
       "fundamentals": {
         "operating_margin": 0.3203,
@@ -4121,6 +8339,12 @@
           "date": "2026-08-26",
           "type": "macro",
           "summary": "Capex projected $195-205B in 2026 with ~60% (~$100B) for servers; AI server prices rising over 15% in early 2027.",
+          "url": null
+        },
+        {
+          "date": "2026-08-26",
+          "type": "other",
+          "summary": "Bill Ackman's Pershing Square sold entire Alphabet stake to fund larger Microsoft AI position.",
           "url": null
         },
         {
@@ -4157,12 +8381,6 @@
           "date": "2026-08-20",
           "type": "other",
           "summary": "Dan Loeb increased Alphabet stake by 489% in Q2 2026, attracted by search dominance",
-          "url": null
-        },
-        {
-          "date": "2026-08-20",
-          "type": "other",
-          "summary": "Dan Loeb's Third Point increased Alphabet stake by 489% in Q2 2026, citing dominant search and YouTube.",
           "url": null
         }
       ],
@@ -4218,7 +8436,7 @@
         "composite_7d_std": 0.86,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -12
+        "rank_chg_7d": -7
       },
       "fundamentals": {
         "operating_margin": 0.3311,
@@ -4349,7 +8567,7 @@
         "composite_7d_std": 1.27,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 25
+        "rank_chg_7d": 22
       },
       "fundamentals": {
         "debt_to_equity": 6.0442,
@@ -4451,7 +8669,7 @@
         "composite_7d_std": 0.98,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -13
+        "rank_chg_7d": -9
       },
       "fundamentals": {
         "gross_margin": 0.3332,
@@ -4641,7 +8859,7 @@
         "composite_7d_std": 0.5,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 3
+        "rank_chg_7d": 0
       },
       "fundamentals": {
         "gross_margin": 0.5819,
@@ -4769,7 +8987,7 @@
         "composite_7d_std": 2.06,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 0
+        "rank_chg_7d": 1
       },
       "fundamentals": {
         "gross_margin": 0.3893,
@@ -5300,7 +9518,7 @@
         "composite_7d_std": 1.33,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -38
+        "rank_chg_7d": -31
       },
       "fundamentals": {
         "operating_margin": 0.2625,
@@ -5376,7 +9594,7 @@
         "composite_7d_std": 0.64,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -2
+        "rank_chg_7d": -3
       },
       "fundamentals": {
         "debt_to_equity": 1.5402,
@@ -5510,7 +9728,7 @@
         "composite_7d_std": 2.18,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -79
+        "rank_chg_7d": -75
       },
       "fundamentals": {
         "gross_margin": 0.118,
@@ -5639,7 +9857,7 @@
         "composite_7d_std": 0.95,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -19
+        "rank_chg_7d": -17
       },
       "fundamentals": {
         "gross_margin": 0.3348,
@@ -5739,7 +9957,7 @@
         "composite_7d_std": 1.25,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -49
+        "rank_chg_7d": -46
       },
       "fundamentals": {
         "gross_margin": 0.566,
@@ -5766,6 +9984,18 @@
           "date": "2026-08-26",
           "type": "executive",
           "summary": "Incoming CEO Heidi O'Neill from Nike to join Lululemon, potential catalyst for sentiment shift starting Sept. 8.",
+          "url": null
+        },
+        {
+          "date": "2026-08-26",
+          "type": "earnings",
+          "summary": "Lululemon faces challenging earnings with expected 2-3% revenue decline and 42-43% net income plunge",
+          "url": null
+        },
+        {
+          "date": "2026-08-26",
+          "type": "executive",
+          "summary": "Incoming CEO Heidi O'Neill from Nike could catalyze market sentiment shift starting Sept. 8",
           "url": null
         }
       ],
@@ -5821,7 +10051,7 @@
         "composite_7d_std": 0.58,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -41
+        "rank_chg_7d": -34
       },
       "fundamentals": {
         "operating_margin": 0.5763,
@@ -5951,7 +10181,7 @@
         "composite_7d_std": 0.87,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -45
+        "rank_chg_7d": -44
       },
       "fundamentals": {
         "operating_margin": 0.461,
@@ -6041,7 +10271,7 @@
         "composite_7d_std": 0.17,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -5
+        "rank_chg_7d": -9
       },
       "fundamentals": {
         "gross_margin": 0.7175,
@@ -6170,7 +10400,7 @@
         "composite_7d_std": 0.7,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -15
+        "rank_chg_7d": -9
       },
       "fundamentals": {
         "operating_margin": 0.3808,
@@ -6301,7 +10531,7 @@
         "composite_7d_std": 1.02,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -53
+        "rank_chg_7d": -51
       },
       "fundamentals": {
         "debt_to_equity": 0.8887,
@@ -6437,7 +10667,7 @@
         "composite_7d_std": 10.24,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 8
+        "rank_chg_7d": 10
       },
       "fundamentals": {
         "gross_margin": 0.5102,
@@ -6568,7 +10798,7 @@
         "composite_7d_std": 1.4,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -20
+        "rank_chg_7d": -18
       },
       "fundamentals": {
         "debt_to_equity": 3.0608,
@@ -6648,7 +10878,7 @@
         "composite_7d_std": 0.09,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -38
+        "rank_chg_7d": -34
       },
       "fundamentals": {
         "gross_margin": 0.6794,
@@ -6676,6 +10906,12 @@
           "date": "2026-08-26",
           "type": "other",
           "summary": "Pershing Square made MSFT largest AI holding by selling Alphabet stake; $2.3B position represents 11.9% of portfolio.",
+          "url": null
+        },
+        {
+          "date": "2026-08-26",
+          "type": "other",
+          "summary": "Bill Ackman's Pershing Square made MSFT largest AI holding ($2.3B, 11.9% of portfolio) by selling Alphabet and trimming Amazon.",
           "url": null
         },
         {
@@ -6718,12 +10954,6 @@
           "date": "2026-08-18",
           "type": "other",
           "summary": "Analyst prediction: Microsoft could reach $5 trillion valuation by 2029, requiring ~10% annual growth based on recent fiscal 2026 performanc",
-          "url": null
-        },
-        {
-          "date": "2026-08-18",
-          "type": "earnings",
-          "summary": "FY2026: 18% revenue growth, 31% net income growth",
           "url": null
         }
       ],
@@ -6779,7 +11009,7 @@
         "composite_7d_std": 1.52,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 6
+        "rank_chg_7d": 7
       },
       "fundamentals": {
         "gross_margin": 0.6869,
@@ -6908,7 +11138,7 @@
         "composite_7d_std": 1.51,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -34
+        "rank_chg_7d": -36
       },
       "fundamentals": {
         "gross_margin": 0.3979,
@@ -7039,7 +11269,7 @@
         "composite_7d_std": 0.6,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -24
+        "rank_chg_7d": -19
       },
       "fundamentals": {
         "operating_margin": 0.5808,
@@ -7153,7 +11383,7 @@
         "composite_7d_std": 0.55,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -37
+        "rank_chg_7d": -35
       },
       "fundamentals": {
         "gross_margin": 0.0344,
@@ -7409,7 +11639,7 @@
         "composite_7d_std": 0.28,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -25
+        "rank_chg_7d": -19
       },
       "fundamentals": {
         "gross_margin": 0.4912,
@@ -7656,7 +11886,7 @@
         "composite_7d_std": 1.66,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -2
+        "rank_chg_7d": -3
       },
       "fundamentals": {
         "gross_margin": 0.7753,
@@ -7785,7 +12015,7 @@
         "composite_7d_std": 1.01,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -45
+        "rank_chg_7d": -40
       },
       "fundamentals": {
         "gross_margin": 0.7415,
@@ -7916,7 +12146,7 @@
         "composite_7d_std": 1.0,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 13
+        "rank_chg_7d": 12
       },
       "fundamentals": {
         "gross_margin": 0.3606,
@@ -8047,7 +12277,7 @@
         "composite_7d_std": 0.41,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -40
+        "rank_chg_7d": -39
       },
       "fundamentals": {
         "debt_to_equity": 0.5938,
@@ -8205,7 +12435,7 @@
         "composite_7d_std": 0.31,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -18
+        "rank_chg_7d": -16
       },
       "fundamentals": {
         "debt_to_equity": 0.7418,
@@ -8334,7 +12564,7 @@
         "composite_7d_std": 4.47,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 1
+        "rank_chg_7d": 8
       },
       "fundamentals": {
         "operating_margin": 0.4958,
@@ -8469,7 +12699,7 @@
         "composite_7d_std": 0.0,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -4
+        "rank_chg_7d": -7
       },
       "fundamentals": {
         "gross_margin": 0.848,
@@ -8600,7 +12830,7 @@
         "composite_7d_std": 0.33,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -31
+        "rank_chg_7d": -32
       },
       "fundamentals": {
         "operating_margin": 0.1878,
@@ -8719,7 +12949,7 @@
         "composite_7d_std": 1.17,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 12
+        "rank_chg_7d": 11
       },
       "fundamentals": {
         "operating_margin": 0.279,
@@ -8813,7 +13043,7 @@
         "composite_7d_std": 0.95,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -1
+        "rank_chg_7d": -2
       },
       "fundamentals": {
         "operating_margin": 0.2495,
@@ -8943,7 +13173,7 @@
         "composite_7d_std": 1.65,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -60
+        "rank_chg_7d": -58
       },
       "fundamentals": {
         "gross_margin": 0.0243,
@@ -9056,7 +13286,7 @@
         "composite_7d_std": 0.82,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 1
+        "rank_chg_7d": 7
       },
       "fundamentals": {
         "operating_margin": 0.0943,
@@ -9169,7 +13399,7 @@
         "composite_7d_std": 0.8,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -70
+        "rank_chg_7d": -63
       },
       "fundamentals": {
         "operating_margin": 0.1827,
@@ -9285,7 +13515,7 @@
         "composite_7d_std": 0.53,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -7
+        "rank_chg_7d": -5
       },
       "fundamentals": {
         "gross_margin": 0.1106,
@@ -9416,7 +13646,7 @@
         "composite_7d_std": 0.0,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 3
+        "rank_chg_7d": 4
       },
       "fundamentals": {
         "gross_margin": 0.6717,
@@ -9541,7 +13771,7 @@
         "composite_7d_std": 6.07,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 174
+        "rank_chg_7d": 176
       },
       "fundamentals": {},
       "events": [],
@@ -9595,7 +13825,7 @@
         "composite_7d_std": 1.24,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 1
+        "rank_chg_7d": 2
       },
       "fundamentals": {
         "gross_margin": 0.8483,
@@ -9725,7 +13955,7 @@
         "composite_7d_std": 3.08,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -12
+        "rank_chg_7d": -7
       },
       "fundamentals": {
         "gross_margin": 0.293,
@@ -9931,7 +14161,7 @@
         "composite_7d_std": 0.05,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -28
+        "rank_chg_7d": -23
       },
       "fundamentals": {
         "gross_margin": 0.0681,
@@ -10060,7 +14290,7 @@
         "composite_7d_std": 1.97,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 8
+        "rank_chg_7d": 9
       },
       "fundamentals": {
         "gross_margin": 0.1885,
@@ -10080,6 +14310,12 @@
           "date": "2026-08-26",
           "type": "product",
           "summary": "Autonomous vehicle technology highlighted as key competitive area in self-driving market.",
+          "url": null
+        },
+        {
+          "date": "2026-08-26",
+          "type": "product",
+          "summary": "TSLA highlighted as overlooked autonomous vehicle stock with significant upside potential in AV technology sector.",
           "url": null
         },
         {
@@ -10128,12 +14364,6 @@
           "date": "2026-08-19",
           "type": "product",
           "summary": "Einride AB ordered 500 Tesla Semi trucks, signaling growing demand for Tesla's electric trucking platform.",
-          "url": null
-        },
-        {
-          "date": "2026-08-19",
-          "type": "product",
-          "summary": "Einride AB ordered 500 Tesla Semi trucks; combined with prior orders signals inflection point for Tesla Semi sales",
           "url": null
         }
       ],
@@ -10189,7 +14419,7 @@
         "composite_7d_std": 0.96,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -10
+        "rank_chg_7d": -11
       },
       "fundamentals": {
         "gross_margin": 0.5702,
@@ -10282,7 +14512,7 @@
         "composite_7d_std": 2.53,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 52
+        "rank_chg_7d": 61
       },
       "fundamentals": {
         "operating_margin": 0.1247,
@@ -10304,6 +14534,12 @@
           "date": "2026-08-26",
           "type": "product",
           "summary": "Autonomous vehicle technology highlighted as growth opportunity for rideshare segment.",
+          "url": null
+        },
+        {
+          "date": "2026-08-26",
+          "type": "product",
+          "summary": "UBER highlighted as overlooked autonomous vehicle stock with significant upside potential in AV technology sector.",
           "url": null
         },
         {
@@ -10352,12 +14588,6 @@
           "date": "2026-08-13",
           "type": "other",
           "summary": "Fundamentals strengthening with improved margins and delivery growth; trading at P/E 17 vs competitor at 110, appearing undervalued.",
-          "url": null
-        },
-        {
-          "date": "2026-05-07",
-          "type": "product",
-          "summary": "Uber expanding into travel/hospitality; partnering with Expedia for hotel bookings, vacation rentals",
           "url": null
         }
       ],
@@ -10413,7 +14643,7 @@
         "composite_7d_std": 0.76,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -22
+        "rank_chg_7d": -17
       },
       "fundamentals": {
         "operating_margin": 0.0482,
@@ -10512,7 +14742,7 @@
         "composite_7d_std": 1.73,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -6
+        "rank_chg_7d": -2
       },
       "fundamentals": {
         "operating_margin": 0.0887,
@@ -10901,7 +15131,7 @@
         "composite_7d_std": 1.28,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": 11
+        "rank_chg_7d": 10
       },
       "fundamentals": {
         "operating_margin": 0.0755,
@@ -11029,7 +15259,7 @@
         "composite_7d_std": 2.82,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -96
+        "rank_chg_7d": -91
       },
       "fundamentals": {
         "debt_to_equity": 2.5481,
@@ -11114,7 +15344,7 @@
         "composite_7d_std": 2.06,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -24
+        "rank_chg_7d": -25
       },
       "fundamentals": {
         "operating_margin": 0.0439,
@@ -11331,7 +15561,7 @@
         "composite_7d_std": 2.11,
         "n": 7,
         "formula_version": "2.3-valuation-ttm",
-        "rank_chg_7d": -24
+        "rank_chg_7d": -25
       },
       "fundamentals": {
         "gross_margin": 0.7687,
