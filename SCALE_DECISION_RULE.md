@@ -126,7 +126,7 @@ net worth changes rather than quietly becoming too large or too small.
 
 | Stage | Trigger | Maximum in the agentic account |
 |---|---|---|
-| 0 · today | — | **$500** (current actual balance; a planned increase to $1,000 has not been made) |
+| 0 · today | — | **$500** (actual balance; the previously-discussed increase to $1,000 is **not planned for now** — decided 2026-08-26) |
 | 1 | All four gates pass | **1% of net worth** (~$8,000 today) |
 | 2 | Gates still pass 12 months later, *at the larger size* | **5% of net worth** (~$40,000) |
 | 3 | Gates still pass 12 further months | Owner's decision, fresh review |
@@ -183,7 +183,5 @@ The measurement is only valid if the thing being measured stops changing:
    genuine skill, and passing in a year tech falls without any. SPY is the honest "did
    picking stocks beat owning stocks" test.
 
-   **Open, and able to override this:** the true benchmark is whatever the transferred money
-   would otherwise have been invested in. If the Robinhood holdings earmarked for transfer
-   are mostly QQQ, then QQQ is the real opportunity cost and becomes the gate. Owner to
-   confirm; until confirmed, SPY stands.
+   **CONFIRMED 2026-08-26: SPY.** The owner confirmed SPY as the gate. QQQ continues to be
+   reported alongside it, but does not gate the decision. This question is closed.

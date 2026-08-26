@@ -25,7 +25,7 @@ run, or API response in this repo — never assumed from memory.
 | # | Item | Status |
 |---|------|--------|
 | 22 | **Re-quote qty mismatch: absolute vs delta** (routine STEP 4 vs `_compute_qty`) | 🔴 **P1 — execution-path.** Can over-buy an add-to-holding BUY on a stale-price day. **Gates Phase 3** of `PLAN_BETA_ALPHA_SPLIT.md`; needs a routine sync, so it has lead time |
-| 25 | **Reset `portfolio_peak.json` on the $500 → $1,000 deposit** | 🟡 **AWAITING ACTION** — do it *after* depositing and *before* the next run, or the kill switch mis-arms |
+| 25 | **Reset `portfolio_peak.json` if/when the account is ever funded** | ⏸️ **PARKED 2026-08-26** — no deposit planned for now. Re-arms the moment one is made |
 | 24 | **Coverage "regression" — DIAGNOSED, not a data failure** | 🟡 **2 defects to fix** (gate hysteresis + coverage denominator). Does **not** block Phase 2. Do not ship before Wed 2026-08-26 |
 | 11 | **`since_entry` dossier anchor is structurally always `None`** | 🟡 **PENDING** — re-verified 2026-08-22: 172 dossier records, **0** non-null. Inert since it shipped |
 | 14 | **Narrow the risk_watch cross-mode interlock** | ⬜ **PENDING, not built** — key the interlock off rebalance SELLs only |
@@ -57,15 +57,20 @@ it; (c) skip the re-quote for add-to-holding BUYs and let them execute at the st
 Recommend **(a)**. Until it is fixed, a stale-price day is the one path where the sector cap can
 be exceeded at the broker — noted in the `enforce_sector_limits` docstring.
 
-### [ ] 25. Reset `portfolio_peak.json` when funding $500 → $1,000 — **owner action, timing-sensitive**
-`portfolio_peak.json` currently reads `{"peak": 528.0813949525, "updated": "2026-08-19"}`.
-It tracks raw `total_value`, so a **deposit inflates the peak** — a $500 deposit would
-read as a new ~$1,028 peak, and the kill-switch drawdown math `(peak − current) / peak`
-then measures from a number that includes deposited cash, not performance (documented
-limitation, CLAUDE.md "Known Limitations"). **Deposit first, then edit
-`portfolio_peak.json`** and set `"peak"` to the post-deposit `total_value` — Manual
-Execution Runbook Scenario C. Doing this after a run has already recomputed drawdown
-against the inflated peak risks a false kill-switch trip blocking all BUYs.
+### [ ] 25. Reset `portfolio_peak.json` if/when the account is funded — ⏸️ **PARKED 2026-08-26**
+
+**No deposit is planned for now** (owner, 2026-08-26). The account stays at ~$500 and this
+item is dormant — but it must re-arm the moment any money is added, so it is parked rather
+than closed.
+
+**Why it matters when it does happen:** `portfolio_peak.json` tracks raw `total_value`, so a
+deposit looks like a new all-time high. The drawdown kill switch then measures the fall from
+a peak that includes deposited cash rather than investment performance, and can arm itself
+against a loss that never happened — blocking all new BUYs.
+
+**The order matters:** deposit first, *then* set `peak` to the post-deposit value, *then*
+let the next run happen. See DEPLOYMENT.md Runbook Scenario C.
+
 
 ## 🆕 PENDING (2026-08-22) — Nasdaq 100 benchmark
 
