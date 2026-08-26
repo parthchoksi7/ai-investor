@@ -504,29 +504,36 @@ class TestBetaStable:
             r = compute_risk_metrics(asset, mkt)
             assert r["beta"] == self._legacy_beta(asset, mkt), f"legacy beta drifted at {beta}"
 
-    def test_composite_does_not_consume_beta_stable(self):
-        """FORMULA_VERSION is deliberately NOT bumped in Phase 1 — proof is that the
-        composite never reads the new field.
+    def test_raw_composite_does_not_consume_beta_stable(self):
+        """The un-neutralized composite is a function of the ticker's OWN series only.
 
-        The two market series must GENUINELY differ. `_corr_series` derives the
-        market path from the seed alone, so re-calling it with a different `beta`
-        returns a byte-identical market — the first version of this test did exactly
-        that, which made it tautological: it would have passed even if beta_stable
-        WERE wired into the composite. Caught in review.
+        This was Phase 1's headline invariant (beta_stable is additive, nothing reads
+        it). Phase 2 deliberately changed the contract at the top level —
+        `neutralize_beta` consumes `beta_stable`, so `score_all_tickers` with
+        neutralization ON is now market-dependent by design. The invariant still holds
+        for the RAW sub-scores, which is what this now pins: with
+        `beta_neutralize=False`, changing only the market must move `beta_stable` and
+        nothing else.
+
+        The two market series must GENUINELY differ. `_corr_series` derives the market
+        path from the seed alone, so re-calling it with a different `beta` returns a
+        byte-identical market — the first version of this test did exactly that, which
+        made it tautological. Caught in review.
         """
-        from quant_engine import score_all_tickers, FACTOR_WEIGHTS, FORMULA_VERSION
+        from quant_engine import score_all_tickers, FACTOR_WEIGHTS
         asset, mkt  = self._corr_series(260, 1.2, seed=7)
         _a2,   mkt2 = self._corr_series(260, 1.2, seed=99)
         assert mkt2 != mkt, "fixture bug: the two market series must actually differ"
 
-        s1 = score_all_tickers({"history": {"A": asset, "SPY": mkt},  "fundamentals": {}})
-        s2 = score_all_tickers({"history": {"A": asset, "SPY": mkt2}, "fundamentals": {}})
+        s1 = score_all_tickers({"history": {"A": asset, "SPY": mkt},  "fundamentals": {}},
+                               beta_neutralize=False)
+        s2 = score_all_tickers({"history": {"A": asset, "SPY": mkt2}, "fundamentals": {}},
+                               beta_neutralize=False)
 
         assert "beta_stable" not in FACTOR_WEIGHTS
-        assert s1["A"]["formula_version"] == FORMULA_VERSION == "2.3-valuation-ttm"
         # The new field genuinely moved — so the inputs really were different ...
         assert s1["A"]["beta_stable"] != s2["A"]["beta_stable"]
-        # ... while nothing the composite reads moved at all.
+        # ... while nothing the raw composite reads moved at all.
         for k in ("momentum_score", "quality_score", "valuation_score",
                   "volatility_score", "composite_score", "factors_used"):
             assert s1["A"][k] == s2["A"][k], f"{k} moved when only the market changed"
@@ -703,6 +710,203 @@ class TestBetaStable:
         assert row["beta_stable_window"] > 63
 
 
+
+
+# ── quant_engine beta neutralization (Phase 2) ───────────────────────────────
+
+class TestBetaNeutralize:
+    """Cross-sectional beta neutralization of composite_score.
+
+    The headline guarantee is mechanical (rho -> 0), and that is what these tests
+    pin. Whether it IMPROVES returns is a separate, measured question — the answer
+    on the 205-session harness was that it raises raw return purely by raising beta,
+    while beta-adjusted alpha FALLS in every arm. See PLAN_BETA_ALPHA_SPLIT.md §5.
+    """
+
+    def _mk(self, beta, composite):
+        return {"composite_score": composite, "beta_stable": beta,
+                "data_available": True, "momentum_available": True}
+
+    def _universe(self, n=40, slope=-20.0):
+        """A universe whose composite is deliberately a linear function of beta."""
+        out = {}
+        for i in range(n):
+            beta = -0.5 + i * (2.5 / (n - 1))          # -0.5 .. 2.0
+            comp = 50.0 + slope * beta + (3.0 if i % 2 else -3.0)   # + alternating noise
+            out[f"T{i:02d}"] = self._mk(round(beta, 4), round(comp, 4))
+        return out
+
+    def _corr(self, a, b):
+        n = len(a); ma, mb = sum(a)/n, sum(b)/n
+        num = sum((x-ma)*(y-mb) for x, y in zip(a, b))
+        da = sum((x-ma)**2 for x in a) ** .5
+        db = sum((y-mb)**2 for y in b) ** .5
+        return num/(da*db) if da*db else 0.0
+
+    # ── the guarantee ────────────────────────────────────────────────────────
+
+    def test_removes_the_beta_correlation(self):
+        from quant_engine import neutralize_beta
+        s = self._universe()
+        before = self._corr([v["composite_score"] for v in s.values()],
+                            [v["beta_stable"] for v in s.values()])
+        assert before < -0.9                       # fixture really is beta-loaded
+        neutralize_beta(s)
+        after = self._corr([v["composite_score"] for v in s.values()],
+                           [v["beta_stable"] for v in s.values()])
+        # Not exactly 0: composite_score is rounded to 1dp after the adjustment, which
+        # reintroduces a trace correlation. The governing gate is |rho| <= 0.15
+        # (PLAN_BETA_ALPHA_SPLIT.md §5); live data gives 0.000.
+        assert abs(after) < 0.01, f"rho should be ~0, got {after}"
+
+    def test_preserves_the_raw_score_for_audit(self):
+        from quant_engine import neutralize_beta
+        s = self._universe()
+        raw = {t: v["composite_score"] for t, v in s.items()}
+        neutralize_beta(s)
+        for t, v in s.items():
+            assert v["composite_raw"] == raw[t]
+            assert v["beta_neutralized"] is True
+            assert v["composite_score"] != v["composite_raw"]
+
+    def test_residual_ordering_within_equal_beta(self):
+        """Two names at the SAME beta must keep their relative order — the
+        adjustment is a function of beta alone, so it cannot reorder them."""
+        from quant_engine import neutralize_beta
+        s = self._universe()
+        s["SAME_HI"] = self._mk(1.0, 80.0)
+        s["SAME_LO"] = self._mk(1.0, 40.0)
+        neutralize_beta(s)
+        assert s["SAME_HI"]["composite_score"] > s["SAME_LO"]["composite_score"]
+
+    # ── degradation ──────────────────────────────────────────────────────────
+
+    def test_too_few_names_degrades_to_raw(self):
+        from quant_engine import neutralize_beta, MIN_NEUTRALIZE_NAMES
+        s = self._universe(n=MIN_NEUTRALIZE_NAMES - 1)
+        raw = {t: v["composite_score"] for t, v in s.items()}
+        neutralize_beta(s)
+        for t, v in s.items():
+            assert v["composite_score"] == raw[t]
+            assert v["beta_neutralized"] is False
+
+    def test_no_beta_spread_degrades_to_raw(self):
+        """Every name at the same beta → no cross-sectional variance to regress on."""
+        from quant_engine import neutralize_beta
+        s = {f"T{i}": self._mk(1.0, 40.0 + i) for i in range(30)}
+        raw = {t: v["composite_score"] for t, v in s.items()}
+        neutralize_beta(s)
+        for t, v in s.items():
+            assert v["composite_score"] == raw[t]
+            assert v["beta_neutralized"] is False
+
+    def test_ticker_without_beta_is_left_alone(self):
+        from quant_engine import neutralize_beta
+        s = self._universe()
+        s["NOBETA"] = {"composite_score": 55.0, "beta_stable": None,
+                       "data_available": True, "momentum_available": True}
+        neutralize_beta(s)
+        assert s["NOBETA"]["composite_score"] == 55.0
+        assert s["NOBETA"]["beta_neutralized"] is False
+
+    def test_benchmarks_excluded_from_fit_and_adjustment(self):
+        """SPY is beta 1.0 by construction and is not a candidate — it must not
+        anchor the regression or be rewritten."""
+        from quant_engine import neutralize_beta
+        s = self._universe()
+        s["SPY"] = self._mk(1.0, 50.0)
+        neutralize_beta(s)
+        assert s["SPY"]["composite_score"] == 50.0
+        assert s["SPY"]["beta_neutralized"] is False
+
+    def test_output_stays_in_range(self):
+        from quant_engine import neutralize_beta
+        s = self._universe(slope=-60.0)          # extreme loading → big residuals
+        neutralize_beta(s)
+        for v in s.values():
+            assert 0.0 <= v["composite_score"] <= 100.0
+
+    # ── wiring ───────────────────────────────────────────────────────────────
+
+    def _wired_universe(self, n=40):
+        """A universe big enough to clear MIN_NEUTRALIZE_NAMES with real beta spread,
+        built from PRICE HISTORY so it exercises the whole scoring path rather than
+        hand-written score dicts."""
+        md = {"history": {}, "fundamentals": {}}
+        md["history"]["SPY"] = _trend(100.0, 118.0, 300)
+        for i in range(n):
+            # alternate steep/shallow trends so composite and beta both vary
+            end = 100.0 + (40.0 if i % 2 else 8.0) + i * 0.6
+            md["history"][f"T{i:02d}"] = _trend(100.0, end, 300)
+        return md
+
+    def test_neutralization_is_actually_wired_into_score_all_tickers(self):
+        """The production call site must really run.
+
+        The previous version of this test used a ONE-TICKER universe — below
+        MIN_NEUTRALIZE_NAMES, so both branches degraded to the raw composite and the
+        assertion was that they matched. A mutation test proved it worthless: replacing
+        the call site with `if False:` still passed the whole suite. Caught in review.
+        """
+        from quant_engine import score_all_tickers
+        md = self._wired_universe()
+        on  = score_all_tickers(md, beta_neutralize=True)
+        off = score_all_tickers(md, beta_neutralize=False)
+
+        assert any(on[t]["beta_neutralized"] for t in on if t != "SPY"), \
+            "neutralization never fired — the call site is not wired"
+        moved = [t for t in on if t != "SPY"
+                 and on[t]["composite_score"] != off[t]["composite_score"]]
+        assert moved, "ON and OFF produced identical composites — the call site is dead"
+        # and the raw value is preserved on both paths
+        for t in moved:
+            assert on[t]["composite_raw"] == off[t]["composite_score"]
+
+    def test_raw_and_neutralized_never_share_a_partition_key(self):
+        """FORMULA_VERSION is the key an IC analyzer groups by. Raw and neutralized are
+        different populations (live moves reach 22 points) and pooling them corrupts the
+        very measurement this change exists to protect (P0-2)."""
+        from quant_engine import score_all_tickers, FORMULA_VERSION, RAW_VARIANT_SUFFIX
+        md = self._wired_universe()
+        on  = score_all_tickers(md, beta_neutralize=True)
+        off = score_all_tickers(md, beta_neutralize=False)
+        assert on["T00"]["formula_version"] == FORMULA_VERSION
+        assert off["T00"]["formula_version"] == FORMULA_VERSION + RAW_VARIANT_SUFFIX
+        assert on["T00"]["formula_version"] != off["T00"]["formula_version"]
+
+    def test_degraded_run_also_gets_the_raw_partition_key(self):
+        """Too few names to fit -> raw composites -> must carry the raw key too."""
+        from quant_engine import score_all_tickers, FORMULA_VERSION, RAW_VARIANT_SUFFIX
+        md = {"history": {"SPY": _trend(100.0, 118.0, 300),
+                          "A": _trend(100.0, 130.0, 300)}, "fundamentals": {}}
+        s = score_all_tickers(md, beta_neutralize=True)
+        assert s["A"]["beta_neutralized"] is False
+        assert s["A"]["formula_version"].endswith(RAW_VARIANT_SUFFIX)
+        assert s["A"]["formula_version"] != FORMULA_VERSION
+
+    def test_fit_is_stamped_so_cross_plane_divergence_is_detectable(self):
+        """The fit is cross-sectional, so a ticker's score depends on which OTHER tickers
+        were in the batch. factor_history.jsonl is written by the GH Actions plane on the
+        full universe while the trade is decided on the slimmed snapshot — stamping the
+        fit makes that divergence visible instead of silently corrupting the ledger."""
+        from quant_engine import score_all_tickers
+        big = score_all_tickers(self._wired_universe(40), beta_neutralize=True)
+        small = score_all_tickers(self._wired_universe(25), beta_neutralize=True)
+        f_big, f_small = big["T00"]["neutralize_fit"], small["T00"]["neutralize_fit"]
+        assert f_big and f_small
+        assert f_big["n_fit"] != f_small["n_fit"], "n_fit must record the batch size"
+        for k in ("intercept", "slope", "centre"):
+            assert k in f_big
+        # the same ticker really does score differently on a different universe —
+        # this is inherent to neutralization; the stamp is what makes it auditable
+        assert big["T00"]["composite_score"] != small["T00"]["composite_score"]
+
+    def test_formula_version_bumped(self):
+        """Phase 2 is a real signal change and MUST reset the evidence clock."""
+        from quant_engine import FORMULA_VERSION
+        assert FORMULA_VERSION == "3.0-beta-neutral"
+
+
 # ── quant_engine.score_all_tickers ───────────────────────────────────────────
 
 class TestScoreAllTickers:
@@ -719,7 +923,14 @@ class TestScoreAllTickers:
         scores = score_all_tickers(market_data)
         s = scores["AAPL"]
         assert set(s["factors_used"]) == {"momentum", "quality", "valuation", "volatility"}
-        assert s["formula_version"] == FORMULA_VERSION
+        # This fixture is a 2-ticker universe, below MIN_NEUTRALIZE_NAMES, so the run
+        # degrades to RAW composites and correctly carries the raw partition suffix.
+        # The weight formula under test is unaffected — it is the pre-neutralization
+        # composite either way, which is exactly what composite_raw preserves.
+        from quant_engine import RAW_VARIANT_SUFFIX
+        assert s["formula_version"] == FORMULA_VERSION + RAW_VARIANT_SUFFIX
+        assert s["beta_neutralized"] is False
+        assert s["composite_raw"] == s["composite_score"]
         expected = (
             s["momentum_score"]    * FACTOR_WEIGHTS["momentum"]
             + s["quality_score"]   * FACTOR_WEIGHTS["quality"]
