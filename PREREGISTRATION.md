@@ -37,6 +37,13 @@ The **block-sampled Spearman rank information coefficient (IC)** of
   not overlap; all confidence intervals and p-values use this **effective N**, not
   the raw overlapping daily count.
 
+> **Scope note (added 2026-08-27).** This registration governs the *calibration ledger's*
+> primary skill metric, and it remains `quant.composite_score` — unchanged. It is **not** the
+> whole test for scaling capital. `SCALE_DECISION_RULE.md` Gate 1b additionally requires
+> evidence that the **LLM layer** adds something on top, because this metric is deterministic
+> and contains no AI. The two documents are complementary, not competing: this one asks "does
+> the score predict?", that one asks "does the AI earn its seat?".
+
 ## 4. Secondary (exploratory) metrics
 ICs and sign-hit-rates for the other agents/fields (research confidence,
 earnings-alpha score, Devil's-Advocate risk score, position hold score). These

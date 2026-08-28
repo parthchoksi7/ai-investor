@@ -68,25 +68,63 @@ never there is not.
 
 ## 3. The gates — all four must pass
 
-### Gate 1 · The predictions work (the gate with real statistical power)
+Gate 1 has two halves (1a and 1b) and **both** are required; Gates 2–4 are single.
 
-**Two routes, either one satisfies the gate.** A single threshold forced a bad choice: 0.08
-is decidable in ~1.3 years but is better than most professional quant funds achieve, so it
-might never be reached; 0.03 is realistic but takes ~9 years. Two routes remove the choice —
-a strong signal earns a fast decision, a modest one still counts but must prove itself longer.
+### Gate 1 · The predictions work — **and the AI is the reason** (the gate with real power)
 
-| Route | Signal (IC) | Independent observations | ≈ time |
+**Amended 2026-08-27, before any result exists.** The original Gate 1 pointed at
+`PREREGISTRATION.md`'s primary metric, which is `quant.composite_score` — the **deterministic**
+formula, with no AI involved anywhere in it. As written, the rule could have been satisfied
+by a system that performs identically with all seven agents switched off, while still paying
+for them. That does not answer this account's question (CLAUDE.md → Purpose). Corrected here
+while there are no results to be tempted by; changing it later would be moving the goalposts.
+
+**Both halves are required.**
+
+#### Gate 1a · The foundation works — the deterministic score predicts
+
+`quant.composite_score@21d` reaches **either**:
+
+| Route | IC | Independent observations | ≈ time |
 |---|---|---|---|
 | **Fast** | ≥ **0.08** | ≥ **400** | ~1.3 years |
 | **Slow** | ≥ **0.05** | ≥ **1,600** | ~3.4 years |
 
-Either route additionally requires:
-- a confidence interval that **excludes zero**, and
-- measurement **entirely within one `FORMULA_VERSION`** — no mixing across scoring changes.
+with a confidence interval **excluding zero**, measured **entirely within one
+`FORMULA_VERSION`** — no mixing across scoring changes.
 
-*Source: `agent_scorecards.json`, the existing `stage_c_readiness.py` machinery.
-Note this is a stricter bar than that file's current `MIN_N_EFFECTIVE = 30` /
-`MAX_CI_HALFWIDTH = 0.15`, which was set to decide a build question, not a money question.*
+#### Gate 1b · The AI adds something on top of it
+
+At least one of the following, **BH-adjusted** (`significant_bh` in
+`agent_scorecards.json`, `p_value_bh` in the counterfactual):
+
+- **An agent's own signal predicts** — any of `research.confidence`,
+  `devils_advocate.overall_risk_score`, `position_review.hold_score` clears the same IC and
+  observation bar as Gate 1a, **in its expected direction**; or
+- **The AI's decisions predict** — in `counterfactual.json`, `pm_selected` (the names the
+  Portfolio Manager chose beat the ones it passed on) or `da_reject` (the names the Devil's
+  Advocate flagged underperform) shows the correct sign with **both sides ≥ 10** and BH-adjusted
+  **p < 0.05**.
+
+**Multiple-comparison correction is mandatory, not optional.** Allowing "any one of five
+signals" is five independent chances at a 5% false-positive rate — roughly a 1-in-4 chance of
+passing on noise alone. Raw p-values do not satisfy this gate.
+
+**Two signals are excluded as structurally unmeasurable**, and must never be used to satisfy
+1b: `cro_veto` (n_flagged = 1–2 — the CRO rarely vetoes a *named* ticker, so it cannot reach
+the n ≥ 10 floor) and `pm.expected_return` (n_effective = 7, because only BUYs carry the
+field). Citing either would be passing the gate on a sample that cannot support it.
+
+#### If 1a passes and 1b fails — that is a RESULT, not a failure
+
+It means: **the deterministic factor model works and the AI is decoration.** That is a
+genuinely valuable finding, arguably more actionable than the alternative, and the correct
+response is to run the quant layer *without* the LLM pipeline and stop paying for it —
+`deliberation_stats.json` notes per-agent cost is still unmeasured, which should be fixed
+before that comparison is made.
+
+Do **not** scale the agentic account in that case. Scale the deterministic strategy instead,
+which is a different and much cheaper system.
 
 ### Gate 2 · The account doesn't contradict the predictions
 
@@ -165,7 +203,22 @@ The measurement is only valid if the thing being measured stops changing:
 
 ---
 
-## 7. Decisions taken (2026-08-26)
+## 7. Decisions taken
+
+### Amendment — 2026-08-27, before any result existed
+
+**Gate 1 split into 1a (deterministic foundation) + 1b (the AI adds something).** The
+original pointed only at `quant.composite_score`, which contains no AI, so the rule could
+have been satisfied by a system that works identically with all seven agents off. That
+answers the wrong question for this account. Both halves are now required, 1b demands
+BH-adjusted significance to stop "any one of five signals" manufacturing a false positive,
+and two signals (`cro_veto`, `pm.expected_return`) are excluded as structurally
+unmeasurable at n = 1–7.
+
+Made before the measurement window opened (first scored rebalance 2026-09-02) and before any
+qualifying result existed. Any *further* change to a threshold restarts the window.
+
+### Original decisions (2026-08-26)
 
 1. **Signal threshold — two routes** (§3 Gate 1). Rationale: the risk is lopsided. A false
    positive moves real money into noise and costs years plus confidence; a false negative
