@@ -24,7 +24,7 @@ run, or API response in this repo — never assumed from memory.
 
 | # | Item | Status |
 |---|------|--------|
-| 22 | **Re-quote qty mismatch: absolute vs delta** (routine STEP 4 vs `_compute_qty`) | 🟠 **CODE FIXED 2026-08-28 — awaiting routine sync.** `ROUTINE_DAILY_CYCLE.md` corrected; the LIVE prompt still carries the bug until pasted. Two bugs, not one: over-buys an add-to-holding BUY, **and silently skips a `target_weight=0` full exit** |
+| 22 | **Re-quote qty mismatch: absolute vs delta** | ✅ **CLOSED 2026-08-28** — canonical prompt fixed AND live routine synced; STEP 4 block verified matching byte-for-byte |
 | 25 | **Reset `portfolio_peak.json` if/when the account is ever funded** | ⏸️ **PARKED 2026-08-26** — no deposit planned for now. Re-arms the moment one is made |
 | 24 | **Coverage "regression" — DIAGNOSED, not a data failure** | 🟡 **2 defects to fix** (gate hysteresis + coverage denominator). Does **not** block Phase 2. Do not ship before Wed 2026-08-26 |
 | 11 | **`since_entry` dossier anchor is structurally always `None`** | 🟡 **PENDING** — re-verified 2026-08-22: 172 dossier records, **0** non-null. Inert since it shipped |
@@ -35,11 +35,11 @@ run, or API response in this repo — never assumed from memory.
 
 ---
 
-### [ ] 22. Re-quote qty mismatch — ABSOLUTE vs DELTA — 🟠 **CODE FIXED, AWAITING ROUTINE SYNC**
+### [x] 22. Re-quote qty mismatch — ABSOLUTE vs DELTA — ✅ **CLOSED 2026-08-28**
 
-**Canonical prompt corrected 2026-08-28** (`ROUTINE_DAILY_CYCLE.md` STEP 4). **The LIVE
-routine still carries the bug** until the corrected block is pasted into the routines UI —
-that is the only remaining action, and it is owner-only.
+Canonical prompt corrected **and the live routine synced by the owner the same day**. The
+STEP 4 re-quote block was verified **matching the canonical `ROUTINE_DAILY_CYCLE.md`
+byte-for-byte**, including the full-exit special case.
 
 **It was two bugs, not one.** The routine re-quoted a stale-priced order as
 `target_weight × total_value ÷ live_price` — an ABSOLUTE position — while
@@ -49,18 +49,17 @@ that is the only remaining action, and it is owner-only.
   roughly doubling the intended add, and breaching the sector cap at the broker for a
   clamped BUY.
 - **SELL with `target_weight = 0`** (a full exit) → `0 × total ÷ price = 0`, and STEP 4's
-  "skip if qty <= 0" then **silently skipped the exit entirely.** This was not in the
-  original write-up.
+  "skip if qty <= 0" then **silently skipped the exit entirely.** Not in the original
+  write-up; found while drafting the fix.
 
-**Scope — narrower than it first appears.** The re-quote only triggers when
-`decision["price_as_of"]` is present and ≠ today, and only `main.py` stamps that field (from
-the dossier, line ~745). **`risk_watch.py` never stamps it**, so the daily −25% stop-loss
-path is NOT exposed — it always uses its own live MCP quote and the pre-computed qty. The
-exposed surface is **rebalance decisions on a stale-price day only**.
+**Scope, verified rather than assumed:** the re-quote only triggers when
+`decision["price_as_of"]` is present and ≠ today, and only `main.py` stamps that field.
+`risk_watch.py` never does, so the daily −25% stop-loss path was **never exposed** — it
+always uses its own live MCP quote. The exposed surface was rebalance decisions on a
+stale-price day only.
 
-**The corrected block** mirrors `_compute_qty` exactly, including the full-exit special case
-(`target_weight == 0` → `available_qty`, never scaled by price). See `ROUTINE_DAILY_CYCLE.md`
-STEP 4 for the paste-ready text.
+**Never observed firing live** — no envelope has yet carried a stale `price_as_of`. Fixed
+before it cost anything.
 
 
 ### [ ] 25. Reset `portfolio_peak.json` if/when the account is funded — ⏸️ **PARKED 2026-08-26**
