@@ -298,11 +298,40 @@ For each decision where action is BUY or SELL:
   1. QUANTITY — read decision["qty"] directly.
      This is the pre-computed fractional share count (e.g., 0.648382).
      DO NOT recompute it. DO NOT round it to a whole number.
+
      STALE-PRICE RE-QUOTE (P0-1): if decision["price_as_of"] is present and ≠ today,
      the qty was sized on a stale slice price — fetch the live quote via
-     get_equity_quotes and recompute:
-       round(decision["target_weight"] × mcp_portfolio["total_value"] ÷ live_price, 6)
-     Fallback (only if decision["qty"] is missing or null): same live-quote computation.
+     get_equity_quotes and recompute.
+
+     ⚠ THE RECOMPUTATION MUST MATCH execute._compute_qty's SEMANTICS. It returns a
+     DELTA (how much to ADD or REMOVE), never an absolute target position. The old
+     formula here was `target_weight × total_value ÷ live_price`, which is absolute,
+     and was wrong in BOTH directions:
+       • BUY of a name already held  -> bought the FULL target on top of the existing
+         position, roughly doubling the intended add and breaching the sector cap at
+         the broker for a clamped BUY.
+       • SELL with target_weight = 0 -> computed 0, so step 2's "skip if qty <= 0"
+         SILENTLY SKIPPED the exit. That includes a risk/stop-loss exit.
+
+     Use these formulas instead:
+
+       held_qty     = qty for this ticker from mcp_portfolio["positions"] (0 if absent)
+       avail_qty    = available_qty for this ticker (falls back to held_qty)
+       held_value   = held_qty × live_price
+       target_value = decision["target_weight"] × mcp_portfolio["total_value"]
+
+       BUY:
+         qty = round((target_value − held_value) ÷ live_price, 6)
+         if qty <= 0 -> already at or above target, SKIP this decision.
+
+       SELL:
+         if decision["target_weight"] == 0:
+             qty = avail_qty          # FULL EXIT — never scale by price, never 0
+         else:
+             if (target_value − held_value) >= 0 -> SKIP (already at/below target)
+             qty = round(min((held_value − target_value) ÷ live_price, avail_qty), 6)
+
+     Fallback (only if decision["qty"] is missing or null): same formulas.
 
   2. SKIP CONDITION — skip this decision only if qty <= 0.
      qty = 0.648 is a valid fractional order. Place it.

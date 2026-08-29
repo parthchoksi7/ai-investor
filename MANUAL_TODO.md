@@ -24,7 +24,7 @@ run, or API response in this repo — never assumed from memory.
 
 | # | Item | Status |
 |---|------|--------|
-| 22 | **Re-quote qty mismatch: absolute vs delta** (routine STEP 4 vs `_compute_qty`) | 🔴 **P1 — execution-path.** Can over-buy an add-to-holding BUY on a stale-price day. **Gates Phase 3** of `PLAN_BETA_ALPHA_SPLIT.md`; needs a routine sync, so it has lead time |
+| 22 | **Re-quote qty mismatch: absolute vs delta** (routine STEP 4 vs `_compute_qty`) | 🟠 **CODE FIXED 2026-08-28 — awaiting routine sync.** `ROUTINE_DAILY_CYCLE.md` corrected; the LIVE prompt still carries the bug until pasted. Two bugs, not one: over-buys an add-to-holding BUY, **and silently skips a `target_weight=0` full exit** |
 | 25 | **Reset `portfolio_peak.json` if/when the account is ever funded** | ⏸️ **PARKED 2026-08-26** — no deposit planned for now. Re-arms the moment one is made |
 | 24 | **Coverage "regression" — DIAGNOSED, not a data failure** | 🟡 **2 defects to fix** (gate hysteresis + coverage denominator). Does **not** block Phase 2. Do not ship before Wed 2026-08-26 |
 | 11 | **`since_entry` dossier anchor is structurally always `None`** | 🟡 **PENDING** — re-verified 2026-08-22: 172 dossier records, **0** non-null. Inert since it shipped |
@@ -35,27 +35,33 @@ run, or API response in this repo — never assumed from memory.
 
 ---
 
-### [ ] 22. Re-quote qty mismatch — ABSOLUTE vs DELTA (P1, execution-path) — **owner decision + routine sync**
-Surfaced by `/code-review high` during the Aug 19 sector-clamp remediation. **Pre-existing —
-not introduced by that batch — and it affects every BUY that ADDS to an existing holding, not
-just clamped ones.**
+### [ ] 22. Re-quote qty mismatch — ABSOLUTE vs DELTA — 🟠 **CODE FIXED, AWAITING ROUTINE SYNC**
 
-- `execute._compute_qty()` returns a **DELTA** for a held name:
-  `(target_weight × total_value − current_market_value) ÷ price`.
-- The routine's stale-price re-quote (`ROUTINE_DAILY_CYCLE.md` STEP 4, the P0-1 path) recomputes
-  an **ABSOLUTE** quantity: `target_weight × total_value ÷ live_price`.
+**Canonical prompt corrected 2026-08-28** (`ROUTINE_DAILY_CYCLE.md` STEP 4). **The LIVE
+routine still carries the bug** until the corrected block is pasted into the routines UI —
+that is the only remaining action, and it is owner-only.
 
-When `decision["price_as_of"] != today` the routine re-quotes, and an add-to-holding BUY is
-placed at the **full target size on top of the position already held** — roughly doubling the
-intended add and, for a clamped BUY, breaching the sector cap at the broker. It fires only on a
-stale-price day, which is why it has not been observed live.
+**It was two bugs, not one.** The routine re-quoted a stale-priced order as
+`target_weight × total_value ÷ live_price` — an ABSOLUTE position — while
+`execute._compute_qty()` returns a **DELTA**:
 
-**Options:** (a) make the routine re-quote delta-aware (needs the held qty, which
-`mcp_portfolio.json` already carries) — correct but requires a live-routine sync; (b) have
-`main.py` stamp an explicit `sizing_basis: "delta"` on each decision and have the routine honor
-it; (c) skip the re-quote for add-to-holding BUYs and let them execute at the stamped qty.
-Recommend **(a)**. Until it is fixed, a stale-price day is the one path where the sector cap can
-be exceeded at the broker — noted in the `enforce_sector_limits` docstring.
+- **BUY of a name already held** → bought the full target *on top of* the existing position,
+  roughly doubling the intended add, and breaching the sector cap at the broker for a
+  clamped BUY.
+- **SELL with `target_weight = 0`** (a full exit) → `0 × total ÷ price = 0`, and STEP 4's
+  "skip if qty <= 0" then **silently skipped the exit entirely.** This was not in the
+  original write-up.
+
+**Scope — narrower than it first appears.** The re-quote only triggers when
+`decision["price_as_of"]` is present and ≠ today, and only `main.py` stamps that field (from
+the dossier, line ~745). **`risk_watch.py` never stamps it**, so the daily −25% stop-loss
+path is NOT exposed — it always uses its own live MCP quote and the pre-computed qty. The
+exposed surface is **rebalance decisions on a stale-price day only**.
+
+**The corrected block** mirrors `_compute_qty` exactly, including the full-exit special case
+(`target_weight == 0` → `available_qty`, never scaled by price). See `ROUTINE_DAILY_CYCLE.md`
+STEP 4 for the paste-ready text.
+
 
 ### [ ] 25. Reset `portfolio_peak.json` if/when the account is funded — ⏸️ **PARKED 2026-08-26**
 
