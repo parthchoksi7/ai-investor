@@ -18,9 +18,50 @@ on:
         default: false
         type: boolean
 
+# Serialize runs of this workflow. The four staggered crons are deliberately
+# redundant (GitHub silently skips scheduled runs under load), but they assume a
+# run finishes before the next fires. On 2026-08-27/28 GitHub's scheduler deferred
+# every trigger by ~10 hours, so all four landed 24-52 min apart instead of
+# 30-120 min. Two concurrent runs then (a) shared one Polygon free-tier 5-calls/min
+# budget, producing 429 storms that stretched each run from ~12-40 min to 40-70 min
+# (which caused MORE overlap — self-reinforcing), and (b) both regenerated all eight
+# committed artifacts, so the loser's push lost the race and its `git pull --rebase`
+# hit a content conflict in every one of them, tripping the deliberate abort in the
+# push step below. Three runs failed that way.
+#
+# cancel-in-progress: false — an in-flight sweep must never be killed mid-fetch;
+# its progress (raw_history_store.json + the expansion cursor) is only durable via
+# the always-run cache save below.
+#
+# workflow_dispatch is deliberately EXEMPT (its own per-run group). The manual
+# dispatch is the documented mitigation for exactly the situation this block guards
+# against — "no fresh snapshot has landed and the routine fires at 9:45" (CLAUDE.md
+# cron-delay section; Runbook Scenario E). Queueing it behind a scheduled run would
+# defeat its purpose, and GitHub would silently CANCEL it while pending if a later
+# cron entered the group. The cost of the exemption is that a manual dispatch can
+# still race a scheduled run — acceptable, because an operator firing it by hand is
+# watching, and an emergency lever that can be cancelled is not a lever.
+#
+# Known trade-off on the scheduled side: GitHub keeps at most ONE pending run per
+# group, so a long in-flight run plus three later triggers loses TWO of them, not
+# one — that day contributes 2 of its 4 expansion batches and a full 290-name sweep
+# takes 2+ days. Still the right trade: four runs that fight each other for the
+# Polygon rate limit are slower AND half of them fail.
+concurrency:
+  group: market-data-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'scheduled' }}
+  cancel-in-progress: false
+
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    # Bounded so a wedged run can never hold the concurrency group above for
+    # GitHub's 6-hour default. get_extended_history sleeps up to ~90s per ticker on
+    # Polygon 429s across a ~400-name sweep, so a stall is realistic — and a stalled
+    # run that blocks the 7:00/8:00/8:30 triggers means no snapshot exists at 9:45,
+    # which costs a Wednesday its rebalance (four SKIP-RETRYs). 50 min clears the
+    # observed uncontended range (12-40 min) with headroom; the 40-70 min runs of
+    # 2026-08-27/28 were rate-limit contention that serialization removes.
+    timeout-minutes: 50
     permissions:
       contents: write
     env:
@@ -125,13 +166,17 @@ jobs:
         # (pipeline_digest, the EOD publish, a concurrent market_data retry) lands on
         # main first. Rebase-and-retry so a benign push race doesn't drop the snapshot
         # + factor_history + data_quality artifacts (same durability lesson as the
-        # routine STEP 5 push). fundamentals_cache.json is the one file in the
-        # whitelist above with a second independent committer (the cloud routine's
-        # rare degraded-fallback path, ROUTINE_DAILY_CYCLE.md:280/378) — a genuine
-        # content conflict there is low-probability and, if it ever fires, fails this
-        # attempt cleanly (see the explicit error messages below); it does not corrupt
-        # anything, since a fresh `actions/checkout` on the next scheduled run is
-        # unaffected by this run's conflicted state.
+        # routine STEP 5 push). THREE files in the whitelist above have a second
+        # independent committer — the cloud routine stages fundamentals_cache.json,
+        # forecasts_scored.jsonl AND agent_scorecards.json (ROUTINE_DAILY_CYCLE.md:280/407),
+        # not just the first. The `concurrency` group at the top of this file serializes
+        # runs of THIS workflow against each other, but it cannot serialize against the
+        # cloud plane, so that cross-plane race survives it — and serialization pushes
+        # runs later into the day, nearer the routine. A genuine content conflict there
+        # is low-probability and, if it fires, fails this attempt cleanly (see the
+        # explicit error messages below); it does not corrupt anything, since a fresh
+        # `actions/checkout` on the next scheduled run is unaffected by this run's
+        # conflicted state.
         run: |
           for i in 1 2 3; do
             git push && exit 0
