@@ -13,6 +13,76 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — `market_data.yml` failed 3 of its last 8 runs when GitHub started firing the crons ~10 hours late
+
+The four daily market-data triggers are deliberately redundant — GitHub silently skips
+scheduled runs under load, so the workflow fires at 5:00 / 7:00 / 8:00 / 8:30 AM ET to
+guarantee at least one snapshot lands before the 9:45 AM trading routine. That design
+assumes each run finishes before the next one starts. On **2026-08-27 and 08-28** GitHub's
+scheduler deferred every trigger by roughly ten hours, so instead of arriving 30–120 minutes
+apart they arrived **24–52 minutes apart** — and started overlapping.
+
+Two things then went wrong at once, each making the other worse:
+
+- **They fought over the Polygon rate limit.** Polygon's free tier allows 5 calls/minute, and
+  that budget is per API key, not per run. Two concurrent runs sharing it produced continuous
+  `429` backoffs (the logs are wall-to-wall `⏳ Polygon 429 for AAPL — backing off 45s`),
+  stretching each run from its normal 12–40 minutes to **40–70 minutes** — which caused *more*
+  overlap on the next trigger. Self-reinforcing.
+- **They fought over the push.** Both runs regenerate all eight committed artifacts for the
+  same day. The first to finish pushes; the second's push is rejected, its `git pull --rebase`
+  hits a content conflict in *every one* of `market_snapshot.json`, `factor_history.jsonl`,
+  `events.jsonl`, `data_quality_report.json`, `data_quality_history.jsonl`,
+  `research_dossier.json`, `forecasts_scored.jsonl` and `agent_scorecards.json`, and the push
+  step's deliberate abort fires.
+
+**No data was lost** — the winning run's snapshot landed on `main` both days, and the failing
+runs' expansion-cursor progress still persisted via the `if: always()` cache save. The red X
+was a by-design bail-out, not corruption. But it was masking the real problem: the snapshot
+was landing at **~7 PM ET, about nine hours after the routine that consumes it** (heartbeat
+issue #40 flagged exactly this). Aug 27–28 were Thursday/Friday, so the gate returned exit 30
+(risk-watch, which needs no snapshot) and nothing was actually missed — but the next Wednesday
+rebalance would have SKIP-RETRY'd on all four attempts and lost the week.
+
+- **`fix(workflow)` a `concurrency` group (`cancel-in-progress: false`)** — scheduled runs of
+  this workflow now serialize instead of racing. This closes the *same-workflow* push conflict
+  — the one that actually failed — and, more importantly, removes the 429 storms: a run that
+  has the Polygon budget to itself goes back to 12–40 minutes, which is what stops the overlap
+  from compounding in the first place. `cancel-in-progress` is deliberately `false`, since an
+  in-flight sweep's progress only becomes durable at the cache-save step.
+- **`workflow_dispatch` is exempt from the group** (it gets its own per-run key). The manual
+  dispatch is the documented mitigation for precisely the situation the group guards against
+  — no fresh snapshot with the routine about to fire — so queueing it would defeat its purpose,
+  and GitHub would *silently cancel it while pending* if a later cron entered the group. The
+  cost is that a hand-fired dispatch can still race a scheduled run; that's the right trade,
+  because an emergency lever that can be cancelled is not a lever.
+- **`fix(workflow)` `timeout-minutes: 50` on the fetch job.** Serializing runs means a wedged
+  one holds the group for GitHub's 6-hour default — and `get_extended_history` sleeps up to
+  ~90s per ticker on 429s across a ~400-name sweep, so a stall is realistic. A stalled run that
+  blocks the 7:00/8:00/8:30 triggers leaves no snapshot at 9:45, which is how a Wednesday loses
+  its rebalance. 50 minutes clears the observed uncontended range with headroom.
+- **Two limits worth stating plainly.** (1) The group cannot serialize against the *cloud
+  routine*, which also commits `fundamentals_cache.json`, `forecasts_scored.jsonl` and
+  `agent_scorecards.json` — that cross-plane push race survives this fix, and serialization
+  pushes runs later into the day, nearer the routine. It stays a clean-fail, not corruption.
+  (2) GitHub keeps at most one *pending* run per group, so a long in-flight run plus three
+  later triggers loses **two** of them: that day contributes 2 of its 4 expansion batches, and
+  a full 290-name sweep takes 2+ days. Still worth it against four runs that fight each other
+  and half of which fail.
+- **Not shipped: a "skip if today's snapshot is already fresh" guard**, which was the obvious
+  companion fix and turns out to be actively harmful here. The Stage D expansion sweep advances
+  a cursor **once per run** at `EXPANSION_BATCH_SIZE = 75`, and there are **290 expansion-only
+  names — exactly four batches**, which is why there are exactly four crons. Skipping runs 2–4
+  whenever run 1 succeeded would stretch a full sweep from one day to four, staling the
+  candidate-discovery universe to save runner minutes that are already free (the repo is
+  public). The redundancy in those four triggers is not redundant.
+- **The ~10-hour scheduler delay itself is GitHub-side and not fixable from this repo.** The
+  standing mitigation is unchanged (CLAUDE.md, cron-delay section): if no fresh
+  `chore: market snapshot` commit has landed by ~9:15 AM ET on a **Wednesday**, dispatch it by
+  hand — `gh workflow run market_data.yml --repo parthchoksi7/ai-investor`. If the delay
+  persists, the durable fix is the one already documented as longer-term: have the routine
+  dispatch `market_data.yml` itself and poll for the fresh commit rather than assuming it.
+
 ### Changed — the stock score no longer smuggles in a bet on the market (`FORMULA_VERSION` 3.0)
 
 The scoring formula rated stocks out of 100, and that score turned out to be dominated by

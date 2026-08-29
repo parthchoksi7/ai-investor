@@ -10734,6 +10734,115 @@ class TestLintGate:
             f"UnboundLocalError class):\n{result.stdout}")
 
 
+class TestMarketDataConcurrency:
+    """Regression net for the 2026-08-27/28 incident: GitHub deferred every
+    market_data cron by ~10 hours, the four triggers landed 24-52 min apart
+    instead of 30-120, and overlapping runs (a) shared one Polygon 5-calls/min
+    budget into 429 storms that stretched runs to 40-70 min, and (b) both
+    regenerated all eight committed artifacts, so the loser's rebase conflicted
+    in every one of them and the push step aborted. Three runs failed that way.
+
+    These assert the STRUCTURE of the fix, not GitHub's runtime — a future edit
+    that drops the group, the timeout, or the dispatch exemption fails here."""
+
+    WORKFLOW = ".github/workflows/market_data.yml"
+
+    @pytest.fixture
+    def wf(self):
+        import os
+        import yaml
+        if not os.path.isfile(self.WORKFLOW):
+            pytest.skip("workflow file not present in this checkout")
+        with open(self.WORKFLOW) as f:
+            return yaml.safe_load(f)
+
+    def test_scheduled_runs_are_serialized(self, wf):
+        """A concurrency group is what stops two runs racing the same push."""
+        assert "concurrency" in wf, (
+            "market_data.yml lost its concurrency group — overlapping runs will "
+            "again race the push and conflict on all eight committed artifacts")
+        assert wf["concurrency"].get("group")
+
+    def test_in_flight_sweep_is_never_cancelled(self, wf):
+        """cancel-in-progress must stay false: a sweep's progress (the expansion
+        cursor + raw_history_store.json) only becomes durable at the always-run
+        cache-save step, so killing a run mid-fetch discards it."""
+        assert wf["concurrency"].get("cancel-in-progress") is False
+
+    def test_manual_dispatch_is_exempt_from_the_group(self, wf):
+        """workflow_dispatch is the documented mitigation for 'no fresh snapshot
+        and the routine is about to fire'. GitHub keeps only ONE pending run per
+        group and silently cancels it when a later trigger arrives — so a queued
+        dispatch could be killed before it ran. It must key on something unique
+        per run (github.run_id), not a constant."""
+        group = wf["concurrency"]["group"]
+        assert "workflow_dispatch" in group and "github.run_id" in group, (
+            f"concurrency group {group!r} would queue manual dispatches behind "
+            "scheduled runs, where GitHub can cancel them while pending")
+
+    def test_dispatch_and_schedule_resolve_to_different_groups(self, wf):
+        """Evaluate the GitHub expression the way Actions does: && and || yield
+        the OPERAND, not a boolean. Dispatch -> unique per-run key; schedule ->
+        one shared key. If these ever collapsed to the same value the exemption
+        above would be silently dead."""
+        group = wf["concurrency"]["group"]
+        assert group.count("${{") == 1, "test only models a single expression"
+        prefix, expr = group.split("${{", 1)
+        expr = expr.split("}}")[0].strip()
+        assert expr == ("github.event_name == 'workflow_dispatch' "
+                        "&& github.run_id || 'scheduled'"), (
+            f"concurrency expression changed to {expr!r} — re-verify the "
+            "dispatch exemption still holds before updating this assertion")
+
+        def resolve(event_name, run_id):
+            left = (event_name == "workflow_dispatch") and run_id
+            return prefix + str(left or "scheduled")
+
+        assert resolve("workflow_dispatch", 33217187218) == "market-data-33217187218"
+        assert resolve("workflow_dispatch", 33215577933) == "market-data-33215577933"
+        assert resolve("schedule", None) == "market-data-scheduled"
+        # Every scheduled trigger shares one key; no two dispatches ever do.
+        assert resolve("schedule", None) == resolve("schedule", None)
+        assert resolve("workflow_dispatch", 1) != resolve("workflow_dispatch", 2)
+
+    def test_a_wedged_run_cannot_hold_the_group_indefinitely(self, wf):
+        """Serialization without a timeout is a NEW failure mode, not a fix:
+        GitHub's default is 6 hours, and get_extended_history sleeps up to ~90s
+        per ticker on 429s across a ~400-name sweep. A stalled run that blocks
+        the 7:00/8:00/8:30 triggers leaves no snapshot at 9:45 — which is how a
+        Wednesday loses its rebalance to four SKIP-RETRYs."""
+        timeout = wf["jobs"]["fetch"].get("timeout-minutes")
+        assert timeout is not None, (
+            "the fetch job has no timeout-minutes; a wedged run now holds the "
+            "concurrency group for GitHub's 6-hour default")
+        # Must clear the observed uncontended range (12-40 min) but stay well
+        # inside the ~165 min between the first cron and the 9:45 routine.
+        assert 45 <= timeout <= 90, f"timeout-minutes={timeout} outside the sane band"
+
+    def test_all_four_staggered_crons_survive(self, wf):
+        """The redundancy is load-bearing: 290 expansion-only names at
+        EXPANSION_BATCH_SIZE=75 is exactly four batches, and the cursor advances
+        once per run. Dropping triggers (or skipping runs when today's snapshot
+        is already fresh) stretches a full sweep from one day to four."""
+        crons = [c["cron"] for c in wf[True]["schedule"]]  # PyYAML parses `on:` as True
+        assert len(crons) == 4, f"expected 4 staggered crons, found {crons}"
+
+    def test_expansion_sweep_still_needs_every_run(self):
+        """Guards the arithmetic the point above depends on. If the universe or
+        the batch size changes so a sweep no longer needs all four runs, the
+        skip-if-fresh guard deliberately NOT shipped becomes viable again."""
+        import market_data as md
+        from universe import CORE_UNIVERSE, EXPANDED_UNIVERSE
+        always = set(md.full_depth_scope(
+            CORE_UNIVERSE, md.SP500_HOLDINGS.keys(), set(), benchmarks=("SPY", "QQQ")))
+        expansion_only = set(EXPANDED_UNIVERSE) - always
+        runs_per_sweep = -(-len(expansion_only) // md.EXPANSION_BATCH_SIZE)
+        assert runs_per_sweep >= 4, (
+            f"{len(expansion_only)} expansion names / batch "
+            f"{md.EXPANSION_BATCH_SIZE} = {runs_per_sweep} run(s) per sweep; the "
+            "four-cron redundancy may no longer be load-bearing")
+
+
 class TestRunDailyCycleSmoke:
     """End-to-end smoke of run_daily_cycle() with the network boundary stubbed
     and EVERY file write redirected to tmp_path (all pipeline file constants
