@@ -1,11 +1,38 @@
 {
-  "run_id": "20260901-134814",
-  "date": "2026-09-01",
-  "mode": "risk_watch",
-  "generated_at": "2026-09-01T13:48:14.036667+00:00",
+  "run_id": "20260902-154923",
+  "date": "2026-09-02",
+  "mode": "rebalance",
+  "generated_at": "2026-09-02T15:49:23.903221+00:00",
   "policy_version": "2.0-phase5-weekly",
-  "data_quality": null,
-  "execution_started_at": null,
-  "executed_at": "2026-09-01T13:48:49.512980+00:00",
-  "decisions": []
+  "data_quality": {
+    "data_quality_score": 100,
+    "data_quality_status": "OK",
+    "data_quality_hash": "b2f94abc11e71301"
+  },
+  "execution_started_at": "2026-09-02T15:52:35.890353+00:00",
+  "executed_at": null,
+  "decisions": [
+    {
+      "ticker": "PLD",
+      "action": "SELL",
+      "target_weight": 0.0,
+      "source_of_capital": "PLD",
+      "expected_return": 0.0,
+      "rationale": "REDUCE flagged, devil reject=True, low alpha, val=30",
+      "qty": 0.305908,
+      "price_as_of": "2026-09-02",
+      "sizing_price": 139.68
+    },
+    {
+      "ticker": "BKNG",
+      "action": "BUY",
+      "target_weight": 0.055,
+      "source_of_capital": "cash",
+      "expected_return": 0.11,
+      "rationale": "cmp*=76, persist=75, travel recovery, AI take-rate optionality",
+      "qty": 0.147316,
+      "price_as_of": "2026-09-02",
+      "sizing_price": 195.69
+    }
+  ]
 }

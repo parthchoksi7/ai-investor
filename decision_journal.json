@@ -863,9 +863,19 @@
       "Major new supply wave in strategic infill markets drives net lease spreads into negative territory persistently",
       "Significant tenant credit event (loss of >5% of revenue from single customer) or covenant breach by top 10 tenants"
     ],
-    "status": "open",
-    "actual_return": null,
-    "thesis_correct": null
+    "status": "closed",
+    "actual_return": -0.0524,
+    "thesis_correct": false,
+    "exits": [
+      {
+        "date": "2026-09-02",
+        "run_id": "20260902-154923",
+        "exit_price": 139.68,
+        "avg_price": 147.4,
+        "realized_return": -0.0524,
+        "full_exit": true
+      }
+    ]
   },
   {
     "trade_id": "d561e99d-b62b-42f4-916d-ed6fd1fb205c",
@@ -1073,6 +1083,68 @@
       "EYLEA U.S. sales decline >10% YoY in 2026 (indicates loss of moat, not temporary trial-driven repricing)",
       "Credit rating downgrade or inability to access capital markets (liquidity stress during litigation)",
       "Regeneron restates prior financial statements related to Fianlimab trial reporting (criminal exposure)"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "331bad05-58cb-44e3-b425-578af281f72a",
+    "run_id": "20260902-154923",
+    "date": "2026-09-02",
+    "ticker": "PLD",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "PLD is moderately undervalued as a secular logistics real estate compounder facing near-term multiple compression despite durable secular tailwinds (e-commerce, nearshoring, supply chain regionalization) that justify premium valuations once rate volatility settles and rental growth inflects positively.",
+    "anti_thesis": "PLD's valuation score of 30/100 confirms it remains expensive on real metrics (P/E, FCF yield, EV/EBITDA) even after significant multiple compression, meaning the stock already prices in a recovery that hasn't materialized. The structural tailwinds (nearshoring, e-commerce) are real but widely known and already embedded in cap rates and analyst models, leaving no variant-view margin of safety. If rates stay structurally elevated above 4.5% and new supply in Sun Belt markets continues absorbing tenant demand, same-store NOI growth could disappoint for multiple consecutive quarters, triggering a re-rating toward a 5.5%+ cap rate that implies 20-30%+ downside from current levels.",
+    "catalysts": [
+      "Q3/Q4 2026 earnings beat on same-store NOI growth as tenant demand for logistics normalizes and occupancy stabilizes near 96\u201397%",
+      "Announced guidance raise or forward-looking rent spread acceleration in earnings commentary as new lease mark-to-market tightens",
+      "10-year Treasury yields stabilize below 4.0% for sustained period, triggering multiple re-expansion in defensive REIT sector",
+      "Significant M&A announcement (asset sale at 5%+ cap rate, or tuck-in acquisition) that demonstrates capital allocation discipline and unlocks embedded value",
+      "Nearshoring acceleration reflected in tenant demand surge (e.g., automotive, consumer goods onshoring) driving net absorption and pricing power",
+      "Analyst upgrades triggered by sentiment shift from real estate recession narratives to logistics supply fundamentals tightness"
+    ],
+    "confidence": 6,
+    "expected_return": 0.0,
+    "invalidates_if": [
+      "Q3/Q4 2026 earnings reveal same-store NOI decline >2% YoY or occupancy falls below 94%, signaling structural demand loss rather than cyclical normalization",
+      "Management guidance is reduced or rent growth expectations are pushed further into 2027, indicating customer stress or market weakness persisting longer than expected",
+      "Debt covenant violations or credit downgrade announcements signal financial distress or forced deleveraging at unfavorable prices",
+      "Meaningful same-store cash rent spread compression (negative or <1%) for two consecutive quarters despite stable occupancy, indicating pricing power loss",
+      "Dimensional or other large shareholders sell significant stake at current prices, signaling conviction pivot",
+      "10-year Treasury rates sustainably move above 4.75% without corresponding operational upside, confirming structural cap rate expansion"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "07731134-39a6-4673-a3b2-5eaf7566de00",
+    "run_id": "20260902-154923",
+    "date": "2026-09-02",
+    "ticker": "BKNG",
+    "action": "BUY",
+    "target_weight": 0.055,
+    "thesis": "BKNG is significantly undervalued despite a defensible 13% revenue growth trajectory, as markets have overreacted to near-term geopolitical headwinds while ignoring structural AI-driven efficiency gains and international expansion opportunities that should drive multiple expansion.",
+    "anti_thesis": "BKNG trades at a premium that already embeds double-digit revenue growth and margin expansion, leaving virtually no margin of safety if macro deterioration or competitive pressure from Google's vertical search integration structurally compresses take-rates or volumes. The AI monetization narrative is speculative and unproven at scale, while Google \u2014 which controls the top-of-funnel discovery layer \u2014 has every incentive to disintermediate OTAs entirely rather than route traffic to BKNG. A recession combined with sustained USD strength and Google's continued encroachment could simultaneously compress volumes, margins, and the multiple, producing a 35-45% drawdown from current levels.",
+    "catalysts": [
+      "Q4 2026 earnings beat with stabilized guidance and evidence of travel demand recovery as supply chain normalizes",
+      "Announcement of AI-driven take-rate expansion initiatives showing 25-50bps incremental margin opportunity from merchant/traveler monetization",
+      "International segment acceleration (APAC/LATAM) demonstrating >20% growth, proving geographic diversification thesis",
+      "Margin expansion commentary in earnings calls as operating leverage from $28B revenue base compounds with AI efficiency gains",
+      "Strategic partnership or M&A announcement in alternative accommodations/experiences category (Airbnb competitive response)",
+      "Free cash flow acceleration above 6.3% yield with evidence of capital allocation discipline (buybacks resumption)"
+    ],
+    "confidence": 6,
+    "expected_return": 0.11,
+    "invalidates_if": [
+      "Revenue growth decelerates below 8% YoY in subsequent quarters with no recovery narrative",
+      "Operating margins compress below 28% and management provides no credible path back to 32%+",
+      "Market share data shows BKNG losing wallet share to Airbnb, Google, or regional competitors in key segments",
+      "AI initiatives announced but not reflected in user engagement metrics or take-rate expansion within 18 months",
+      "Free cash flow yield falls below 5% due to capex increases without corresponding margin expansion",
+      "Major customer (airline, hotel group) announces direct booking incentives or channel conflict reducing BKNG volumes"
     ],
     "status": "open",
     "actual_return": null,
