@@ -14,7 +14,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.8613,
+    "p_value_bh": 0.8602,
     "significant_bh": false
   },
   "research.confidence@21d": {
@@ -32,7 +32,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.864,
+    "p_value_bh": 0.8602,
     "significant_bh": false
   },
   "earnings.earnings_alpha_score@21d": {
@@ -50,7 +50,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.864,
+    "p_value_bh": 0.8602,
     "significant_bh": false
   },
   "devils_advocate.overall_risk_score@21d": {
@@ -68,7 +68,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.864,
+    "p_value_bh": 0.8602,
     "significant_bh": false
   },
   "position_review.hold_score@21d": {
@@ -104,7 +104,7 @@
     "horizon_days": 21,
     "formula_version": "2.0-quality-tilt",
     "is_primary": false,
-    "p_value_bh": 0.864,
+    "p_value_bh": 0.8602,
     "significant_bh": false
   },
   "event_present.flag@21d": {
@@ -122,7 +122,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.728,
+    "p_value_bh": 0.7765,
     "significant_bh": false
   },
   "persist_mean.composite_7d_mean@21d": {
@@ -140,7 +140,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.864,
+    "p_value_bh": 0.8602,
     "significant_bh": false
   },
   "pm.expected_return@21d": {
@@ -158,7 +158,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.728,
+    "p_value_bh": 0.7765,
     "significant_bh": false
   },
   "quant.composite_score@63d~unknown": {
@@ -176,17 +176,17 @@
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.728,
+    "p_value_bh": 0.7765,
     "significant_bh": false
   },
   "research.confidence@63d": {
-    "n": 317,
+    "n": 321,
     "n_effective": 35,
     "n_eff_approx": 5,
-    "ic": -0.034,
+    "ic": -0.032,
     "ic_block": -0.068,
-    "ic_shrunk": -0.029,
-    "hit_rate": 0.47,
+    "ic_shrunk": -0.028,
+    "hit_rate": 0.477,
     "hit_rate_block": 0.571,
     "ci_halfwidth": 0.331,
     "p_value": 0.6902,
@@ -194,7 +194,7 @@
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.864,
+    "p_value_bh": 0.8602,
     "significant_bh": false
   },
   "earnings.earnings_alpha_score@63d": {
@@ -212,17 +212,17 @@
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.864,
+    "p_value_bh": 0.8602,
     "significant_bh": false
   },
   "devils_advocate.overall_risk_score@63d": {
-    "n": 278,
+    "n": 282,
     "n_effective": 33,
     "n_eff_approx": 4,
-    "ic": 0.015,
+    "ic": 0.017,
     "ic_block": 0.188,
-    "ic_shrunk": 0.013,
-    "hit_rate": 0.565,
+    "ic_shrunk": 0.014,
+    "hit_rate": 0.564,
     "hit_rate_block": 0.485,
     "ci_halfwidth": 0.341,
     "p_value": 0.2871,
@@ -230,25 +230,25 @@
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.8613,
+    "p_value_bh": 0.8602,
     "significant_bh": false
   },
   "position_review.hold_score@63d": {
-    "n": 151,
-    "n_effective": 17,
+    "n": 153,
+    "n_effective": 18,
     "n_eff_approx": 2,
     "ic": -0.136,
-    "ic_block": 0.14,
+    "ic_block": 0.086,
     "ic_shrunk": -0.102,
-    "hit_rate": 0.417,
-    "hit_rate_block": 0.412,
-    "ci_halfwidth": 0.475,
-    "p_value": 0.5763,
+    "hit_rate": 0.425,
+    "hit_rate_block": 0.444,
+    "ci_halfwidth": 0.462,
+    "p_value": 0.724,
     "orientation": 1,
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.864,
+    "p_value_bh": 0.8602,
     "significant_bh": false
   },
   "quant.composite_score@21d~2.3-valuation-ttm": {
@@ -266,13 +266,31 @@
     "horizon_days": 21,
     "formula_version": "2.3-valuation-ttm",
     "is_primary": false,
-    "p_value_bh": 0.864,
+    "p_value_bh": 0.8602,
+    "significant_bh": false
+  },
+  "quant.composite_score@63d~2.0-quality-tilt": {
+    "n": 4,
+    "n_effective": 4,
+    "n_eff_approx": 1,
+    "ic": -0.4,
+    "ic_block": -0.4,
+    "ic_shrunk": -0.03,
+    "hit_rate": 0.25,
+    "hit_rate_block": 0.25,
+    "ci_halfwidth": 0.98,
+    "p_value": 0.4884,
+    "orientation": 1,
+    "horizon_days": 63,
+    "formula_version": "2.0-quality-tilt",
+    "is_primary": false,
+    "p_value_bh": 0.8602,
     "significant_bh": false
   },
   "_meta": {
     "primary_metric": "quant.composite_score@21d",
     "primary_horizon": 21,
-    "n_metrics": 15,
+    "n_metrics": 16,
     "bh_alpha": 0.05,
     "preregistration": "https://aspredicted.org/zm7a2p.pdf",
     "note": "Headline skill = the primary metric only; all others are BH-adjusted secondary. Read ic_block / p_value_bh on the effective (block-sampled) N, not the raw overlapping ic."
