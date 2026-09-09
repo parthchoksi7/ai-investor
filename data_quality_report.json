@@ -1,7 +1,7 @@
 {
   "date": "2026-09-09",
   "data_date": "2026-09-09",
-  "generated_at": "2026-09-09T14:09:06.247191+00:00",
+  "generated_at": "2026-09-09T15:23:50.900394+00:00",
   "status": "OK",
   "data_quality_score": 100,
   "strategy_shift_ok": true,
@@ -21,7 +21,7 @@
       "abort_below": 22
     },
     "fundamental_coverage_pct": {
-      "value": 94.4,
+      "value": 94.9,
       "status": "OK",
       "degraded_below": 80.0,
       "abort_below": null
@@ -33,7 +33,7 @@
       "abort_below": null
     },
     "valuation_coverage_pct": {
-      "value": 94.8,
+      "value": 96.0,
       "status": "OK",
       "degraded_below": null,
       "abort_below": null,
@@ -42,18 +42,18 @@
   },
   "breaches": [],
   "cik_map_ok": true,
-  "price_outlier_count": 2,
-  "hash": "5f46ff5658f5e36c",
+  "price_outlier_count": 3,
+  "hash": "f124402ad7db2e6a",
   "event_digest": {
     "chunks": 4,
     "chunks_ok": 4,
     "parse_success_rate": 1.0,
-    "raw_events": 14,
+    "raw_events": 19,
     "capped": false,
     "chunks_available": 4,
     "max_chunks": 15,
     "as_of": "2026-09-09",
-    "events_written": 13,
+    "events_written": 18,
     "events_deduped": 0
   }
 }
