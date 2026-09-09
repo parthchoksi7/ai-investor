@@ -834,9 +834,19 @@
       "Major geopolitical oil supply surge (OPEC+ oversupply) drives oil toward $50s and persists; thesis assumes $70+ structural floor",
       "EOG announces large-scale M&A or major project write-down that signals management confidence in current asset base has declined"
     ],
-    "status": "open",
-    "actual_return": null,
-    "thesis_correct": null
+    "status": "closed",
+    "actual_return": -0.001,
+    "thesis_correct": false,
+    "exits": [
+      {
+        "date": "2026-09-09",
+        "run_id": "20260909-144755",
+        "exit_price": 145.36,
+        "avg_price": 145.51,
+        "realized_return": -0.001,
+        "full_exit": true
+      }
+    ]
   },
   {
     "trade_id": "586f879b-433a-4fc9-9ef9-cc87417cc293",
@@ -1145,6 +1155,35 @@
       "AI initiatives announced but not reflected in user engagement metrics or take-rate expansion within 18 months",
       "Free cash flow yield falls below 5% due to capex increases without corresponding margin expansion",
       "Major customer (airline, hotel group) announces direct booking incentives or channel conflict reducing BKNG volumes"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "91339278-3116-4239-b10d-db3f428f71a2",
+    "run_id": "20260909-144755",
+    "date": "2026-09-09",
+    "ticker": "EOG",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "EOG's combination of industry-leading capital discipline, low decline rates, and advantaged asset base positions it to deliver superior free cash flow and shareholder returns as the market reprices the durability of its competitive moat amid energy transition uncertainty.",
+    "anti_thesis": "EOG's premium valuation (90/100 pipeline score implying cheapness) is entirely hostage to oil prices staying above $75/bbl, yet WTI is structurally threatened by OPEC+ spare capacity of 5-6 million bbl/day, accelerating U.S. shale productivity gains from competitors, and Chinese demand disappointment. A sustained move to $60/bbl would collapse FCF by 40-50%, forcing a dividend/buyback reset and multiple compression simultaneously\u2014exactly the double-whammy that causes permanent capital impairment. The 'underinvestment cycle' narrative is widely owned and already reflected in positioning, leaving no contrarian margin of safety.",
+    "catalysts": [
+      "Oil price sustained above $75-80/bbl + broader energy sector revaluation recognizing underinvestment cycle dynamics",
+      "Q3-Q4 earnings revisions higher as 2026 guidance incorporates tighter supply forecasts and higher realized pricing",
+      "Dividend increase or accelerated buyback announcement signaling management confidence in mid-cycle cash generation assumptions",
+      "Relative outperformance vs. mega-cap peers (XOM, CVX) during earnings season due to higher FCF conversion rates and lower capex intensity",
+      "Activist commentary or analyst repositioning favoring capital discipline/low-decline operators over growth-at-all-costs producers"
+    ],
+    "confidence": 6,
+    "expected_return": 0.0,
+    "invalidates_if": [
+      "Announced material capex cuts or dividend freeze on weak cash flow guidance (signals management no longer confident in thesis)",
+      "Oil sustained below $60 for 2+ quarters with no supply response, indicating demand destruction is dominant",
+      "Competitive advantage erosion evidenced by decline-rate acceleration or inferior well-level returns vs. peers",
+      "Major operational setback (reserve downgrade, project delay, safety incident) that questions asset quality claims",
+      "Debt-to-equity ratio climbs above 0.35+ without corresponding shareholder return expansion, signaling balance sheet discipline breakdown"
     ],
     "status": "open",
     "actual_return": null,

@@ -1,11 +1,27 @@
 {
-  "run_id": "20260908-134854",
-  "date": "2026-09-08",
-  "mode": "risk_watch",
-  "generated_at": "2026-09-08T13:48:54.839060+00:00",
+  "run_id": "20260909-144755",
+  "date": "2026-09-09",
+  "mode": "rebalance",
+  "generated_at": "2026-09-09T14:47:55.534847+00:00",
   "policy_version": "2.0-phase5-weekly",
-  "data_quality": null,
-  "execution_started_at": null,
-  "executed_at": "2026-09-08T13:49:30.374589+00:00",
-  "decisions": []
+  "data_quality": {
+    "data_quality_score": 100,
+    "data_quality_status": "OK",
+    "data_quality_hash": "5f46ff5658f5e36c"
+  },
+  "execution_started_at": "2026-09-09T14:50:54.244941+00:00",
+  "executed_at": null,
+  "decisions": [
+    {
+      "ticker": "EOG",
+      "action": "SELL",
+      "target_weight": 0.0,
+      "source_of_capital": "EOG",
+      "expected_return": 0.0,
+      "rationale": "REDUCE flagged, oil price downside risk, free Energy headroom",
+      "qty": 0.31977,
+      "price_as_of": "2026-09-09",
+      "sizing_price": 145.36
+    }
+  ]
 }
