@@ -50,7 +50,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9848,
+    "p_value_bh": 0.9759,
     "significant_bh": false
   },
   "devils_advocate.overall_risk_score@21d": {
@@ -86,7 +86,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9848,
+    "p_value_bh": 0.9759,
     "significant_bh": false
   },
   "quant.composite_score@21d~2.0-quality-tilt": {
@@ -104,7 +104,7 @@
     "horizon_days": 21,
     "formula_version": "2.0-quality-tilt",
     "is_primary": false,
-    "p_value_bh": 0.9848,
+    "p_value_bh": 0.9759,
     "significant_bh": false
   },
   "event_present.flag@21d": {
@@ -212,7 +212,7 @@
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9848,
+    "p_value_bh": 0.9759,
     "significant_bh": false
   },
   "devils_advocate.overall_risk_score@63d": {
@@ -248,7 +248,7 @@
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9848,
+    "p_value_bh": 0.9759,
     "significant_bh": false
   },
   "quant.composite_score@21d~2.3-valuation-ttm": {
@@ -288,16 +288,16 @@
     "significant_bh": false
   },
   "event_present.flag@63d": {
-    "n": 304,
-    "n_effective": 102,
+    "n": 307,
+    "n_effective": 105,
     "n_eff_approx": 5,
-    "ic": 0.139,
-    "ic_block": 0.172,
+    "ic": 0.138,
+    "ic_block": 0.17,
     "ic_shrunk": 0.119,
-    "hit_rate": 0.559,
-    "hit_rate_block": 0.559,
-    "ci_halfwidth": 0.194,
-    "p_value": 0.0835,
+    "hit_rate": 0.557,
+    "hit_rate_block": 0.552,
+    "ci_halfwidth": 0.191,
+    "p_value": 0.083,
     "orientation": 1,
     "horizon_days": 63,
     "formula_version": null,
@@ -306,21 +306,21 @@
     "significant_bh": false
   },
   "persist_mean.composite_7d_mean@63d": {
-    "n": 304,
-    "n_effective": 102,
+    "n": 307,
+    "n_effective": 105,
     "n_eff_approx": 5,
-    "ic": -0.055,
-    "ic_block": -0.004,
-    "ic_shrunk": -0.048,
-    "hit_rate": 0.572,
-    "hit_rate_block": 0.608,
-    "ci_halfwidth": 0.194,
-    "p_value": 0.9685,
+    "ic": -0.059,
+    "ic_block": -0.015,
+    "ic_shrunk": -0.05,
+    "hit_rate": 0.564,
+    "hit_rate_block": 0.59,
+    "ci_halfwidth": 0.191,
+    "p_value": 0.8793,
     "orientation": 1,
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9848,
+    "p_value_bh": 0.9759,
     "significant_bh": false
   },
   "pm.expected_return@63d": {
