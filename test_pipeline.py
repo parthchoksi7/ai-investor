@@ -10809,8 +10809,8 @@ class TestMarketDataConcurrency:
         """Serialization without a timeout is a NEW failure mode, not a fix:
         GitHub's default is 6 hours, and get_extended_history sleeps up to ~90s
         per ticker on 429s across a ~400-name sweep. A stalled run that blocks
-        the 7:00/8:00/8:30 triggers leaves no snapshot at 9:45 — which is how a
-        Wednesday loses its rebalance to four SKIP-RETRYs."""
+        the 8:00 trigger leaves no snapshot at 9:45 — which is how a Wednesday
+        loses its rebalance to a SKIP-RETRY."""
         timeout = wf["jobs"]["fetch"].get("timeout-minutes")
         assert timeout is not None, (
             "the fetch job has no timeout-minutes; a wedged run now holds the "
@@ -10819,28 +10819,116 @@ class TestMarketDataConcurrency:
         # inside the ~165 min between the first cron and the 9:45 routine.
         assert 45 <= timeout <= 90, f"timeout-minutes={timeout} outside the sane band"
 
-    def test_all_four_staggered_crons_survive(self, wf):
-        """The redundancy is load-bearing: 290 expansion-only names at
-        EXPANSION_BATCH_SIZE=75 is exactly four batches, and the cursor advances
-        once per run. Dropping triggers (or skipping runs when today's snapshot
-        is already fresh) stretches a full sweep from one day to four."""
-        crons = [c["cron"] for c in wf[True]["schedule"]]  # PyYAML parses `on:` as True
-        assert len(crons) == 4, f"expected 4 staggered crons, found {crons}"
+    def test_two_staggered_crons_survive(self, wf):
+        """Two triggers, cut from four on 2026-09-21 for Actions-minutes cost.
 
-    def test_expansion_sweep_still_needs_every_run(self):
-        """Guards the arithmetic the point above depends on. If the universe or
-        the batch size changes so a sweep no longer needs all four runs, the
-        skip-if-fresh guard deliberately NOT shipped becomes viable again."""
+        Each run spends ~38 min (observed 12-70) almost entirely asleep on
+        Polygon's 5-calls/min free tier, and GitHub bills idle wall-clock: four
+        runs/weekday was ~3,200 min/month against a 2,000-min allowance. Two is
+        ~1,600. The redundancy that remains is what defends the 9:45 routine
+        against GitHub silently skipping a scheduled run — one trigger would not.
+
+        The cost is sweep latency, not correctness: see
+        test_expansion_sweep_fits_the_carry_forward_window below."""
+        crons = [c["cron"] for c in wf[True]["schedule"]]  # PyYAML parses `on:` as True
+        assert len(crons) == 2, (
+            f"expected 2 staggered crons, found {crons} — adding triggers back "
+            "re-inflates the Actions bill (~800 min/month each); removing the "
+            "second one leaves the 9:45 routine with no defense against a "
+            "silently-skipped cron")
+
+    def test_expansion_sweep_fits_the_carry_forward_window(self):
+        """The four-cron design existed so the 290-name expansion sweep finished
+        in ONE day (290 / EXPANSION_BATCH_SIZE=75 = 4 batches, cursor advances
+        once per run). At two runs/day it completes in ~2 TRADING days instead.
+
+        The comparison must be made in CALENDAR days, because that is the unit
+        CARRY_FORWARD_MAX_DAYS is evaluated in (market_data.py, `max_age_days`) —
+        and an entry older than it is DROPPED from history/prices, not merely
+        stale. Two trading days can span four calendar days when the weekend
+        falls inside them (a batch fetched Thursday is next reached Monday), so
+        the naive trading-day figure understates the true worst case by 2x.
+
+        The drop is also silent: `universe_fetched_pct` is computed over the set
+        that WAS fetched, so expansion names aging out do not move the data-quality
+        coverage number. That is what makes this worth an explicit guard rather
+        than trusting the DQ floors to catch it."""
         import market_data as md
         from universe import CORE_UNIVERSE, EXPANDED_UNIVERSE
         always = set(md.full_depth_scope(
             CORE_UNIVERSE, md.SP500_HOLDINGS.keys(), set(), benchmarks=("SPY", "QQQ")))
         expansion_only = set(EXPANDED_UNIVERSE) - always
         runs_per_sweep = -(-len(expansion_only) // md.EXPANSION_BATCH_SIZE)
-        assert runs_per_sweep >= 4, (
-            f"{len(expansion_only)} expansion names / batch "
-            f"{md.EXPANSION_BATCH_SIZE} = {runs_per_sweep} run(s) per sweep; the "
-            "four-cron redundancy may no longer be load-bearing")
+        trading_days = -(-runs_per_sweep // 2)  # two scheduled runs per trading day
+
+        # Worst case: the sweep straddles a weekend. N trading days starting on a
+        # Thursday cost N + 2 calendar days once Sat/Sun are counted.
+        worst_case_calendar_days = trading_days + 2 if trading_days >= 2 else trading_days
+        assert worst_case_calendar_days <= md.CARRY_FORWARD_MAX_DAYS, (
+            f"{len(expansion_only)} expansion names / batch {md.EXPANSION_BATCH_SIZE} "
+            f"= {runs_per_sweep} runs = {trading_days} trading days per sweep at 2 "
+            f"runs/day, or {worst_case_calendar_days} calendar days across a weekend "
+            f"— that exceeds CARRY_FORWARD_MAX_DAYS={md.CARRY_FORWARD_MAX_DAYS}, so "
+            "expansion entries would be DROPPED faster than the sweep refreshes them, "
+            "and silently (universe_fetched_pct only counts what was fetched).")
+
+    def test_dst_updater_literals_match_this_workflow(self, wf):
+        """update_dst.yml switches the crons between EDT and EST by matching the
+        schedule block as a literal string. If the block here is edited without
+        updating that file, `str.replace` matches nothing.
+
+        That is not hypothetical — it had already happened: update_dst.yml was
+        still carrying a three-cron 7:00/8:00/8:30 block long after the schedule
+        became four crons, so the Nov 8 switch would have left market_data.yml an
+        hour off all winter. update_dst.yml now fails loudly at runtime, but that
+        runtime is twice a year, at the moment of harm, in a workflow nobody
+        watches. This catches the drift in the PR that causes it instead."""
+        with open(".github/workflows/update_dst.yml") as f:
+            dst = f.read()
+        with open(self.WORKFLOW) as f:
+            market_lines = f.read().splitlines()
+
+        # Drive the check from the REAL schedule lines, not from a regex over
+        # update_dst.yml's python source. An earlier version of this test parsed
+        # the literals out of update_dst.yml and silently captured only the first
+        # of the two (the second has no trailing "\n" to anchor on), so editing
+        # the 8:00 line went undetected — a tautological guard for the exact drift
+        # it existed to catch. Every scheduled cron line must appear verbatim.
+        cron_lines = [ln for ln in market_lines
+                      if ln.strip().startswith("- cron:") and "*" in ln]
+        assert len(cron_lines) == 2, (
+            f"expected 2 cron lines to check, found {len(cron_lines)}")
+
+        # Recover the quoted cron literals update_dst.yml will search for. Compared
+        # as EXACT strings, not substrings: `str.replace` needs the whole block
+        # verbatim, so merely shortening a trailing comment in market_data.yml
+        # already breaks the switch while still passing a substring check.
+        dst_crons = []
+        for raw in dst.splitlines():
+            stripped = raw.strip()
+            if "- cron:" not in stripped or not stripped.startswith('"'):
+                continue
+            literal = stripped[1:stripped.rindex('"')]
+            if literal.endswith("\\n"):
+                literal = literal[:-2]
+            dst_crons.append(literal)
+
+        edt_crons = [c for c in dst_crons if "EDT" in c]
+        est_crons = [c for c in dst_crons if "EST" in c]
+
+        assert edt_crons == cron_lines, (
+            "update_dst.yml's EDT block does not exactly match this workflow's "
+            f"schedule.\n  market_data.yml: {cron_lines}\n  update_dst.yml:  {edt_crons}\n"
+            "update_dst.yml switches the UTC offset by literal string match, so any "
+            "difference — including a changed comment — makes it match nothing and "
+            "leave the crons an hour off for half the year (exactly what happened to "
+            "the old 7:00/8:00/8:30 block). Update the mkt_block_edt literal.")
+
+        # The EST block must mirror it one-for-one, or the November switch writes a
+        # schedule the March switch can no longer find its way back from.
+        assert len(est_crons) == len(edt_crons), (
+            f"update_dst.yml has {len(edt_crons)} EDT cron literals but "
+            f"{len(est_crons)} EST ones — the two blocks must mirror each other")
 
 
 class TestRunDailyCycleSmoke:

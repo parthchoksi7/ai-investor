@@ -13,6 +13,50 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Changed — market data now fetches twice a day instead of four times, to stop overrunning the free GitHub Actions allowance
+
+The repo exhausted **100% of its 2,000 included GitHub Actions minutes** with 10 days left in
+the September billing cycle. An audit of every workflow found the cause was not spread across
+the system at all — **`market_data.yml` accounted for 2,310 of the 2,358 minutes used (98%)**.
+Every other workflow combined — publish, health check, heartbeat, alert, digest, keepalive —
+came to about 50 minutes.
+
+The reason a single workflow costs that much is that **it is billed for time it spends doing
+nothing**. `get_extended_history` (`market_data.py:115`) requests price history one ticker at a
+time, and Polygon's free tier allows 5 API calls per minute. At ~175-250 tickers per run, a run
+spends roughly 38 minutes (observed range 12-70) sitting in rate-limit sleep, and GitHub bills
+wall-clock time. Four runs every weekday came to ~3,200 minutes/month against a 2,000 allowance.
+
+**Cut to two triggers — 5:00 AM and 8:00 AM ET** — which brings the month to ~1,600 minutes,
+back inside the free tier. Notes on the two judgement calls:
+
+- **Why 8:00 and not 8:30** (the old last-chance slot): the job carries a 50-minute timeout, so
+  the latest a run can finish — or be killed with nothing committed — is 50 minutes after it
+  starts. From 8:00 that is 8:50, 55 minutes before the 9:45 trading routine; from 8:30 it is
+  9:20, leaving 25. Both clear 9:45 on paper, but only the earlier slot leaves enough room to
+  notice a killed run and fire the manual safety dispatch before the routine needs the data.
+- **Why two and not one:** the redundancy exists because GitHub silently skips scheduled runs
+  under load — it has happened three times in this repo's history. One trigger would leave the
+  Wednesday rebalance with no defense against that.
+
+The cost is sweep latency, not data correctness. The 290-name expansion sweep advances 75 names
+per run, so it now completes in ~2 days rather than 1 — comfortably inside the 5-day
+`CARRY_FORWARD_MAX_DAYS` tolerance that actually governs how stale an expansion name may get.
+Core, held, S&P 500 and benchmark names are never batched; they are re-fetched in full on every
+run, so the trading-critical data is unchanged.
+
+### Fixed — the DST auto-updater had silently stopped updating the market-data crons
+
+`update_dst.yml` switches the workflow crons between EDT and EST twice a year by string-matching
+the schedule block. That block had drifted: the updater was still looking for a **three**-cron
+`7:00 / 8:00 / 8:30` schedule that had already been replaced by a four-cron one. `str.replace()`
+does not complain when it matches nothing, so **the November 8 switch would have quietly left
+`market_data.yml` on the wrong offset for the entire winter**, firing every trigger an hour late.
+
+The block now matches the real schedule, and the no-match case **raises instead of passing
+silently**, so the next time someone edits the crons without updating this file, the workflow
+fails loudly rather than mis-scheduling the market data feed for six months.
+
 ### Fixed — `market_data.yml` failed 3 of its last 8 runs when GitHub started firing the crons ~10 hours late
 
 The four daily market-data triggers are deliberately redundant — GitHub silently skips

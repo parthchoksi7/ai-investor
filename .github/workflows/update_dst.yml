@@ -28,35 +28,50 @@ jobs:
           tz = ZoneInfo("America/New_York")
           offset_hours = int(datetime.now(tz).utcoffset().total_seconds() / 3600)  # -4 or -5
 
-          # market_data.yml: three staggered triggers (7:00 / 8:00 / 8:30 AM ET)
-          h7  = 7  - offset_hours
-          h8  = 8  - offset_hours
           # health_check.yml: 1:15 PM ET (after the last 12:45 ET routine retry)
           hc  = 13 - offset_hours
 
-          # market_data.yml — replace entire schedule block (3 crons) as a unit
+          # market_data.yml — replace the entire schedule block (2 crons) as a unit.
+          # These strings MUST match market_data.yml byte-for-byte or the replace is a
+          # silent no-op. That is not hypothetical: this block previously described a
+          # THREE-cron 7:00/8:00/8:30 schedule that had already been replaced by a
+          # four-cron one, so it matched nothing and market_data.yml would have been
+          # left on the wrong offset all winter. Fixed 2026-09-21 along with the
+          # four-to-two cron cut; the assertion below now fails loudly instead.
           mkt_block_edt = (
-              "    - cron: '0 11 * * 1-5'   # 7:00 AM EDT — earliest attempt\n"
-              "    - cron: '0 12 * * 1-5'   # 8:00 AM EDT — primary\n"
-              "    - cron: '30 12 * * 1-5'  # 8:30 AM EDT — fallback"
+              "    - cron: '0 9  * * 1-5'   # 5:00 AM EDT — early crawl (Stage D sweep + max retry buffer)\n"
+              "    - cron: '0 12 * * 1-5'   # 8:00 AM EDT — fallback, with worst-case margin before 9:45"
           )
           mkt_block_est = (
-              "    - cron: '0 12 * * 1-5'   # 7:00 AM EST — earliest attempt\n"
-              "    - cron: '0 13 * * 1-5'   # 8:00 AM EST — primary\n"
-              "    - cron: '30 13 * * 1-5'  # 8:30 AM EST — fallback"
+              "    - cron: '0 10 * * 1-5'   # 5:00 AM EST — early crawl (Stage D sweep + max retry buffer)\n"
+              "    - cron: '0 13 * * 1-5'   # 8:00 AM EST — fallback, with worst-case margin before 9:45"
           )
           mkt_old = mkt_block_est if offset_hours == -4 else mkt_block_edt
           mkt_new = mkt_block_edt if offset_hours == -4 else mkt_block_est
 
           changed = False
+          # Deferred so a market_data mismatch cannot abort the health_check rewrite
+          # below — stranding health_check.yml on the wrong offset too would re-create
+          # the Jun 12 hygiene bug (a 12:15 PM ET check false-alarming against the
+          # 12:45 ET routine retry). Record the failure, finish the work that CAN be
+          # done, then fail the step at the end.
+          fatal = None
 
           path = ".github/workflows/market_data.yml"
           text = open(path).read()
-          new_text = text.replace(mkt_old, mkt_new)
-          if new_text != text:
-              open(path, "w").write(new_text)
+          if mkt_new in text:
+              print(f"{path} already on UTC{offset_hours} — nothing to do")
+          elif mkt_old in text:
+              open(path, "w").write(text.replace(mkt_old, mkt_new))
               changed = True
               print(f"Updated {path} for UTC{offset_hours}")
+          else:
+              fatal = (
+                  f"::error::{path} schedule block matches NEITHER the expected EDT nor EST "
+                  "form — the cron block was edited without updating update_dst.yml. "
+                  "market_data.yml is now on the wrong offset for half the year; fix both files."
+              )
+              print(fatal)
 
           path = ".github/workflows/health_check.yml"
           text = open(path).read()
@@ -69,9 +84,18 @@ jobs:
 
           if not changed:
               print("No changes needed — crons already correct for current offset.")
+
+          # health_check.yml has been given every chance to update before this fires.
+          if fatal:
+              raise SystemExit(fatal)
           EOF
 
       - name: Commit if changed
+        # always() so that a market_data block mismatch (which fails the step above
+        # AFTER rewriting health_check.yml) still commits the health_check fix. The
+        # run is still reported as failed by the step above — this only stops a
+        # loud failure on one file from silently discarding correct work on the other.
+        if: always()
         run: |
           git config user.name "DST Bot"
           git config user.email "dst-bot@users.noreply.github.com"

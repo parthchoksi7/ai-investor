@@ -2,14 +2,23 @@ name: Market Data Fetch
 
 on:
   schedule:
-    # Four staggered triggers (EDT = UTC-4) — GitHub silently skips scheduled runs under load;
-    # redundant entries ensure at least one fires well before the 9:45 AM ET trading routine.
+    # TWO staggered triggers (EDT = UTC-4) — GitHub silently skips scheduled runs under load,
+    # so a second entry ensures one still lands before the 9:45 AM ET trading routine.
     # The 5:00 AM head start (Stage D) gives the expanded ~400-name sweep + enrichment room.
-    # In winter (EST = UTC-5): update to '0 10', '0 12', '0 13', '30 13'
-    - cron: '0 9  * * 1-5'   # 5:00 AM EDT — Stage D early crawl
-    - cron: '0 11 * * 1-5'   # 7:00 AM EDT — second attempt
-    - cron: '0 12 * * 1-5'   # 8:00 AM EDT — primary
-    - cron: '30 12 * * 1-5'  # 8:30 AM EDT — fallback
+    #
+    # Cut from four triggers to two on 2026-09-21: each run spends ~38 min (observed 12-70)
+    # almost entirely asleep on Polygon's free-tier 5-calls/min limit, and GitHub bills that
+    # idle wall-clock. Four runs/weekday = ~3,200 min/month against a 2,000-min allowance;
+    # two = ~1,600. The 8:00 slot (not 8:30) is the second trigger deliberately: the binding
+    # constraint is `timeout-minutes: 50` below, so the LATEST a run can possibly finish (or
+    # be killed with nothing committed) is start + 50 min. From 8:00 that is 8:50, 55 min
+    # before the 9:45 routine; from 8:30 it is 9:20, leaving 25. Both clear 9:45, but 8:00
+    # leaves room to notice a killed run and fire the manual safety dispatch; 8:30 does not.
+    # See the expansion-sweep note in the concurrency block below.
+    #
+    # In winter (EST = UTC-5): update to '0 10', '0 13' (update_dst.yml does this automatically)
+    - cron: '0 9  * * 1-5'   # 5:00 AM EDT — early crawl (Stage D sweep + max retry buffer)
+    - cron: '0 12 * * 1-5'   # 8:00 AM EDT — fallback, with worst-case margin before 9:45
   workflow_dispatch:
     inputs:
       full_refresh:
@@ -18,11 +27,11 @@ on:
         default: false
         type: boolean
 
-# Serialize runs of this workflow. The four staggered crons are deliberately
-# redundant (GitHub silently skips scheduled runs under load), but they assume a
-# run finishes before the next fires. On 2026-08-27/28 GitHub's scheduler deferred
-# every trigger by ~10 hours, so all four landed 24-52 min apart instead of
-# 30-120 min. Two concurrent runs then (a) shared one Polygon free-tier 5-calls/min
+# Serialize runs of this workflow. The staggered crons are deliberately redundant
+# (GitHub silently skips scheduled runs under load), but they assume a run
+# finishes before the next fires. On 2026-08-27/28 GitHub's scheduler deferred
+# every trigger by ~10 hours, so all four (then-current) triggers landed 24-52 min
+# apart instead of 30-120 min. Two concurrent runs then (a) shared one Polygon free-tier 5-calls/min
 # budget, producing 429 storms that stretched each run from ~12-40 min to 40-70 min
 # (which caused MORE overlap — self-reinforcing), and (b) both regenerated all eight
 # committed artifacts, so the loser's push lost the race and its `git pull --rebase`
@@ -43,10 +52,16 @@ on:
 # watching, and an emergency lever that can be cancelled is not a lever.
 #
 # Known trade-off on the scheduled side: GitHub keeps at most ONE pending run per
-# group, so a long in-flight run plus three later triggers loses TWO of them, not
-# one — that day contributes 2 of its 4 expansion batches and a full 290-name sweep
-# takes 2+ days. Still the right trade: four runs that fight each other for the
-# Polygon rate limit are slower AND half of them fail.
+# group, so a long in-flight run plus a later trigger can lose it. With two daily
+# triggers that means a bad day contributes 1 of its 2 expansion batches.
+#
+# Expansion-sweep budget at two runs/day: 2 x EXPANSION_BATCH_SIZE (75) = 150
+# expansion names/day, so the 290-name sweep completes every ~2 days — still inside
+# CARRY_FORWARD_MAX_DAYS (5, market_data.py:25), which is the actual staleness
+# tolerance for expansion-only names. Core/held/SP500/benchmarks are never batched
+# and are re-fetched in full on every run, so the trading-critical set is unaffected.
+# If EXPANSION_BATCH_SIZE or the universe size changes, re-check that ~2-day cycle
+# against the 5-day tolerance.
 concurrency:
   group: market-data-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'scheduled' }}
   cancel-in-progress: false
@@ -57,10 +72,11 @@ jobs:
     # Bounded so a wedged run can never hold the concurrency group above for
     # GitHub's 6-hour default. get_extended_history sleeps up to ~90s per ticker on
     # Polygon 429s across a ~400-name sweep, so a stall is realistic — and a stalled
-    # run that blocks the 7:00/8:00/8:30 triggers means no snapshot exists at 9:45,
-    # which costs a Wednesday its rebalance (four SKIP-RETRYs). 50 min clears the
-    # observed uncontended range (12-40 min) with headroom; the 40-70 min runs of
-    # 2026-08-27/28 were rate-limit contention that serialization removes.
+    # run that blocks the 8:00 trigger means no snapshot exists at 9:45, which costs
+    # a Wednesday its rebalance (SKIP-RETRY). 50 min clears the observed uncontended
+    # range (12-40 min) with headroom; the 40-70 min runs of 2026-08-27/28 were
+    # rate-limit contention that serialization removes. NOTE: this cap is also what
+    # bounds the Actions-minutes bill per run — see the schedule block above.
     timeout-minutes: 50
     permissions:
       contents: write
