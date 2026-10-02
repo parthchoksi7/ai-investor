@@ -1,11 +1,82 @@
 {
-  "run_id": "20260929-134853",
-  "date": "2026-09-29",
-  "mode": "risk_watch",
-  "generated_at": "2026-09-29T13:48:53.499989+00:00",
+  "run_id": "20261002-164823",
+  "date": "2026-10-02",
+  "mode": "rebalance",
+  "generated_at": "2026-10-02T16:48:23.653795+00:00",
   "policy_version": "2.0-phase5-weekly",
-  "data_quality": null,
-  "execution_started_at": null,
-  "executed_at": "2026-09-29T13:49:23.018971+00:00",
-  "decisions": []
+  "data_quality": {
+    "data_quality_score": 85,
+    "data_quality_status": "DEGRADED",
+    "data_quality_hash": "38b835baeb5698c0"
+  },
+  "execution_started_at": "2026-10-02T16:51:54.438454+00:00",
+  "executed_at": null,
+  "decisions": [
+    {
+      "ticker": "JNJ",
+      "action": "SELL",
+      "target_weight": 0.0,
+      "source_of_capital": "cash",
+      "expected_return": 0.03,
+      "rationale": "REDUCE+low alpha; patent cliff, pipeline miss risk",
+      "qty": 0.178711,
+      "price_as_of": "2026-10-02",
+      "sizing_price": 258.66
+    },
+    {
+      "ticker": "AXP",
+      "action": "SELL",
+      "target_weight": 0.0,
+      "source_of_capital": "cash",
+      "expected_return": 0.03,
+      "rationale": "REDUCE+low alpha; cyclical risk, momentum weakest in book",
+      "qty": 0.119992,
+      "price_as_of": "2026-10-02",
+      "sizing_price": 302.09
+    },
+    {
+      "ticker": "CB",
+      "action": "SELL",
+      "target_weight": 0.0,
+      "source_of_capital": "cash",
+      "expected_return": 0.04,
+      "rationale": "REDUCE flagged; stale data, -8% recent, insurance cycle risk",
+      "qty": 0.128512,
+      "price_as_of": "2026-10-02",
+      "sizing_price": 331.3
+    },
+    {
+      "ticker": "JPM",
+      "action": "BUY",
+      "target_weight": 0.09,
+      "source_of_capital": "AXP",
+      "expected_return": 0.1,
+      "rationale": "Higher quant score, Q3 catalyst, FCF normalization",
+      "qty": 0.134191,
+      "price_as_of": "2026-10-02",
+      "sizing_price": 333.18
+    },
+    {
+      "ticker": "NEM",
+      "action": "BUY",
+      "target_weight": 0.09,
+      "source_of_capital": "JNJ",
+      "expected_return": 0.12,
+      "rationale": "Negative beta hedge, gold tailwinds, cheap valuation",
+      "qty": 0.391094,
+      "price_as_of": "2026-10-02",
+      "sizing_price": 114.31999969482422
+    },
+    {
+      "ticker": "NVDA",
+      "action": "BUY",
+      "target_weight": 0.09,
+      "source_of_capital": "CB",
+      "expected_return": 0.15,
+      "rationale": "Top momentum, AI infra regime, Vera Rubin inflection",
+      "qty": 0.193667,
+      "price_as_of": "2026-10-02",
+      "sizing_price": 230.86
+    }
+  ]
 }
