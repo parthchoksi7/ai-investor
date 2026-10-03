@@ -361,6 +361,12 @@ def _provider_group(ticker: str) -> int:
 # Absolute coverage floor (IPS Appendix A). A steady low coverage — not a drop —
 # was the June bug, so the gate is an ABSOLUTE floor, not a week-over-week delta.
 FUNDAMENTAL_COVERAGE_FLOOR_PCT = 80.0
+# Expansion-gate HYSTERESIS (MANUAL_TODO #24): once expanded, stay expanded unless
+# prior coverage falls below this lower bound. With a single 80% threshold, a run
+# whose rotating 75-name batch carried a few unenriched names read e.g. 72.9%,
+# closed the gate, the next (core-only, ~96%) run reopened it — so the candidate
+# universe flipped between ~100 and ~170 names on cron timing alone.
+FUNDAMENTAL_COVERAGE_EXIT_PCT = 70.0
 
 
 def _compute_fundamental_coverage(all_tickers: list, fundamentals: dict,
@@ -624,15 +630,27 @@ def select_fetch_batch(active: list[str], core: list[str], sp500_keys, held: set
 
 
 def _prior_coverage_ok() -> bool:
-    """Yesterday's fundamental-coverage verdict, from the previously-committed
-    snapshot's data_quality block. The expansion gate (universe.get_active_universe)
-    needs a coverage signal BEFORE today's enrichment has run — the prior day's is
-    the honest available one. Missing/unreadable → False (expansion stays closed)."""
+    """The expansion gate's coverage verdict, from the previously-committed
+    snapshot. The gate (universe.get_active_universe) needs a coverage signal
+    BEFORE today's enrichment has run — the prior run's is the honest available
+    one. Missing/unreadable → False (expansion stays closed).
+
+    Hysteresis (MANUAL_TODO #24): ENTER expansion at ≥ FUNDAMENTAL_COVERAGE_FLOOR_PCT
+    (the prior run's coverage_ok); once the prior run WAS expanded, STAY expanded
+    while its coverage is ≥ FUNDAMENTAL_COVERAGE_EXIT_PCT. A batch-mix dip just
+    under 80% no longer flips the candidate universe between runs."""
     try:
         with open("market_snapshot.json") as f:
-            return bool((json.load(f).get("data_quality") or {}).get("coverage_ok"))
+            prior = json.load(f)
     except Exception:
         return False
+    dq = prior.get("data_quality") or {}
+    if prior.get("universe_expanded"):
+        try:
+            return float(dq.get("fundamental_coverage_pct")) >= FUNDAMENTAL_COVERAGE_EXIT_PCT
+        except (TypeError, ValueError):
+            return bool(dq.get("coverage_ok"))
+    return bool(dq.get("coverage_ok"))
 
 
 def _load_history_store() -> dict:

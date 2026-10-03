@@ -11809,3 +11809,35 @@ class TestYoungHistoryGuard:
         assert "PARA" not in universe.EXPANDED_UNIVERSE
         assert "PSKY" in universe.EXPANDED_UNIVERSE
         assert sector_of("PSKY") == "Communication Services"
+
+
+# ── Oct 3 2026 remediation 2.3 — expansion-gate hysteresis (MANUAL_TODO #24) ─
+
+class TestExpansionGateHysteresis:
+    def _prior(self, tmp_path, monkeypatch, expanded, pct):
+        import json as _j, market_data as md
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "market_snapshot.json").write_text(_j.dumps({
+            "universe_expanded": expanded,
+            "data_quality": {"fundamental_coverage_pct": pct,
+                             "coverage_ok": pct >= md.FUNDAMENTAL_COVERAGE_FLOOR_PCT}}))
+        return md
+
+    def test_expanded_stays_expanded_on_a_batch_dip(self, tmp_path, monkeypatch):
+        md = self._prior(tmp_path, monkeypatch, True, 72.9)   # the Aug 22 reading
+        assert md._prior_coverage_ok() is True
+
+    def test_expanded_exits_below_lower_bound(self, tmp_path, monkeypatch):
+        md = self._prior(tmp_path, monkeypatch, True, 65.0)
+        assert md._prior_coverage_ok() is False
+
+    def test_core_enters_only_at_the_floor(self, tmp_path, monkeypatch):
+        md = self._prior(tmp_path, monkeypatch, False, 75.0)
+        assert md._prior_coverage_ok() is False
+        md = self._prior(tmp_path, monkeypatch, False, 96.0)
+        assert md._prior_coverage_ok() is True
+
+    def test_missing_snapshot_keeps_expansion_closed(self, tmp_path, monkeypatch):
+        import market_data as md
+        monkeypatch.chdir(tmp_path)
+        assert md._prior_coverage_ok() is False
