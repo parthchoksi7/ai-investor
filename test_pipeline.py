@@ -11975,3 +11975,65 @@ class TestGainAwareMinHold:
              "market_value": 43.2}]}
         analysis.run_portfolio_manager({}, {}, {}, {}, {}, {}, pf, [], date="2026-08-17")
         assert "(at a gain) — NOT sellable" in captured["msg"]
+
+
+# ── Oct 3 2026 remediation 3.1/3.2 — benchmark, exposure, buying power in prompts ─
+
+class TestBenchmarkExposureContext:
+    QS = {"META": {"beta_stable": 1.3}, "CVX": {"beta_stable": -0.1}, "V": {"beta_stable": 0.5}}
+
+    def test_beta_is_weighted_with_cash_at_zero(self):
+        from analysis import _benchmark_exposure_block
+        out = _benchmark_exposure_block({"META": 0.4, "CVX": 0.2, "V": 0.2}, self.QS,
+                                        date="2026-10-02")
+        # 0.4*1.3 + 0.2*-0.1 + 0.2*0.5 = 0.60, 20% cash
+        assert "0.60" in out and "BELOW the band 0.8–1.2" in out and "invested 80%" in out
+
+    def test_missing_beta_is_listed_not_guessed(self):
+        from analysis import _benchmark_exposure_block
+        out = _benchmark_exposure_block({"META": 0.5, "ZZZ": 0.4}, self.QS, date="2026-10-02")
+        assert "0.65" in out and "ZZZ" in out and "excluded" in out
+
+    def test_sector_gap_vs_spy_is_shown(self):
+        from analysis import _benchmark_exposure_block
+        out = _benchmark_exposure_block({"META": 0.5}, self.QS, date="2026-10-02")
+        assert "Technology 0% vs 40% (-40pp)" in out and "as of 2026-10-01" in out
+
+    def test_stale_reference_weights_are_omitted(self):
+        import policy
+        assert policy.benchmark_reference(today="2027-06-01").get("sector_weights") is None
+        assert policy.benchmark_reference(today="2026-10-02")["sector_weights"]["Technology"] == 0.3993
+
+    def test_pm_prompt_carries_benchmark_buying_power_and_sell_reason(self, monkeypatch, tmp_path):
+        import analysis
+        monkeypatch.chdir(tmp_path)
+        captured = {}
+        monkeypatch.setattr(analysis, "_safe_call",
+                            lambda model, system, user_msg, **k:
+                            (captured.update(system=system, msg=user_msg), ([], {}))[1])
+        pf = {"total_value": 500.0, "cash": 157.21, "buying_power": 32.65, "positions": [
+            {"symbol": "META", "qty": 0.07, "avg_price": 676.3, "current_price": 728.0,
+             "market_value": 52.0}]}
+        analysis.run_portfolio_manager({}, {}, {}, {}, {}, self.QS, pf, [], date="2026-10-02")
+        msg = captured["msg"]
+        assert "BENCHMARK & MARKET EXPOSURE" in msg
+        assert "Settled buying power: $32.65" in msg
+        assert "which condition of the original thesis has broken" in msg
+        assert "< 63 if the position is AT A GAIN" in msg
+        assert "measured against SPY, after tax" in captured["system"]
+
+    def test_cro_sees_context_and_is_told_not_to_veto_on_it(self, monkeypatch):
+        import analysis
+        captured = {}
+        monkeypatch.setattr(analysis, "_safe_call",
+                            lambda model, system, user_msg, **k:
+                            (captured.update(system=system, msg=user_msg),
+                             {"approved": True, "rejected_tickers": []})[1])
+        pf = {"total_value": 500.0, "cash": 157.21, "positions": [
+            {"symbol": "META", "qty": 0.07, "avg_price": 676.3, "current_price": 728.0,
+             "market_value": 52.0}]}
+        analysis.run_chief_risk_officer(
+            [{"ticker": "V", "action": "BUY", "target_weight": 0.05}], pf, self.QS)
+        assert "BENCHMARK CONTEXT" in captured["msg"] and "Projected book market exposure" in captured["msg"]
+        assert "never a veto trigger" in captured["system"]
+        assert "fair test against its" in captured["system"]
