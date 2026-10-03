@@ -11736,3 +11736,76 @@ class TestSelectQuantScores:
         embed = src.index('snapshot["precomputed_scores"]')
         slim = src.index("slim_snapshot_for_commit(snapshot")
         assert embed < slim, "scores must be embedded before the committed copy is slimmed"
+
+
+# ── Oct 3 2026 remediation 2.2 — reused/young tickers (PARA → Banzai) ────────
+
+class TestYoungHistoryGuard:
+    """'PARA' became Banzai International ($2.4M cap) after Paramount moved to PSKY;
+    the universe kept scoring it as Paramount from 39 bars of ~$0.60 prices."""
+
+    def _bars(self, n, close=10.0):
+        from datetime import datetime, timezone
+        out = []
+        d = date.today() - timedelta(days=n * 7 // 5 + 3)
+        while len(out) < n:
+            d += timedelta(days=1)
+            if d.weekday() < 5:
+                ms = int(datetime(d.year, d.month, d.day, tzinfo=timezone.utc).timestamp() * 1000)
+                out.append({"date": ms, "open": close, "high": close, "low": close,
+                            "close": close, "volume": 1})
+        out[-1]["date"] = int(datetime.combine(date.today(), datetime.min.time(),
+                                               tzinfo=timezone.utc).timestamp() * 1000)
+        return out
+
+    def _setup(self, monkeypatch, active):
+        import market_data as md, universe
+        monkeypatch.setattr(universe, "CORE_UNIVERSE", ["SPY", "AAPL"])
+        monkeypatch.setattr(universe, "get_active_universe", lambda coverage_ok=True: active)
+        monkeypatch.setattr(md, "SP500_HOLDINGS", {})
+        monkeypatch.setattr(md, "_held_tickers", lambda: set())
+        monkeypatch.setattr(md, "get_news_summary", lambda: [])
+        monkeypatch.setattr(md, "get_ticker_news", lambda t, limit=5: [])
+        monkeypatch.setattr(md, "get_all_fundamentals", lambda tickers: {})
+        return md
+
+    def test_predicate(self):
+        from market_data import is_history_young, YOUNG_HISTORY_BARS
+        assert is_history_young(self._bars(39))
+        assert not is_history_young(self._bars(YOUNG_HISTORY_BARS))
+        assert not is_history_young([])          # absent is a different failure (thin/dead)
+
+    def test_young_expansion_ticker_is_excluded_and_recorded(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        md = self._setup(monkeypatch, ["SPY", "AAPL", "PARA", "LONGX"])
+        monkeypatch.setattr(md, "get_extended_history",
+                            lambda t, days=210: self._bars(39, 0.6) if t == "PARA" else self._bars(205))
+        snap = md.get_market_snapshot(force=True)
+        assert "PARA" not in snap["history"] and "PARA" not in snap["prices"]
+        assert "LONGX" in snap["history"]
+        assert snap["young_history_tickers"] == ["PARA"]
+
+    def test_young_core_ticker_stays_visible(self, tmp_path, monkeypatch):
+        """Same asymmetry as the thin guard: a core/held name must stay loud."""
+        monkeypatch.chdir(tmp_path)
+        md = self._setup(monkeypatch, ["SPY", "AAPL"])
+        monkeypatch.setattr(md, "get_extended_history",
+                            lambda t, days=210: self._bars(60) if t == "AAPL" else self._bars(205))
+        snap = md.get_market_snapshot(force=True)
+        assert "AAPL" in snap["history"] and snap["young_history_tickers"] == []
+
+    def test_data_quality_reports_young_tickers(self):
+        from data_quality import classify_data_quality
+        snap = {"date": "2026-10-02", "prices": {"SPY": {"close": 1}},
+                "history": {"SPY": [{"close": 1.0}] * 205},
+                "young_history_tickers": ["PARA"], "data_quality": {}}
+        rep = classify_data_quality(snap)
+        assert any("young_history_tickers" in b and "PARA" in b for b in rep["breaches"])
+        assert rep["metrics"]["young_history_tickers"]["status"] == "DEGRADED"
+
+    def test_universe_lists_psky_not_para(self):
+        import universe
+        from guardrails import sector_of
+        assert "PARA" not in universe.EXPANDED_UNIVERSE
+        assert "PSKY" in universe.EXPANDED_UNIVERSE
+        assert sector_of("PSKY") == "Communication Services"

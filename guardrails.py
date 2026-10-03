@@ -174,7 +174,7 @@ SECTOR_MAP: dict[str, str] = {
     "CHTR": "Communication Services", "CMCSA": "Communication Services",
     "DIS": "Communication Services", "EA": "Communication Services",
     "FOXA": "Communication Services", "IPG": "Communication Services",
-    "OMC": "Communication Services", "PARA": "Communication Services",
+    "OMC": "Communication Services", "PSKY": "Communication Services",
     "PINS": "Communication Services", "RBLX": "Communication Services",
     "ROKU": "Communication Services", "SNAP": "Communication Services",
     "T": "Communication Services", "TMUS": "Communication Services",

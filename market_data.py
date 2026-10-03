@@ -32,6 +32,14 @@ CARRY_FORWARD_MAX_DAYS = 5   # a store entry older than this is dropped, not car
 # core/held/SP500 ticker stays visible so the abort gate can still see and catch it).
 MIN_VIABLE_BARS = 22
 
+# A 210-trading-day request that comes back FRESH but with fewer bars than this is
+# not a long-lived large cap: it is either a new listing or a REUSED symbol. Both are
+# unfit to rank against a 252-day-beta universe. Confirmed live 2026-10-03: "PARA"
+# (listed here as Paramount) had become Banzai International, a $2.4M micro-cap —
+# 39 bars from 2026-08-07 at ~$0.60, scored daily as Paramount using Banzai's SEC
+# filings. Paramount itself trades as PSKY since the Aug 2025 Skydance merger.
+YOUNG_HISTORY_BARS = 126
+
 # MANUAL_TODO #6b: expansion-only names are swept in batches via universe.next_batch/
 # save_batch (fetch_progress.json, also cached across GH Actions runs) — ~300
 # expansion-only tickers at Polygon's 5-calls/min would take ~60 min in one run, on
@@ -171,6 +179,17 @@ def is_history_thin(hist: list[dict], min_bars: int | None = None) -> bool:
     when the fetch-time-only copy left the carry-forward path unguarded."""
     if min_bars is None:
         min_bars = MIN_VIABLE_BARS
+    return bool(hist) and len(hist) < min_bars
+
+
+def is_history_young(hist: list[dict], min_bars: int | None = None) -> bool:
+    """Third sibling: enough bars to compute *something*, but far fewer than a
+    long-listed name returns for a 210-day request — a new listing or a reused
+    ticker (see YOUNG_HISTORY_BARS for the PARA → Banzai case). Applied to
+    expansion-only names, like is_history_thin, for the same reason: a missing
+    core/held name must stay loud (the depth gate), never silently vanish."""
+    if min_bars is None:
+        min_bars = YOUNG_HISTORY_BARS
     return bool(hist) and len(hist) < min_bars
 
 
@@ -742,6 +761,8 @@ def get_market_snapshot(force: bool = False) -> dict:
 
     store = _load_history_store() if force else {}
     expansion_batch_set = set(batch)
+    expansion_only_set = set(expansion_only)
+    young_history: list[str] = []
     fetched = failed = carried = dead = thin = 0
     for i, ticker in enumerate(all_tickers):
         entry = store.get(ticker)
@@ -805,6 +826,13 @@ def get_market_snapshot(force: bool = False) -> dict:
         # expansion stub can never reach `history`/`prices` no matter which of those
         # three paths it arrives by.
         if ticker in expansion_batch_set and is_history_thin(entry["history"]):
+            continue
+        # Young/reused-symbol screen (Oct 2026): unlike `thin`, applies to EVERY
+        # expansion-only name on every surfacing path (today's batch or carried
+        # forward), and is RECORDED — data_quality reports it as a breach so a
+        # stale universe entry gets fixed in universe.py instead of sitting out quietly.
+        if ticker in expansion_only_set and is_history_young(entry["history"]):
+            young_history.append(ticker)
             continue
         entry_date = str(entry.get("date") or "")
         if entry_date != today_str:
@@ -944,6 +972,9 @@ def get_market_snapshot(force: bool = False) -> dict:
         # the per-ticker records; the routine re-quotes any stale-priced order.
         "price_as_of_by_ticker": price_as_of_by_ticker,
         "universe_expanded": expanded,
+        # Expansion-only names excluded because their history is far too short for
+        # a long-listed name (new listing or reused ticker) — see is_history_young.
+        "young_history_tickers": sorted(young_history),
         "prices":           prices,
         "history":          history,
         "fundamentals":     fundamentals,

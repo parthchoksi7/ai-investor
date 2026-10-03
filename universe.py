@@ -79,7 +79,10 @@ _EXPANSION: list[str] = [
     "CDW", "IT", "FICO", "AKAM", "JNPR", "FSLR", "ENPH", "TDY", "ZBRA",
     # Software / Internet / Media / Comm
     "INTU", "ADSK", "CRM", "DOCU", "OKTA", "TWLO", "HUBS", "ZM", "DDOG",
-    "DIS", "CMCSA", "T", "VZ", "TMUS", "CHTR", "WBD", "PARA", "FOXA", "OMC",
+    # PSKY replaces PARA (2026-10-03): Paramount trades as PSKY since the Aug 2025
+    # Skydance merger, and the symbol PARA was reassigned to Banzai International
+    # (a $2.4M micro-cap) — verified against Polygon reference + SEC company_tickers.
+    "DIS", "CMCSA", "T", "VZ", "TMUS", "CHTR", "WBD", "PSKY", "FOXA", "OMC",
     "TTD", "PINS", "SNAP", "RBLX", "DASH", "ROKU", "EA", "TTWO",
     # Financials
     "SCHW", "USB", "PNC", "TFC", "COF", "BK", "STT", "AIG", "MET", "PRU",
