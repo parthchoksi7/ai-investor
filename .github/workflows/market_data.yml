@@ -177,6 +177,11 @@ jobs:
           # ~400-name expansion. Also gated in code on fundamental coverage ≥ 80%
           # (universe.get_active_universe) — the flag alone is not sufficient.
           UNIVERSE_EXPANDED: ${{ vars.UNIVERSE_EXPANDED || 'false' }}
+          # Phase 5 (Oct 2026) — set the Actions VARIABLE POLYGON_FETCH_MODE=grouped to
+          # refresh every stored ticker from ONE grouped-daily call (~38 min → seconds;
+          # expansion universe stops rotating). Default per_ticker = unchanged behavior.
+          # Owner decision: it changes the data substrate (PLAN_OCT3_REMEDIATION.md §5).
+          POLYGON_FETCH_MODE: ${{ vars.POLYGON_FETCH_MODE || 'per_ticker' }}
         run: python fetch_snapshot.py
 
       - name: Save provider + raw-history cache

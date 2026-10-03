@@ -12037,3 +12037,92 @@ class TestBenchmarkExposureContext:
         assert "BENCHMARK CONTEXT" in captured["msg"] and "Projected book market exposure" in captured["msg"]
         assert "never a veto trigger" in captured["system"]
         assert "fair test against its" in captured["system"]
+
+
+# ── Oct 3 2026 remediation Phase 5 — grouped-daily refresh (flag-gated) ──────
+
+class TestGroupedDailyRefresh:
+    def _hist_through(self, last: "date", n=205, close=100.0):
+        import market_data as md
+        from market_calendar import is_trading_day
+        days, d = [], last
+        while len(days) < n:
+            if is_trading_day(d):
+                days.append(d)
+            d -= timedelta(days=1)
+        return [{"date": md._midnight_et_ms(x), "open": close, "high": close, "low": close,
+                 "close": close, "volume": 1} for x in reversed(days)]
+
+    def test_midnight_et_matches_the_range_endpoint_convention(self):
+        import market_data as md
+        assert md._midnight_et_ms(date(2026, 10, 1)) == 1790827200000   # observed range-bar t
+
+    def test_contiguous_history_is_extended_by_one_bar(self):
+        import market_data as md
+        fresh = date(2026, 10, 1)
+        entry = {"history": self._hist_through(date(2026, 9, 30))}
+        bar = {"date": md._midnight_et_ms(fresh), "open": 1, "high": 1, "low": 1, "close": 101.0, "volume": 1}
+        out = md.grouped_refresh(entry, bar, fresh, set(), "AAPL")
+        assert out[-1]["close"] == 101.0 and out[-1]["date"] == md._midnight_et_ms(fresh)
+        assert out[-2] == entry["history"][-1]
+
+    def test_gap_split_or_missing_bar_is_not_eligible(self):
+        import market_data as md
+        fresh = date(2026, 10, 1)
+        bar = {"date": md._midnight_et_ms(fresh), "open": 1, "high": 1, "low": 1, "close": 1, "volume": 1}
+        gap = {"history": self._hist_through(date(2026, 9, 28))}
+        assert md.grouped_refresh(gap, bar, fresh, set(), "AAPL") is None          # missed days
+        ok = {"history": self._hist_through(date(2026, 9, 30))}
+        assert md.grouped_refresh(ok, bar, fresh, {"AAPL"}, "AAPL") is None        # recent split
+        assert md.grouped_refresh(ok, None, fresh, set(), "AAPL") is None          # not in grouped
+        assert md.grouped_refresh(None, bar, fresh, set(), "AAPL") is None         # nothing stored
+
+    def _setup(self, monkeypatch, tmp_path, mode):
+        import market_data as md, universe
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(md, "POLYGON_FETCH_MODE", mode)
+        monkeypatch.setattr(universe, "CORE_UNIVERSE", ["SPY", "AAPL"])
+        monkeypatch.setattr(universe, "get_active_universe",
+                            lambda coverage_ok=True: ["SPY", "AAPL", "EXPA", "EXPB"])
+        monkeypatch.setattr(md, "SP500_HOLDINGS", {})
+        monkeypatch.setattr(md, "_held_tickers", lambda: set())
+        monkeypatch.setattr(md, "get_news_summary", lambda: [])
+        monkeypatch.setattr(md, "get_ticker_news", lambda t, limit=5: [])
+        monkeypatch.setattr(md, "get_all_fundamentals", lambda tickers: {})
+        monkeypatch.setattr(md, "EXPANSION_BATCH_SIZE", 1)      # batch = one expansion name
+        from market_calendar import most_recent_complete_trading_day
+        fresh = most_recent_complete_trading_day()
+        prev = md._previous_trading_day(fresh)
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        md._save_history_store({t: {"date": yesterday, "history": self._hist_through(prev)}
+                                for t in ("SPY", "AAPL", "EXPA", "EXPB")})
+        calls = []
+        def per_ticker(t, days=210):
+            calls.append(t)
+            return self._hist_through(fresh)
+        monkeypatch.setattr(md, "get_extended_history", per_ticker)
+        bar = {"date": md._midnight_et_ms(fresh), "open": 1, "high": 1, "low": 1,
+               "close": 123.0, "volume": 1}
+        monkeypatch.setattr(md, "get_grouped_daily",
+                            lambda d: {t: dict(bar) for t in ("SPY", "AAPL", "EXPA", "EXPB")})
+        monkeypatch.setattr(md, "get_split_tickers", lambda since: set())
+        return md, calls
+
+    def test_grouped_mode_makes_no_per_ticker_calls_and_covers_all_stored_names(self, monkeypatch, tmp_path):
+        md, calls = self._setup(monkeypatch, tmp_path, "grouped")
+        snap = md.get_market_snapshot(force=True)
+        assert calls == []                                       # every name refreshed from one call
+        assert {"EXPA", "EXPB"} <= set(snap["history"])          # whole expansion set, not one batch
+        assert snap["prices"]["AAPL"]["close"] == 123.0
+
+    def test_default_mode_is_unchanged_per_ticker(self, monkeypatch, tmp_path):
+        md, calls = self._setup(monkeypatch, tmp_path, "per_ticker")
+        snap = md.get_market_snapshot(force=True)
+        assert "AAPL" in calls and "SPY" in calls
+        assert len([t for t in ("EXPA", "EXPB") if t in snap["history"]]) == 1   # batch only
+
+    def test_split_lookup_failure_falls_back_to_per_ticker(self, monkeypatch, tmp_path):
+        md, calls = self._setup(monkeypatch, tmp_path, "grouped")
+        monkeypatch.setattr(md, "get_split_tickers", lambda since: None)
+        md.get_market_snapshot(force=True)
+        assert "AAPL" in calls

@@ -81,25 +81,25 @@ Independent sources: Robinhood MCP (orders, buying power, realized P&L) and Poly
 
 | # | Fix | Finding it closes | Files | Status |
 |---|-----|-------------------|-------|--------|
-| 3.1 | **Tell the PM and CRO what they're measured against.** A code-computed block: benchmark = SPY; current and projected book beta (`beta_stable`, cash = 0); the policy band 0.8–1.2; SPY sector weights vs the book, sourced and dated in `policy.yaml`, omitted if no trustworthy source. Information, not a mandate. The CRO's objective becomes survival **and** a fair test vs SPY; exposure is context, **never a veto trigger** (the Aug 19 lesson). | `_PM_SYSTEM`/`_CRO_SYSTEM` never name the benchmark; "negative beta" cited as a BUY reason; book beta 0.2 (life) / 0.55 (now) vs Gate 2's 0.8–1.2 | `analysis.py`, `policy.yaml`/`policy.py` (`target_beta_min/max`, benchmark weights), tests | ⬜ |
-| 3.2 | **PM sees settled buying power** — plans rotations it can actually execute (pairs with 1.2). | Oct 2 | `analysis.py` | ⬜ |
-| 3.3 | **Selling needs a reason, not an expired timer.** Gain-aware min-hold: a discretionary SELL of a position **at a gain** needs ≥ 63 trading days (losers keep 30 — harvesting a loss is tax-favorable). PM tags and the guard share one helper so they cannot disagree. PM prompt: a discretionary SELL must name which recorded invalidation condition has occurred; "REDUCE + low alpha" alone is not one. Risk exits exempt as always. | 5 of 8 weekly-regime sells landed 42–49 days after purchase — the min-hold became the holding period; 11/11 realized lots short-term | `guardrails.py`, `analysis.py`, `policy.yaml`/`policy.py` (`min_holding_trading_days_gain`), IPS §7.2, tests | ⬜ |
-| 3.4 | **Wash-sale window is inclusive.** Re-entry blocked through day 30 (IRS §1091: "within 30 days after"). | `guardrails.py:698` `days < 30`; EOG sold Jun 22 at a loss, rebought Jul 22 (day 30) = wash sale | `guardrails.py`, `policy.yaml` comment, IPS §7.3, tests | ⬜ |
+| 3.1 | **Tell the PM and CRO what they're measured against.** A code-computed block: benchmark = SPY; current and projected book beta (`beta_stable`, cash = 0); the policy band 0.8–1.2; SPY sector weights vs the book, sourced and dated in `policy.yaml`, omitted if no trustworthy source. Information, not a mandate. The CRO's objective becomes survival **and** a fair test vs SPY; exposure is context, **never a veto trigger** (the Aug 19 lesson). | `_PM_SYSTEM`/`_CRO_SYSTEM` never name the benchmark; "negative beta" cited as a BUY reason; book beta 0.2 (life) / 0.55 (now) vs Gate 2's 0.8–1.2 | `analysis.py`, `policy.yaml`/`policy.py` (`target_beta_min/max`, benchmark weights), tests | ✅ 5381014 + fd331fa |
+| 3.2 | **PM sees settled buying power** — plans rotations it can actually execute (pairs with 1.2). | Oct 2 | `analysis.py` | ✅ fd331fa |
+| 3.3 | **Selling needs a reason, not an expired timer.** Gain-aware min-hold: a discretionary SELL of a position **at a gain** needs ≥ 63 trading days (losers keep 30 — harvesting a loss is tax-favorable). PM tags and the guard share one helper so they cannot disagree. PM prompt: a discretionary SELL must name which recorded invalidation condition has occurred; "REDUCE + low alpha" alone is not one. Risk exits exempt as always. | 5 of 8 weekly-regime sells landed 42–49 days after purchase — the min-hold became the holding period; 11/11 realized lots short-term | `guardrails.py`, `analysis.py`, `policy.yaml`/`policy.py` (`min_holding_trading_days_gain`), IPS §7.2, tests | ✅ 5381014 + fd331fa |
+| 3.4 | **Wash-sale window is inclusive.** Re-entry blocked through day 30 (IRS §1091: "within 30 days after"). | `guardrails.py:698` `days < 30`; EOG sold Jun 22 at a loss, rebought Jul 22 (day 30) = wash sale | `guardrails.py`, `policy.yaml` comment, IPS §7.3, tests | ✅ 5381014 |
 
 ## Phase 4 — Governance & documents
 
 | # | Fix | Status |
 |---|-----|--------|
-| 4.1 | `SCALE_DECISION_RULE.md` §7: log the contamination (W39 missed, Sep 21–30 blackout, half-executed Oct 2) and the single restart, with the freeze commitment and the new window-open date. | ⬜ |
-| 4.2 | `IPS.md`: §8 line 297 claims a "tech/mega-cap-tilted" book (the opposite is true); §7.2 / §7.3 / Appendix A–B for 1.2, 3.1, 3.3, 3.4. | ⬜ |
-| 4.3 | Skill files (`portfolio_manager`, `ml_ai_engineer`, `chief_risk_officer`, `tax_strategist`): replace stale hard-coded figures with dated current values + "read the artifact, not this number". | ⬜ |
-| 4.4 | `RELEASE_NOTES.md`, `CLAUDE.md` (changelog, Investment Rules, routine notes, Known Limitations), `MANUAL_TODO.md` (close #24; add owner actions). | ⬜ |
+| 4.1 | `SCALE_DECISION_RULE.md` §7: log the contamination (W39 missed, Sep 21–30 blackout, half-executed Oct 2) and the single restart, with the freeze commitment and the new window-open date. | ✅ 80a690b |
+| 4.2 | `IPS.md`: §8 line 297 claims a "tech/mega-cap-tilted" book (the opposite is true); §7.2 / §7.3 / Appendix A–B for 1.2, 3.1, 3.3, 3.4. | ✅ 80a690b |
+| 4.3 | Skill files (`portfolio_manager`, `ml_ai_engineer`, `chief_risk_officer`, `tax_strategist`): replace stale hard-coded figures with dated current values + "read the artifact, not this number". | ✅ 80a690b |
+| 4.4 | `RELEASE_NOTES.md`, `CLAUDE.md` (changelog, Investment Rules, routine notes, Known Limitations), `MANUAL_TODO.md` (close #24; add owner actions). | ✅ 80a690b |
 
 ## Phase 5 — Make the data job ~40× cheaper (flag-gated; ships last)
 
 | # | Fix | Status |
 |---|-----|--------|
-| 5.1 | Polygon grouped-daily (`/v2/aggs/grouped/...`, every US ticker in one call) for the **incremental daily bar**, plus the splits reference endpoint to re-fetch any ticker with a new split. Behind `POLYGON_FETCH_MODE=grouped` (default **off**). Ships only with a parity test proving identical bars to the per-ticker path on recent days. Turning it on is a separate owner decision: it changes the data substrate, though not the formula. | ⬜ |
+| 5.1 | Polygon grouped-daily (`/v2/aggs/grouped/...`, every US ticker in one call) for the **incremental daily bar**, plus the splits reference endpoint to re-fetch any ticker with a new split. Behind `POLYGON_FETCH_MODE=grouped` (default **off**). Ships only with a parity test proving identical bars to the per-ticker path on recent days. Turning it on is a separate owner decision: it changes the data substrate, though not the formula. | ✅ built, flag OFF — parity verified (164/164 identical OHLCV on 2026-10-01; timestamps normalized to midnight ET); enabling = owner decision (MANUAL_TODO #30) |
 
 ## Phase 6 — Verify & ship
 
