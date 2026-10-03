@@ -24,9 +24,14 @@ run, or API response in this repo — never assumed from memory.
 
 | # | Item | Status |
 |---|------|--------|
+| 26 | **Live-routine sync for the Oct 3 remediation** — paste the updated `ROUTINE_DAILY_CYCLE.md` STEP 0 (exit 11 → `data_request.json`; exit 30 on the final attempt), STEP 1 (`buying_power`), STEP 4 (`ref_id` from the envelope, `order_errors.json`, fill-price read-back) and STEP 5 (`git add order_errors.json`) into the daily routine | ⬜ **OWNER** — before Mon 2026-10-05 9:45 ET is ideal; every change is backward-compatible, so merge/sync order cannot break a run |
+| 27 | **GitHub → Settings → Notifications → Actions: email on failed workflows** | ⬜ **OWNER** — the only alert path that still works when Actions itself is blocked (Sep 21–30 2026 billing outage: heartbeat, alert, publish all dark, zero alerts for 8 days) |
+| 28 | **`/code-review ultra` on the Oct 3 remediation PR** (execution-path items 1.2/1.3) | ⬜ **OWNER** — ultra is user-launched and billed (DEPLOYMENT §7.0) |
+| 29 | **Verify 11 universe names absent from SEC's ticker map** (2026-10-03): ANSS, AVB, BK, DFS, EA, EQR, HES, JNPR, MMC, PXD, WBA — all also absent from the snapshot. Some are known acquisitions (ANSS, DFS, HES, JNPR, PXD, WBA); others may be renames that silently dropped a live company from the universe | ⬜ **data_steward** — verify each against Polygon reference before editing `universe.py` (verify-before-fix: the ORCL lesson) |
+| 30 | **Phase 5 — grouped-daily fetch** (`PLAN_OCT3_REMEDIATION.md` §5): one Polygon call per day for every ticker instead of ~200 rate-limited calls | ⬜ flag-gated, default off; turning it on is an owner decision (data substrate change) |
 | 22 | **Re-quote qty mismatch: absolute vs delta** | ✅ **CLOSED 2026-08-28** — canonical prompt fixed AND live routine synced; STEP 4 block verified matching byte-for-byte |
 | 25 | **Reset `portfolio_peak.json` if/when the account is ever funded** | ⏸️ **PARKED 2026-08-26** — no deposit planned for now. Re-arms the moment one is made |
-| 24 | **Coverage "regression" — DIAGNOSED, not a data failure** | 🟡 **2 defects to fix** (gate hysteresis + coverage denominator). Does **not** block Phase 2. Do not ship before Wed 2026-08-26 |
+| 24 | **Coverage "regression" — DIAGNOSED, not a data failure** | ✅ **Hysteresis shipped 2026-10-03** (enter ≥80%, stay ≥70%). Denominator left as-is: coverage reads 98.2% expanded today. The post-outage 175↔164 universe swing is carry-forward expiry during batch catch-up, not the gate — Phase 5 (#30) removes it |
 | 11 | **`since_entry` dossier anchor is structurally always `None`** | 🟡 **PENDING** — re-verified 2026-08-22: 172 dossier records, **0** non-null. Inert since it shipped |
 | 14 | **Narrow the risk_watch cross-mode interlock** | ⬜ **PENDING, not built** — key the interlock off rebalance SELLs only |
 | 15 | **Crash-evidence preservation in risk_watch** | ⬜ **PENDING, not built** — archive a claimed-but-unstamped envelope before overwriting |

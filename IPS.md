@@ -18,7 +18,7 @@
 >
 > | | |
 > |---|---|
-> | **Version** | 1.0 |
+> | **Version** | 1.4 (2026-10-03 — see Appendix B; the header had stayed at 1.0 through amendments 1.1–1.3) |
 > | **Effective date** | 2026-06-27 |
 > | **Owner / fiduciary** | Account owner (Parth Choksi) |
 > | **Review cadence** | Quarterly, or on any material change (see §12) |
@@ -265,12 +265,17 @@ adopt a tolerance band with a mechanical rule. Drift is tolerated; unbounded dri
   never the LLM** — on the same execution envelope.
 
 ### 7.2 Minimum holding period
-**~30 trading days** soft floor before a discretionary SELL. Risk exits (stop-loss,
-tripped invalidation, kill switch) are **exempt**.
+**~30 trading days** floor before a discretionary SELL — **63 trading days when the
+position is at a gain** (v1.4). Selling a winner early surrenders ~54% of the gain to
+short-term tax; selling a loser early harvests a loss, so losers keep the shorter
+floor. Risk exits (stop-loss, tripped invalidation, kill switch) are **exempt**.
+A discretionary SELL must name the thesis condition that broke — an expired timer or
+a weaker rank is not a reason (§7.5).
 
 ### 7.3 Wash-sale / re-entry discipline
-No re-buy of a name sold within **30 calendar days**. Exited names carry a **90-day**
-recall window for re-entry context.
+No re-buy of a name sold within **30 calendar days, inclusive** — day 30 is still
+inside the IRS §1091 window (v1.4; the guard previously allowed day 30). Exited names
+carry a **90-day** recall window for re-entry context.
 
 ### 7.4 Tax-aware hold (long-term boundary)
 When a position is in gain and within **~30 trading days of its 1-year mark** (per-lot,
@@ -294,7 +299,8 @@ trigger.
 | Item | Policy |
 |------|--------|
 | **Primary benchmark** | SPY (total return), measured **after tax** |
-| **Required secondary** | QQQ (total return) — the book is tech/mega-cap-tilted, so beating SPY while losing to QQQ is not real alpha |
+| **Required secondary** | QQQ (total return) — reported alongside SPY, not a gate (`SCALE_DECISION_RULE.md` §7). *Corrected v1.4:* this row used to justify QQQ because "the book is tech/mega-cap-tilted"; in fact the book held **0% Information Technology** from 2026-06-25 to 2026-10-02 while IT was ~40% of SPY |
+| **Exposure context** | Book beta (`beta_stable`, cash = 0) vs the Gate 2 band **0.8–1.2** and sector weights vs SPY (issuer-sourced, dated, refreshed quarterly) are shown to the PM and CRO every rebalance (v1.4). Context, not a control: no guard enforces the band and the CRO never vetoes on it |
 | **Additional baselines** | equal-weight top-N, random-N, buy-and-hold the initial book, and the **quant-only shadow** (LLM removed) |
 | **Attribution** | Brinson allocation/selection/interaction + factor attribution — returns must be explained, not just measured |
 | **Counterfactual** | Forward performance of **rejected/vetoed names** is tracked — the CRO and Devil's Advocate must be measurably right to be load-bearing |
@@ -405,7 +411,9 @@ trading:
   rebalance_weekday: 2          # Wednesday; Thu/Fri catch-up
   rebalance_frequency: weekly   # revisit monthly
   min_holding_trading_days: 30  # risk exits exempt
-  wash_sale_calendar_days: 30
+  min_holding_trading_days_gain: 63   # v1.4 — discretionary SELL of a position at a gain
+  wash_sale_calendar_days: 30   # INCLUSIVE (v1.4)
+  settled_cash_buffer_pct: 5    # v1.4 — BUYs ≤ settled buying power × (1 − this); cash account
   exited_recall_calendar_days: 90
   tax_aware_hold_window_trading_days: 30   # before 1-year mark, per-lot FIFO
 
@@ -419,6 +427,7 @@ risk:
 benchmark:
   primary: SPY_total_return_after_tax
   required_secondary: QQQ_total_return
+  target_beta_band: [0.8, 1.2]    # v1.4 — SCALE_DECISION_RULE Gate 2; PM/CRO context only
   baselines: [equal_weight_topn, random_n, buy_and_hold_initial, quant_only_shadow]
 
 evaluation:
@@ -466,3 +475,5 @@ tax:
 | 1.2 | 2026-07-09 | Ratified the §6 sector-cap exception (~35% financials from the Jul 8 rebalance) as a bounded, self-healing deviation to age out, not force-trim | The SECTOR_MAP hole let orphaned expansion-name BUYs breach the 25% cap; the cap is now fixed (full-universe + fail-closed) and blocks new financial BUYs, so the book self-corrects as min-holds expire — a taxable trim would violate the anti-churn min-hold policy for no risk benefit | Owner |
 | 1.3 | 2026-08-19 | Added §6.1: position and sector caps bind at **entry**, not continuously — drift above a cap is surfaced, never auto-trimmed. Closes the 1.2 exception (aged out as designed) | A forced trim in a CA top-bracket taxable account realizes ~54% short-term tax precisely because the position worked, and fights the min-hold / tax-aware-hold anti-churn rules. The caps exist to stop the system *building* concentration, not to dismantle what appreciation created. Bounded by a 35%-sector / 15%-name review trigger | Owner |
 | 1.3 | 2026-08-19 | §6 Max-sector control amended: an over-cap BUY is **clamped to the remaining headroom** rather than rejected outright | The Aug 19 2026 rebalance rejected two fully-researched BUYs for being 2–4pp oversized and traded nothing, leaving 18.1% cash idle for the 34th consecutive run when 6.6% / 5.3% positions were compliant. Rejecting a fixable *size* discards the thesis; clamping enforces the same cap while preserving the decision | Owner |
+| 1.4 | 2026-10-03 | §7.2 gain-aware minimum hold (63 trading days for a position at a gain; losers keep 30) + a discretionary SELL must name the broken thesis condition; §7.3 wash-sale window made inclusive of day 30; Appendix A `settled_cash_buffer_pct` (BUYs sized to settled cash) | Oct 2026 investigation (`PLAN_OCT3_REMEDIATION.md`): 5 of 8 weekly-regime SELLs landed 42–49 days after purchase — the 30-day floor had become the holding period and 11/11 realized lots were short-term; EOG was re-bought on day 30 after a loss sale (a wash sale the old guard allowed); the Oct 2 rotation's three BUYs never reached the broker because a cash account cannot spend same-day proceeds | Owner |
+| 1.4 | 2026-10-03 | §8 corrected (the "tech-tilted" QQQ rationale was false) and an exposure-context row added: book beta vs the Gate 2 band 0.8–1.2 and sector weights vs SPY are shown to the PM/CRO | Neither agent had ever been told the benchmark; the book ran ~0.2 realized beta and 0% IT (≈40% of SPY) as unchosen bets. Context, not a control — the Aug 19 2026 lesson is that a risk agent told to reject on a limit hard-drops trades upstream of the clamps |

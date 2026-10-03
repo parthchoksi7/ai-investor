@@ -56,9 +56,11 @@ For every proposal evaluate:
 
 ## The evidence clock is the deepest problem — own it
 
-`FORMULA_VERSION` has moved four times (`2.0-quality-tilt` → `2.1-valuation-live` →
-`2.2-valuation-sec-only` → `2.3-valuation-ttm`). Each was a genuine signal change and each
-correctly reset the evaluation clock. The consequence: **the primary metric has never
+`FORMULA_VERSION` has moved five times (`2.0-quality-tilt` → `2.1-valuation-live` →
+`2.2-valuation-sec-only` → `2.3-valuation-ttm` → `3.0-beta-neutral`, 2026-08-27). Each was a
+genuine signal change and each correctly reset the evaluation clock. The 2026-10-03
+remediation restarted the Gate 1b/Gate 2 window (prompts, universe, sizing) **without**
+touching the formula, and committed to a freeze (`SCALE_DECISION_RULE.md` §7). The consequence: **the primary metric has never
 matured.** `agent_scorecards.json` still reports `quant.composite_score@21d` as unscored
 under the current formula, and `stage_c_readiness` has read ACCUMULATING since it was built.
 
@@ -70,8 +72,8 @@ never to learn anything.
 
 ## Cost is measured against AUM, not against a token budget
 
-This account holds roughly $1,000. A research pipeline that costs $2/week costs **10% of
-AUM per year** — larger than any plausible alpha, and larger than the effects the pipeline
+This account holds roughly 500 dollars. A research pipeline costing 1 dollar a week costs
+**about 10% of AUM per year** — larger than any plausible alpha, and larger than the effects the pipeline
 is being evaluated for.
 
 `deliberation_stats.json` records that per-agent token and cost are **not logged** (A12),
@@ -84,18 +86,22 @@ lead to very different architectures.
 
 Before proposing any change to the pipeline, reconcile it with what is already measured:
 
-* **Devil's Advocate is the only agent pointing the right way.** Its flags precede
-  underperformance by +1.44pp at 21 days (`counterfactual.json`, p = 0.36) — directionally
-  correct, not significant.
-* **Portfolio Manager selection points the wrong way** — −3.3pp at 21d, −7.1pp at 63d.
-* **CRO vetoes show no value** — gap −0.0019, `adds_value: false`, at a 37.9% full-veto rate.
-* **The DA is already a hard filter, not a deliberation input** — `da_flag_pm_no_buy`
-  coincidence is **99.4%**. The PM never buys a DA-flagged name, so the "debate" between
-  them is not a debate.
+**Re-read `counterfactual.json` / `deliberation_stats.json` every time.** The
+August readings below reversed by October, which is itself the finding: at this sample
+size, the ordering of agents is noise.
 
-The structural implication worth evaluating: **keep the LLM as a filter, drop it as a
-selector.** Fewer agents, lower cost, and it plays to the only measured strength. Do not
-propose it as a certainty — the evidence is insignificant — but do not ignore it either.
+| Signal | 2026-08 snapshot | 2026-10-02 |
+|---|---|---|
+| Devil's Advocate reject @21d | +1.44pp right way (p 0.36) | +0.34pp right way (p 0.79); **@63d wrong way** (−2.9pp) |
+| PM selection @21d / @63d | −3.3 / −7.1pp (wrong way) | **+4.0 / +6.2pp (right way)**, p 0.09 / 0.12 |
+| CRO veto @21d | gap −0.0019, no value | n_flagged 3 (below the n floor); vetoed names beat approved by 3.3pp |
+| CRO full-veto rate | 37.9% (11/29) | 44.4% (16/36, as of Sep 2) |
+| DA flag → PM never buys | 99.4% | 99.5% |
+
+Two things survive the reversal. **The DA is a hard filter, not a debate partner**
+(99.5% coincidence). **The CRO vetoes often and predicts nothing measurable.** The
+August "keep the LLM as a filter, drop it as a selector" idea rested on a PM-selection
+sign that has since flipped. Treat it as an open question, not a direction.
 
 ## Signal Quality
 
