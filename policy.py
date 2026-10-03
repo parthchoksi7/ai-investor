@@ -47,6 +47,9 @@ _DEFAULTS: dict = {
     "blocked_tickers":          ["TSLA"],
     # v2.1 (Oct 3 2026 remediation) additions:
     "settled_cash_buffer_pct":  0.05,           # BUYs ≤ settled buying power × (1 − this)
+    "min_holding_trading_days_gain": 63,        # discretionary SELL of a GAINED position (IPS §7.2)
+    "target_beta_min":          0.8,            # Gate 2 band — PM/CRO context only
+    "target_beta_max":          1.2,
     # data-quality: 1-day move > this PERCENT with no corporate action = suspect print
     "price_outlier_pct":        35,
 }
@@ -81,6 +84,10 @@ _VALIDATORS = {
     "tax_aware_hold_window_trading_days": lambda v: _is_int(v) and v >= 0,
     # a FRACTION margin in [0, 0.5) — `5` (percent typo) would leave no budget at all
     "settled_cash_buffer_pct":  lambda v: _is_num(v) and 0 <= v < 0.5,
+    "min_holding_trading_days_gain": lambda v: _is_int(v) and v >= 0,
+    # beta band bounds — plausible market-exposure range (a percent typo like 80 fails)
+    "target_beta_min":          lambda v: _is_num(v) and 0 <= v <= 3,
+    "target_beta_max":          lambda v: _is_num(v) and 0 < v <= 3,
     # weekday index — Mon..Fri only (a weekend rebalance day would silently never fire)
     "rebalance_weekday":        lambda v: _is_int(v) and 0 <= v <= 4,
     # PERCENT (1..100) — a fraction typo (0.35 / 0.07) or an absurd value is rejected
@@ -95,6 +102,8 @@ _SECTION_KEYS = {
     "rebalance_weekday":        "trading",
     "single_name_stop_pct":     "risk",
     "safe_mode_index_drop_pct": "risk",
+    "target_beta_min":          "risk",
+    "target_beta_max":          "risk",
 }
 
 _POLICY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "policy.yaml")
@@ -160,6 +169,37 @@ VALUES: dict = _load()
 def get(key: str, default=None):
     """Read a single operative limit."""
     return VALUES.get(key, default)
+
+
+def benchmark_reference(path: str | None = None, today: str | None = None,
+                        max_age_days: int = 120) -> dict:
+    """The benchmark REFERENCE block (ticker + sector weights) from policy.yaml.
+
+    Reference data, not a limit — so it is deliberately outside VALUES/_DEFAULTS
+    (no ratchet needed: if it cannot be loaded, prompts simply omit it). Weights
+    older than `max_age_days` are dropped rather than shown stale; weights that
+    do not sum to ~1 are dropped as malformed. Returns {} on any failure.
+    """
+    try:
+        import yaml
+        from datetime import date as _date
+        with open(path or _POLICY_PATH) as f:
+            raw = (yaml.safe_load(f) or {}).get("benchmark") or {}
+        out = {"ticker": str(raw.get("ticker") or "SPY")}
+        w = raw.get("sector_weights") or {}
+        as_of = str(raw.get("sector_weights_as_of") or "")
+        if isinstance(w, dict) and w and as_of:
+            ok_vals = all(_is_num(v) and 0 <= v <= 1 for v in w.values())
+            total = sum(float(v) for v in w.values()) if ok_vals else 0.0
+            age = ((_date.fromisoformat(today) if today else _date.today())
+                   - _date.fromisoformat(as_of)).days
+            if ok_vals and 0.97 <= total <= 1.03 and 0 <= age <= max_age_days:
+                out.update({"sector_weights": {str(k): float(v) for k, v in w.items()},
+                            "sector_weights_as_of": as_of,
+                            "sector_weights_source": raw.get("sector_weights_source")})
+        return out
+    except Exception:
+        return {}
 
 
 def policy_version() -> str:

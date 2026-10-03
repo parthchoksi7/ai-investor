@@ -983,7 +983,8 @@ def run_portfolio_manager(
     # holding's min-hold eligibility so the PM stops proposing discretionary
     # SELLs the turnover guard is guaranteed to reject (Jul 8 2026: both SELL
     # legs of a rotation rejected → DEGRADED health + orphaned BUYs).
-    from guardrails import sector_of, min_hold_days_remaining, wash_sale_days_remaining
+    from guardrails import (sector_of, min_hold_days_remaining, wash_sale_days_remaining,
+                            position_gained)
     from journal import _load_list, TRANSACTIONS_FILE
     _txs = _load_list(TRANSACTIONS_FILE)
     # Eligibility is computed as of the RUN's date, not wall-clock, so a replay /
@@ -996,8 +997,10 @@ def run_portfolio_manager(
         t = p["symbol"]
         weight = (p["market_value"] / total * 100) if total else 0
         review = position_reviews.get(t, {})
-        rem = min_hold_days_remaining(t, transactions=_txs, today=_as_of)
-        hold_tag = "sellable" if not rem else f"min_hold: {rem}d left — NOT sellable"
+        gained = position_gained(t, portfolio)
+        rem = min_hold_days_remaining(t, transactions=_txs, today=_as_of, gained=gained)
+        hold_tag = ("sellable" if not rem else
+                    f"min_hold: {rem}d left{' (at a gain)' if gained else ''} — NOT sellable")
         holdings_lines.append(
             f"  {t}: {p['qty']} sh @ ${p['avg_price']:.2f} = ${p['market_value']:,.0f} ({weight:.1f}%) "
             f"| hold={review.get('hold_score','?')}/10 alpha={review.get('remaining_alpha','?')} "

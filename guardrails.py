@@ -72,6 +72,7 @@ MAX_SECTOR_WEIGHT        = _POLICY["max_sector_weight"]   # hard cap on projecte
 # 13.3% CA), so the dominant after-tax lever is simply trading LESS. These two
 # controls are deliberately stronger than the GFV guard above: they exist to cut
 # the documented weekly momentum-rotation churn, not to manage settlement.
+MIN_HOLDING_GAIN_DAYS    = _POLICY["min_holding_trading_days_gain"]  # discretionary SELL of a position AT A GAIN (v2.1, IPS §7.2)
 MIN_HOLDING_TRADING_DAYS = _POLICY["min_holding_trading_days"]  # don't SELL a name bought < N trading days ago (risk exits exempt) — 30 since policy v2.0 (IPS §7.2)
 WASH_SALE_REENTRY_DAYS   = _POLICY["wash_sale_reentry_days"]    # don't BUY a name SOLD within N calendar days (wash-sale + anti-churn)
 MIN_NET_EDGE             = _POLICY["min_net_edge"]              # $ floor: a BUY's expected edge must clear cost + CA ST tax (#6; tunable)
@@ -519,6 +520,19 @@ def _last_live_sell_date(ticker: str, transactions: list) -> str | None:
     return _last_live_trade_date(ticker, transactions, "SELL")
 
 
+def position_gained(ticker: str, portfolio: dict | None) -> bool:
+    """True when the held position's current price is above its cost basis.
+    Unknown (not held / no prices) → False, i.e. the shorter loser threshold —
+    the gain-aware hold must never block an exit it cannot prove is a gain."""
+    for p in (portfolio or {}).get("positions", []) or []:
+        if p.get("symbol") == ticker:
+            try:
+                return float(p.get("current_price") or 0) > float(p.get("avg_price") or 0) > 0
+            except (TypeError, ValueError):
+                return False
+    return False
+
+
 def enforce_min_holding_period(
     decisions: list[dict],
     portfolio: dict,
@@ -526,8 +540,16 @@ def enforce_min_holding_period(
     kill_active: bool = False,
     min_holding_days: int = MIN_HOLDING_TRADING_DAYS,
     today: str | None = None,
+    min_holding_days_gain: int = MIN_HOLDING_GAIN_DAYS,
 ) -> tuple[list[dict], list[dict]]:
-    """Reject discretionary SELLs of names bought < min_holding_days trading days ago.
+    """Reject discretionary SELLs of names bought < min_holding_days trading days ago
+    — or < min_holding_days_gain when the position is AT A GAIN (policy v2.1).
+
+    Gain-aware (Oct 2026): with one 30-day threshold, 5 of the 8 weekly-regime
+    SELLs landed 42–49 calendar days after purchase — the minimum had become the
+    holding period, and every realized lot was short-term. Selling a WINNER early
+    surrenders ~54% of the gain to tax; selling a LOSER early harvests a loss, so
+    losers keep the shorter threshold.
 
     Anti-churn / tax control. In a CA top-bracket taxable account every sale is a
     short-term gain (~54%), so cutting round-trip frequency is the dominant
@@ -561,9 +583,12 @@ def enforce_min_holding_period(
             continue
         ticker   = d.get("ticker", "")
         buy_date = _last_live_buy_date(ticker, transactions)
-        if buy_date and _trading_days_since(buy_date, today) < min_holding_days:
-            reason = (f"min-holding: bought {buy_date}, < {min_holding_days} "
-                      f"trading days ago (anti-churn/tax)")
+        gained   = position_gained(ticker, portfolio)
+        need     = min_holding_days_gain if gained else min_holding_days
+        if buy_date and _trading_days_since(buy_date, today) < need:
+            reason = (f"min-holding: bought {buy_date}, < {need} trading days ago"
+                      f"{' (position at a GAIN — selling a winner early pays ~54% tax)' if gained else ''}"
+                      f" (anti-churn/tax)")
             rejected.append({**d, "rejected_reason": reason})
             print(f"   🚫 HOLDING REJECT: SELL {ticker} — {reason}")
         else:
@@ -621,6 +646,8 @@ def min_hold_days_remaining(
     transactions: list | None = None,
     today: str | None = None,
     min_holding_days: int = MIN_HOLDING_TRADING_DAYS,
+    gained: bool = False,
+    min_holding_days_gain: int = MIN_HOLDING_GAIN_DAYS,
 ) -> int | None:
     """Trading days until `ticker` clears the min-holding guard, or None.
 
@@ -637,7 +664,8 @@ def min_hold_days_remaining(
     if not buy_date:
         return None
     today = today or datetime.now(_ET).strftime("%Y-%m-%d")
-    return max(0, min_holding_days - _trading_days_since(buy_date, today))
+    need = min_holding_days_gain if gained else min_holding_days
+    return max(0, need - _trading_days_since(buy_date, today))
 
 
 def wash_sale_days_remaining(
@@ -669,7 +697,7 @@ def wash_sale_days_remaining(
         return None
     if days < 0:  # future-dated SELL row — malformed; fail open like the guard
         return None
-    return max(0, window_days - days)
+    return max(0, window_days + 1 - days)   # inclusive window: buyable from day window_days+1
 
 
 def enforce_wash_sale_reentry(
@@ -705,9 +733,12 @@ def enforce_wash_sale_reentry(
                 days = (today_date - datetime.strptime(sell_date, "%Y-%m-%d").date()).days
             except ValueError:
                 days = None
-        if days is not None and 0 <= days < window_days:
+        # INCLUSIVE (v2.1): IRS §1091 covers a re-buy "within 30 days after" the
+        # sale, so day 30 is still inside the window (EOG sold at a loss 2026-06-22
+        # and re-bought 2026-07-22 — day 30 — was a wash sale the old `<` allowed).
+        if days is not None and 0 <= days <= window_days:
             reason = (f"wash-sale/anti-churn: sold {sell_date}, {days}d ago "
-                      f"(< {window_days}d re-entry block)")
+                      f"(≤ {window_days}d re-entry block)")
             rejected.append({**d, "rejected_reason": reason})
             print(f"   🚫 REENTRY REJECT: BUY {ticker} — {reason}")
         else:
@@ -867,7 +898,7 @@ def flag_wash_sale_presale(
         for lot in open_lots(transactions, ticker):
             held = holding_days(lot.get("acquired"), today)
             basis = lot.get("cost_basis", 0) or 0
-            if held is not None and 0 <= held < window_days and float(sell_px) < basis:
+            if held is not None and 0 <= held <= window_days and float(sell_px) < basis:
                 recent_loss_lots.append({**lot, "held_days": held})
         if recent_loss_lots:
             info = {

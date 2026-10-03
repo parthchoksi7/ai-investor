@@ -4178,13 +4178,16 @@ class TestGuardrailBoundaries:
             today="2026-06-12")
         assert len(kept) == 1 and rej == []
 
-    def test_wash_sale_exactly_30_days_allowed(self):
+    def test_wash_sale_exactly_30_days_blocked(self):
+        """v2.1: the window is INCLUSIVE — IRS §1091 covers a re-buy 'within 30 days
+        after' the sale, so day 30 is blocked and day 31 is the first allowed day.
+        (The old `< 30` let EOG be re-bought on day 30 after a 2026-06-22 loss sale.)"""
         import guardrails as g
-        # sold 2026-05-15, today 2026-06-14 = 30 days; '< 30' blocks, so 30 is allowed
-        kept, rej = g.enforce_wash_sale_reentry(
-            [{"ticker": "X", "action": "BUY", "target_weight": 0.08}],
-            transactions=[{"ticker": "X", "action": "SELL", "date": "2026-05-15", "dry_run": False}],
-            today="2026-06-14")
+        buy = [{"ticker": "X", "action": "BUY", "target_weight": 0.08}]
+        txs = [{"ticker": "X", "action": "SELL", "date": "2026-05-15", "dry_run": False}]
+        kept, rej = g.enforce_wash_sale_reentry(buy, transactions=txs, today="2026-06-14")  # day 30
+        assert kept == [] and len(rej) == 1
+        kept, rej = g.enforce_wash_sale_reentry(buy, transactions=txs, today="2026-06-15")  # day 31
         assert len(kept) == 1 and rej == []
 
 
@@ -7449,6 +7452,9 @@ class TestPolicyParity:
         "safe_mode_index_drop_pct": 7,              # v2.0 — §18.5 crisis brake
         "blocked_tickers":          ["TSLA"],
         "settled_cash_buffer_pct":  0.05,           # v2.1 — Oct 3 2026 remediation 1.2
+        "min_holding_trading_days_gain": 63,        # v2.1 — remediation 3.3
+        "target_beta_min":          0.8,            # v2.1 — remediation 3.1 (context only)
+        "target_beta_max":          1.2,
     }
 
     def test_defaults_match_operative_baseline(self):
@@ -10305,22 +10311,23 @@ class TestWashSaleDaysRemaining:
     def test_counts_down_calendar_days(self):
         from guardrails import wash_sale_days_remaining
         txs = [{"ticker": "JNJ", "action": "SELL", "date": "2026-06-10", "dry_run": False}]
-        # Jun 30 = 20 calendar days after the sale → 10 left (the live JNJ case)
+        # Jun 30 = 20 calendar days after the sale → 11 left (inclusive window:
+        # buyable from day 31)
         assert wash_sale_days_remaining("JNJ", transactions=txs,
-                                        today="2026-06-30") == 10
+                                        today="2026-06-30") == 11
 
     def test_boundary_matches_the_guard(self):
         from guardrails import enforce_wash_sale_reentry, wash_sale_days_remaining
         txs = [{"ticker": "JNJ", "action": "SELL", "date": "2026-06-10", "dry_run": False}]
         buy = [{"ticker": "JNJ", "action": "BUY", "target_weight": 0.05}]
-        # day 29: guard rejects ⟺ helper says blocked
-        kept, rej = enforce_wash_sale_reentry(buy, transactions=txs, today="2026-07-09")
-        assert rej and wash_sale_days_remaining("JNJ", transactions=txs,
-                                                today="2026-07-09") == 1
-        # day 30: guard allows ⟺ helper says 0
+        # day 30: guard rejects ⟺ helper says blocked (inclusive window, v2.1)
         kept, rej = enforce_wash_sale_reentry(buy, transactions=txs, today="2026-07-10")
+        assert rej and wash_sale_days_remaining("JNJ", transactions=txs,
+                                                today="2026-07-10") == 1
+        # day 31: guard allows ⟺ helper says 0
+        kept, rej = enforce_wash_sale_reentry(buy, transactions=txs, today="2026-07-11")
         assert kept and wash_sale_days_remaining("JNJ", transactions=txs,
-                                                 today="2026-07-10") == 0
+                                                 today="2026-07-11") == 0
 
     def test_no_sell_record_returns_none(self):
         from guardrails import wash_sale_days_remaining
@@ -11910,3 +11917,61 @@ class TestReconcileFills:
         lots, uncovered = performance.compute_realized_lots(cutoff)
         assert uncovered == []
         assert performance.realized_summary(lots)["realized_gain_pretax"] == pytest.approx(-6.70, abs=0.05)
+
+
+
+# ── Oct 3 2026 remediation 3.3 — gain-aware min-hold ─────────────────────────
+
+class TestGainAwareMinHold:
+    TXS = [{"ticker": "AXP", "action": "BUY", "date": "2026-06-22", "dry_run": False}]
+
+    def _pf(self, cur, avg):
+        return {"positions": [{"symbol": "AXP", "current_price": cur, "avg_price": avg}]}
+
+    def test_winner_needs_63_loser_needs_30(self):
+        from guardrails import enforce_min_holding_period
+        sell = [{"ticker": "AXP", "action": "SELL", "target_weight": 0.0}]
+        today = "2026-08-17"   # ~39 trading days after 2026-06-22
+        kept, rej = enforce_min_holding_period(sell, self._pf(360, 339.62),
+                                               transactions=self.TXS, today=today)
+        assert kept == [] and "GAIN" in rej[0]["rejected_reason"]
+        kept, rej = enforce_min_holding_period(sell, self._pf(302, 339.62),
+                                               transactions=self.TXS, today=today)
+        assert len(kept) == 1 and rej == []           # a loser can be harvested at 30+
+
+    def test_helper_agrees_with_guard(self):
+        from guardrails import min_hold_days_remaining, enforce_min_holding_period
+        sell = [{"ticker": "AXP", "action": "SELL", "target_weight": 0.0}]
+        for today in ("2026-08-17", "2026-09-21", "2026-09-22", "2026-10-02"):
+            for cur in (360.0, 302.0):
+                pf = self._pf(cur, 339.62)
+                rem = min_hold_days_remaining("AXP", transactions=self.TXS, today=today,
+                                              gained=cur > 339.62)
+                kept, _ = enforce_min_holding_period(sell, pf, transactions=self.TXS, today=today)
+                assert (rem == 0) == bool(kept), (today, cur, rem)
+
+    def test_unknown_gain_uses_shorter_threshold(self):
+        from guardrails import position_gained
+        assert position_gained("AXP", {"positions": []}) is False
+        assert position_gained("AXP", {"positions": [{"symbol": "AXP"}]}) is False
+        assert position_gained("AXP", None) is False
+
+    def test_kill_switch_still_exempts(self):
+        from guardrails import enforce_min_holding_period
+        sell = [{"ticker": "AXP", "action": "SELL", "target_weight": 0.0}]
+        kept, rej = enforce_min_holding_period(sell, self._pf(360, 339.62), transactions=self.TXS,
+                                               kill_active=True, today="2026-07-01")
+        assert len(kept) == 1 and rej == []
+
+    def test_pm_tag_says_at_a_gain(self, monkeypatch, tmp_path):
+        import json as _j, analysis
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "transactions.json").write_text(_j.dumps(self.TXS))
+        captured = {}
+        monkeypatch.setattr(analysis, "_safe_call",
+                            lambda model, system, user_msg, **k: captured.setdefault("msg", user_msg) and ([], {}))
+        pf = {"total_value": 500.0, "cash": 100.0, "positions": [
+            {"symbol": "AXP", "qty": 0.12, "avg_price": 339.62, "current_price": 360.0,
+             "market_value": 43.2}]}
+        analysis.run_portfolio_manager({}, {}, {}, {}, {}, {}, pf, [], date="2026-08-17")
+        assert "(at a gain) — NOT sellable" in captured["msg"]
