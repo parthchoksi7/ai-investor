@@ -73,7 +73,8 @@ def _same(a: float, b: float) -> bool:
 
 def reconcile_transactions(txs: list[dict], orders: list[dict]) -> dict:
     """Mutates `txs` in place. Returns a report dict."""
-    report = {"repriced": 0, "id_stamped": 0, "backfilled": [], "unchanged": 0}
+    report = {"repriced": 0, "id_stamped": 0, "backfilled": [], "unchanged": 0,
+              "unbacked_live": [], "duplicate_ids": []}
     used: set[int] = set()
     for o in orders:
         idx = next((i for i, t in enumerate(txs)
@@ -119,6 +120,25 @@ def reconcile_transactions(txs: list[dict], orders: list[dict]) -> dict:
             report["repriced"] += 1
         else:
             report["unchanged"] += 1
+
+    # Reverse direction — the case assign_ref_ids exists to prevent: a reused key
+    # can make the broker return an OLD order id for a NEW request, leaving a
+    # "live" transaction with no broker fill behind it. Reported, never auto-fixed:
+    # deciding which of two rows is real needs a human with the broker statement.
+    broker_ids = {o["order_id"] for o in orders}
+    first_order = min((o["date"] for o in orders), default="")
+    seen: dict[str, int] = {}
+    for i, t in enumerate(txs):
+        if t.get("dry_run"):
+            continue
+        oid = t.get("broker_order_id")
+        label = f"{t.get('date')} {t.get('action')} {t.get('ticker')} qty={t.get('qty')}"
+        if oid:
+            if oid in seen:
+                report["duplicate_ids"].append(f"{label} shares broker_order_id {oid}")
+            seen[oid] = i
+        if (t.get("date") or "") >= first_order and (not oid or oid not in broker_ids):
+            report["unbacked_live"].append(label)
     return report
 
 
@@ -191,6 +211,10 @@ def main(argv: list[str]) -> int:
           f"unchanged {tx_report['unchanged']}, backfilled {len(tx_report['backfilled'])}")
     for b in tx_report["backfilled"]:
         print(f"   + {b}")
+    for u in tx_report["unbacked_live"]:
+        print(f"   ⚠ LIVE transaction with NO broker fill in the evidence: {u}")
+    for d in tx_report["duplicate_ids"]:
+        print(f"   ⚠ duplicate broker id: {d}")
     print(f"trades.csv: repriced {csv_report['repriced']}; broker orders with no live row: "
           f"{csv_report['unmatched_orders'] or 'none'}")
     key = next((k for k in ("realized_gain_pretax", "realized_gain", "realized") if k in after), None)

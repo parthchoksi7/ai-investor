@@ -72,16 +72,21 @@ on:
 # and are re-fetched in full on every run, so the trading-critical set is unaffected.
 # If EXPANSION_BATCH_SIZE or the universe size changes, re-check that ~2-day cycle
 # against the 5-day tolerance.
-concurrency:
-  group: market-data-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'scheduled' }}
-  cancel-in-progress: false
-
+# NOTE (Oct 2026): the concurrency group now lives on the `fetch` JOB, not the
+# workflow, so an on-demand (push) run's `check` job is never queued behind — and
+# never displaces — a pending scheduled run (GitHub keeps one pending run per group,
+# so a workflow-level group let a data request cancel a waiting scheduled run and
+# then no-op). `check` stands down when a scheduled/manual run is already queued or
+# in progress; only then does the request's `fetch` join the group.
 jobs:
   check:
     # Decides whether an ON-DEMAND (push) run has anything to do. Scheduled and
     # manual runs always proceed — their behavior is unchanged.
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read        # to see whether another market_data run is already active
     outputs:
       run: ${{ steps.decide.outputs.run }}
     steps:
@@ -93,6 +98,8 @@ jobs:
         with:
           ref: main
       - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ "${{ github.event_name }}" != "push" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
@@ -108,22 +115,37 @@ jobs:
           s = json.load(open("market_snapshot.json"))
           d = json.load(open("research_dossier.json"))
           depth = min((len(h) for h in (s.get("history") or {}).values()), default=0)
-          ok = (s.get("date") == today and d.get("as_of") == today
-                and len(d.get("built_from_days") or []) >= 2 and depth >= 22)
+          bfd = [str(x) for x in (d.get("built_from_days") or [])]
+          # Mirrors preflight_gate._dossier_fresh + its snapshot checks exactly, so the
+          # job and the gate can never disagree about "ready" (a looser check here would
+          # no-op a request while the gate keeps returning 11 all day).
+          ok = (s.get("date") == today and depth >= 22
+                and d.get("as_of") == today and len(bfd) >= 2
+                and max(bfd) == today and bool(d.get("tickers")))
           print("yes" if ok else "no")
           PY
           )
-          echo "today=$TODAY request=$REQ data_ready=$READY"
-          if [ "$REQ" = "$TODAY" ] && [ "$READY" != "yes" ]; then
+          # Another market_data run already queued/in progress will land the data —
+          # stand down rather than compete with (or displace) it. The routine's next
+          # hourly attempt re-checks and may re-request.
+          ACTIVE=$(gh api "repos/${{ github.repository }}/actions/workflows/market_data.yml/runs?per_page=20" \
+                     --jq "[.workflow_runs[] | select(.id != ${{ github.run_id }}) | select(.status==\"queued\" or .status==\"in_progress\" or .status==\"waiting\" or .status==\"pending\")] | length" 2>/dev/null || echo 0)
+          echo "today=$TODAY request=$REQ data_ready=$READY other_active_runs=$ACTIVE"
+          if [ "$REQ" = "$TODAY" ] && [ "$READY" != "yes" ] && [ "$ACTIVE" = "0" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "On-demand request not needed (request not dated today, or today's data is already ready)."
+            echo "On-demand request not needed (request not dated today, data already ready, or another run is active)."
           fi
 
   fetch:
     needs: check
     if: needs.check.outputs.run == 'true'
+    # Serialize fetches (see the long comment above). workflow_dispatch keeps its own
+    # per-run group — the manual safety dispatch must never queue or be cancelled.
+    concurrency:
+      group: market-data-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'scheduled' }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     # Bounded so a wedged run can never hold the concurrency group above for
     # GitHub's 6-hour default. get_extended_history sleeps up to ~90s per ticker on

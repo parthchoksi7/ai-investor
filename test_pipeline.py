@@ -10875,16 +10875,19 @@ class TestMarketDataConcurrency:
 
     def test_scheduled_runs_are_serialized(self, wf):
         """A concurrency group is what stops two runs racing the same push."""
-        assert "concurrency" in wf, (
+        # Oct 2026: the group moved from the workflow to the `fetch` job (so an
+        # on-demand run's `check` job can never displace a pending scheduled run);
+        # the serialization it provides for the actual fetches is unchanged.
+        assert "concurrency" in wf["jobs"]["fetch"], (
             "market_data.yml lost its concurrency group — overlapping runs will "
             "again race the push and conflict on all eight committed artifacts")
-        assert wf["concurrency"].get("group")
+        assert wf["jobs"]["fetch"]["concurrency"].get("group")
 
     def test_in_flight_sweep_is_never_cancelled(self, wf):
         """cancel-in-progress must stay false: a sweep's progress (the expansion
         cursor + raw_history_store.json) only becomes durable at the always-run
         cache-save step, so killing a run mid-fetch discards it."""
-        assert wf["concurrency"].get("cancel-in-progress") is False
+        assert wf["jobs"]["fetch"]["concurrency"].get("cancel-in-progress") is False
 
     def test_manual_dispatch_is_exempt_from_the_group(self, wf):
         """workflow_dispatch is the documented mitigation for 'no fresh snapshot
@@ -10892,7 +10895,7 @@ class TestMarketDataConcurrency:
         group and silently cancels it when a later trigger arrives — so a queued
         dispatch could be killed before it ran. It must key on something unique
         per run (github.run_id), not a constant."""
-        group = wf["concurrency"]["group"]
+        group = wf["jobs"]["fetch"]["concurrency"]["group"]
         assert "workflow_dispatch" in group and "github.run_id" in group, (
             f"concurrency group {group!r} would queue manual dispatches behind "
             "scheduled runs, where GitHub can cancel them while pending")
@@ -10902,7 +10905,7 @@ class TestMarketDataConcurrency:
         the OPERAND, not a boolean. Dispatch -> unique per-run key; schedule ->
         one shared key. If these ever collapsed to the same value the exemption
         above would be silently dead."""
-        group = wf["concurrency"]["group"]
+        group = wf["jobs"]["fetch"]["concurrency"]["group"]
         assert group.count("${{") == 1, "test only models a single expression"
         prefix, expr = group.split("${{", 1)
         expr = expr.split("}}")[0].strip()
@@ -11731,13 +11734,16 @@ class TestSelectQuantScores:
         _, source, _ = select_quant_scores(self._md())
         assert source == "local"
 
-    def test_name_missing_from_precomputed_is_filled_and_named(self):
+    def test_name_missing_from_precomputed_scores_everything_locally(self):
+        """Never MIX scales: score_all_tickers beta-neutralizes across the whole
+        cross-section, so one gap means the whole set is scored locally (flagged)."""
         from main import select_quant_scores
         from quant_engine import FORMULA_VERSION
         pre = {"as_of": "2026-10-02", "formula_version": FORMULA_VERSION,
                "scores": {"JPM": {"composite_score": 77.3}}}
         scores, source, note = select_quant_scores(self._md(pre))
-        assert source == "precomputed" and "MTB" in scores and "MTB" in note
+        assert source == "local" and "MTB" in note and "MTB" in scores
+        assert scores["JPM"]["composite_score"] != 77.3
 
     def test_fetch_snapshot_embeds_scores_before_slimming(self):
         src = open("/".join(__file__.split("/")[:-1] + ["fetch_snapshot.py"])).read()
@@ -12096,7 +12102,8 @@ class TestGroupedDailyRefresh:
         monkeypatch.setattr(md, "EXPANSION_BATCH_SIZE", 1)      # batch = one expansion name
         from market_calendar import most_recent_complete_trading_day
         fresh = most_recent_complete_trading_day()
-        prev = md._previous_trading_day(fresh)
+        from market_calendar import previous_trading_day
+        prev = previous_trading_day(fresh)
         yesterday = (date.today() - timedelta(days=1)).isoformat()
         md._save_history_store({t: {"date": yesterday, "history": self._hist_through(prev)}
                                 for t in ("SPY", "AAPL", "EXPA", "EXPB")})
@@ -12206,3 +12213,94 @@ class TestRemediationReviewFixes:
         script = wf["jobs"]["check"]["steps"][1]["run"]
         assert "research_dossier.json" in script and "depth >= 22" in script
         assert wf["jobs"]["fetch"]["steps"][0]["with"]["ref"].startswith("${{ github.event_name == 'push'")
+
+
+
+# ── /code-review high, second pass (2026-10-03) ──────────────────────────────
+
+class TestRemediationReviewPass2:
+    def test_backstop_thesis_exit_keeps_the_30_day_floor_for_a_winner(self):
+        from guardrails import enforce_min_holding_period
+        txs = [{"ticker": "AXP", "action": "BUY", "date": "2026-06-22", "dry_run": False}]
+        pf = {"positions": [{"symbol": "AXP", "current_price": 360.0, "avg_price": 339.62}]}
+        today = "2026-08-17"    # ~39 trading days: past 30, short of 63
+        thesis = [{"ticker": "AXP", "action": "SELL", "target_weight": 0.0, "thesis_exit": True}]
+        discretionary = [{"ticker": "AXP", "action": "SELL", "target_weight": 0.0}]
+        kept, _ = enforce_min_holding_period(thesis, pf, transactions=txs, today=today)
+        assert len(kept) == 1
+        kept, rej = enforce_min_holding_period(discretionary, pf, transactions=txs, today=today)
+        assert kept == [] and rej
+
+    def test_backstop_marks_its_exits_as_thesis_exits(self):
+        from main import apply_pm_backstop
+        decisions = []
+        pf = {"positions": [{"symbol": "PLD", "qty": 0.3, "market_value": 42.0}]}
+        state = {"position_reviews": {"PLD": {"recommended_action": "REDUCE", "hold_score": 3,
+                                              "remaining_alpha": "LOW"}},
+                 "devils_advocate": {"PLD": {"recommend_reject": True, "overall_risk_score": 8}}}
+        apply_pm_backstop(decisions, pf, state)
+        assert decisions and decisions[0]["thesis_exit"] is True
+
+    def test_reconcile_flags_unbacked_live_and_duplicate_ids(self):
+        from reconcile_fills import reconcile_transactions
+        orders = [{"order_id": "o1", "ticker": "V", "action": "BUY", "qty": 0.1, "price": 380.0,
+                   "date": "2026-08-26", "timestamp": "2026-08-26T13:51:42Z"}]
+        txs = [{"ticker": "V", "action": "BUY", "qty": 0.1, "price": 382.0, "date": "2026-08-26",
+                "dry_run": False, "broker_order_id": "o1"},
+               {"ticker": "V", "action": "BUY", "qty": 0.1, "price": 383.0, "date": "2026-09-02",
+                "dry_run": False, "broker_order_id": "o1"},           # reused id → phantom
+               {"ticker": "JPM", "action": "BUY", "qty": 0.1, "price": 333.0, "date": "2026-10-02",
+                "dry_run": True}]                                       # speculative: ignored
+        rep = reconcile_transactions(txs, orders)
+        assert any("2026-09-02" in u for u in rep["unbacked_live"]) is False   # id exists in evidence…
+        assert any("shares broker_order_id o1" in d for d in rep["duplicate_ids"])  # …but is shared
+        txs.append({"ticker": "MSFT", "action": "BUY", "qty": 0.1, "price": 500.0,
+                    "date": "2026-09-16", "dry_run": False, "broker_order_id": "ghost"})
+        rep = reconcile_transactions(txs, orders)
+        assert any("MSFT" in u for u in rep["unbacked_live"])
+
+    def test_local_portfolio_reports_settled_buying_power(self, monkeypatch, tmp_path):
+        import execute
+        monkeypatch.chdir(tmp_path)                     # no mcp_portfolio.json → local path
+        class _P:
+            @staticmethod
+            def load_account_profile(account_number=None):
+                return {"cash": "157.21", "unsettled_funds": "124.56"}
+            @staticmethod
+            def load_portfolio_profile(account_number=None):
+                return {"equity": "496.35"}
+        class _A:
+            @staticmethod
+            def build_holdings(account_number=None):
+                return {}
+        class _RH:
+            profiles = _P
+            account = _A
+        monkeypatch.setattr(execute, "rh", _RH)
+        monkeypatch.setattr(execute, "_login", lambda: None)
+        pf = execute.get_portfolio_summary()
+        assert pf["buying_power"] == pytest.approx(32.65)   # cash minus unsettled proceeds
+
+    def test_cro_is_told_the_settled_cash_clamp(self, monkeypatch):
+        import analysis
+        captured = {}
+        monkeypatch.setattr(analysis, "_safe_call",
+                            lambda model, system, user_msg, **k:
+                            (captured.update(msg=user_msg), {"approved": True, "rejected_tickers": []})[1])
+        pf = {"total_value": 500.0, "cash": 157.21, "buying_power": 32.65, "positions": []}
+        analysis.run_chief_risk_officer([{"ticker": "V", "action": "BUY", "target_weight": 0.05}], pf, {})
+        assert "SETTLED BUYING POWER: $32.65" in captured["msg"]
+
+    def test_workflow_check_mirrors_the_gate_and_never_displaces_a_run(self):
+        import yaml
+        wf = yaml.safe_load(open("/".join(__file__.split("/")[:-1] + [".github/workflows/market_data.yml"])))
+        script = wf["jobs"]["check"]["steps"][1]["run"]
+        assert "max(bfd) == today" in script and 'd.get("tickers")' in script
+        assert "other_active_runs" in script and wf["jobs"]["check"]["permissions"]["actions"] == "read"
+        assert "concurrency" not in wf                       # moved off the workflow…
+        assert wf["jobs"]["fetch"]["concurrency"]["cancel-in-progress"] is False   # …onto fetch
+
+    def test_previous_trading_day_lives_in_the_calendar(self):
+        from market_calendar import previous_trading_day
+        assert previous_trading_day("2026-10-05") == date(2026, 10, 2)    # Mon → Fri
+        assert previous_trading_day("2026-06-22") == date(2026, 6, 18)    # skips Juneteenth

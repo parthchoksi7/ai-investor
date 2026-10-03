@@ -1498,6 +1498,11 @@ PROJECTED PORTFOLIO (post-trade weights):
 {(chr(10) + corr_block) if corr_block else ''}
 
 CURRENT CASH: ${portfolio['cash']:,.2f} ({portfolio['cash']/total*100:.1f}%)
+SETTLED BUYING POWER: ${float(portfolio.get('buying_power') if portfolio.get('buying_power') is not None else portfolio['cash']):,.2f}
+  — this is a cash account: today's SELL proceeds settle next business day. A
+  downstream guard scales the BUY leg down to this amount, so a rotation's SELL can
+  execute in full while its BUY is smaller (or dropped). Weigh the SELLs on their own
+  merits; do not veto a BUY for size — it is clamped.
 
 BENCHMARK CONTEXT (scored against SPY — context only, never a veto trigger):
 {_benchmark_exposure_block(projected, quant_scores, label="Projected book")}

@@ -143,9 +143,6 @@ def classify_data_quality(snapshot: dict, expected_universe: int | None = None) 
         breaches.append(f"nan_inf_count DEGRADED: {nan_count} non-finite numeric value(s)")
         n_degraded += 1
 
-    # Young/reused-symbol exclusions (Oct 2026, PARA → Banzai) → DEGRADED: the
-    # names were already kept OUT of scoring by market_data, so nothing is traded
-    # on them; the breach exists so the stale universe.py entry gets fixed.
     # INFORMATIONAL, not a breach: the names were already kept OUT of scoring, so
     # nothing traded is affected — degrading the run's status/score would mark every
     # forecast's provenance stamp below-quality (contaminating the year-end partition)

@@ -9,6 +9,8 @@ import os
 import re
 import requests
 from datetime import date, datetime, timedelta, timezone
+
+from market_calendar import previous_trading_day
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -135,27 +137,14 @@ def get_extended_history(ticker: str, days: int = 210) -> list[dict]:
         # Stage D: back off + retry on a 429 instead of silently falling through to
         # yfinance (which now 401s) — under an expanded universe a rate-limit burst
         # mid-sweep must degrade to "slower", not "ticker silently missing".
-        for attempt in range(3):
-            try:
-                r = requests.get(url, params=params, timeout=10)
-                if r.status_code == 429:
-                    import time as _time
-                    wait = 15 * (attempt + 1)
-                    print(f"   ⏳ Polygon 429 for {ticker} — backing off {wait}s "
-                          f"(attempt {attempt + 1}/3)")
-                    _time.sleep(wait)
-                    continue
-                results = r.json().get("results", [])
-                if results:
-                    return [
-                        {"date": res["t"], "open": res["o"], "high": res["h"],
-                         "low": res["l"], "close": res["c"], "volume": res["v"]}
-                        for res in results
-                    ]
-                break
-            except Exception as e:
-                print(f"   ⚠ Polygon history failed for {ticker}: {e}")
-                break
+        data = _polygon_json(url, params, ticker, timeout=10)
+        results = (data or {}).get("results") or []
+        if results:
+            return [
+                {"date": res["t"], "open": res["o"], "high": res["h"],
+                 "low": res["l"], "close": res["c"], "volume": res["v"]}
+                for res in results
+            ]
 
     return _history_yfinance(ticker, days)
 
@@ -170,11 +159,13 @@ def _midnight_et_ms(day: date) -> int:
                         tzinfo=ZoneInfo("America/New_York")).timestamp() * 1000)
 
 
-def _polygon_json(url: str, params: dict, label: str) -> dict | None:
-    """GET with the same 429 back-off as get_extended_history; None on failure."""
+def _polygon_json(url: str, params: dict, label: str, timeout: int = 30) -> dict | None:
+    """The ONE Polygon GET with 429 back-off (15/30/45 s, 3 attempts); None on any
+    failure. get_extended_history, get_grouped_daily and get_split_tickers all use it,
+    so the back-off cannot drift between the per-ticker and grouped paths."""
     for attempt in range(3):
         try:
-            r = requests.get(url, params=params, timeout=30)
+            r = requests.get(url, params=params, timeout=timeout)
             if r.status_code == 429:
                 import time as _time
                 wait = 15 * (attempt + 1)
@@ -225,14 +216,6 @@ def get_split_tickers(since: date) -> set[str] | None:
     return {str(r.get("ticker")) for r in data.get("results") or [] if r.get("ticker")}
 
 
-def _previous_trading_day(day: date) -> date:
-    from market_calendar import is_trading_day
-    d = day - timedelta(days=1)
-    while not is_trading_day(d):
-        d -= timedelta(days=1)
-    return d
-
-
 def grouped_refresh(entry: dict | None, bar: dict | None, fresh_through: date,
                     split_tickers: set[str], ticker: str,
                     window_days: int = 210) -> list[dict] | None:
@@ -251,7 +234,7 @@ def grouped_refresh(entry: dict | None, bar: dict | None, fresh_through: date,
         last = datetime.fromtimestamp(hist[-1]["date"] / 1000, tz=timezone.utc).date()
     except (KeyError, TypeError, ValueError, OSError):
         return None
-    if last != _previous_trading_day(fresh_through):
+    if last != previous_trading_day(fresh_through):
         return None
     cutoff_ms = _midnight_et_ms(date.today() - timedelta(days=window_days + 90))
     merged = [b for b in hist if b.get("date", 0) >= cutoff_ms] + [bar]
@@ -997,8 +980,9 @@ def get_market_snapshot(force: bool = False) -> dict:
             continue
         # Young/reused-symbol screen (Oct 2026): unlike `thin`, applies to EVERY
         # expansion-only name on every surfacing path (today's batch or carried
-        # forward), and is RECORDED — data_quality reports it as a breach so a
-        # stale universe entry gets fixed in universe.py instead of sitting out quietly.
+        # forward), and is RECORDED — snapshot.young_history_tickers, an informational
+        # data_quality metric, and a fetch-log warning — so a stale universe entry gets
+        # fixed in universe.py. It does NOT degrade the run: nothing traded is affected.
         if ticker in expansion_only_set and is_history_young(entry["history"]):
             young_history.append(ticker)
             continue

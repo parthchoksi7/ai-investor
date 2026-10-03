@@ -322,6 +322,12 @@ def get_portfolio_summary() -> dict:
     holdings         = rh.account.build_holdings(account_number=AGENTIC_ACCOUNT) or {}
 
     cash        = float(account.get("cash", 0) or 0)
+    # Settled, spendable cash (Oct 3 2026 remediation): on a cash account `cash`
+    # includes unsettled sale proceeds; enforce_settled_cash needs buying power.
+    try:
+        buying_power = float(account.get("buying_power"))
+    except (TypeError, ValueError):
+        buying_power = max(0.0, cash - float(account.get("unsettled_funds", 0) or 0))
     total_equity = float(portfolio_profile.get("equity", 0) or 0)
 
     positions = []
@@ -340,9 +346,10 @@ def get_portfolio_summary() -> dict:
         })
 
     return {
-        "cash":        cash,
-        "total_value": total_equity,
-        "positions":   positions,
+        "cash":         cash,
+        "buying_power": buying_power,
+        "total_value":  total_equity,
+        "positions":    positions,
     }
 
 

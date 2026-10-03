@@ -583,7 +583,7 @@ def enforce_min_holding_period(
             continue
         ticker   = d.get("ticker", "")
         buy_date = _last_live_buy_date(ticker, transactions)
-        gained   = position_gained(ticker, portfolio)
+        gained   = position_gained(ticker, portfolio) and not d.get("thesis_exit")
         need     = min_holding_days_gain if gained else min_holding_days
         if buy_date and _trading_days_since(buy_date, today) < need:
             reason = (f"min-holding: bought {buy_date}, < {need} trading days ago"
@@ -1045,8 +1045,9 @@ def enforce_settled_cash(
     BUYs they were meant to fund never reached the broker ($32.65 spendable against
     $134 of BUYs; Robinhood's own buying_power read $32.65 with $157.21 of cash).
 
-    Budget = settled buying power × (1 − buffer_pct). The buffer covers
-    Robinhood's market-order price collar and a stale-price re-quote. When the
+    Budget = settled buying power × (1 − buffer_pct). The buffer covers the move
+    between the sizing close and the live price (Robinhood's market-buy collar
+    measured only 0.02–0.06% above the fill in this account's order history). When the
     routine did not report `buying_power`, pre-trade `cash` is used — the
     pre-existing behavior, never looser (today's SELL proceeds are not in it).
 

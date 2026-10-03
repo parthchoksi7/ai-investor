@@ -120,6 +120,10 @@ def apply_pm_backstop(decisions: list, portfolio: dict, pipeline_state: dict) ->
                 "action": "SELL",
                 "target_weight": 0.0,
                 "source_of_capital": "exit_deteriorating_position",
+                # A 3-signal thesis-break exit, not a discretionary trim: it keeps the
+                # 30-day floor even for a gained position (the 63-day gain hold exists
+                # to stop churning winners, never to lock in a broken thesis).
+                "thesis_exit": True,
                 "expected_return": 0.0,
                 "rationale": (
                     f"Auto-exit: position_review={pr.get('recommended_action')} "
@@ -158,18 +162,15 @@ def select_quant_scores(market_data: dict) -> tuple[dict, str, str]:
     if pre.get("formula_version") != FORMULA_VERSION:
         return (score_all_tickers(market_data), "local",
                 f"precomputed formula {pre.get('formula_version')} ≠ live {FORMULA_VERSION}")
-    scores = dict(scores)
     missing = [t for t in market_data.get("prices", {}) if t not in scores]
-    note = ""
     if missing:
-        # A name in today's prices but absent from the GH-side scoring (rare) gets
-        # a local score rather than none; named in the note so it is auditable.
-        local = score_all_tickers(market_data)
-        filled = [t for t in missing if t in local]
-        for t in filled:
-            scores[t] = local[t]
-        note = f"{len(filled)} name(s) scored locally: {filled[:10]}"
-    return scores, "precomputed", note
+        # Never MIX the two: score_all_tickers beta-neutralizes across the whole
+        # cross-section, so a locally-scored name is not on the precomputed scale.
+        # A coverage gap (rare) falls back to scoring everything locally, flagged.
+        return (score_all_tickers(market_data), "local",
+                f"precomputed_scores missing {len(missing)} name(s) {missing[:10]} — "
+                "scored all names locally rather than mix scales")
+    return dict(scores), "precomputed", ""
 
 
 def run_daily_cycle():
@@ -537,12 +538,18 @@ def run_daily_cycle():
     # so it gets its own, non-informational check (decision_validation never pages).
     # A clamp alone (BUYs scaled, still placed) is expected behavior: OK with a note.
     if cash_rejected:
+        _sells = {d.get("ticker") for d in decisions if str(d.get("action", "")).upper() == "SELL"}
+        _orphan_sells = sorted({r.get("source_of_capital") for r in cash_rejected
+                                if r.get("source_of_capital") in _sells})
         health.record("settled_cash", DEGRADED,
                       message=f"{len(cash_rejected)} BUY(s) dropped — settled buying power "
                               "could not fund them above the order floor (today's SELL "
-                              "proceeds settle T+1; capital idle until next rebalance)",
+                              "proceeds settle T+1; capital idle until next rebalance)"
+                              + (f". Funding SELL(s) {_orphan_sells} still execute on their "
+                                 "own merits" if _orphan_sells else ""),
                       dropped=[r.get("ticker") for r in cash_rejected],
-                      clamped=[c.get("ticker") for c in cash_clamped])
+                      clamped=[c.get("ticker") for c in cash_clamped],
+                      funding_sells_executing=_orphan_sells)
     elif cash_clamped:
         health.record("settled_cash", OK,
                       message=f"{len(cash_clamped)} BUY(s) scaled to settled buying power",
