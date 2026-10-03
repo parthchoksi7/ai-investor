@@ -1819,9 +1819,12 @@ class TestPreflightGate:
     def _today_et(self):
         return self.OPEN_DAY
 
-    def _run(self, tmp_path, date_override=None):
+    def _run(self, tmp_path, date_override=None, time_override=None):
         env = dict(self.os.environ)
         env["PREFLIGHT_DATE_OVERRIDE"] = date_override or self.OPEN_DAY
+        env.pop("PREFLIGHT_TIME_OVERRIDE", None)
+        if time_override:
+            env["PREFLIGHT_TIME_OVERRIDE"] = time_override
         return self.subprocess.run(
             [self.sys.executable, self.GATE],
             cwd=str(tmp_path), capture_output=True, text=True, env=env,
@@ -1862,23 +1865,23 @@ class TestPreflightGate:
         self._write(tmp_path, "market_snapshot.json",
                     {"date": "2020-01-01", "prices": {}, "history": {"AAPL": [{}] * 200}})
         self._write(tmp_path, "pending_decisions.json", {"date": today, "executed_at": None})
-        assert self._run(tmp_path) == 10  # SKIP/RETRY
+        assert self._run(tmp_path) == 11  # SKIP/RETRY-STALE — data plane late
 
     def test_skip_retry_when_snapshot_missing(self, tmp_path):
-        assert self._run(tmp_path) == 10  # SKIP/RETRY — no data landed yet
+        assert self._run(tmp_path) == 11  # SKIP/RETRY-STALE — no data landed yet
 
     def test_skip_retry_when_insufficient_history(self, tmp_path):
         today = self._today_et()
         self._write(tmp_path, "market_snapshot.json",
                     {"date": today, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 5}})
-        assert self._run(tmp_path) == 10  # SKIP/RETRY — <22 bars
+        assert self._run(tmp_path) == 11  # SKIP/RETRY-STALE — <22 bars
 
     def test_skip_retry_when_dossier_missing_on_rebalance_day(self, tmp_path):
         """Fresh snapshot but NO dossier → the rebalance must not run (P1-5)."""
         today = self._today_et()
         self._write(tmp_path, "market_snapshot.json",
                     {"date": today, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 200}})
-        assert self._run(tmp_path) == 10
+        assert self._run(tmp_path) == 11
 
     def test_skip_retry_when_dossier_stale_on_rebalance_day(self, tmp_path):
         today = self._today_et()
@@ -1887,7 +1890,7 @@ class TestPreflightGate:
         self._write(tmp_path, "research_dossier.json",
                     {"schema": "dossier-1.0", "as_of": "2020-01-01", "n_tickers": 1,
                      "built_from_days": ["2019-12-31", "2020-01-01"], "tickers": {"AAPL": {}}})
-        assert self._run(tmp_path) == 10
+        assert self._run(tmp_path) == 11
 
     def test_done_takes_precedence_over_stale(self, tmp_path):
         """If already executed, skip-done even if the snapshot looks stale."""
@@ -6578,7 +6581,7 @@ class TestPreflightGateMissingPending(TestPreflightGate):
 
     def test_malformed_snapshot_returns_skip_retry(self, tmp_path):
         (tmp_path / "market_snapshot.json").write_text("{invalid json")
-        assert self._run(tmp_path) == 10
+        assert self._run(tmp_path) == 11   # SKIP/RETRY-STALE (rebalance day, data unusable)
 
 
 # ── cost_model — zero inputs, LT rate, zero notional ─────────────────────────
@@ -8964,6 +8967,96 @@ class TestStageCReadiness:
 # Phase 5 (Stages B/C/D) — weekly cadence, risk_watch, dossier consumer, Stage D
 # ═══════════════════════════════════════════════════════════════════════════
 
+class TestPreflightFinalAttemptFallback:
+    """Oct 2026 remediation 1.1/2.4. A rebalance blocked by late data (or API) on
+    the routine's FINAL attempt (≥12:30 ET) must run risk_watch instead of skipping
+    — Sep 23–25 and Sep 30–Oct 1 2026 had no −25% stop check at all while GitHub
+    Actions was billing-blocked. Earlier attempts return 11 (stale data) so the
+    routine can request a data run. A fallback risk_watch never consumes the week's
+    rebalance: Thu/Fri catch-up stays available."""
+
+    import os
+    import subprocess
+    import sys
+
+    GATE = os.path.join(os.path.dirname(__file__), "preflight_gate.py")
+    WED, THU = "2026-06-24", "2026-06-25"   # week of Mon 2026-06-22, no holidays
+
+    def _run(self, tmp_path, date, time=None):
+        env = dict(self.os.environ)
+        env["PREFLIGHT_DATE_OVERRIDE"] = date
+        env.pop("PREFLIGHT_TIME_OVERRIDE", None)
+        if time:
+            env["PREFLIGHT_TIME_OVERRIDE"] = time
+        return self.subprocess.run([self.sys.executable, self.GATE], cwd=str(tmp_path),
+                                   capture_output=True, text=True, env=env).returncode
+
+    def _write(self, tmp_path, name, obj):
+        (tmp_path / name).write_text(json.dumps(obj))
+
+    def _snapshot(self, tmp_path, date):
+        self._write(tmp_path, "market_snapshot.json",
+                    {"date": date, "prices": {"AAPL": {}}, "history": {"AAPL": [{}] * 200}})
+
+    def _dossier(self, tmp_path, date):
+        from datetime import datetime, timedelta
+        prev = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+        self._write(tmp_path, "research_dossier.json",
+                    {"schema": "dossier-1.0", "as_of": date, "n_tickers": 1,
+                     "built_from_days": [prev, date], "tickers": {"AAPL": {}}})
+
+    def test_stale_snapshot_before_final_attempt_requests_data(self, tmp_path):
+        self._snapshot(tmp_path, "2026-06-23")
+        assert self._run(tmp_path, self.WED, "09:45") == 11
+
+    def test_stale_snapshot_on_final_attempt_runs_risk_watch(self, tmp_path):
+        self._snapshot(tmp_path, "2026-06-23")
+        assert self._run(tmp_path, self.WED, "12:45") == 30
+
+    def test_missing_snapshot_on_final_attempt_runs_risk_watch(self, tmp_path):
+        assert self._run(tmp_path, self.WED, "12:45") == 30   # empty dir
+
+    def test_stale_dossier_on_final_attempt_runs_risk_watch(self, tmp_path):
+        self._snapshot(tmp_path, self.WED)                    # fresh snapshot, no dossier
+        assert self._run(tmp_path, self.WED, "12:45") == 30
+
+    def test_threshold_is_1230(self, tmp_path):
+        self._snapshot(tmp_path, "2026-06-23")
+        assert self._run(tmp_path, self.WED, "12:29") == 11
+        assert self._run(tmp_path, self.WED, "12:30") == 30
+
+    def test_fresh_data_on_final_attempt_still_rebalances(self, tmp_path):
+        """The fallback fires only when the rebalance is BLOCKED."""
+        self._snapshot(tmp_path, self.WED)
+        self._dossier(tmp_path, self.WED)
+        assert self._run(tmp_path, self.WED, "12:45") == 0
+
+    def test_catchup_day_final_attempt_runs_risk_watch(self, tmp_path):
+        self._snapshot(tmp_path, self.WED)                    # Thursday, stale
+        assert self._run(tmp_path, self.THU, "12:45") == 30
+
+    def test_fallback_risk_watch_does_not_consume_the_week(self, tmp_path):
+        """Wednesday's fallback risk_watch envelope (executed) must not lock the
+        ISO week — Thursday with fresh data runs the catch-up rebalance."""
+        self._snapshot(tmp_path, self.THU)
+        self._dossier(tmp_path, self.THU)
+        self._write(tmp_path, "pending_decisions.json",
+                    {"date": self.WED, "mode": "risk_watch", "run_id": "rw1",
+                     "execution_started_at": "2026-06-24T16:50:00Z",
+                     "executed_at": "2026-06-24T16:51:00Z", "decisions": []})
+        assert self._run(tmp_path, self.THU, "09:45") == 0
+
+    def test_market_closed_never_falls_back(self, tmp_path):
+        """A closed market accepts orders that never fill — no fallback."""
+        assert self._run(tmp_path, "2026-06-19", "12:45") == 10   # Juneteenth
+
+    def test_done_today_wins_over_fallback(self, tmp_path):
+        self._write(tmp_path, "pending_decisions.json",
+                    {"date": self.WED, "mode": "risk_watch", "run_id": "rw1",
+                     "executed_at": "2026-06-24T16:51:00Z", "decisions": []})
+        assert self._run(tmp_path, self.WED, "12:45") == 20
+
+
 class TestPreflightGateModeRouting(TestPreflightGate):
     """§6.3 mode routing: 0 REBALANCE (Wed / Thu-Fri catch-up) · 30 RISK-WATCH ·
     10 SKIP/RETRY · 20 SKIP/DONE. Uses the week of 2026-06-22 (Mon) — no NYSE
@@ -9065,12 +9158,16 @@ class TestPreflightGateModeRouting(TestPreflightGate):
         assert self._run(tmp_path, date_override=self.MON) == 20
 
     def test_wednesday_stale_data_skips_retry_not_risk_watch(self, tmp_path):
-        """On the rebalance day, stale data → 10 (retry / Thu catch-up), never a
-        silent fallback into risk-watch (mixing modes intra-day would defeat the
-        daily envelope idempotency)."""
+        """On the rebalance day, stale data on a NON-final attempt → 11 (retry /
+        request data / Thu catch-up), never a fallback into risk-watch: an
+        executed risk_watch envelope would SKIP/DONE every later attempt and
+        block a rebalance whose data arrives at 10:30. The only exception is the
+        FINAL attempt (≥12:30 ET), where no later attempt exists to block —
+        see TestPreflightFinalAttemptFallback."""
         self._write(tmp_path, "market_snapshot.json",
                     {"date": "2020-01-01", "prices": {}, "history": {"AAPL": [{}] * 200}})
-        assert self._run(tmp_path, date_override=self.WED) == 10
+        assert self._run(tmp_path, date_override=self.WED) == 11
+        assert self._run(tmp_path, date_override=self.WED, time_override="11:45") == 11
 
 
 class TestJournalRebalanceStamp:

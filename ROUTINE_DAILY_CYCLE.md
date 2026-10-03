@@ -58,15 +58,48 @@ Branch on GATE_EXIT — do not skip this:
                               market_snapshot.json AND fresh research_dossier.json, no
                               rebalance attempted this ISO week. Set MODE=rebalance and
                               continue to STEP 1.
-  • 30 (PROCEED/RISK-WATCH) → any other trading day. Set MODE=risk_watch and continue to
-                              STEP 1. You will run risk_watch.py (SELL-only, zero LLM) in
-                              STEP 3 — NEVER main.py in this mode.
-  • 10 (SKIP/RETRY)         → market closed, or (on a rebalance day) snapshot/dossier not
-                              fresh or API overloaded. STOP now — do NOT fetch the
-                              portfolio, run any pipeline, or place any orders. The next
-                              scheduled attempt (+60 min) re-checks.
+  • 30 (PROCEED/RISK-WATCH) → any other trading day — OR the FINAL attempt (12:45) of a
+                              rebalance day whose rebalance is still blocked (late data /
+                              API), so the −25% stop still runs today. Set MODE=risk_watch
+                              and continue to STEP 1. You will run risk_watch.py (SELL-only,
+                              zero LLM) in STEP 3 — NEVER main.py in this mode.
+  • 11 (SKIP/RETRY-STALE)   → rebalance day, but market_snapshot.json / research_dossier.json
+                              has not landed yet. Request an on-demand data run (below),
+                              then STOP — do NOT fetch the portfolio, run any pipeline, or
+                              place any orders. The next attempt (+60 min) re-checks.
+  • 10 (SKIP/RETRY)         → market closed, or (on a rebalance day) Anthropic API
+                              overloaded. STOP now — do NOT fetch the portfolio, run any
+                              pipeline, or place any orders. The next attempt re-checks.
   • 20 (SKIP/DONE)          → Today's pipeline (either mode) already executed or claimed.
                               STOP now — re-running would risk double-execution.
+
+ON GATE_EXIT == 11 ONLY — request market data, at most once per day, then STOP.
+Pushing data_request.json starts market_data.yml within seconds instead of waiting on
+GitHub's deferred cron. Stage ONLY data_request.json, and do NOT put [skip ci] in the
+message (it would suppress the very workflow this push exists to start):
+
+python - <<'PY'
+import json, datetime, zoneinfo
+today = datetime.datetime.now(zoneinfo.ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+try:
+    prev = json.load(open("data_request.json")).get("date")
+except Exception:
+    prev = None
+if prev == today:
+    print("Market data already requested today — not re-requesting.")
+else:
+    json.dump({"date": today,
+               "requested_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+               "reason": "preflight exit 11 (snapshot/dossier not fresh on a rebalance day)"},
+              open("data_request.json", "w"), indent=2)
+    print("DATA_REQUESTED")
+PY
+git config user.email 'ai-investor-bot@users.noreply.github.com'
+git config user.name 'AI Investor Bot'
+git add data_request.json
+git diff --staged --quiet || (git commit -m 'chore: request market data' && (git push || (git pull --rebase && git push)))
+
+Then STOP this attempt. (If the push fails, just stop — the scheduled crons still run.)
 
 Only continue past this step when GATE_EXIT == 0 or GATE_EXIT == 30.
 (preflight_gate.py uses only the Python standard library, so it runs before pip install.)

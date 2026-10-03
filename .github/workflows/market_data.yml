@@ -19,6 +19,16 @@ on:
     # In winter (EST = UTC-5): update to '0 10', '0 13' (update_dst.yml does this automatically)
     - cron: '0 9  * * 1-5'   # 5:00 AM EDT — early crawl (Stage D sweep + max retry buffer)
     - cron: '0 12 * * 1-5'   # 8:00 AM EDT — fallback, with worst-case margin before 9:45
+  # On-demand (Oct 2026 remediation 2.4): when the routine's preflight gate finds a
+  # stale snapshot on a rebalance day it exits 11 and the routine pushes
+  # data_request.json. A push-triggered run starts within seconds, unlike the
+  # scheduled crons, which GitHub has been starting 2-7 hours late (observed
+  # 9:52 AM-3:32 PM ET for the "5:00 / 8:00 AM" triggers in Sep-Oct 2026). The
+  # `check` job below makes an on-demand run a no-op when today's snapshot already
+  # exists or the request is not dated today (e.g. the merge that first adds the file).
+  push:
+    branches: [main]
+    paths: ['data_request.json']
   workflow_dispatch:
     inputs:
       full_refresh:
@@ -67,7 +77,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check:
+    # Decides whether an ON-DEMAND (push) run has anything to do. Scheduled and
+    # manual runs always proceed — their behavior is unchanged.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      # ref: main, NOT the push SHA: the workflow-level concurrency group can hold
+      # this run behind an in-flight scheduled run, and the snapshot that run commits
+      # is only visible on the latest main.
+      - uses: actions/checkout@v5
+        if: github.event_name == 'push'
+        with:
+          ref: main
+      - id: decide
+        run: |
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          TODAY=$(TZ=America/New_York date +%F)
+          REQ=$(python3 -c "import json;print(json.load(open('data_request.json')).get('date') or '')" 2>/dev/null || echo "")
+          SNAP=$(python3 -c "import json;print(json.load(open('market_snapshot.json')).get('date') or '')" 2>/dev/null || echo "")
+          echo "today=$TODAY request=$REQ snapshot=$SNAP"
+          if [ "$REQ" = "$TODAY" ] && [ "$SNAP" != "$TODAY" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "On-demand request not needed (request not dated today, or today's snapshot already landed)."
+          fi
+
   fetch:
+    needs: check
+    if: needs.check.outputs.run == 'true'
     runs-on: ubuntu-latest
     # Bounded so a wedged run can never hold the concurrency group above for
     # GitHub's 6-hour default. get_extended_history sleeps up to ~90s per ticker on
