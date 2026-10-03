@@ -1,6 +1,6 @@
 # Plan — Oct 3 2026 remediation (the performance investigation's fix list)
 
-**Status:** 🔄 IN PROGRESS. Owner-directed 2026-10-03: "fix everything today."
+**Status:** ✅ BUILT & REVIEWED (2026-10-03) — awaiting owner: `/code-review ultra`, merge, routine sync. Owner-directed 2026-10-03: "fix everything today."
 **Branch:** `fix/oct3-remediation`, one PR. **Deploy = merge to `main`**, only after owner OK.
 **Must be live before:** Wed 2026-10-07 rebalance. Every routine-prompt change is
 backward-compatible in both directions, so merge order versus routine sync cannot break a run.
@@ -103,12 +103,26 @@ Independent sources: Robinhood MCP (orders, buying power, realized P&L) and Poly
 
 ## Phase 6 — Verify & ship
 
-- ⬜ `pytest test_pipeline.py -q` green; ruff `F821,F823`; workflow YAML parses
-- ⬜ `/code-review high` — every finding resolved
-- ⬜ PR opened; owner launches `/code-review ultra` (execution path)
+- ✅ `pytest test_pipeline.py -q`: **1033 passed** (942 at branch start, so +91). Ruff
+  `F821,F823` clean. All workflow YAML parses. The `market_data.yml` check script was
+  extracted and executed locally on both branches; its live GitHub-API stand-down query
+  was exercised for real.
+- ✅ `/code-review high`, **three passes**:
+  - Pass 1, whole branch: 10 findings, all fixed in `01c4927`.
+  - Pass 2, whole branch: 10 findings. Nine fixed in `4ceeccc`. One was rejected with
+    evidence: the "5% collar eats the buffer" claim is false, because the broker's own
+    orders show a collar of 0.02–0.06%.
+  - Pass 3, fixes only: 10 findings, all fixed in `9e86c99`.
+  - The worst self-inflicted issues caught were: a cash clamp that could make the
+    routine skip an add-to-holding BUY; an AI-settable `thesis_exit` that could bypass
+    the 63-day hold; and a stale `fills.json` able to create phantom fills.
+- ✅ No `DRY_RUN main.py`. It is the weekend, so the stale snapshot would preflight-abort,
+  and a dev run must never write `pending_decisions.json`. The `run_daily_cycle` smoke
+  suite covers the wiring end to end.
+- ⬜ PR opened → owner launches `/code-review ultra` (execution path: 1.2, 1.3, `fills.json`)
 - ⬜ Owner OK → merge to `main`
-- ⬜ Live routine sync of `ROUTINE_DAILY_CYCLE.md` (STEP 0/1/4/5) before Mon 2026-10-05 9:45 ET
-  (backward-compatible either way)
+- ⬜ Live routine sync of `ROUTINE_DAILY_CYCLE.md` (STEP 0/1/4/5) before Mon 2026-10-05
+  9:45 ET. It is backward-compatible either way.
 
 ## Owner actions (cannot be done from code)
 
