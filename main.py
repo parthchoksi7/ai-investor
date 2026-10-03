@@ -31,7 +31,7 @@ from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, StalePortfolioError, DRY_RUN
 from journal      import check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions, close_position, get_ticker_history, recently_exited, consecutive_cash_above, _load_list, TRANSACTIONS_FILE
-from guardrails   import validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, enforce_tax_aware_hold, enforce_safe_mode, enforce_capital_dependency, enforce_research_backed_buys, flag_wash_sale_presale, min_hold_days_remaining, WASH_SALE_REENTRY_DAYS
+from guardrails   import enforce_settled_cash, validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, enforce_tax_aware_hold, enforce_safe_mode, enforce_capital_dependency, enforce_research_backed_buys, flag_wash_sale_presale, min_hold_days_remaining, WASH_SALE_REENTRY_DAYS
 from build_dossier import load_dossier, validate_dossier
 from policy       import policy_version as _policy_version
 from publish      import publish_to_supabase
@@ -448,6 +448,13 @@ def run_daily_cycle():
     # expected_return; SELLs exempt. Runs last (final economic filter).
     decisions, netedge_rejected = enforce_net_edge(decisions, market_data["prices"])
 
+    # Settled-cash budget (Oct 3 2026 remediation 1.2) — LAST, so it sizes the final
+    # BUY set. Cash account: today's SELL proceeds settle T+1 and cannot fund today's
+    # BUYs (Oct 2 2026: three funded BUYs never reached the broker). Clamps the BUY
+    # leg to settled buying power; a rotation's proceeds deploy at the next rebalance.
+    decisions, cash_rejected, cash_clamped = enforce_settled_cash(
+        decisions, portfolio, market_data["prices"])
+
     # Wash-sale PRE-sale FLAG (A6) — the post-sale re-buy block above covers one
     # side of IRS §1091; this flags (never blocks) a loss exit within 30d of a
     # purchase, the other side. Flag-and-allow: a wash sale only defers the loss,
@@ -468,7 +475,7 @@ def run_daily_cycle():
 
     for r in (research_rejected + safemode_rejected + holding_rejected
               + reentry_rejected + taxhold_rejected + dependency_rejected
-              + sector_rejected + netedge_rejected):
+              + sector_rejected + netedge_rejected + cash_rejected):
         validation_report["rejected"].append(
             {"ticker": r.get("ticker", "?"), "action": r.get("action", "?"),
              "reason": r.get("rejected_reason", "turnover/sector/net-edge guard")})
@@ -477,10 +484,10 @@ def run_daily_cycle():
     # validate_decisions' weight clamp. Recording it keeps health DEGRADED: the PM
     # proposing a size the cap cannot hold is a signal, even though the trade
     # survives at the compliant size.
-    for m in sector_clamped:
+    for m in sector_clamped + cash_clamped:
         validation_report["modified"].append(
             {"ticker": m.get("ticker", "?"), "action": m.get("action", "?"),
-             "reason": m.get("clamped_reason", "sector-cap clamp")})
+             "reason": m.get("clamped_reason", "sector-cap / settled-cash clamp")})
 
     # `passed` is recomputed against the decisions that survived the FULL chain.
     # validate_decisions increments it for its own rule set only, so before this

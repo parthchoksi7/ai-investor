@@ -111,13 +111,14 @@ STEP 1 — Fetch portfolio via Robinhood MCP  (both modes)
 Call in order:
 1. get_accounts() — confirm account YOUR_ACCOUNT_NUMBER is present with agentic_allowed=true.
    If not found or agentic_allowed=false, STOP immediately.
-2. get_portfolio(account_number='YOUR_ACCOUNT_NUMBER') — for cash and total_value
+2. get_portfolio(account_number='YOUR_ACCOUNT_NUMBER') — for cash, total_value and buying_power
 3. get_equity_positions(account_number='YOUR_ACCOUNT_NUMBER') — for holdings
 
 Write mcp_portfolio.json with this exact structure:
 {
   "as_of": "<ISO-8601 timestamp, US/Eastern, e.g. 2026-07-06T09:46:00-04:00>",
   "cash": <float>,
+  "buying_power": <float — buying_power.buying_power from get_portfolio>,
   "total_value": <float>,
   "positions": [
     {
@@ -136,6 +137,12 @@ as_of MUST be the current timestamp (ET) at which you fetched this portfolio. ex
 get_portfolio_summary() raises StalePortfolioError if as_of is missing or not dated today (ET),
 and the pipeline then aborts before sizing any orders — every order is sized from this file, so a
 stale copy would size today's trades against a prior day's cash/positions. Write it fresh every run.
+
+buying_power is the SETTLED, spendable cash Robinhood reports (get_portfolio →
+buying_power.buying_power). This is a CASH account: proceeds from a sale are NOT spendable
+until they settle the next business day, so buying_power can be far below cash (2026-10-02:
+cash $157.21, buying_power $32.65). The guard chain sizes every BUY against it — write the
+broker's number verbatim; never substitute cash.
 
 available_qty = shares_available_for_sells from get_equity_positions (falls back to qty if the
 field is absent). SELL orders are capped to available_qty to prevent oversell. In RISK-WATCH mode

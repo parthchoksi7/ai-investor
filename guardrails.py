@@ -26,9 +26,17 @@ Rules enforced per decision:
   8. Good-faith-violation guard (cash account): REJECT a SELL whose most
      recent broker-accepted BUY was within GFV_WINDOW_TRADING_DAYS trading
      days — unless the kill switch is active (risk exits always allowed).
-     The system deliberately places SELLs before BUYs so same-day BUYs are
-     routinely funded by unsettled proceeds; selling those positions the
-     next day risks a GFV and, repeated, a 90-day account restriction.
+     Defense in depth: this guard assumed same-day BUYs could be funded by
+     unsettled proceeds. On this Robinhood cash account they CANNOT —
+     unsettled proceeds are excluded from buying_power (verified 2026-10-03),
+     and rule 9 now sizes BUYs to settled cash. The GFV guard stays in case the
+     account type changes; a GFV would risk a 90-day restriction.
+
+  9. Settled-cash budget (cash account, v2.1): total BUY notional ≤ settled
+     buying power × (1 − settled_cash_buffer_pct); over budget, every BUY is
+     scaled by one factor (qty recomputed) and sub-floor BUYs dropped. Today's
+     SELL proceeds settle T+1 and cannot fund today's BUYs (Oct 2 2026).
+     Runs LAST in main.py's chain — enforce_settled_cash.
 
 HOLD decisions pass through untouched (no qty, no notional).
 
@@ -37,6 +45,7 @@ The result report is recorded to system_health.json under the
 or skipped) so the existing alert.yml path surfaces every intervention.
 """
 
+import math
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -67,6 +76,7 @@ MIN_HOLDING_TRADING_DAYS = _POLICY["min_holding_trading_days"]  # don't SELL a n
 WASH_SALE_REENTRY_DAYS   = _POLICY["wash_sale_reentry_days"]    # don't BUY a name SOLD within N calendar days (wash-sale + anti-churn)
 MIN_NET_EDGE             = _POLICY["min_net_edge"]              # $ floor: a BUY's expected edge must clear cost + CA ST tax (#6; tunable)
 TAX_AWARE_HOLD_WINDOW    = _POLICY["tax_aware_hold_window_trading_days"]  # block discretionary SELL of a gained lot near its 1-year LT date (IPS §7.5)
+SETTLED_CASH_BUFFER_PCT  = _POLICY["settled_cash_buffer_pct"]   # BUYs ≤ settled buying power × (1 − this) — cash account (v2.1)
 SAFE_MODE_INDEX_DROP_PCT = _POLICY["safe_mode_index_drop_pct"]  # PERCENT — SPY 1-day drop ≥ this halts all new BUYs (§18.5 crisis safe-mode)
 
 
@@ -987,6 +997,95 @@ def validate_decisions(
         report["passed"] += 1
 
     return validated, report
+
+
+def enforce_settled_cash(
+    decisions: list[dict],
+    portfolio: dict,
+    prices: dict,
+    buffer_pct: float = SETTLED_CASH_BUFFER_PCT,
+    min_notional: float = MIN_ORDER_NOTIONAL,
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Clamp the BUY leg to what the account can actually spend today.
+
+    This is a CASH account: proceeds from today's SELLs settle T+1 and are NOT
+    spendable until then. SELLs are placed before BUYs, but that ordering does not
+    make their proceeds available — on 2026-10-02 three SELLs filled and all three
+    BUYs they were meant to fund never reached the broker ($32.65 spendable against
+    $134 of BUYs; Robinhood's own buying_power read $32.65 with $157.21 of cash).
+
+    Budget = settled buying power × (1 − buffer_pct). The buffer covers
+    Robinhood's market-order price collar and a stale-price re-quote. When the
+    routine did not report `buying_power`, pre-trade `cash` is used — the
+    pre-existing behavior, never looser (today's SELL proceeds are not in it).
+
+    Over budget → every BUY is scaled by the same factor (qty floored to 6 dp so
+    the total cannot creep over), preserving the PM's relative sizing; a BUY that
+    falls under `min_notional` after scaling is dropped. SELLs and HOLDs pass
+    through untouched. Strictly subtractive: never adds or enlarges an order.
+
+    Returns (kept, rejected, clamped). The proceeds of an un-funded rotation are
+    deployed at the next rebalance — the missed-trade failure direction.
+    """
+    raw_bp = portfolio.get("buying_power")
+    try:
+        available = float(raw_bp)
+        source = "settled buying_power"
+    except (TypeError, ValueError):
+        available = float(portfolio.get("cash", 0) or 0)
+        source = "pre-trade cash (buying_power not reported)"
+    budget = max(0.0, available * (1 - buffer_pct))
+
+    def _price(d: dict) -> float | None:
+        p = (prices.get(d.get("ticker", ""), {}) or {}).get("close")
+        try:
+            p = float(p)
+        except (TypeError, ValueError):
+            return None
+        return p if p > 0 else None
+
+    buys = [d for d in decisions
+            if str(d.get("action", "")).upper() == "BUY" and float(d.get("qty") or 0) > 0]
+    priced = [(d, _price(d)) for d in buys]
+    total = sum(float(d.get("qty") or 0) * p for d, p in priced if p)
+    unpriced = any(p is None for _, p in priced)
+
+    if not buys or (total <= budget + 1e-9 and not unpriced):
+        return list(decisions), [], []
+
+    scale = (budget / total) if total > 0 else 0.0
+    kept, rejected, clamped = [], [], []
+    for d in decisions:
+        if not (str(d.get("action", "")).upper() == "BUY" and float(d.get("qty") or 0) > 0):
+            kept.append(d)
+            continue
+        p = _price(d)
+        if p is None:
+            reason = "settled-cash guard: no price to size this BUY against the cash budget"
+            rejected.append({**d, "rejected_reason": reason})
+            print(f"   🚫 SETTLED-CASH REJECT: BUY {d.get('ticker')} — {reason}")
+            continue
+        qty = float(d.get("qty") or 0)
+        if scale >= 1.0:
+            kept.append(d)
+            continue
+        new_qty = math.floor(qty * scale * 1e6) / 1e6
+        if new_qty * p < min_notional:
+            reason = (f"settled-cash guard: {source} ${available:,.2f} cannot fund this BUY "
+                      f"above the ${min_notional:.0f} floor (today's SELL proceeds settle T+1)")
+            rejected.append({**d, "rejected_reason": reason})
+            print(f"   🚫 SETTLED-CASH REJECT: BUY {d.get('ticker')} — {reason}")
+            continue
+        reason = (f"settled-cash clamp: BUYs total ${total:,.2f} > budget ${budget:,.2f} "
+                  f"({source} ${available:,.2f} less {buffer_pct:.0%}); scaled ×{scale:.3f} "
+                  f"— today's SELL proceeds settle T+1")
+        out = {**d, "qty": new_qty,
+               "target_weight": round(float(d.get("target_weight") or 0) * scale, 4),
+               "clamped_reason": reason}
+        kept.append(out)
+        clamped.append(out)
+        print(f"   ✂️  SETTLED-CASH CLAMP: BUY {d.get('ticker')} qty {qty:g} → {new_qty:g}")
+    return kept, rejected, clamped
 
 
 def enforce_net_edge(

@@ -24,9 +24,14 @@
 #                                          safe-mode: halt BUYs on an index drop ≥ 7%)
 #   NOTE: universe size 100 → 400 remains gated on UNIVERSE_EXPANDED + coverage
 #   (universe.get_active_universe) — the flag, not this file, is the switch.
+#
+# v2.1 (Oct 3 2026 remediation, owner-directed — PLAN_OCT3_REMEDIATION.md):
+#   settled_cash_buffer_pct  : —  → 0.05  (BUYs sized to SETTLED buying power less
+#                                          this margin; a cash account cannot spend
+#                                          same-day sale proceeds — Oct 2 2026 incident)
 # ─────────────────────────────────────────────────────────────────────────────
 
-policy_version: "2.0-phase5-weekly"
+policy_version: "2.1-oct3-remediation"
 
 guardrails:
   max_target_weight:        0.10   # IPS max_position_pct (10%) — clamp + qty recompute
@@ -39,6 +44,11 @@ guardrails:
   min_net_edge:             0.0    # USD — a BUY's expected edge must clear cost + CA ST tax
   tax_aware_hold_window_trading_days: 30  # IPS §7.5 — gained lot within ~30 trading days
                                           # of its 1-year date: block discretionary SELL
+  settled_cash_buffer_pct:  0.05   # v2.1 — total BUY notional ≤ settled buying power ×
+                                   # (1 − this). Cash account: same-day SELL proceeds
+                                   # are NOT spendable (Oct 2 2026: 3 funded BUYs never
+                                   # reached the broker). The margin covers Robinhood's
+                                   # market-order price collar + a stale-price re-quote.
 
 trading:
   rebalance_weekday: 2             # 0=Mon … 2=Wed … 4=Fri; Thu/Fri catch-up (§6.5)

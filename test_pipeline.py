@@ -7437,6 +7437,7 @@ class TestPolicyParity:
         "single_name_stop_pct":     0.25,           # v2.0 — risk_watch stop (§6.7)
         "safe_mode_index_drop_pct": 7,              # v2.0 — §18.5 crisis brake
         "blocked_tickers":          ["TSLA"],
+        "settled_cash_buffer_pct":  0.05,           # v2.1 — Oct 3 2026 remediation 1.2
     }
 
     def test_defaults_match_operative_baseline(self):
@@ -7453,7 +7454,7 @@ class TestPolicyParity:
         loaded = policy._load()  # reads the real policy.yaml next to the module
         for k, v in self.OPERATIVE.items():
             assert loaded[k] == v, f"policy.yaml {k}={loaded[k]!r} != operative {v!r}"
-        assert loaded["policy_version"] == "2.0-phase5-weekly"
+        assert loaded["policy_version"] == "2.1-oct3-remediation"
 
     def test_guardrails_constants_sourced_from_policy(self):
         """guardrails.* constants equal the policy values AND the operative ones."""
@@ -7506,7 +7507,7 @@ class TestPolicyParity:
     def test_policy_version_helper(self):
         import policy
         assert policy.policy_version() == policy.VALUES["policy_version"]
-        assert policy.policy_version() == "2.0-phase5-weekly"
+        assert policy.policy_version() == "2.1-oct3-remediation"
 
     def test_validation_rejects_units_typo_keeps_cap(self, tmp_path):
         """A percent/fraction units typo (10 instead of 0.10) must NOT disable the cap —
@@ -11400,3 +11401,145 @@ class TestRunDailyCycleSmoke:
         assert [d["ticker"] for d in row["post_cro_decisions"]] == ["GS"]  # intent kept
         pending = _j.loads((tmp_path / "pending_decisions.json").read_text())
         assert row["final_decisions"] == pending["decisions"]    # log agrees with envelope
+
+    # Oct 3 2026 remediation 1.2 — settled-cash guard, end to end.
+    def test_rotation_buy_clamped_to_settled_cash(self, monkeypatch, tmp_path):
+        import json as _j
+        portfolio = {"cash": 20.0, "buying_power": 20.0, "total_value": 500.0, "positions": [
+            {"symbol": "JPM", "qty": 2.0, "avg_price": 100.0, "available_qty": 2.0,
+             "current_price": 110.0, "market_value": 220.0, "unrealized_pnl": 20.0}]}
+        decisions = [
+            {"ticker": "JPM", "action": "SELL", "target_weight": 0.0,
+             "source_of_capital": "cash", "rationale": "rotate"},
+            {"ticker": "MSFT", "action": "BUY", "target_weight": 0.09,
+             "source_of_capital": "JPM", "expected_return": 0.10, "rationale": "rotate"}]
+        self._run(monkeypatch, tmp_path, decisions, portfolio=portfolio)
+        pending = _j.loads((tmp_path / "pending_decisions.json").read_text())
+        buys = [d for d in pending["decisions"] if d["action"] == "BUY"]
+        assert buys, "BUY should survive, clamped"
+        msft_px = 100.0   # TICKERS[0] price in _market_data
+        assert buys[0]["qty"] * msft_px <= 20.0 + 1e-6
+        health = _j.loads((tmp_path / "system_health.json").read_text())
+        mods = health["checks"]["decision_validation"].get("modified", [])
+        assert any("settled-cash" in m["reason"] for m in mods)
+
+
+# ── Oct 3 2026 remediation 1.2 — settled-cash guard ──────────────────────────
+
+class TestSettledCashGuard:
+    """enforce_settled_cash: a CASH account cannot spend same-day SELL proceeds.
+    Seeded with the verbatim 2026-10-02 rotation (run 20261002-164823): SELLs of
+    JNJ/AXP/CB filled; BUYs of JPM/NEM/NVDA (9% each, $44.71) never reached the
+    broker because Robinhood reported buying_power $32.65 against $157.21 cash."""
+
+    PRICES = {"JPM": {"close": 333.18}, "NEM": {"close": 114.32}, "NVDA": {"close": 230.86},
+              "JNJ": {"close": 258.66}, "AXP": {"close": 302.09}, "CB": {"close": 331.30}}
+
+    def _oct2_decisions(self):
+        return [
+            {"ticker": "JNJ", "action": "SELL", "qty": 0.178711, "target_weight": 0.0},
+            {"ticker": "AXP", "action": "SELL", "qty": 0.119992, "target_weight": 0.0},
+            {"ticker": "CB",  "action": "SELL", "qty": 0.128512, "target_weight": 0.0},
+            {"ticker": "JPM", "action": "BUY",  "qty": 0.134191, "target_weight": 0.09,
+             "source_of_capital": "AXP"},
+            {"ticker": "NEM", "action": "BUY",  "qty": 0.391094, "target_weight": 0.09,
+             "source_of_capital": "JNJ"},
+            {"ticker": "NVDA", "action": "BUY", "qty": 0.193667, "target_weight": 0.09,
+             "source_of_capital": "CB"},
+        ]
+
+    def _buy_total(self, decisions):
+        return sum(d["qty"] * self.PRICES[d["ticker"]]["close"]
+                   for d in decisions if d["action"] == "BUY")
+
+    def test_oct2_replay_clamps_buys_to_settled_cash(self):
+        from guardrails import enforce_settled_cash
+        portfolio = {"cash": 32.65, "buying_power": 32.65, "total_value": 496.78}
+        kept, rejected, clamped = enforce_settled_cash(
+            self._oct2_decisions(), portfolio, self.PRICES, buffer_pct=0.05)
+        assert self._buy_total(kept) <= 32.65 * 0.95 + 1e-6
+        assert [d["ticker"] for d in kept if d["action"] == "SELL"] == ["JNJ", "AXP", "CB"]
+        assert {d["ticker"] for d in clamped} == {"JPM", "NEM", "NVDA"}
+        assert rejected == []
+        # Relative sizing preserved: every BUY scaled by the same factor.
+        orig = {d["ticker"]: d["qty"] for d in self._oct2_decisions() if d["action"] == "BUY"}
+        ratios = {d["ticker"]: d["qty"] / orig[d["ticker"]] for d in clamped}
+        assert max(ratios.values()) - min(ratios.values()) < 1e-4
+        for d in clamped:
+            assert "settled-cash clamp" in d["clamped_reason"]
+            assert d["target_weight"] < 0.09
+
+    def test_under_budget_is_untouched(self):
+        from guardrails import enforce_settled_cash
+        portfolio = {"cash": 157.21, "buying_power": 157.21, "total_value": 496.35}
+        decisions = self._oct2_decisions()
+        kept, rejected, clamped = enforce_settled_cash(decisions, portfolio, self.PRICES)
+        assert kept == decisions and rejected == [] and clamped == []
+
+    def test_missing_buying_power_falls_back_to_cash(self):
+        """An unsynced routine writes no buying_power — pre-trade cash is used,
+        which already excludes today's SELL proceeds (never looser than before)."""
+        from guardrails import enforce_settled_cash
+        kept, _, clamped = enforce_settled_cash(
+            self._oct2_decisions(), {"cash": 32.65, "total_value": 496.78},
+            self.PRICES, buffer_pct=0.05)
+        assert self._buy_total(kept) <= 32.65 * 0.95 + 1e-6
+        assert "pre-trade cash" in clamped[0]["clamped_reason"]
+
+    def test_unparseable_buying_power_falls_back_to_cash(self):
+        from guardrails import enforce_settled_cash
+        kept, _, _ = enforce_settled_cash(
+            self._oct2_decisions(), {"cash": 32.65, "buying_power": "n/a"},
+            self.PRICES, buffer_pct=0.0)
+        assert self._buy_total(kept) <= 32.65 + 1e-6
+
+    def test_string_buying_power_is_parsed(self):
+        from guardrails import enforce_settled_cash
+        kept, _, _ = enforce_settled_cash(
+            self._oct2_decisions(), {"cash": 999.0, "buying_power": "32.6500"},
+            self.PRICES, buffer_pct=0.0)
+        assert self._buy_total(kept) <= 32.65 + 1e-6   # buying_power wins over cash
+
+    def test_below_floor_after_scaling_is_dropped(self):
+        from guardrails import enforce_settled_cash
+        kept, rejected, clamped = enforce_settled_cash(
+            self._oct2_decisions(), {"cash": 12.0, "buying_power": 12.0},
+            self.PRICES, buffer_pct=0.0, min_notional=5.0)
+        # $12 across three BUYs → ~$4 each, all under the $5 floor.
+        assert {d["ticker"] for d in rejected} == {"JPM", "NEM", "NVDA"}
+        assert clamped == []
+        assert all(d["action"] == "SELL" for d in kept)
+        assert "T+1" in rejected[0]["rejected_reason"]
+
+    def test_zero_buying_power_drops_every_buy_keeps_sells(self):
+        from guardrails import enforce_settled_cash
+        kept, rejected, _ = enforce_settled_cash(
+            self._oct2_decisions(), {"cash": 0.0, "buying_power": 0.0}, self.PRICES)
+        assert len(rejected) == 3
+        assert [d["action"] for d in kept] == ["SELL", "SELL", "SELL"]
+
+    def test_never_enlarges_an_order(self):
+        from guardrails import enforce_settled_cash
+        decisions = self._oct2_decisions()
+        kept, _, _ = enforce_settled_cash(decisions, {"buying_power": 10_000.0}, self.PRICES)
+        for a, b in zip(decisions, kept):
+            assert b["qty"] <= a["qty"]
+
+    def test_holds_and_zero_qty_pass_through(self):
+        from guardrails import enforce_settled_cash
+        decisions = [{"ticker": "JPM", "action": "HOLD", "target_weight": 0.0},
+                     {"ticker": "NEM", "action": "BUY", "qty": 0, "target_weight": 0.0}]
+        kept, rejected, clamped = enforce_settled_cash(decisions, {"buying_power": 0.0}, self.PRICES)
+        assert kept == decisions and rejected == [] and clamped == []
+
+    def test_unpriced_buy_is_rejected_not_guessed(self):
+        from guardrails import enforce_settled_cash
+        decisions = [{"ticker": "ZZZZ", "action": "BUY", "qty": 1.0, "target_weight": 0.05}]
+        kept, rejected, _ = enforce_settled_cash(decisions, {"buying_power": 1000.0}, {})
+        assert kept == [] and len(rejected) == 1
+
+    def test_policy_buffer_is_governed(self):
+        import guardrails, policy
+        assert guardrails.SETTLED_CASH_BUFFER_PCT == policy.VALUES["settled_cash_buffer_pct"]
+        assert policy._VALIDATORS["settled_cash_buffer_pct"](0.05)
+        assert not policy._VALIDATORS["settled_cash_buffer_pct"](5)    # percent typo

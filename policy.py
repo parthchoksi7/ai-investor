@@ -30,7 +30,7 @@ import os
 # historical constants; each §18.4 migration updates BOTH policy.yaml and this
 # baseline together (TestPolicyParity asserts they stay identical).
 _DEFAULTS: dict = {
-    "policy_version":           "2.0-builtin-defaults",
+    "policy_version":           "2.1-builtin-defaults",
     "max_target_weight":        0.10,
     "max_buy_notional_pct":     0.12,
     "min_order_notional":       5.00,
@@ -45,6 +45,8 @@ _DEFAULTS: dict = {
     "single_name_stop_pct":     0.25,           # −25% from cost basis (risk_watch, §6.7)
     "safe_mode_index_drop_pct": 7,              # PERCENT — SPY 1-day drop halts BUYs (§18.5)
     "blocked_tickers":          ["TSLA"],
+    # v2.1 (Oct 3 2026 remediation) additions:
+    "settled_cash_buffer_pct":  0.05,           # BUYs ≤ settled buying power × (1 − this)
     # data-quality: 1-day move > this PERCENT with no corporate action = suspect print
     "price_outlier_pct":        35,
 }
@@ -77,6 +79,8 @@ _VALIDATORS = {
     "min_holding_trading_days": lambda v: _is_int(v) and v >= 0,
     "wash_sale_reentry_days":   lambda v: _is_int(v) and v >= 0,
     "tax_aware_hold_window_trading_days": lambda v: _is_int(v) and v >= 0,
+    # a FRACTION margin in [0, 0.5) — `5` (percent typo) would leave no budget at all
+    "settled_cash_buffer_pct":  lambda v: _is_num(v) and 0 <= v < 0.5,
     # weekday index — Mon..Fri only (a weekend rebalance day would silently never fire)
     "rebalance_weekday":        lambda v: _is_int(v) and 0 <= v <= 4,
     # PERCENT (1..100) — a fraction typo (0.35 / 0.07) or an absurd value is rejected
