@@ -202,6 +202,13 @@ def _reconcile_trade_log(run_id: str, fills: dict) -> int:
             if fill.get("order_id"):
                 row["broker_order_id"] = fill["order_id"]
             if fill.get("price"):
+                try:
+                    _decision_px = float(row.get("price") or 0)
+                except (TypeError, ValueError):
+                    _decision_px = 0.0
+                row["fill_price"] = f"{float(fill['price']):.4f}"
+                if _decision_px > 0 and not row.get("slippage_bps"):
+                    row["slippage_bps"] = f"{(float(fill['price']) / _decision_px - 1) * 1e4:.1f}"
                 row["price"] = f"{float(fill['price']):.4f}"
                 if row.get("qty"):
                     notional = float(row["qty"]) * float(fill["price"])
@@ -251,8 +258,30 @@ def _reconcile_journal(run_id: str, fills: dict) -> int:
     return changed
 
 
+def assign_ref_ids(decisions: list) -> list:
+    """Stamp a broker idempotency key (uuid4 `ref_id`) on every BUY/SELL decision
+    that lacks one. Idempotent; mutates and returns `decisions`.
+
+    The routine used to have its LLM type ref_ids by hand. Some were not valid
+    UUIDs (`c3f95e82-4d6a-5b13-c25f-…`); others followed a reusable template
+    (`a1b2c3d4-0001-4001-8001-aabbccddeeff` on 2026-10-02, `b2c3d4e5-0010-…` on
+    2026-06-08). A key reused across weeks can make Robinhood return the OLD
+    order for a NEW request, so the routine would record a fill that never
+    happened. Generated here, in code, the key is unique per decision, and a
+    transport-failure retry of the same decision reuses the same key (so it can
+    never double-place).
+    """
+    import uuid as _uuid_mod
+    for d in decisions or []:
+        if isinstance(d, dict) and str(d.get("action", "")).upper() in ("BUY", "SELL") \
+                and not d.get("ref_id"):
+            d["ref_id"] = str(_uuid_mod.uuid4())
+    return decisions
+
+
 def mark_transactions_live(run_id: str, fills: dict | None = None,
-                           force_flip_all: bool = False) -> None:
+                           force_flip_all: bool = False,
+                           errors: dict | None = None) -> None:
     """Reconcile ALL of a run's speculative logs against actual broker fills.
 
     main.py runs DRY_RUN=true in the cloud (robin_stocks is blocked), so it
@@ -283,7 +312,14 @@ def mark_transactions_live(run_id: str, fills: dict | None = None,
     ZERO were reconciled live, records reconciliation=FAILED on
     system_health.json — orders may have been placed with fills.json
     missing/empty, which is exactly the state that must page a human.
+
+    `errors` (optional, from order_errors.json) maps ticker -> the broker/MCP
+    error text for an order that was NOT placed. It is recorded on the
+    still-speculative transaction (`rejected_reason`) and in the reconciliation
+    check, so an unplaced order says WHY (Oct 2 2026 left no trace). An error
+    entry never marks anything live — only `fills` does.
     """
+    errors = {k: str(v)[:300] for k, v in (errors or {}).items() if k}
     if fills is None and not force_flip_all:
         raise ValueError(
             "mark_transactions_live requires broker fills (ticker -> {order_id, price}, "
@@ -295,6 +331,7 @@ def mark_transactions_live(run_id: str, fills: dict | None = None,
     txs = _load_list(TRANSACTIONS_FILE)
     run_txs = [tx for tx in txs if tx.get("run_id") == run_id]
     updated = 0
+    noted = 0
     for tx in run_txs:
         if not tx.get("dry_run"):
             continue
@@ -312,12 +349,19 @@ def mark_transactions_live(run_id: str, fills: dict | None = None,
                 if tx.get("qty"):
                     tx["total_value"] = round(float(tx["qty"]) * float(fill["price"]), 2)
             updated += 1
+        elif ticker in errors:
+            # Still speculative (dry_run=True) — only the reason is recorded.
+            tx["rejected_reason"] = f"broker: {errors[ticker]}"
+            noted += 1
         # else: ticker not in fills → rejected/unfilled → leave dry_run=True
-    if updated:
+    if updated or noted:
         _save(TRANSACTIONS_FILE, txs)
+    if updated:
         print(f"   ✅ Marked {updated} transaction(s) as live (run_id={run_id})")
     else:
         print(f"   ℹ️  No dry_run transactions found for run_id={run_id}")
+    if noted:
+        print(f"   📝 Recorded broker error text on {noted} unplaced order(s)")
 
     if force_flip_all:
         print("   ⚠️  EMERGENCY force_flip_all — every run transaction flipped live "
@@ -340,10 +384,14 @@ def mark_transactions_live(run_id: str, fills: dict | None = None,
                                  "missing or empty. Verify against Robinhood order history.",
                          unfilled=unfilled)
         elif unfilled:
+            why = "; ".join(f"{t}: {errors[t]}" for t in unfilled if t in errors)
             append_check("reconciliation", DEGRADED,
                          message=f"{len(unfilled)} of {len(run_txs)} order(s) not accepted by "
-                                 "broker — kept speculative (dry_run/rejected)",
-                         unfilled=unfilled, filled=sorted(fills))
+                                 "broker — kept speculative (dry_run/rejected)"
+                                 + (f". Broker said: {why}" if why else
+                                    ". No broker error recorded (order_errors.json empty)"),
+                         unfilled=unfilled, filled=sorted(fills),
+                         errors={t: errors[t] for t in unfilled if t in errors})
         else:
             append_check("reconciliation", OK, filled=sorted(fills))
 

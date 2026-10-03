@@ -47,7 +47,7 @@ from zoneinfo import ZoneInfo
 
 from execute import (get_portfolio_summary, execute_trades, log_trades,
                      order_executed, StalePortfolioError, BLOCKED_TICKERS, DRY_RUN)
-from journal import (check_kill_switches, record_transaction, record_trade,
+from journal import (assign_ref_ids, check_kill_switches, record_transaction, record_trade,
                      close_position, mark_execution_started, mark_pending_executed,
                      _load, LAST_REBALANCE_FILE)
 from market_calendar import iso_week_of
@@ -191,6 +191,9 @@ def run_risk_watch() -> None:
     # date+executed_at idempotency applies unchanged.
     prices = {p["symbol"]: {"close": float(p.get("current_price") or 0)}
               for p in portfolio.get("positions", []) if p.get("symbol")}
+    # Broker idempotency keys generated in code, never typed by the routine's LLM
+    # (Oct 3 2026 remediation 1.3 — see journal.assign_ref_ids).
+    assign_ref_ids(decisions)
     with open("pending_decisions.json", "w") as f:
         _json.dump({
             "run_id":               run_id,

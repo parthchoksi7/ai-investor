@@ -11543,3 +11543,76 @@ class TestSettledCashGuard:
         assert guardrails.SETTLED_CASH_BUFFER_PCT == policy.VALUES["settled_cash_buffer_pct"]
         assert policy._VALIDATORS["settled_cash_buffer_pct"](0.05)
         assert not policy._VALIDATORS["settled_cash_buffer_pct"](5)    # percent typo
+
+
+# ── Oct 3 2026 remediation 1.3 — code-generated ref_ids, broker error text ───
+
+class TestRefIdsAndOrderErrors:
+    def test_assign_ref_ids_stamps_orders_only_and_is_idempotent(self):
+        import uuid
+        from journal import assign_ref_ids
+        ds = [{"ticker": "A", "action": "BUY"}, {"ticker": "B", "action": "sell"},
+              {"ticker": "C", "action": "HOLD"}]
+        assign_ref_ids(ds)
+        assert "ref_id" not in ds[2]
+        first = [ds[0]["ref_id"], ds[1]["ref_id"]]
+        for r in first:
+            assert uuid.UUID(r).version == 4          # a real uuid4, not a hand-typed pattern
+        assert first[0] != first[1]
+        assign_ref_ids(ds)                             # re-stamping keeps the same keys
+        assert [ds[0]["ref_id"], ds[1]["ref_id"]] == first
+
+    def test_rebalance_envelope_carries_ref_ids(self, monkeypatch, tmp_path):
+        import json as _j
+        smoke = TestRunDailyCycleSmoke()
+        decisions = [{"ticker": "MSFT", "action": "BUY", "target_weight": 0.05,
+                      "source_of_capital": "cash", "expected_return": 0.10, "rationale": "x"}]
+        smoke._run(monkeypatch, tmp_path, decisions)
+        pending = _j.loads((tmp_path / "pending_decisions.json").read_text())
+        assert all(d.get("ref_id") for d in pending["decisions"]
+                   if d["action"] in ("BUY", "SELL"))
+
+    def _seed(self, tmp_path, monkeypatch):
+        import json as _j, journal
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "transactions.json").write_text(_j.dumps([
+            {"run_id": "r1", "ticker": "AXP", "action": "SELL", "qty": 0.1, "dry_run": True},
+            {"run_id": "r1", "ticker": "NVDA", "action": "BUY", "qty": 0.2, "dry_run": True}]))
+        (tmp_path / "system_health.json").write_text(_j.dumps(
+            {"run_id": "r1", "date": "2026-10-02", "overall_status": "OK", "checks": {}, "alerts": []}))
+        return journal
+
+    def test_errors_recorded_but_never_marked_live(self, tmp_path, monkeypatch):
+        import json as _j
+        journal = self._seed(tmp_path, monkeypatch)
+        journal.mark_transactions_live("r1", {"AXP": {"order_id": "o1", "price": 302.87}},
+                                       errors={"NVDA": "insufficient buying power"})
+        txs = {t["ticker"]: t for t in _j.loads((tmp_path / "transactions.json").read_text())}
+        assert txs["AXP"]["dry_run"] is False and txs["AXP"]["price"] == 302.87
+        assert txs["NVDA"]["dry_run"] is True                     # error ≠ fill
+        assert "insufficient buying power" in txs["NVDA"]["rejected_reason"]
+        h = _j.loads((tmp_path / "system_health.json").read_text())
+        rec = h["checks"]["reconciliation"]
+        assert rec["status"] == "DEGRADED"
+        assert "insufficient buying power" in rec["message"]
+        assert rec["errors"] == {"NVDA": "insufficient buying power"}
+
+    def test_missing_error_text_is_called_out(self, tmp_path, monkeypatch):
+        import json as _j
+        journal = self._seed(tmp_path, monkeypatch)
+        journal.mark_transactions_live("r1", {"AXP": {"order_id": "o1", "price": None}})
+        h = _j.loads((tmp_path / "system_health.json").read_text())
+        assert "No broker error recorded" in h["checks"]["reconciliation"]["message"]
+
+    def test_trade_log_records_fill_price_and_slippage(self, tmp_path, monkeypatch):
+        import csv, execute, journal
+        monkeypatch.chdir(tmp_path)
+        with open(execute.TRADE_LOG, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=execute.TRADE_LOG_FIELDS)
+            w.writeheader()
+            w.writerow({"date": "2026-10-02", "ticker": "JNJ", "action": "SELL", "qty": "0.178711",
+                        "price": "258.66", "run_id": "r1", "dry_run": "True"})
+        journal._reconcile_trade_log("r1", {"JNJ": {"order_id": "o", "price": 256.1943}})
+        row = next(csv.DictReader(open(execute.TRADE_LOG)))
+        assert row["fill_price"] == "256.1943" and row["price"] == "256.1943"
+        assert float(row["slippage_bps"]) == pytest.approx((256.1943 / 258.66 - 1) * 1e4, abs=0.1)

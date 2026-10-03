@@ -330,8 +330,9 @@ Failing toward missed trades is correct; failing toward duplicate trades is not.
 (The claim commit carries the full artifact set so the audit trail of what was
 *intended* survives even if this attempt dies during order placement.)
 
-Maintain a fills accumulator as you place orders — a dict you will write to fills.json:
-  fills = {}   # ticker -> {"order_id": <str>, "price": <float or null>}
+Maintain two accumulators as you place orders — written to fills.json / order_errors.json:
+  fills  = {}   # ticker -> {"order_id": <str>, "price": <float or null>}   (broker ACCEPTED)
+  errors = {}   # ticker -> "<broker/MCP error text>"                       (NOT placed)
 
 For each decision where action is BUY or SELL:
 
@@ -377,9 +378,13 @@ For each decision where action is BUY or SELL:
      qty = 0.648 is a valid fractional order. Place it.
      Robinhood supports fractional shares down to 0.000001.
 
-  3. PLACE ORDER — generate a fresh UUID ref_id per order for broker-side idempotency
-     (re-send the SAME ref_id only if you retry the SAME order after a transport failure;
-     never reuse it for a different order):
+  3. PLACE ORDER — use decision["ref_id"] VERBATIM as the broker idempotency key. The
+     pipeline generated it in code (uuid4). NEVER type, invent, or pattern a ref_id yourself
+     — hand-typed keys (e.g. a1b2c3d4-0001-…) can repeat across weeks, and a repeated key can
+     make the broker return an OLD order for a NEW request. Re-send the same ref_id only
+     when retrying the SAME decision after a transport failure. Only if decision["ref_id"] is
+     missing (an envelope from older code), generate one with
+     `python -c "import uuid; print(uuid.uuid4())"` and use that output:
      place_equity_order(
        account_number='YOUR_ACCOUNT_NUMBER',
        symbol=<ticker>,
@@ -387,28 +392,35 @@ For each decision where action is BUY or SELL:
        quantity=<qty from step 1>,
        type='market',
        time_in_force='gfd',
-       ref_id=<fresh uuid4>
+       ref_id=<decision["ref_id"]>
      )
 
   4. RECORD THE RESULT:
-     • If the response carries an order id, the broker ACCEPTED the order. Record it:
-         fills[<ticker>] = {"order_id": <response id>, "price": <average/executed price or null>}
-       (If the response has no fill price yet for a market order, leave price null — the
-        decision-time quote in transactions.json is then kept.)
-     • If the response is an error / rejection (no id), DO NOT add it to fills. Log the error
-       to the session output. It will correctly remain dry_run=True (never published as a fill).
+     • If the response carries an order id, the broker ACCEPTED the order. Then call
+       get_equity_orders(account_number='YOUR_ACCOUNT_NUMBER', order_id=<that id>) once and
+       read its average_price (market orders normally fill within a second). Record:
+         fills[<ticker>] = {"order_id": <response id>, "price": <average_price, or null if not
+                            filled yet>}
+       The real fill price is what makes realized P&L and tax lots match the broker; leave
+       it null only when the order is genuinely not yet filled.
+     • If the response is an error / rejection (no id), DO NOT add it to fills. Record the
+       broker's message: errors[<ticker>] = "<the error text, verbatim, ≤300 chars>". It will
+       correctly remain dry_run=True (never published as a fill).
      • If place_equity_order itself ERRORS / throws (timeout, transport failure), treat it
-       exactly like a rejection: record the error, DO NOT add it to fills, and CONTINUE to the
-       next order. One order's exception must never abort the remaining orders — with SELLs
-       placed before BUYs, aborting would strand capital in cash with the BUYs never attempted.
+       exactly like a rejection: record errors[<ticker>], DO NOT add it to fills, and CONTINUE
+       to the next order. One order's exception must never abort the remaining orders — with
+       SELLs placed before BUYs, aborting would strand capital in cash with the BUYs never
+       attempted.
 
   5. LOG the result (ticker, qty, order id or error) to the session output.
 
 Skip HOLD decisions entirely.
 If pending_decisions["decisions"] is [], skip order placement (fills stays {}) and go to the stamp step.
 
-Write the accumulator to fills.json so the stamp step can read it:
-  Write fills.json = the fills dict you built above (e.g. {"BAC": {"order_id": "...", "price": 55.52}, ...}).
+Write both accumulators so the stamp step can read them:
+  Write fills.json        = the fills dict (e.g. {"BAC": {"order_id": "...", "price": 55.52}, ...}).
+  Write order_errors.json = the errors dict (e.g. {"NVDA": "insufficient buying power"}), or {}.
+  An entry in order_errors.json NEVER marks an order live — only fills.json does.
 
 AFTER ALL ORDERS ARE PLACED (or if decisions was empty), stamp the execution —
 BUT (rebalance mode only) only if the CRO made a genuine decision. If the CRO itself
@@ -421,6 +433,7 @@ from journal import mark_pending_executed, mark_transactions_live
 p = json.load(open('pending_decisions.json'))
 h = json.load(open('system_health.json')) if os.path.exists('system_health.json') else {}
 fills = json.load(open('fills.json')) if os.path.exists('fills.json') else {}
+errors = json.load(open('order_errors.json')) if os.path.exists('order_errors.json') else {}
 cro_api_failed = h.get('checks', {}).get('agent_7_cro', {}).get('api_failed', False)
 if p.get('mode', 'rebalance') == 'risk_watch' or p['decisions'] or not cro_api_failed:
     mark_pending_executed(p['run_id'])
@@ -432,7 +445,7 @@ if p.get('mode', 'rebalance') == 'risk_watch' or p['decisions'] or not cro_api_f
     # reconciler records reconciliation=FAILED on system_health.json (paging).
     # NOTE: never call mark_transactions_live(run_id) with no fills arg — it
     # RAISES (a bare flip-all silently re-created the phantom-fill bug).
-    mark_transactions_live(p['run_id'], fills)
+    mark_transactions_live(p['run_id'], fills, errors=errors)
     print(f"Execution stamped: run_id={p['run_id']} mode={p.get('mode')} ({len(fills)} fill(s) reconciled)")
 else:
     print("Skipping execution stamp — CRO blocked trades due to API error, not a risk decision. Next retry will re-run.")
@@ -444,7 +457,7 @@ STEP 5 — Commit artifacts  (both modes)
 
 git config user.email 'ai-investor-bot@users.noreply.github.com'
 git config user.name 'AI Investor Bot'
-git add portfolio_snapshot.json system_health.json mcp_portfolio.json trades.csv decision_journal.json fundamentals_cache.json portfolio_peak.json pending_decisions.json last_rebalance.json agent_log.json transactions.json fills.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json decisions_ledger.jsonl decisions_scored.jsonl counterfactual.json
+git add portfolio_snapshot.json system_health.json mcp_portfolio.json trades.csv decision_journal.json fundamentals_cache.json portfolio_peak.json pending_decisions.json last_rebalance.json agent_log.json transactions.json fills.json order_errors.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json decisions_ledger.jsonl decisions_scored.jsonl counterfactual.json
 git diff --staged --quiet || git commit -m 'chore: daily cycle'
 
 # Push WITH a rebase retry. Orders are already LIVE — this push carries the executed_at stamp,
