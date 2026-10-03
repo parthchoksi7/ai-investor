@@ -1,12 +1,12 @@
-# Pipeline-Integrity Digest — week ending 2026-09-19
+# Pipeline-Integrity Digest — week ending 2026-10-03
 
-_Window: 2026-09-13 .. 2026-09-19 · §15.5 weekly summary_
+_Window: 2026-09-27 .. 2026-10-03 · §15.5 weekly summary_
 
 ## Data quality
-- **Runs logged:** 10
-- **Fundamental coverage:** last 95.5% (min 94.9%, max 95.5%)
-- **Data-quality score:** avg 92.5 (min 85)
-- **Status mix:** {'OK': 5, 'DEGRADED': 5}
+- **Runs logged:** 3
+- **Fundamental coverage:** last 98.2% (min 95.5%, max 98.2%)
+- **Data-quality score:** avg 95.0 (min 85)
+- **Status mix:** {'OK': 2, 'DEGRADED': 1}
 
 ## Run health
 - **Health rows:** 0
@@ -14,21 +14,17 @@ _Window: 2026-09-13 .. 2026-09-19 · §15.5 weekly summary_
 - **Abort/Fail rate:** —
 
 ## ⚠ Degraded / aborted data-quality days
-- 2026-09-14: **DEGRADED** (coverage 95.5%)
-- 2026-09-15: **DEGRADED** (coverage 95.5%)
-- 2026-09-16: **DEGRADED** (coverage 95.5%)
-- 2026-09-17: **DEGRADED** (coverage 95.5%)
-- 2026-09-18: **DEGRADED** (coverage 95.5%)
+- 2026-10-02: **DEGRADED** (coverage 97.2%)
 
-## Weekly rebalance (2026-W38): ✅ executed on 2026-09-16 — 2 ticker(s) traded
+## Weekly rebalance (2026-W40): ✅ executed on 2026-10-02 — 6 ticker(s) traded
 
 ## Cash drag vs SPY (over-band cash)
-- **Cumulative: $+9.09** (cost) · avg excess cash 30.9% above the 10% band · 27 periods
+- **Cumulative: $+10.13** (cost) · avg excess cash 29.9% above the 10% band · 28 periods
 
 ## Stage C readiness
 - **ACCUMULATING — not enough evidence to decide yet**
-  - `quant.composite_score@21d` — not scored yet
-  - ✅ `persist_mean.composite_7d_mean@21d` — ic=-0.015 ci=±0.077 n_eff=649
-  - ✅ `event_present.flag@21d` — ic=-0.118 ci=±0.077 n_eff=649
+  - ⏳ `quant.composite_score@21d` — ic=-0.03 ci=±0.428 n_eff=21
+  - ✅ `persist_mean.composite_7d_mean@21d` — ic=-0.025 ci=±0.068 n_eff=822
+  - ✅ `event_present.flag@21d` — ic=-0.123 ci=±0.068 n_eff=822
 
-_Generated 2026-09-19T00:26:27_
+_Generated 2026-10-03T01:14:49_
