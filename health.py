@@ -25,6 +25,29 @@ ABORTED   = "ABORTED"
 
 _SEVERITY = {OK: 0, DEGRADED: 1, FAILED: 2, ABORTED: 3}
 
+# Checks whose DEGRADED is informational — a guard working as designed (a clamp, a
+# rejected proposal, a cash-band note), not something a human must act on. They
+# still show DEGRADED in `overall_status` and in every report; they just don't page.
+# Their FAILED/ABORTED still pages. Before this split, every weekly rebalance since
+# July 2026 opened a DEGRADED alert issue, so the Oct 2 execution failure (3 BUYs
+# never placed) arrived looking exactly like the routine weekly noise.
+INFORMATIONAL_CHECKS = frozenset({"decision_validation", "cash_discipline",
+                                  "wash_sale_presale"})
+
+
+def actionable_status(checks: dict) -> str:
+    """Worst status across checks, ignoring informational checks' DEGRADED.
+    alert.yml pages on this; overall_status is unchanged for every other reader."""
+    if not checks:
+        return FAILED
+    worst = 0
+    for name, c in checks.items():
+        sev = _SEVERITY.get((c or {}).get("status"), 0)
+        if name in INFORMATIONAL_CHECKS and sev <= _SEVERITY[DEGRADED]:
+            continue
+        worst = max(worst, sev)
+    return next(s for s, v in _SEVERITY.items() if v == worst)
+
 
 class HealthTracker:
     def __init__(self, run_id: str, date: str):
@@ -66,6 +89,7 @@ class HealthTracker:
             "date":           self.date,
             "timestamp":      datetime.now(timezone.utc).isoformat(),
             "overall_status": self.overall_status,
+            "actionable_status": actionable_status(self.checks),
             "checks":         self.checks,
             "alerts":         self.alerts,
         }
@@ -107,8 +131,9 @@ def append_check(name: str, status: str, message: str = "", **details) -> dict:
 
     For steps that run AFTER main.py has already written the health file —
     e.g. fill reconciliation in routine STEP 4. Recomputes overall_status and
-    rebuilds the alerts list: alert.yml keys off overall status, so inserting
-    a FAILED check without recomputing would hide it under a stale OK.
+    rebuilds the alerts list: alert.yml keys off actionable_status (falling back
+    to overall_status), so inserting a FAILED check without recomputing would
+    hide it under a stale OK.
     """
     data = load_last_health()
     if not data:
@@ -126,6 +151,7 @@ def append_check(name: str, status: str, message: str = "", **details) -> dict:
     ]
     worst = max((_SEVERITY.get(c.get("status"), 0) for c in checks.values()), default=0)
     data["overall_status"] = next(s for s, v in _SEVERITY.items() if v == worst)
+    data["actionable_status"] = actionable_status(checks)
     data["timestamp"] = datetime.now(timezone.utc).isoformat()
 
     tmp = HEALTH_FILE + ".tmp"

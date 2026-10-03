@@ -16,6 +16,17 @@ import pytest
 from datetime import date, timedelta
 
 
+@pytest.fixture(autouse=True)
+def _isolate_health_history(tmp_path, monkeypatch):
+    """No test may append to the REAL health_history.jsonl (Oct 3 2026: 666
+    fixture rows — run-abc, run-001, run-xyz — had accumulated in the local copy
+    because tests patched HEALTH_FILE but not HEALTH_HISTORY_FILE). A test that
+    exercises the history itself re-patches it; this only sets the default."""
+    import health
+    monkeypatch.setattr(health, "HEALTH_HISTORY_FILE",
+                        str(tmp_path / "_isolated_health_history.jsonl"))
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _make_history(closes: list[float]) -> list[dict]:
@@ -11616,3 +11627,52 @@ class TestRefIdsAndOrderErrors:
         row = next(csv.DictReader(open(execute.TRADE_LOG)))
         assert row["fill_price"] == "256.1943" and row["price"] == "256.1943"
         assert float(row["slippage_bps"]) == pytest.approx((256.1943 / 258.66 - 1) * 1e4, abs=0.1)
+
+
+
+# ── Oct 3 2026 remediation 1.4 — page only on actionable status ──────────────
+
+class TestActionableStatus:
+    def test_informational_degraded_does_not_page(self):
+        from health import actionable_status
+        checks = {"market_data": {"status": "OK"},
+                  "decision_validation": {"status": "DEGRADED"},
+                  "cash_discipline": {"status": "DEGRADED"},
+                  "wash_sale_presale": {"status": "DEGRADED"}}
+        assert actionable_status(checks) == "OK"
+
+    def test_real_degraded_pages(self):
+        from health import actionable_status
+        checks = {"decision_validation": {"status": "DEGRADED"},
+                  "reconciliation": {"status": "DEGRADED"}}   # the Oct 2 failure
+        assert actionable_status(checks) == "DEGRADED"
+
+    def test_informational_failed_still_pages(self):
+        from health import actionable_status
+        assert actionable_status({"decision_validation": {"status": "FAILED"}}) == "FAILED"
+
+    def test_no_checks_is_failed(self):
+        from health import actionable_status
+        assert actionable_status({}) == "FAILED"
+
+    def test_save_and_append_check_write_both_statuses(self, tmp_path, monkeypatch):
+        import health
+        monkeypatch.setattr(health, "HEALTH_FILE", str(tmp_path / "h.json"))
+        t = health.HealthTracker("r1", "2026-10-02")
+        t.record("decision_validation", health.DEGRADED, "1 clamped")
+        t.record("market_data", health.OK)
+        d = t.save()
+        assert d["overall_status"] == "DEGRADED" and d["actionable_status"] == "OK"
+        d = health.append_check("reconciliation", health.DEGRADED, "3 of 6 not accepted")
+        assert d["overall_status"] == "DEGRADED" and d["actionable_status"] == "DEGRADED"
+
+    def test_alert_workflow_pages_on_actionable_status(self):
+        import yaml
+        wf = yaml.safe_load(open("/".join(__file__.split("/")[:-1] + [".github/workflows/alert.yml"])))
+        steps = wf["jobs"]["alert"]["steps"]
+        read = next(s for s in steps if s.get("id") == "health")["run"]
+        assert "actionable_status" in read
+
+    def test_history_is_isolated_from_the_real_file(self):
+        import health
+        assert "_isolated_health_history" in health.HEALTH_HISTORY_FILE
