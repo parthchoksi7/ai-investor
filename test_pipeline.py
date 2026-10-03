@@ -11841,3 +11841,72 @@ class TestExpansionGateHysteresis:
         import market_data as md
         monkeypatch.chdir(tmp_path)
         assert md._prior_coverage_ok() is False
+
+
+# ── Oct 3 2026 remediation 2.5 — reconcile the audit logs to broker fills ────
+
+class TestReconcileFills:
+    ORDERS = [
+        {"order_id": "o-buy-jun8", "ticker": "AAPL", "action": "BUY", "qty": 0.127061,
+         "price": 314.9199, "date": "2026-06-08", "timestamp": "2026-06-08T15:06:30Z"},
+        {"order_id": "o-sell", "ticker": "AAPL", "action": "SELL", "qty": 0.127061,
+         "price": 293.335, "date": "2026-06-10", "timestamp": "2026-06-10T18:51:30Z"},
+        {"order_id": "o-known", "ticker": "JNJ", "action": "SELL", "qty": 0.178711,
+         "price": 256.1943, "date": "2026-10-02", "timestamp": "2026-10-02T16:52:21Z"},
+    ]
+
+    def _txs(self):
+        return [
+            {"ticker": "AAPL", "action": "SELL", "qty": 0.127061, "price": 301.54,
+             "date": "2026-06-10", "dry_run": False},                         # no id, decision quote
+            {"ticker": "JNJ", "action": "SELL", "qty": 0.178711, "price": 258.66,
+             "date": "2026-10-02", "dry_run": False, "broker_order_id": "o-known"},
+            {"ticker": "NVDA", "action": "BUY", "qty": 0.19, "price": 230.86,
+             "date": "2026-10-02", "dry_run": True},                          # unplaced — never touched
+        ]
+
+    def test_reprices_backfills_and_leaves_speculative_rows(self):
+        from reconcile_fills import reconcile_transactions
+        txs = self._txs()
+        rep = reconcile_transactions(txs, self.ORDERS)
+        assert rep["backfilled"] == ["2026-06-08 BUY AAPL"]
+        assert rep["id_stamped"] == 1 and rep["repriced"] == 2
+        by = {(t["ticker"], t["action"], t["date"]): t for t in txs}
+        assert by[("AAPL", "SELL", "2026-06-10")]["price"] == 293.335
+        assert by[("AAPL", "SELL", "2026-06-10")]["broker_order_id"] == "o-sell"
+        assert by[("AAPL", "SELL", "2026-06-10")]["decision_price"] == 301.54   # audit trail kept
+        assert by[("JNJ", "SELL", "2026-10-02")]["price"] == 256.1943
+        nvda = by[("NVDA", "BUY", "2026-10-02")]
+        assert nvda["dry_run"] is True and nvda["price"] == 230.86
+        backfill = by[("AAPL", "BUY", "2026-06-08")]
+        assert backfill["source"] == "broker_backfill" and backfill["dry_run"] is False
+
+    def test_idempotent(self):
+        from reconcile_fills import reconcile_transactions
+        txs = self._txs()
+        reconcile_transactions(txs, self.ORDERS)
+        rep = reconcile_transactions(txs, self.ORDERS)
+        assert rep["repriced"] == 0 and rep["backfilled"] == [] and rep["unchanged"] == 3
+
+    def test_backfill_closes_the_uncovered_sell(self):
+        import performance
+        from reconcile_fills import reconcile_transactions
+        txs = [t for t in self._txs() if t["ticker"] == "AAPL"]
+        _, uncovered = performance.compute_realized_lots(txs)
+        assert len(uncovered) == 1
+        reconcile_transactions(txs, self.ORDERS[:2])
+        lots, uncovered = performance.compute_realized_lots(txs)
+        assert uncovered == []
+        assert performance.realized_summary(lots)["realized_gain_pretax"] == pytest.approx(
+            0.127061 * (293.335 - 314.9199), abs=0.01)
+
+    def test_committed_logs_match_the_broker(self):
+        """The repo's transactions.json, reconciled 2026-10-03, reproduces the
+        broker's realized P&L (-$6.70) to within per-trade cent rounding."""
+        import json as _j, os, performance
+        root = os.path.dirname(os.path.abspath(__file__))
+        txs = _j.load(open(os.path.join(root, "transactions.json")))
+        cutoff = [t for t in txs if (t.get("date") or "") <= "2026-10-02"]
+        lots, uncovered = performance.compute_realized_lots(cutoff)
+        assert uncovered == []
+        assert performance.realized_summary(lots)["realized_gain_pretax"] == pytest.approx(-6.70, abs=0.05)

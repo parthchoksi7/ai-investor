@@ -1,0 +1,479 @@
+{
+ "source": "Robinhood MCP get_equity_orders(state=filled, created_at_gte=2026-06-01), agentic account, pulled 2026-10-03",
+ "note": "Authoritative broker fills used by reconcile_fills.py. Validation: FIFO realized P&L recomputed from these rows must match the broker's get_realized_pnl total (-$6.70 as of 2026-10-03).",
+ "broker_realized_pnl_total": -6.7,
+ "orders": [
+  {
+   "order_id": "6abfe150-3651-4923-8f1f-034103357fd1",
+   "symbol": "CB",
+   "side": "sell",
+   "quantity": "0.128512",
+   "average_price": "330.2401",
+   "created_at": "2026-10-02T16:52:32Z"
+  },
+  {
+   "order_id": "6abfe14b-c13d-43ea-a117-e1907c290575",
+   "symbol": "AXP",
+   "side": "sell",
+   "quantity": "0.119992",
+   "average_price": "302.8701",
+   "created_at": "2026-10-02T16:52:27Z"
+  },
+  {
+   "order_id": "6abfe145-9241-4021-9508-5853807b93aa",
+   "symbol": "JNJ",
+   "side": "sell",
+   "quantity": "0.178711",
+   "average_price": "256.1943",
+   "created_at": "2026-10-02T16:52:21Z"
+  },
+  {
+   "order_id": "6aaac8e7-fab2-402b-8602-4773eb5afe6a",
+   "symbol": "META",
+   "side": "buy",
+   "quantity": "0.071934",
+   "average_price": "676.3299",
+   "created_at": "2026-09-16T16:50:47Z"
+  },
+  {
+   "order_id": "6aaac8e1-857b-4efd-8c30-0b79469bb5cb",
+   "symbol": "GOOGL",
+   "side": "buy",
+   "quantity": "0.139755",
+   "average_price": "345.6399",
+   "created_at": "2026-09-16T16:50:41Z"
+  },
+  {
+   "order_id": "6aa1726d-ecac-41dc-9fd7-1984b139bbe8",
+   "symbol": "EOG",
+   "side": "sell",
+   "quantity": "0.319770",
+   "average_price": "146.8701",
+   "created_at": "2026-09-09T14:51:25Z"
+  },
+  {
+   "order_id": "6a984674-4c26-4362-8ad1-47efe9bf42da",
+   "symbol": "BKNG",
+   "side": "buy",
+   "quantity": "0.147316",
+   "average_price": "198.7499",
+   "created_at": "2026-09-02T15:53:24Z"
+  },
+  {
+   "order_id": "6a98466d-9d91-4a8a-aa4e-52d5b7d1ba61",
+   "symbol": "PLD",
+   "side": "sell",
+   "quantity": "0.305908",
+   "average_price": "137.3202",
+   "created_at": "2026-09-02T15:53:17Z"
+  },
+  {
+   "order_id": "6a8eef75-b930-44a2-aeeb-3d3d5856e7cb",
+   "symbol": "REGN",
+   "side": "buy",
+   "quantity": "0.032845",
+   "average_price": "824.0899",
+   "created_at": "2026-08-26T13:51:49Z"
+  },
+  {
+   "order_id": "6a8eef6e-dc94-4666-8d16-19ca674da164",
+   "symbol": "V",
+   "side": "buy",
+   "quantity": "0.116078",
+   "average_price": "382.8599",
+   "created_at": "2026-08-26T13:51:42Z"
+  },
+  {
+   "order_id": "6a8eef68-6b89-440a-b58e-60cc974c4b88",
+   "symbol": "CFG",
+   "side": "sell",
+   "quantity": "0.643275",
+   "average_price": "70.2800",
+   "created_at": "2026-08-26T13:51:36Z"
+  },
+  {
+   "order_id": "6a7dcc5e-1039-4227-a591-423969a7c994",
+   "symbol": "CVX",
+   "side": "buy",
+   "quantity": "0.237135",
+   "average_price": "194.9639",
+   "created_at": "2026-08-13T13:53:34Z"
+  },
+  {
+   "order_id": "6a7dcc58-4262-4c11-9602-22051b094072",
+   "symbol": "EBAY",
+   "side": "sell",
+   "quantity": "0.412280",
+   "average_price": "103.2801",
+   "created_at": "2026-08-13T13:53:28Z"
+  },
+  {
+   "order_id": "6a734031-be40-497c-852d-f0099b7ada26",
+   "symbol": "JNJ",
+   "side": "buy",
+   "quantity": "0.178711",
+   "average_price": "255.4999",
+   "created_at": "2026-08-05T13:52:49Z"
+  },
+  {
+   "order_id": "6a73402a-7b1c-48cf-abda-1a42472932f4",
+   "symbol": "ABNB",
+   "side": "buy",
+   "quantity": "0.303888",
+   "average_price": "152.9099",
+   "created_at": "2026-08-05T13:52:42Z"
+  },
+  {
+   "order_id": "6a60cb97-17ad-4891-8484-041c7b7f320e",
+   "symbol": "PLD",
+   "side": "buy",
+   "quantity": "0.305908",
+   "average_price": "147.4058",
+   "created_at": "2026-07-22T13:54:31Z"
+  },
+  {
+   "order_id": "6a60cb91-8e01-4031-9638-53fe7d66d266",
+   "symbol": "EOG",
+   "side": "buy",
+   "quantity": "0.319770",
+   "average_price": "145.5200",
+   "created_at": "2026-07-22T13:54:26Z"
+  },
+  {
+   "order_id": "6a60cb8c-5846-40a9-aaa8-230313e81465",
+   "symbol": "MS",
+   "side": "sell",
+   "quantity": "0.215357",
+   "average_price": "218.6801",
+   "created_at": "2026-07-22T13:54:20Z"
+  },
+  {
+   "order_id": "6a4e563a-b9a2-46d0-8303-be86517706c8",
+   "symbol": "CFG",
+   "side": "buy",
+   "quantity": "0.643275",
+   "average_price": "69.6999",
+   "created_at": "2026-07-08T13:52:58Z"
+  },
+  {
+   "order_id": "6a4e5635-fafd-4fbd-a138-e6000013a92a",
+   "symbol": "CB",
+   "side": "buy",
+   "quantity": "0.128512",
+   "average_price": "356.8051",
+   "created_at": "2026-07-08T13:52:53Z"
+  },
+  {
+   "order_id": "6a451b89-0fc3-4a09-889a-304da4b70636",
+   "symbol": "EBAY",
+   "side": "buy",
+   "quantity": "0.412280",
+   "average_price": "111.6472",
+   "created_at": "2026-07-01T13:52:10Z"
+  },
+  {
+   "order_id": "6a428662-daca-4213-9eee-06fb654a58a1",
+   "symbol": "BAC",
+   "side": "sell",
+   "quantity": "0.451037",
+   "average_price": "58.2801",
+   "created_at": "2026-06-29T14:51:14Z"
+  },
+  {
+   "order_id": "6a3d324b-c7a6-4c18-a0c7-090d4f82bea1",
+   "symbol": "LIN",
+   "side": "sell",
+   "quantity": "0.087592",
+   "average_price": "519.5301",
+   "created_at": "2026-06-25T13:51:07Z"
+  },
+  {
+   "order_id": "6a393e03-fe19-4d9b-84ad-c942448393d1",
+   "symbol": "AXP",
+   "side": "buy",
+   "quantity": "0.119992",
+   "average_price": "339.6200",
+   "created_at": "2026-06-22T13:52:03Z"
+  },
+  {
+   "order_id": "6a393dff-0ee5-40af-90be-b288c7e21db7",
+   "symbol": "VRTX",
+   "side": "buy",
+   "quantity": "0.101027",
+   "average_price": "464.6799",
+   "created_at": "2026-06-22T13:51:59Z"
+  },
+  {
+   "order_id": "6a393df8-9c26-4f56-959f-6ba79a440e16",
+   "symbol": "BAC",
+   "side": "sell",
+   "quantity": "0.276983",
+   "average_price": "57.4800",
+   "created_at": "2026-06-22T13:51:52Z"
+  },
+  {
+   "order_id": "6a393df0-9d94-4d37-ba15-ae42969c5a77",
+   "symbol": "EOG",
+   "side": "sell",
+   "quantity": "0.247912",
+   "average_price": "130.4100",
+   "created_at": "2026-06-22T13:51:44Z"
+  },
+  {
+   "order_id": "6a393deb-ed94-4874-a21d-561b2954a0f1",
+   "symbol": "AAPL",
+   "side": "sell",
+   "quantity": "0.135837",
+   "average_price": "300.8501",
+   "created_at": "2026-06-22T13:51:39Z"
+  },
+  {
+   "order_id": "6a393de5-d62e-48f8-8fdf-8aa0976714c1",
+   "symbol": "PANW",
+   "side": "sell",
+   "quantity": "0.144413",
+   "average_price": "294.5601",
+   "created_at": "2026-06-22T13:51:33Z"
+  },
+  {
+   "order_id": "6a393de0-52e9-4461-b58a-e93c600d30b8",
+   "symbol": "GS",
+   "side": "sell",
+   "quantity": "0.039584",
+   "average_price": "1107.5701",
+   "created_at": "2026-06-22T13:51:28Z"
+  },
+  {
+   "order_id": "6a3413d9-89cc-4d8d-bc2c-95dd495673b0",
+   "symbol": "LLY",
+   "side": "sell",
+   "quantity": "0.038668",
+   "average_price": "1095.5642",
+   "created_at": "2026-06-18T15:50:49Z"
+  },
+  {
+   "order_id": "6a2c0f0d-283a-4e29-a3e8-900a1171f5dc",
+   "symbol": "AAPL",
+   "side": "buy",
+   "quantity": "0.135837",
+   "average_price": "292.0950",
+   "created_at": "2026-06-12T13:52:13Z"
+  },
+  {
+   "order_id": "6a2c0f0c-d4bc-4b2f-8563-401b1718eb76",
+   "symbol": "BAC",
+   "side": "buy",
+   "quantity": "0.728020",
+   "average_price": "55.5199",
+   "created_at": "2026-06-12T13:52:12Z"
+  },
+  {
+   "order_id": "6a2c0f05-5278-466f-b77e-61ebc925d5c5",
+   "symbol": "JPM",
+   "side": "sell",
+   "quantity": "0.095754",
+   "average_price": "316.1001",
+   "created_at": "2026-06-12T13:52:05Z"
+  },
+  {
+   "order_id": "6a2c0f04-f4b3-449f-8e8a-e67e775625e1",
+   "symbol": "EQIX",
+   "side": "sell",
+   "quantity": "0.037203",
+   "average_price": "1047.9101",
+   "created_at": "2026-06-12T13:52:04Z"
+  },
+  {
+   "order_id": "6a2b04ff-43ce-4b21-b609-c2c9d136a257",
+   "symbol": "PANW",
+   "side": "buy",
+   "quantity": "0.144413",
+   "average_price": "277.2199",
+   "created_at": "2026-06-11T18:57:03Z"
+  },
+  {
+   "order_id": "6a2b04f8-8df1-4cf6-a9ba-a195b5c10310",
+   "symbol": "LLY",
+   "side": "buy",
+   "quantity": "0.038668",
+   "average_price": "1164.4299",
+   "created_at": "2026-06-11T18:56:56Z"
+  },
+  {
+   "order_id": "6a2b04ef-97fb-4f74-b0a8-79531cd0c9f6",
+   "symbol": "MRK",
+   "side": "sell",
+   "quantity": "0.289350",
+   "average_price": "122.4301",
+   "created_at": "2026-06-11T18:56:47Z"
+  },
+  {
+   "order_id": "6a29b24e-eadb-47d0-a9f1-0e11cf472f2b",
+   "symbol": "MS",
+   "side": "buy",
+   "quantity": "0.052849",
+   "average_price": "207.7300",
+   "created_at": "2026-06-10T18:51:58Z"
+  },
+  {
+   "order_id": "6a29b24c-2cd9-489b-baa9-449d65d2c76c",
+   "symbol": "LIN",
+   "side": "buy",
+   "quantity": "0.018076",
+   "average_price": "509.1850",
+   "created_at": "2026-06-10T18:51:56Z"
+  },
+  {
+   "order_id": "6a29b24b-a0a5-45be-9100-13b4429b6121",
+   "symbol": "GS",
+   "side": "buy",
+   "quantity": "0.039584",
+   "average_price": "1006.6047",
+   "created_at": "2026-06-10T18:51:55Z"
+  },
+  {
+   "order_id": "6a29b239-9865-4498-bf6d-24af78e1ec2d",
+   "symbol": "JNJ",
+   "side": "sell",
+   "quantity": "0.150539",
+   "average_price": "238.1801",
+   "created_at": "2026-06-10T18:51:37Z"
+  },
+  {
+   "order_id": "6a29b238-2186-45a9-86ac-3634f397a905",
+   "symbol": "ABBV",
+   "side": "sell",
+   "quantity": "0.133894",
+   "average_price": "225.5301",
+   "created_at": "2026-06-10T18:51:36Z"
+  },
+  {
+   "order_id": "6a29b236-b9c7-4339-877e-898d4e811da3",
+   "symbol": "PLD",
+   "side": "sell",
+   "quantity": "0.245970",
+   "average_price": "146.3901",
+   "created_at": "2026-06-10T18:51:34Z"
+  },
+  {
+   "order_id": "6a29b235-b93c-4a7a-98bb-c69a742bd6c9",
+   "symbol": "TJX",
+   "side": "sell",
+   "quantity": "0.216928",
+   "average_price": "166.4948",
+   "created_at": "2026-06-10T18:51:33Z"
+  },
+  {
+   "order_id": "6a29b233-32a5-415f-ae0f-a964bd9e3434",
+   "symbol": "BAC",
+   "side": "sell",
+   "quantity": "0.646234",
+   "average_price": "54.7601",
+   "created_at": "2026-06-10T18:51:31Z"
+  },
+  {
+   "order_id": "6a29b232-97f8-44d1-9635-67b9a53a5c55",
+   "symbol": "AAPL",
+   "side": "sell",
+   "quantity": "0.127061",
+   "average_price": "293.3350",
+   "created_at": "2026-06-10T18:51:30Z"
+  },
+  {
+   "order_id": "6a26dbab-3e03-46bc-99d0-514d9b5e6c75",
+   "symbol": "JNJ",
+   "side": "buy",
+   "quantity": "0.150539",
+   "average_price": "232.7700",
+   "created_at": "2026-06-08T15:11:39Z"
+  },
+  {
+   "order_id": "6a26dbaa-b198-4a38-8883-1e09ae9f1980",
+   "symbol": "LIN",
+   "side": "buy",
+   "quantity": "0.069516",
+   "average_price": "503.8800",
+   "created_at": "2026-06-08T15:11:38Z"
+  },
+  {
+   "order_id": "6a26dafe-deb3-410c-9572-97e571a07e89",
+   "symbol": "JPM",
+   "side": "buy",
+   "quantity": "0.095754",
+   "average_price": "313.7499",
+   "created_at": "2026-06-08T15:08:46Z"
+  },
+  {
+   "order_id": "6a26dafd-33d7-4a35-b2df-2b4fca3c3993",
+   "symbol": "ABBV",
+   "side": "buy",
+   "quantity": "0.133894",
+   "average_price": "224.4299",
+   "created_at": "2026-06-08T15:08:45Z"
+  },
+  {
+   "order_id": "6a26dafc-f152-4de4-a28c-dd845162d2b5",
+   "symbol": "EOG",
+   "side": "buy",
+   "quantity": "0.247912",
+   "average_price": "141.1199",
+   "created_at": "2026-06-08T15:08:44Z"
+  },
+  {
+   "order_id": "6a26dafb-9acf-4e83-8c0e-70afe3d380b0",
+   "symbol": "PLD",
+   "side": "buy",
+   "quantity": "0.245970",
+   "average_price": "142.4499",
+   "created_at": "2026-06-08T15:08:43Z"
+  },
+  {
+   "order_id": "6a26dafb-be05-4782-92f7-93238a7e0dd8",
+   "symbol": "TJX",
+   "side": "buy",
+   "quantity": "0.216928",
+   "average_price": "161.4800",
+   "created_at": "2026-06-08T15:08:43Z"
+  },
+  {
+   "order_id": "6a26dafa-6e1d-44fb-93a4-938563b5dffb",
+   "symbol": "MRK",
+   "side": "buy",
+   "quantity": "0.289350",
+   "average_price": "121.0800",
+   "created_at": "2026-06-08T15:08:42Z"
+  },
+  {
+   "order_id": "6a26dafa-fce8-4de1-8bd8-1b1687abd642",
+   "symbol": "BAC",
+   "side": "buy",
+   "quantity": "0.646234",
+   "average_price": "54.2199",
+   "created_at": "2026-06-08T15:08:42Z"
+  },
+  {
+   "order_id": "6a26dac9-0be0-41d3-b76a-217230b3afba",
+   "symbol": "MS",
+   "side": "buy",
+   "quantity": "0.162508",
+   "average_price": "215.4399",
+   "created_at": "2026-06-08T15:07:53Z"
+  },
+  {
+   "order_id": "6a26dac7-31b8-471f-8963-a57a8ce2f461",
+   "symbol": "EQIX",
+   "side": "buy",
+   "quantity": "0.037203",
+   "average_price": "1076.7399",
+   "created_at": "2026-06-08T15:07:51Z"
+  },
+  {
+   "order_id": "6a26da76-e1ba-46f1-a0fa-f249d23fae6c",
+   "symbol": "AAPL",
+   "side": "buy",
+   "quantity": "0.127061",
+   "average_price": "314.9199",
+   "created_at": "2026-06-08T15:06:30Z"
+  }
+ ]
+}
