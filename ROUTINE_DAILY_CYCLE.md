@@ -73,7 +73,9 @@ Branch on GATE_EXIT — do not skip this:
   • 20 (SKIP/DONE)          → Today's pipeline (either mode) already executed or claimed.
                               STOP now — re-running would risk double-execution.
 
-ON GATE_EXIT == 11 ONLY — request market data, at most once per day, then STOP.
+ON GATE_EXIT == 11 ONLY — request market data, then STOP. Re-request only if the previous
+request is more than 75 minutes old (a requested run takes ~40 min; the next hourly attempt
+re-checks).
 Pushing data_request.json starts market_data.yml within seconds instead of waiting on
 GitHub's deferred cron. Stage ONLY data_request.json, and do NOT put [skip ci] in the
 message (it would suppress the very workflow this push exists to start):
@@ -85,8 +87,13 @@ try:
     prev = json.load(open("data_request.json")).get("date")
 except Exception:
     prev = None
-if prev == today:
-    print("Market data already requested today — not re-requesting.")
+try:
+    prev_at = datetime.datetime.fromisoformat(json.load(open("data_request.json")).get("requested_at"))
+    age_min = (datetime.datetime.now(datetime.timezone.utc) - prev_at).total_seconds() / 60
+except Exception:
+    age_min = 1e9
+if prev == today and age_min < 75:
+    print(f"Market data requested {age_min:.0f} min ago — not re-requesting yet.")
 else:
     json.dump({"date": today,
                "requested_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -419,7 +426,10 @@ If pending_decisions["decisions"] is [], skip order placement (fills stays {}) a
 
 Write both accumulators so the stamp step can read them:
   Write fills.json        = the fills dict (e.g. {"BAC": {"order_id": "...", "price": 55.52}, ...}).
-  Write order_errors.json = the errors dict (e.g. {"NVDA": "insufficient buying power"}), or {}.
+  Write order_errors.json = {"run_id": <pending_decisions["run_id"]>, "errors": <the errors dict>}
+                            e.g. {"run_id": "20261007-134806", "errors": {"NVDA": "insufficient buying power"}}
+                            — write it on EVERY run, with "errors": {} when nothing failed, so a
+                            prior run's file can never be mistaken for today's.
   An entry in order_errors.json NEVER marks an order live — only fills.json does.
 
 AFTER ALL ORDERS ARE PLACED (or if decisions was empty), stamp the execution —

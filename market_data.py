@@ -365,6 +365,16 @@ def _fetch_fundamentals(ticker: str) -> dict | None:
         return _fundamentals_yfinance(ticker)
 
 
+def _cached_fundamentals(tickers: list[str]) -> dict:
+    """Fundamentals from fundamentals_cache.json without fetching (any age)."""
+    try:
+        with open(FUNDAMENTALS_CACHE) as f:
+            cache = json.load(f)
+    except Exception:
+        return {}
+    return {t: (cache.get(t) or {}).get("data") for t in tickers if t in cache}
+
+
 def get_all_fundamentals(tickers: list[str]) -> dict:
     """Fetch fundamentals for all tickers, using a weekly file cache to limit API calls."""
     cache: dict = {}
@@ -1030,6 +1040,9 @@ def get_market_snapshot(force: bool = False) -> dict:
         if expanded and expansion_only:
             new_cursor = save_batch(expansion_only, EXPANSION_BATCH_SIZE, batch_cursor)
             print(f"   🌐 expansion batch cursor advanced to {new_cursor}/{len(expansion_only)}")
+    if young_history:
+        print(f"   ⚠ young/reused-symbol history excluded from scoring: {sorted(young_history)} "
+              "— verify each and fix universe.py")
     if grouped_bars is not None:
         print(f"   📦 grouped refresh used for {grouped_used} ticker(s); "
               f"{fetched - grouped_used} per-ticker fetch(es)")
@@ -1042,7 +1055,12 @@ def get_market_snapshot(force: bool = False) -> dict:
               f"{f' ({_failed_detail})' if _failed_detail else ''}, "
               f"{carried} carried forward (≤{CARRY_FORWARD_MAX_DAYS}d, price_as_of stamped)")
 
-    fundamentals = get_all_fundamentals(scope_tickers)
+    fundamentals = get_all_fundamentals(all_tickers)
+    if grouped_only:
+        # Grouped-only expansion names take CACHED fundamentals (any age) — fetching
+        # them would reintroduce ~200 rate-limited per-ticker Polygon calls into the
+        # one-call path. SEC enrichment below still refreshes them on its own schedule.
+        fundamentals.update(_cached_fundamentals(sorted(grouped_only)))
 
     # Per-ticker deep-dive for top 4 movers (|change_pct| > 3%) — 4 Polygon calls.
     # Cap at 4 so that together with get_news_summary() above we stay within 5 calls/min.

@@ -8987,7 +8987,7 @@ class TestStageCReadiness:
 
 class TestPreflightFinalAttemptFallback:
     """Oct 2026 remediation 1.1/2.4. A rebalance blocked by late data (or API) on
-    the routine's FINAL attempt (≥12:30 ET) must run risk_watch instead of skipping
+    the routine's FINAL attempt (≥12:40 ET) must run risk_watch instead of skipping
     — Sep 23–25 and Sep 30–Oct 1 2026 had no −25% stop check at all while GitHub
     Actions was billing-blocked. Earlier attempts return 11 (stale data) so the
     routine can request a data run. A fallback risk_watch never consumes the week's
@@ -9038,10 +9038,11 @@ class TestPreflightFinalAttemptFallback:
         self._snapshot(tmp_path, self.WED)                    # fresh snapshot, no dossier
         assert self._run(tmp_path, self.WED, "12:45") == 30
 
-    def test_threshold_is_1230(self, tmp_path):
+    def test_threshold_is_1240(self, tmp_path):
+        """12:40, so a late-starting 11:45 attempt is not mistaken for the final one."""
         self._snapshot(tmp_path, "2026-06-23")
-        assert self._run(tmp_path, self.WED, "12:29") == 11
-        assert self._run(tmp_path, self.WED, "12:30") == 30
+        assert self._run(tmp_path, self.WED, "12:39") == 11
+        assert self._run(tmp_path, self.WED, "12:40") == 30
 
     def test_fresh_data_on_final_attempt_still_rebalances(self, tmp_path):
         """The fallback fires only when the rebalance is BLOCKED."""
@@ -9180,7 +9181,7 @@ class TestPreflightGateModeRouting(TestPreflightGate):
         request data / Thu catch-up), never a fallback into risk-watch: an
         executed risk_watch envelope would SKIP/DONE every later attempt and
         block a rebalance whose data arrives at 10:30. The only exception is the
-        FINAL attempt (≥12:30 ET), where no later attempt exists to block —
+        FINAL attempt (≥12:40 ET), where no later attempt exists to block —
         see TestPreflightFinalAttemptFallback."""
         self._write(tmp_path, "market_snapshot.json",
                     {"date": "2020-01-01", "prices": {}, "history": {"AAPL": [{}] * 200}})
@@ -11807,8 +11808,11 @@ class TestYoungHistoryGuard:
                 "history": {"SPY": [{"close": 1.0}] * 205},
                 "young_history_tickers": ["PARA"], "data_quality": {}}
         rep = classify_data_quality(snap)
-        assert any("young_history_tickers" in b and "PARA" in b for b in rep["breaches"])
-        assert rep["metrics"]["young_history_tickers"]["status"] == "DEGRADED"
+        m = rep["metrics"]["young_history_tickers"]
+        assert m["value"] == ["PARA"] and m["informational"] and "universe.py" in m["note"]
+        # informational: already excluded from scoring, so it must not degrade the run
+        assert m["status"] == "OK"
+        assert not any("young_history_tickers" in b for b in rep["breaches"])
 
     def test_universe_lists_psky_not_para(self):
         import universe
@@ -12126,3 +12130,79 @@ class TestGroupedDailyRefresh:
         monkeypatch.setattr(md, "get_split_tickers", lambda since: None)
         md.get_market_snapshot(force=True)
         assert "AAPL" in calls
+
+
+# ── /code-review high (2026-10-03) — regression tests for its findings ───────
+
+class TestRemediationReviewFixes:
+    def test_settled_cash_scales_the_add_not_the_final_weight(self):
+        """Held 5% → target 9%, scale 0.5: the ADD halves (to 7%), the weight must
+        not fall below the current 5% (which made the routine's re-quote skip it)."""
+        from guardrails import enforce_settled_cash
+        pf = {"total_value": 1000.0, "buying_power": 20.0 / 0.95,   # budget exactly $20 after the 5% buffer
+              "positions": [{"symbol": "V", "market_value": 50.0}]}
+        d = [{"ticker": "V", "action": "BUY", "qty": 0.1, "target_weight": 0.09}]   # $40 add
+        kept, _, clamped = enforce_settled_cash(d, pf, {"V": {"close": 400.0}}, buffer_pct=0.05)
+        assert clamped and abs(kept[0]["qty"] - 0.05) < 1e-6
+        assert kept[0]["target_weight"] == pytest.approx(0.07, abs=1e-4)
+        assert kept[0]["target_weight"] > 0.05
+
+    def test_exposure_block_skips_short_basis_beta(self):
+        from analysis import _benchmark_exposure_block
+        qs = {"A": {"beta_stable": 1.0, "beta_stable_available": True},
+              "B": {"beta_stable": 9.9, "beta_stable_available": False}}
+        out = _benchmark_exposure_block({"A": 0.5, "B": 0.5}, qs, date="2026-10-02")
+        assert "0.50" in out and "B" in out.split("excluded:")[1]
+
+    def _seed(self, tmp_path, monkeypatch):
+        import json as _j, journal
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "transactions.json").write_text(_j.dumps([
+            {"run_id": "r2", "ticker": "NVDA", "action": "BUY", "qty": 0.2, "dry_run": True},
+            {"run_id": "r2", "ticker": "JPM", "action": "BUY", "qty": 0.1, "dry_run": True}]))
+        (tmp_path / "system_health.json").write_text(_j.dumps(
+            {"run_id": "r2", "date": "2026-10-07", "overall_status": "OK", "checks": {}, "alerts": []}))
+        return journal
+
+    def test_malformed_order_errors_never_crash_reconciliation(self, tmp_path, monkeypatch):
+        import json as _j
+        journal = self._seed(tmp_path, monkeypatch)
+        journal.mark_transactions_live("r2", {"JPM": {"order_id": "o", "price": 333.0}},
+                                       errors=["insufficient buying power"])     # a list
+        txs = {t["ticker"]: t for t in _j.loads((tmp_path / "transactions.json").read_text())}
+        assert txs["JPM"]["dry_run"] is False and "rejected_reason" not in txs["NVDA"]
+
+    def test_order_errors_for_another_run_are_ignored(self, tmp_path, monkeypatch):
+        import json as _j
+        journal = self._seed(tmp_path, monkeypatch)
+        journal.mark_transactions_live("r2", {"JPM": {"order_id": "o", "price": 333.0}},
+                                       errors={"run_id": "r1", "errors": {"NVDA": "stale"}})
+        txs = {t["ticker"]: t for t in _j.loads((tmp_path / "transactions.json").read_text())}
+        assert "rejected_reason" not in txs["NVDA"]
+        journal.mark_transactions_live("r2", {"JPM": {"order_id": "o", "price": 333.0}},
+                                       errors={"run_id": "r2", "errors": {"NVDA": "no buying power"}})
+        txs = {t["ticker"]: t for t in _j.loads((tmp_path / "transactions.json").read_text())}
+        assert txs["NVDA"]["rejected_reason"] == "broker: no buying power"
+
+    def test_settled_cash_drop_pages_via_its_own_check(self, monkeypatch, tmp_path):
+        import json as _j
+        smoke = TestRunDailyCycleSmoke()
+        portfolio = {"cash": 2.0, "buying_power": 2.0, "total_value": 500.0, "positions": [
+            {"symbol": "JPM", "qty": 2.0, "avg_price": 100.0, "available_qty": 2.0,
+             "current_price": 90.0, "market_value": 180.0, "unrealized_pnl": -20.0}]}
+        decisions = [
+            {"ticker": "JPM", "action": "SELL", "target_weight": 0.0, "source_of_capital": "cash",
+             "rationale": "x"},
+            {"ticker": "MSFT", "action": "BUY", "target_weight": 0.09, "source_of_capital": "JPM",
+             "expected_return": 0.10, "rationale": "x"}]
+        smoke._run(monkeypatch, tmp_path, decisions, portfolio=portfolio)
+        h = _j.loads((tmp_path / "system_health.json").read_text())
+        assert h["checks"]["settled_cash"]["status"] == "DEGRADED"
+        assert h["actionable_status"] != "OK"          # it pages, unlike decision_validation
+
+    def test_on_demand_check_also_covers_a_stale_dossier(self):
+        import yaml
+        wf = yaml.safe_load(open("/".join(__file__.split("/")[:-1] + [".github/workflows/market_data.yml"])))
+        script = wf["jobs"]["check"]["steps"][1]["run"]
+        assert "research_dossier.json" in script and "depth >= 22" in script
+        assert wf["jobs"]["fetch"]["steps"][0]["with"]["ref"].startswith("${{ github.event_name == 'push'")

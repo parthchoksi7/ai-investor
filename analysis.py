@@ -1279,7 +1279,14 @@ def _benchmark_exposure_block(weights: dict, quant_scores: dict, date: str = "",
     invested = sum(held.values())
     beta, missing = 0.0, []
     for t, w in held.items():
-        b = (quant_scores.get(t) or {}).get("beta_stable")
+        sc = quant_scores.get(t) or {}
+        b = sc.get("beta_stable")
+        # A short-window ('short' basis) estimate is deliberately left in beta_stable
+        # but flagged unavailable — quant_engine: a consumer gating on
+        # beta_stable_available must never be handed one. List it, never sum it.
+        if sc.get("beta_stable_available") is False:
+            missing.append(t)
+            continue
         try:
             beta += w * float(b)
         except (TypeError, ValueError):

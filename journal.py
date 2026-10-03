@@ -279,6 +279,25 @@ def assign_ref_ids(decisions: list) -> list:
     return decisions
 
 
+def _coerce_order_errors(errors, run_id: str) -> dict:
+    """order_errors.json is written by the routine's LLM, so its shape is not
+    guaranteed — and this runs AFTER mark_pending_executed, where a crash would
+    leave real fills unreconciled with no check recorded. Accept the envelope
+    {"run_id": ..., "errors": {ticker: text}} only for THIS run (a stale file from
+    a prior run must not annotate today's same-ticker transaction), or a flat
+    {ticker: text} dict; anything else is ignored with a warning."""
+    if isinstance(errors, dict) and "errors" in errors:
+        if errors.get("run_id") not in (None, run_id):
+            print(f"   ⚠ order_errors.json is for run {errors.get('run_id')}, not {run_id} — ignored")
+            return {}
+        errors = errors.get("errors")
+    if not isinstance(errors, dict):
+        if errors:
+            print(f"   ⚠ order_errors.json has unexpected shape ({type(errors).__name__}) — ignored")
+        return {}
+    return {str(k): str(v)[:300] for k, v in errors.items() if k and isinstance(k, str)}
+
+
 def mark_transactions_live(run_id: str, fills: dict | None = None,
                            force_flip_all: bool = False,
                            errors: dict | None = None) -> None:
@@ -319,7 +338,7 @@ def mark_transactions_live(run_id: str, fills: dict | None = None,
     check, so an unplaced order says WHY (Oct 2 2026 left no trace). An error
     entry never marks anything live — only `fills` does.
     """
-    errors = {k: str(v)[:300] for k, v in (errors or {}).items() if k}
+    errors = _coerce_order_errors(errors, run_id)
     if fills is None and not force_flip_all:
         raise ValueError(
             "mark_transactions_live requires broker fills (ticker -> {order_id, price}, "

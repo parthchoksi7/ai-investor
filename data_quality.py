@@ -146,14 +146,16 @@ def classify_data_quality(snapshot: dict, expected_universe: int | None = None) 
     # Young/reused-symbol exclusions (Oct 2026, PARA → Banzai) → DEGRADED: the
     # names were already kept OUT of scoring by market_data, so nothing is traded
     # on them; the breach exists so the stale universe.py entry gets fixed.
+    # INFORMATIONAL, not a breach: the names were already kept OUT of scoring, so
+    # nothing traded is affected — degrading the run's status/score would mark every
+    # forecast's provenance stamp below-quality (contaminating the year-end partition)
+    # and page daily for ~6 months on a genuine new listing. Surfaced in the report
+    # and the fetch log so a stale universe.py entry still gets fixed.
     young = sorted(snapshot.get("young_history_tickers") or [])
-    metrics["young_history_tickers"] = {"value": young, "status": DEGRADED if young else OK,
-                                        "degraded_below": None, "abort_below": None}
-    if young:
-        breaches.append(f"young_history_tickers DEGRADED: {young} returned far fewer "
-                        "bars than a long-listed name — new listing or REUSED symbol; "
-                        "excluded from scoring — verify and fix universe.py")
-        n_degraded += 1
+    metrics["young_history_tickers"] = {"value": young, "status": OK, "informational": True,
+                                        "degraded_below": None, "abort_below": None,
+                                        "note": ("excluded from scoring — new listing or REUSED "
+                                                 "symbol; verify and fix universe.py") if young else ""}
 
     # Valuation coverage is REPORTED for transparency but does NOT gate. As of
     # PLAN_SEC_VALUATION Phase 3 it is SEC-derived, single-source, and climbs

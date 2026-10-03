@@ -533,6 +533,21 @@ def run_daily_cycle():
     # validate_decisions' weight clamp. Recording it keeps health DEGRADED: the PM
     # proposing a size the cap cannot hold is a signal, even though the trade
     # survives at the compliant size.
+    # A settled-cash DROP strands capital for a week — exactly the Oct 2 outcome —
+    # so it gets its own, non-informational check (decision_validation never pages).
+    # A clamp alone (BUYs scaled, still placed) is expected behavior: OK with a note.
+    if cash_rejected:
+        health.record("settled_cash", DEGRADED,
+                      message=f"{len(cash_rejected)} BUY(s) dropped — settled buying power "
+                              "could not fund them above the order floor (today's SELL "
+                              "proceeds settle T+1; capital idle until next rebalance)",
+                      dropped=[r.get("ticker") for r in cash_rejected],
+                      clamped=[c.get("ticker") for c in cash_clamped])
+    elif cash_clamped:
+        health.record("settled_cash", OK,
+                      message=f"{len(cash_clamped)} BUY(s) scaled to settled buying power",
+                      clamped=[c.get("ticker") for c in cash_clamped])
+
     for m in sector_clamped + cash_clamped:
         validation_report["modified"].append(
             {"ticker": m.get("ticker", "?"), "action": m.get("action", "?"),

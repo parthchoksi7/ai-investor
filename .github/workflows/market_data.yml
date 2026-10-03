@@ -99,13 +99,26 @@ jobs:
           fi
           TODAY=$(TZ=America/New_York date +%F)
           REQ=$(python3 -c "import json;print(json.load(open('data_request.json')).get('date') or '')" 2>/dev/null || echo "")
-          SNAP=$(python3 -c "import json;print(json.load(open('market_snapshot.json')).get('date') or '')" 2>/dev/null || echo "")
-          echo "today=$TODAY request=$REQ snapshot=$SNAP"
-          if [ "$REQ" = "$TODAY" ] && [ "$SNAP" != "$TODAY" ]; then
+          # The gate's exit 11 covers a stale SNAPSHOT, a stale/invalid DOSSIER, or a
+          # snapshot under 22 bars deep — all produced by this workflow, so a run is
+          # needed whenever ANY of them is not ready (not only a stale snapshot).
+          READY=$(python3 - <<'PY' 2>/dev/null || echo "no"
+          import json, datetime, zoneinfo
+          today = datetime.datetime.now(zoneinfo.ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+          s = json.load(open("market_snapshot.json"))
+          d = json.load(open("research_dossier.json"))
+          depth = min((len(h) for h in (s.get("history") or {}).values()), default=0)
+          ok = (s.get("date") == today and d.get("as_of") == today
+                and len(d.get("built_from_days") or []) >= 2 and depth >= 22)
+          print("yes" if ok else "no")
+          PY
+          )
+          echo "today=$TODAY request=$REQ data_ready=$READY"
+          if [ "$REQ" = "$TODAY" ] && [ "$READY" != "yes" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "On-demand request not needed (request not dated today, or today's snapshot already landed)."
+            echo "On-demand request not needed (request not dated today, or today's data is already ready)."
           fi
 
   fetch:
@@ -127,7 +140,12 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
+      # An on-demand (push) run may have waited behind an in-flight run in the
+      # concurrency group; build on the LATEST main, not the request commit, or the
+      # append-only artifacts are stale and the final push conflicts.
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'push' && 'main' || github.ref }}
 
       - uses: actions/setup-python@v6
         with:

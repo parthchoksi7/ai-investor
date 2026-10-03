@@ -27,7 +27,7 @@ Exit codes (the routine MUST branch on these):
        market_data.yml starts now rather than on GitHub's deferred cron. If all
        attempts see stale data, the Thu/Fri catch-up picks the week up; if the
        whole week misses, the heartbeat's missed-week check alerts (§15.3).
-       FINAL-ATTEMPT FALLBACK: from 12:30 ET (the routine's last scheduled attempt
+       FINAL-ATTEMPT FALLBACK: from 12:40 ET (the routine's last scheduled attempt
        is 12:45), a blocked rebalance returns 30 instead of 10/11 — the stop-loss
        check must not be skipped all day because data or the API is late. The
        risk_watch envelope never consumes the week's rebalance.
@@ -88,7 +88,12 @@ SKIP_RETRY_STALE = 11
 # still blocked runs risk_watch instead of skipping — otherwise a late data plane
 # disables the −25% stop for the whole day (Sep 23–25 and Sep 30–Oct 1 2026: five
 # trading days with no stop check while GitHub Actions was billing-blocked).
-FINAL_ATTEMPT_ET = (12, 30)
+# 12:40, not earlier: the 11:45 attempt would have to start 55 min late to be
+# mistaken for the final one (which would consume the day with risk_watch). The ET
+# times hold year-round only while the routine cron is DST-adjusted (CLAUDE.md DST
+# note); if that update is missed the fallback simply never fires — no worse than
+# before it existed.
+FINAL_ATTEMPT_ET = (12, 40)
 
 
 def _is_final_attempt() -> bool:

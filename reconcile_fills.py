@@ -20,8 +20,9 @@ P&L before use). Matching, per filled broker order:
                      else (no tx at all) → append a tx marked
                        source="broker_backfill" (dry_run=False)
   trades.csv         live row with same date / ticker / side / qty →
-                     fill_price + slippage_bps (vs the logged decision price),
-                     price := fill, total_value recomputed, broker_order_id filled
+                     fill_price, price := fill, total_value recomputed,
+                     broker_order_id filled (slippage_bps is NOT backfilled — see
+                     reconcile_trade_log)
 
 Rows are only ever corrected toward the broker; nothing is deleted. Speculative
 rows (dry_run=True — unplaced orders) are never touched or flipped.
@@ -141,8 +142,11 @@ def reconcile_trade_log(rows: list[dict], orders: list[dict]) -> dict:
         except ValueError:
             decision_px = 0.0
         r["fill_price"] = f"{o['price']:.4f}"
-        if decision_px > 0 and not r.get("slippage_bps"):
-            r["slippage_bps"] = f"{(o['price'] / decision_px - 1) * 1e4:.1f}"
+        # slippage_bps is deliberately NOT backfilled: for rows reconciled since
+        # Jun 12, `price` may already hold a routine-reported fill (or a market
+        # order's collar price), so fill-vs-`price` is not decision slippage and
+        # would corrupt the A5 dataset. Going forward, mark_transactions_live
+        # computes it at reconcile time, while `price` is still the decision quote.
         if not r.get("broker_order_id"):
             r["broker_order_id"] = o["order_id"]
         if abs(decision_px - o["price"]) > 1e-4:

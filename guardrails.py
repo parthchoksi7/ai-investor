@@ -1085,6 +1085,14 @@ def enforce_settled_cash(
         return list(decisions), [], []
 
     scale = (budget / total) if total > 0 else 0.0
+    # target_weight is the FINAL position weight, while qty is only the DELTA. For an
+    # add to an existing holding, scaling target_weight itself would land BELOW the
+    # current weight, and the routine's stale-price re-quote (target − held) would
+    # then go negative and silently skip the BUY. Scale only the ADD:
+    # new_tw = held_w + (tw − held_w) · scale.
+    _tv = float(portfolio.get("total_value") or 0) or None
+    held_w = {p.get("symbol"): (float(p.get("market_value") or 0) / _tv if _tv else 0.0)
+              for p in portfolio.get("positions", []) or []}
     kept, rejected, clamped = [], [], []
     for d in decisions:
         if not (str(d.get("action", "")).upper() == "BUY" and float(d.get("qty") or 0) > 0):
@@ -1110,8 +1118,10 @@ def enforce_settled_cash(
         reason = (f"settled-cash clamp: BUYs total ${total:,.2f} > budget ${budget:,.2f} "
                   f"({source} ${available:,.2f} less {buffer_pct:.0%}); scaled ×{scale:.3f} "
                   f"— today's SELL proceeds settle T+1")
+        tw = float(d.get("target_weight") or 0)
+        hw = min(held_w.get(d.get("ticker"), 0.0), tw)
         out = {**d, "qty": new_qty,
-               "target_weight": round(float(d.get("target_weight") or 0) * scale, 4),
+               "target_weight": round(hw + (tw - hw) * scale, 4),
                "clamped_reason": reason}
         kept.append(out)
         clamped.append(out)
