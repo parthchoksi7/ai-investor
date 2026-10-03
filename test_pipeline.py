@@ -11676,3 +11676,63 @@ class TestActionableStatus:
     def test_history_is_isolated_from_the_real_file(self):
         import health
         assert "_isolated_health_history" in health.HEALTH_HISTORY_FILE
+
+
+# ── Oct 3 2026 remediation 2.1 — trade on the recorded (full-history) scores ─
+
+class TestSelectQuantScores:
+    def _md(self, pre=None, tails=None):
+        md = {"_data_date": "2026-10-02", "date": "2026-10-02",
+              "prices": {"MTB": {"close": 180.0}, "JPM": {"close": 333.0}},
+              "history": {"MTB": _trend(150, 180, 63), "JPM": _trend(300, 333, 210),
+                          "SPY": _trend(700, 764, 210)},
+              "fundamentals": {}}
+        if pre is not None:
+            md["precomputed_scores"] = pre
+        if tails:
+            md["history_tail_tickers"] = tails
+        return md
+
+    def test_uses_precomputed_when_date_and_formula_match(self):
+        from main import select_quant_scores
+        from quant_engine import FORMULA_VERSION
+        pre = {"as_of": "2026-10-02", "formula_version": FORMULA_VERSION,
+               "scores": {"MTB": {"composite_score": 71.4}, "JPM": {"composite_score": 77.3}}}
+        scores, source, note = select_quant_scores(self._md(pre))
+        assert source == "precomputed" and note == ""
+        assert scores["MTB"]["composite_score"] == 71.4     # the RECORDED value, not a re-score
+
+    def test_stale_precomputed_falls_back_to_local(self):
+        from main import select_quant_scores
+        from quant_engine import FORMULA_VERSION
+        pre = {"as_of": "2026-10-01", "formula_version": FORMULA_VERSION,
+               "scores": {"MTB": {"composite_score": 1.0}}}
+        scores, source, note = select_quant_scores(self._md(pre))
+        assert source == "local" and "as_of" in note
+        assert scores["MTB"]["composite_score"] != 1.0
+
+    def test_formula_mismatch_falls_back_to_local(self):
+        from main import select_quant_scores
+        pre = {"as_of": "2026-10-02", "formula_version": "0.0-old",
+               "scores": {"MTB": {"composite_score": 1.0}}}
+        _, source, note = select_quant_scores(self._md(pre))
+        assert source == "local" and "formula" in note
+
+    def test_absent_precomputed_is_local(self):
+        from main import select_quant_scores
+        _, source, _ = select_quant_scores(self._md())
+        assert source == "local"
+
+    def test_name_missing_from_precomputed_is_filled_and_named(self):
+        from main import select_quant_scores
+        from quant_engine import FORMULA_VERSION
+        pre = {"as_of": "2026-10-02", "formula_version": FORMULA_VERSION,
+               "scores": {"JPM": {"composite_score": 77.3}}}
+        scores, source, note = select_quant_scores(self._md(pre))
+        assert source == "precomputed" and "MTB" in scores and "MTB" in note
+
+    def test_fetch_snapshot_embeds_scores_before_slimming(self):
+        src = open("/".join(__file__.split("/")[:-1] + ["fetch_snapshot.py"])).read()
+        embed = src.index('snapshot["precomputed_scores"]')
+        slim = src.index("slim_snapshot_for_commit(snapshot")
+        assert embed < slim, "scores must be embedded before the committed copy is slimmed"

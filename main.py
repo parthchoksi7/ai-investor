@@ -134,6 +134,44 @@ def apply_pm_backstop(decisions: list, portfolio: dict, pipeline_state: dict) ->
     return auto_exits
 
 
+def select_quant_scores(market_data: dict) -> tuple[dict, str, str]:
+    """Trade on the scores the experiment RECORDS (Oct 3 2026 remediation 2.1).
+
+    fetch_snapshot.py scores the full universe on FULL history in GitHub Actions,
+    logs it to factor_history.jsonl (what Gate 1a measures), and embeds the same
+    output in the snapshot as `precomputed_scores` — BEFORE slimming expansion
+    names to 63-bar tails. Re-scoring here on the slimmed copy gave those names a
+    63-day beta and 1-month-only momentum instead (MTB 74.5 traded vs 71.4
+    recorded on 2026-10-02). Use the embedded scores when they are for this data
+    date and this FORMULA_VERSION; otherwise score locally (the pre-existing path).
+
+    Returns (scores, source, note); source is "precomputed" or "local".
+    """
+    from quant_engine import FORMULA_VERSION
+    pre = market_data.get("precomputed_scores") or {}
+    scores = pre.get("scores") if isinstance(pre, dict) else None
+    if not (isinstance(scores, dict) and scores):
+        return score_all_tickers(market_data), "local", "no precomputed_scores in snapshot"
+    if pre.get("as_of") != market_data.get("_data_date"):
+        return (score_all_tickers(market_data), "local",
+                f"precomputed_scores as_of={pre.get('as_of')} ≠ data date {market_data.get('_data_date')}")
+    if pre.get("formula_version") != FORMULA_VERSION:
+        return (score_all_tickers(market_data), "local",
+                f"precomputed formula {pre.get('formula_version')} ≠ live {FORMULA_VERSION}")
+    scores = dict(scores)
+    missing = [t for t in market_data.get("prices", {}) if t not in scores]
+    note = ""
+    if missing:
+        # A name in today's prices but absent from the GH-side scoring (rare) gets
+        # a local score rather than none; named in the note so it is auditable.
+        local = score_all_tickers(market_data)
+        filled = [t for t in missing if t in local]
+        for t in filled:
+            scores[t] = local[t]
+        note = f"{len(filled)} name(s) scored locally: {filled[:10]}"
+    return scores, "precomputed", note
+
+
 def run_daily_cycle():
     print("\n" + "=" * 60)
     print("🤖  AI INVESTOR V3 — DAILY CYCLE STARTING")
@@ -311,7 +349,8 @@ def run_daily_cycle():
 
     # ── Step 4: Quant scores ──────────────────────────────────────────────────
     print("\n🔢  Step 4: Computing quant scores...")
-    quant_scores = score_all_tickers(market_data)
+    quant_scores, score_source, score_note = select_quant_scores(market_data)
+    print(f"   Scores: {score_source}{(' — ' + score_note) if score_note else ''}")
     top5 = sorted(quant_scores.items(), key=lambda x: x[1].get("composite_score", 0), reverse=True)[:5]
     print("   Top 5 by composite score:")
     for ticker, s in top5:
@@ -334,8 +373,18 @@ def run_daily_cycle():
         health.record("quant_scores", DEGRADED,
                       message=f"Only {real_count}/{len(all_scores)} tickers have real quant scores",
                       real_scores=real_count, total=len(all_scores))
+    elif score_source == "local" and market_data.get("history_tail_tickers"):
+        # The committed snapshot is slimmed: its tail names were scored here on a
+        # 63-bar window, NOT the full history factor_history.jsonl records — the
+        # traded composite would differ from the measured one (Oct 2026 finding).
+        health.record("quant_scores", DEGRADED,
+                      message=f"Scored locally on the slimmed snapshot ({score_note}); "
+                              f"{len(market_data['history_tail_tickers'])} tail name(s) differ "
+                              "from the recorded factor_history scores",
+                      real_scores=real_count, total=len(all_scores), source=score_source)
     else:
-        health.record("quant_scores", OK, real_scores=real_count, total=len(all_scores))
+        health.record("quant_scores", OK, real_scores=real_count, total=len(all_scores),
+                      source=score_source, note=score_note)
 
     # ── Step 5: 7-agent pipeline ──────────────────────────────────────────────
     print("\n🧠  Step 5: Running 7-agent pipeline...")
