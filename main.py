@@ -93,6 +93,32 @@ def _record_supabase_health(health, exc: Exception) -> None:
         health.record("supabase_publish", FAILED, message=msg[:200])
 
 
+def mark_thesis_exits(decisions: list, pipeline_state: dict) -> list[str]:
+    """Decide `thesis_exit` deterministically for every SELL — never trust the flag
+    from the PM's JSON (an LLM could set it to dodge the 63-day gain hold).
+
+    A thesis exit is the same 3-signal condition apply_pm_backstop uses: position
+    review REDUCE/EXIT AND hold_score < 5 AND the Devil's Advocate recommends
+    reject. It keeps the 30-day floor even for a gained position, whether the PM
+    proposed the SELL itself or the backstop added it. Returns the tickers marked."""
+    reviews = pipeline_state.get("position_reviews", {}) or {}
+    devils  = pipeline_state.get("devils_advocate", {}) or {}
+    marked = []
+    for d in decisions:
+        if str(d.get("action", "")).upper() != "SELL":
+            d.pop("thesis_exit", None)
+            continue
+        t = d.get("ticker")
+        pr, da = reviews.get(t, {}) or {}, devils.get(t, {}) or {}
+        is_exit = bool(pr.get("recommended_action") in ("REDUCE", "EXIT")
+                       and (pr.get("hold_score") or 10) < 5
+                       and da.get("recommend_reject", False))
+        d["thesis_exit"] = is_exit
+        if is_exit:
+            marked.append(t)
+    return marked
+
+
 def apply_pm_backstop(decisions: list, portfolio: dict, pipeline_state: dict) -> list[str]:
     """Force-sell deteriorating positions when 3 independent signals agree.
 
@@ -138,7 +164,7 @@ def apply_pm_backstop(decisions: list, portfolio: dict, pipeline_state: dict) ->
     return auto_exits
 
 
-def select_quant_scores(market_data: dict) -> tuple[dict, str, str]:
+def select_quant_scores(market_data: dict, held=None) -> tuple[dict, str, str]:
     """Trade on the scores the experiment RECORDS (Oct 3 2026 remediation 2.1).
 
     fetch_snapshot.py scores the full universe on FULL history in GitHub Actions,
@@ -162,15 +188,24 @@ def select_quant_scores(market_data: dict) -> tuple[dict, str, str]:
     if pre.get("formula_version") != FORMULA_VERSION:
         return (score_all_tickers(market_data), "local",
                 f"precomputed formula {pre.get('formula_version')} ≠ live {FORMULA_VERSION}")
+    scores = dict(scores)
     missing = [t for t in market_data.get("prices", {}) if t not in scores]
-    if missing:
-        # Never MIX the two: score_all_tickers beta-neutralizes across the whole
-        # cross-section, so a locally-scored name is not on the precomputed scale.
-        # A coverage gap (rare) falls back to scoring everything locally, flagged.
-        return (score_all_tickers(market_data), "local",
-                f"precomputed_scores missing {len(missing)} name(s) {missing[:10]} — "
-                "scored all names locally rather than mix scales")
-    return dict(scores), "precomputed", ""
+    if not missing:
+        return scores, "precomputed", ""
+    # A gap must not throw away every recorded score (that would re-introduce the
+    # slimmed-snapshot distortion for all tail names). An unscored NON-held name is
+    # simply left unscored (it cannot become a candidate); a HELD name needs a score
+    # for review, so it gets a local one, marked as on a different scale.
+    held = set(held or ())
+    local_needed = [t for t in missing if t in held]
+    if local_needed:
+        local = score_all_tickers(market_data)
+        for t in local_needed:
+            if t in local:
+                scores[t] = {**local[t], "score_scale": "local (not comparable to precomputed)"}
+    return (scores, "precomputed",
+            f"{len(missing)} name(s) absent from precomputed_scores {missing[:10]}: "
+            f"held ones scored locally {local_needed}, others left unscored")
 
 
 def run_daily_cycle():
@@ -350,7 +385,8 @@ def run_daily_cycle():
 
     # ── Step 4: Quant scores ──────────────────────────────────────────────────
     print("\n🔢  Step 4: Computing quant scores...")
-    quant_scores, score_source, score_note = select_quant_scores(market_data)
+    quant_scores, score_source, score_note = select_quant_scores(
+        market_data, held={p.get("symbol") for p in portfolio.get("positions", [])})
     print(f"   Scores: {score_source}{(' — ' + score_note) if score_note else ''}")
     top5 = sorted(quant_scores.items(), key=lambda x: x[1].get("composite_score", 0), reverse=True)[:5]
     print("   Top 5 by composite score:")
@@ -416,6 +452,7 @@ def run_daily_cycle():
 
     # ── PM backstop: auto-exit when 3 signals agree ──────────────────────────
     apply_pm_backstop(decisions, portfolio, pipeline_state)
+    mark_thesis_exits(decisions, pipeline_state)
 
     # Pre-compute fractional qty
     for _d in decisions:
@@ -538,9 +575,10 @@ def run_daily_cycle():
     # so it gets its own, non-informational check (decision_validation never pages).
     # A clamp alone (BUYs scaled, still placed) is expected behavior: OK with a note.
     if cash_rejected:
-        _sells = {d.get("ticker") for d in decisions if str(d.get("action", "")).upper() == "SELL"}
-        _orphan_sells = sorted({r.get("source_of_capital") for r in cash_rejected
-                                if r.get("source_of_capital") in _sells})
+        _sells = {str(d.get("ticker", "")).strip().upper() for d in decisions
+                  if str(d.get("action", "")).upper() == "SELL"}
+        _orphan_sells = sorted({str(r.get("source_of_capital", "")).strip().upper()
+                                for r in cash_rejected} & _sells)
         health.record("settled_cash", DEGRADED,
                       message=f"{len(cash_rejected)} BUY(s) dropped — settled buying power "
                               "could not fund them above the order floor (today's SELL "

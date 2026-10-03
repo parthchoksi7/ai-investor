@@ -298,6 +298,24 @@ def _coerce_order_errors(errors, run_id: str) -> dict:
     return {str(k): str(v)[:300] for k, v in errors.items() if k and isinstance(k, str)}
 
 
+def _coerce_fills(fills, run_id: str) -> dict:
+    """fills.json is what flips transactions LIVE, so a stale copy from a prior run
+    is a phantom-fill risk. Accept the envelope {"run_id": ..., "fills": {...}} only
+    for THIS run; a mismatched envelope yields {} (→ reconciliation FAILED pages a
+    human). A flat {ticker: {order_id, price}} dict is still accepted (an unsynced
+    routine writes that shape)."""
+    if isinstance(fills, dict) and "fills" in fills and "run_id" in fills:
+        if fills.get("run_id") != run_id:
+            print(f"   ⚠ fills.json is for run {fills.get('run_id')}, not {run_id} — "
+                  "ignored (treated as zero fills; verify against the broker)")
+            return {}
+        fills = fills.get("fills") or {}
+    if not isinstance(fills, dict):
+        print(f"   ⚠ fills.json has unexpected shape ({type(fills).__name__}) — treated as zero fills")
+        return {}
+    return fills
+
+
 def mark_transactions_live(run_id: str, fills: dict | None = None,
                            force_flip_all: bool = False,
                            errors: dict | None = None) -> None:
@@ -339,6 +357,8 @@ def mark_transactions_live(run_id: str, fills: dict | None = None,
     entry never marks anything live — only `fills` does.
     """
     errors = _coerce_order_errors(errors, run_id)
+    if fills is not None and not force_flip_all:
+        fills = _coerce_fills(fills, run_id)
     if fills is None and not force_flip_all:
         raise ValueError(
             "mark_transactions_live requires broker fills (ticker -> {order_id, price}, "

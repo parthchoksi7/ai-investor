@@ -337,6 +337,16 @@ Failing toward missed trades is correct; failing toward duplicate trades is not.
 (The claim commit carries the full artifact set so the audit trail of what was
 *intended* survives even if this attempt dies during order placement.)
 
+Right after the claim push succeeds, RESET both result files for THIS run so a prior run's
+copy can never be read as today's (fills.json is what flips transactions live):
+
+python - <<'PY'
+import json
+rid = json.load(open('pending_decisions.json'))['run_id']
+json.dump({"run_id": rid, "fills": {}}, open('fills.json', 'w'))
+json.dump({"run_id": rid, "errors": {}}, open('order_errors.json', 'w'))
+PY
+
 Maintain two accumulators as you place orders — written to fills.json / order_errors.json:
   fills  = {}   # ticker -> {"order_id": <str>, "price": <float or null>}   (broker ACCEPTED)
   errors = {}   # ticker -> "<broker/MCP error text>"                       (NOT placed)
@@ -425,7 +435,9 @@ Skip HOLD decisions entirely.
 If pending_decisions["decisions"] is [], skip order placement (fills stays {}) and go to the stamp step.
 
 Write both accumulators so the stamp step can read them:
-  Write fills.json        = the fills dict (e.g. {"BAC": {"order_id": "...", "price": 55.52}, ...}).
+  Write fills.json        = {"run_id": <pending_decisions["run_id"]>, "fills": <the fills dict>}
+                            e.g. {"run_id": "20261007-134806", "fills": {"BAC": {"order_id": "...", "price": 55.52}}}
+                            (a fills.json whose run_id is not this run's is ignored and pages)
   Write order_errors.json = {"run_id": <pending_decisions["run_id"]>, "errors": <the errors dict>}
                             e.g. {"run_id": "20261007-134806", "errors": {"NVDA": "insufficient buying power"}}
                             — write it on EVERY run, with "errors": {} when nothing failed, so a
@@ -456,7 +468,8 @@ if p.get('mode', 'rebalance') == 'risk_watch' or p['decisions'] or not cro_api_f
     # NOTE: never call mark_transactions_live(run_id) with no fills arg — it
     # RAISES (a bare flip-all silently re-created the phantom-fill bug).
     mark_transactions_live(p['run_id'], fills, errors=errors)
-    print(f"Execution stamped: run_id={p['run_id']} mode={p.get('mode')} ({len(fills)} fill(s) reconciled)")
+    _n = len(fills.get('fills', {})) if isinstance(fills, dict) and 'fills' in fills else len(fills)
+    print(f"Execution stamped: run_id={p['run_id']} mode={p.get('mode')} ({_n} fill(s) reconciled)")
 else:
     print("Skipping execution stamp — CRO blocked trades due to API error, not a risk decision. Next retry will re-run.")
 PY

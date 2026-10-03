@@ -126,7 +126,8 @@ def reconcile_transactions(txs: list[dict], orders: list[dict]) -> dict:
     # "live" transaction with no broker fill behind it. Reported, never auto-fixed:
     # deciding which of two rows is real needs a human with the broker statement.
     broker_ids = {o["order_id"] for o in orders}
-    first_order = min((o["date"] for o in orders), default="")
+    first_order = min((o["date"] for o in orders), default=None)
+    last_order = max((o["date"] for o in orders), default=None)
     seen: dict[str, int] = {}
     for i, t in enumerate(txs):
         if t.get("dry_run"):
@@ -137,7 +138,10 @@ def reconcile_transactions(txs: list[dict], orders: list[dict]) -> dict:
             if oid in seen:
                 report["duplicate_ids"].append(f"{label} shares broker_order_id {oid}")
             seen[oid] = i
-        if (t.get("date") or "") >= first_order and (not oid or oid not in broker_ids):
+        # Only inside the evidence window: a transaction after the file's last
+        # order (a later run) is simply not covered by this evidence.
+        if first_order and first_order <= (t.get("date") or "") <= last_order \
+                and (not oid or oid not in broker_ids):
             report["unbacked_live"].append(label)
     return report
 

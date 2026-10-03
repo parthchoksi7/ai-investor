@@ -129,7 +129,7 @@ jobs:
           # stand down rather than compete with (or displace) it. The routine's next
           # hourly attempt re-checks and may re-request.
           ACTIVE=$(gh api "repos/${{ github.repository }}/actions/workflows/market_data.yml/runs?per_page=20" \
-                     --jq "[.workflow_runs[] | select(.id != ${{ github.run_id }}) | select(.status==\"queued\" or .status==\"in_progress\" or .status==\"waiting\" or .status==\"pending\")] | length" 2>/dev/null || echo 0)
+                     --jq "[.workflow_runs[] | select(.id != ${{ github.run_id }}) | select(.event != \"push\") | select(.status==\"queued\" or .status==\"in_progress\" or .status==\"waiting\" or .status==\"pending\")] | length" 2>/dev/null || echo 0)
           echo "today=$TODAY request=$REQ data_ready=$READY other_active_runs=$ACTIVE"
           if [ "$REQ" = "$TODAY" ] && [ "$READY" != "yes" ] && [ "$ACTIVE" = "0" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"

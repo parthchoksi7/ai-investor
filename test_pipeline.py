@@ -11734,16 +11734,18 @@ class TestSelectQuantScores:
         _, source, _ = select_quant_scores(self._md())
         assert source == "local"
 
-    def test_name_missing_from_precomputed_scores_everything_locally(self):
-        """Never MIX scales: score_all_tickers beta-neutralizes across the whole
-        cross-section, so one gap means the whole set is scored locally (flagged)."""
+    def test_gap_keeps_recorded_scores_and_never_ranks_an_unscored_name(self):
+        """A gap must not discard every recorded score. An unscored non-held name is
+        left out (cannot become a candidate); a held one gets a local score, marked."""
         from main import select_quant_scores
         from quant_engine import FORMULA_VERSION
         pre = {"as_of": "2026-10-02", "formula_version": FORMULA_VERSION,
                "scores": {"JPM": {"composite_score": 77.3}}}
         scores, source, note = select_quant_scores(self._md(pre))
-        assert source == "local" and "MTB" in note and "MTB" in scores
-        assert scores["JPM"]["composite_score"] != 77.3
+        assert source == "precomputed" and scores["JPM"]["composite_score"] == 77.3
+        assert "MTB" not in scores and "MTB" in note
+        scores, _, _ = select_quant_scores(self._md(pre), held={"MTB"})
+        assert "MTB" in scores and "not comparable" in scores["MTB"]["score_scale"]
 
     def test_fetch_snapshot_embeds_scores_before_slimming(self):
         src = open("/".join(__file__.split("/")[:-1] + ["fetch_snapshot.py"])).read()
@@ -11999,10 +12001,11 @@ class TestBenchmarkExposureContext:
         # 0.4*1.3 + 0.2*-0.1 + 0.2*0.5 = 0.60, 20% cash
         assert "0.60" in out and "BELOW the band 0.8–1.2" in out and "invested 80%" in out
 
-    def test_missing_beta_is_listed_not_guessed(self):
+    def test_missing_beta_is_listed_and_imputed_not_counted_as_cash(self):
         from analysis import _benchmark_exposure_block
         out = _benchmark_exposure_block({"META": 0.5, "ZZZ": 0.4}, self.QS, date="2026-10-02")
-        assert "0.65" in out and "ZZZ" in out and "excluded" in out
+        # ZZZ imputed at the covered average (1.3): 0.5*1.3 + 0.4*1.3 = 1.17, not 0.65
+        assert "1.17" in out and "ZZZ" in out and "imputed" in out
 
     def test_sector_gap_vs_spy_is_shown(self):
         from analysis import _benchmark_exposure_block
@@ -12159,7 +12162,8 @@ class TestRemediationReviewFixes:
         qs = {"A": {"beta_stable": 1.0, "beta_stable_available": True},
               "B": {"beta_stable": 9.9, "beta_stable_available": False}}
         out = _benchmark_exposure_block({"A": 0.5, "B": 0.5}, qs, date="2026-10-02")
-        assert "0.50" in out and "B" in out.split("excluded:")[1]
+        # B's short-basis 9.9 is never summed; B is imputed at A's 1.0 → 1.00
+        assert "1.00" in out and "9.9" not in out and "B" in out.split("excluded:")[1]
 
     def _seed(self, tmp_path, monkeypatch):
         import json as _j, journal
@@ -12255,7 +12259,7 @@ class TestRemediationReviewPass2:
         assert any("2026-09-02" in u for u in rep["unbacked_live"]) is False   # id exists in evidence…
         assert any("shares broker_order_id o1" in d for d in rep["duplicate_ids"])  # …but is shared
         txs.append({"ticker": "MSFT", "action": "BUY", "qty": 0.1, "price": 500.0,
-                    "date": "2026-09-16", "dry_run": False, "broker_order_id": "ghost"})
+                    "date": "2026-08-26", "dry_run": False, "broker_order_id": "ghost"})
         rep = reconcile_transactions(txs, orders)
         assert any("MSFT" in u for u in rep["unbacked_live"])
 
@@ -12304,3 +12308,83 @@ class TestRemediationReviewPass2:
         from market_calendar import previous_trading_day
         assert previous_trading_day("2026-10-05") == date(2026, 10, 2)    # Mon → Fri
         assert previous_trading_day("2026-06-22") == date(2026, 6, 18)    # skips Juneteenth
+
+
+
+# ── /code-review high, third pass (2026-10-03) ───────────────────────────────
+
+class TestRemediationReviewPass3:
+    STATE = {"position_reviews": {"AXP": {"recommended_action": "EXIT", "hold_score": 3},
+                                  "V": {"recommended_action": "HOLD", "hold_score": 7}},
+             "devils_advocate": {"AXP": {"recommend_reject": True}, "V": {"recommend_reject": False}}}
+
+    def test_pm_proposed_broken_thesis_sell_is_a_thesis_exit(self):
+        from main import mark_thesis_exits
+        ds = [{"ticker": "AXP", "action": "SELL", "target_weight": 0.0}]
+        assert mark_thesis_exits(ds, self.STATE) == ["AXP"] and ds[0]["thesis_exit"] is True
+
+    def test_llm_cannot_set_thesis_exit_itself(self):
+        from main import mark_thesis_exits
+        ds = [{"ticker": "V", "action": "SELL", "target_weight": 0.0, "thesis_exit": True},
+              {"ticker": "MSFT", "action": "BUY", "target_weight": 0.05, "thesis_exit": True}]
+        mark_thesis_exits(ds, self.STATE)
+        assert ds[0]["thesis_exit"] is False and "thesis_exit" not in ds[1]
+
+    def test_cro_survives_garbage_buying_power(self, monkeypatch):
+        import analysis
+        captured = {}
+        monkeypatch.setattr(analysis, "_safe_call",
+                            lambda model, system, user_msg, **k:
+                            (captured.update(msg=user_msg), {"approved": True, "rejected_tickers": []})[1])
+        pf = {"total_value": 500.0, "cash": 157.21, "buying_power": "$32.65", "positions": []}
+        analysis.run_chief_risk_officer([{"ticker": "V", "action": "BUY", "target_weight": 0.05}], pf, {})
+        assert "SETTLED BUYING POWER: $157.21" in captured["msg"]      # falls back to cash, no crash
+
+    def test_settled_cash_target_tracks_the_scaled_delta(self):
+        from guardrails import enforce_settled_cash
+        # live held weight (6.1%) already above the 6% target; qty sized from the snapshot
+        pf = {"total_value": 1000.0, "buying_power": 10.0 / 0.95,
+              "positions": [{"symbol": "V", "market_value": 61.0}]}
+        d = [{"ticker": "V", "action": "BUY", "qty": 0.05, "target_weight": 0.06}]   # $20 add
+        kept, _, clamped = enforce_settled_cash(d, pf, {"V": {"close": 400.0}}, buffer_pct=0.05)
+        assert clamped and kept[0]["qty"] == pytest.approx(0.025, abs=1e-6)
+        assert kept[0]["target_weight"] == pytest.approx(0.05, abs=1e-4)   # lowered by exactly $10
+
+    def test_stale_fills_envelope_is_ignored_and_pages(self, tmp_path, monkeypatch):
+        import json as _j, journal
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "transactions.json").write_text(_j.dumps([
+            {"run_id": "r2", "ticker": "JPM", "action": "BUY", "qty": 0.1, "dry_run": True}]))
+        (tmp_path / "system_health.json").write_text(_j.dumps(
+            {"run_id": "r2", "date": "2026-10-07", "overall_status": "OK", "checks": {}, "alerts": []}))
+        journal.mark_transactions_live("r2", {"run_id": "r1", "fills": {"JPM": {"order_id": "old"}}})
+        tx = _j.loads((tmp_path / "transactions.json").read_text())[0]
+        assert tx["dry_run"] is True                                        # no phantom fill
+        h = _j.loads((tmp_path / "system_health.json").read_text())
+        assert h["checks"]["reconciliation"]["status"] == "FAILED"
+        journal.mark_transactions_live("r2", {"run_id": "r2", "fills": {"JPM": {"order_id": "new", "price": 333.0}}})
+        tx = _j.loads((tmp_path / "transactions.json").read_text())[0]
+        assert tx["dry_run"] is False and tx["broker_order_id"] == "new"
+
+    def test_uncovered_beta_is_imputed_not_counted_as_cash(self):
+        from analysis import _benchmark_exposure_block
+        qs = {"A": {"beta_stable": 1.0, "beta_stable_available": True}}
+        out = _benchmark_exposure_block({"A": 0.6, "B": 0.25}, qs, date="2026-10-02")
+        assert "0.85" in out and "imputed" in out     # 0.6*1.0 + 0.25*1.0, not 0.60
+
+    def test_unbacked_check_is_bounded_to_the_evidence_window(self):
+        from reconcile_fills import reconcile_transactions
+        orders = [{"order_id": "o1", "ticker": "V", "action": "BUY", "qty": 0.1, "price": 380.0,
+                   "date": "2026-08-26", "timestamp": "2026-08-26T13:51:42Z"}]
+        txs = [{"ticker": "V", "action": "BUY", "qty": 0.1, "price": 380.0, "date": "2026-08-26",
+                "dry_run": False, "broker_order_id": "o1"},
+               {"ticker": "NVDA", "action": "BUY", "qty": 0.2, "price": 230.0, "date": "2026-10-07",
+                "dry_run": False, "broker_order_id": "later"}]
+        assert reconcile_transactions(txs, orders)["unbacked_live"] == []
+        assert reconcile_transactions([dict(t) for t in txs], [])["unbacked_live"] == []
+
+    def test_only_scheduled_or_manual_runs_make_a_request_stand_down(self):
+        import yaml
+        wf = yaml.safe_load(open("/".join(__file__.split("/")[:-1] + [".github/workflows/market_data.yml"])))
+        assert 'select(.event != \\"push\\")' in wf["jobs"]["check"]["steps"][1]["run"] or \
+               'select(.event != \"push\")' in wf["jobs"]["check"]["steps"][1]["run"]

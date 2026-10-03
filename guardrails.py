@@ -1030,6 +1030,20 @@ def validate_decisions(
     return validated, report
 
 
+def settled_buying_power(portfolio: dict) -> tuple[float, str]:
+    """(amount, source) — settled, spendable cash. `buying_power` is written into
+    mcp_portfolio.json by the routine's LLM, so it is parsed defensively; anything
+    unparseable falls back to pre-trade `cash` (never looser than before). The ONE
+    parser for the guard and the PM/CRO prompts, so they cannot disagree."""
+    try:
+        return float(portfolio.get("buying_power")), "settled buying_power"
+    except (TypeError, ValueError):
+        try:
+            return float(portfolio.get("cash", 0) or 0), "pre-trade cash (buying_power not reported)"
+        except (TypeError, ValueError):
+            return 0.0, "unparseable cash"
+
+
 def enforce_settled_cash(
     decisions: list[dict],
     portfolio: dict,
@@ -1059,13 +1073,7 @@ def enforce_settled_cash(
     Returns (kept, rejected, clamped). The proceeds of an un-funded rotation are
     deployed at the next rebalance — the missed-trade failure direction.
     """
-    raw_bp = portfolio.get("buying_power")
-    try:
-        available = float(raw_bp)
-        source = "settled buying_power"
-    except (TypeError, ValueError):
-        available = float(portfolio.get("cash", 0) or 0)
-        source = "pre-trade cash (buying_power not reported)"
+    available, source = settled_buying_power(portfolio)
     budget = max(0.0, available * (1 - buffer_pct))
 
     def _price(d: dict) -> float | None:
@@ -1086,14 +1094,16 @@ def enforce_settled_cash(
         return list(decisions), [], []
 
     scale = (budget / total) if total > 0 else 0.0
-    # target_weight is the FINAL position weight, while qty is only the DELTA. For an
-    # add to an existing holding, scaling target_weight itself would land BELOW the
-    # current weight, and the routine's stale-price re-quote (target − held) would
-    # then go negative and silently skip the BUY. Scale only the ADD:
-    # new_tw = held_w + (tw − held_w) · scale.
-    _tv = float(portfolio.get("total_value") or 0) or None
-    held_w = {p.get("symbol"): (float(p.get("market_value") or 0) / _tv if _tv else 0.0)
-              for p in portfolio.get("positions", []) or []}
+    # target_weight is the FINAL position weight, while qty is only the DELTA. Lower
+    # the target by exactly the notional the clamp removed (same price the qty was
+    # sized at), so target and qty keep describing the same position: scaling the
+    # target itself sank an add-to-holding below its current weight, and a live
+    # held weight vs a snapshot-priced qty could disagree — either way the routine's
+    # stale-price re-quote (target − held) went ≤ 0 and silently skipped the BUY.
+    try:
+        _tv = float(portfolio.get("total_value") or 0)
+    except (TypeError, ValueError):
+        _tv = 0.0
     kept, rejected, clamped = [], [], []
     for d in decisions:
         if not (str(d.get("action", "")).upper() == "BUY" and float(d.get("qty") or 0) > 0):
@@ -1120,9 +1130,9 @@ def enforce_settled_cash(
                   f"({source} ${available:,.2f} less {buffer_pct:.0%}); scaled ×{scale:.3f} "
                   f"— today's SELL proceeds settle T+1")
         tw = float(d.get("target_weight") or 0)
-        hw = min(held_w.get(d.get("ticker"), 0.0), tw)
+        new_tw = (tw - (qty - new_qty) * p / _tv) if _tv > 0 else tw * scale
         out = {**d, "qty": new_qty,
-               "target_weight": round(hw + (tw - hw) * scale, 4),
+               "target_weight": round(max(0.0, new_tw), 4),
                "clamped_reason": reason}
         kept.append(out)
         clamped.append(out)
