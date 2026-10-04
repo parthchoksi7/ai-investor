@@ -456,6 +456,15 @@ p = json.load(open('pending_decisions.json'))
 h = json.load(open('system_health.json')) if os.path.exists('system_health.json') else {}
 fills = json.load(open('fills.json')) if os.path.exists('fills.json') else {}
 errors = json.load(open('order_errors.json')) if os.path.exists('order_errors.json') else {}
+# Unwrap the run-scoped envelopes HERE (works with old and new journal.py alike):
+# a file stamped for another run is stale and must count as zero fills / no errors.
+def _unwrap(doc, key):
+    if isinstance(doc, dict) and key in doc and 'run_id' in doc:
+        return (doc.get(key) or {}) if doc.get('run_id') == p['run_id'] else {}
+    return doc if isinstance(doc, dict) else {}
+fills, errors = _unwrap(fills, 'fills'), _unwrap(errors, 'errors')
+import inspect
+_kw = {'errors': errors} if 'errors' in inspect.signature(mark_transactions_live).parameters else {}
 cro_api_failed = h.get('checks', {}).get('agent_7_cro', {}).get('api_failed', False)
 if p.get('mode', 'rebalance') == 'risk_watch' or p['decisions'] or not cro_api_failed:
     mark_pending_executed(p['run_id'])
@@ -467,9 +476,8 @@ if p.get('mode', 'rebalance') == 'risk_watch' or p['decisions'] or not cro_api_f
     # reconciler records reconciliation=FAILED on system_health.json (paging).
     # NOTE: never call mark_transactions_live(run_id) with no fills arg — it
     # RAISES (a bare flip-all silently re-created the phantom-fill bug).
-    mark_transactions_live(p['run_id'], fills, errors=errors)
-    _n = len(fills.get('fills', {})) if isinstance(fills, dict) and 'fills' in fills else len(fills)
-    print(f"Execution stamped: run_id={p['run_id']} mode={p.get('mode')} ({_n} fill(s) reconciled)")
+    mark_transactions_live(p['run_id'], fills, **_kw)
+    print(f"Execution stamped: run_id={p['run_id']} mode={p.get('mode')} ({len(fills)} fill(s) reconciled)")
 else:
     print("Skipping execution stamp — CRO blocked trades due to API error, not a risk decision. Next retry will re-run.")
 PY
@@ -480,6 +488,9 @@ STEP 5 — Commit artifacts  (both modes)
 
 git config user.email 'ai-investor-bot@users.noreply.github.com'
 git config user.name 'AI Investor Bot'
+# order_errors.json must exist or the whole `git add` fails (one bad pathspec aborts
+# staging of every file) — e.g. a no-decision day before the file was first committed.
+[ -f order_errors.json ] || echo '{}' > order_errors.json
 git add portfolio_snapshot.json system_health.json mcp_portfolio.json trades.csv decision_journal.json fundamentals_cache.json portfolio_peak.json pending_decisions.json last_rebalance.json agent_log.json transactions.json fills.json order_errors.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json decisions_ledger.jsonl decisions_scored.jsonl counterfactual.json
 git diff --staged --quiet || git commit -m 'chore: daily cycle'
 
