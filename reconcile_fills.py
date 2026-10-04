@@ -74,7 +74,7 @@ def _same(a: float, b: float) -> bool:
 def reconcile_transactions(txs: list[dict], orders: list[dict]) -> dict:
     """Mutates `txs` in place. Returns a report dict."""
     report = {"repriced": 0, "id_stamped": 0, "backfilled": [], "unchanged": 0,
-              "unbacked_live": [], "duplicate_ids": []}
+              "unbacked_live": [], "duplicate_ids": [], "id_mismatch": []}
     broker_ids_all = {o["order_id"] for o in orders}
     used: set[int] = set()
     for o in orders:
@@ -91,9 +91,17 @@ def reconcile_transactions(txs: list[dict], orders: list[dict]) -> dict:
                         and str(t.get("ticker", "")).upper() == o["ticker"]
                         and str(t.get("action", "")).upper() == o["action"]
                         and _same(t.get("qty") or 0, o["qty"])), None)
+            if idx is not None and txs[idx].get("broker_order_id"):
+                # Attributes match but the row already carries a DIFFERENT id that is not
+                # in this evidence (an LLM-recorded ref_id — or a genuine id of a
+                # cancelled order). Ambiguous: never overwrite it, never backfill a
+                # duplicate lot either. Report it for a human with the broker statement.
+                report["id_mismatch"].append(
+                    f"{o['date']} {o['action']} {o['ticker']}: log has id "
+                    f"{txs[idx]['broker_order_id']}, broker fill is {o['order_id']}")
+                used.add(idx)
+                continue
             if idx is not None:
-                if txs[idx].get("broker_order_id"):
-                    txs[idx]["prior_broker_order_id"] = txs[idx]["broker_order_id"]
                 txs[idx]["broker_order_id"] = o["order_id"]
                 report["id_stamped"] += 1
         if idx is None:
@@ -175,8 +183,8 @@ def reconcile_trade_log(rows: list[dict], orders: list[dict]) -> dict:
         # slippage_bps is deliberately NOT backfilled: for rows reconciled since
         # Jun 12, `price` may already hold a routine-reported fill (or a market
         # order's collar price), so fill-vs-`price` is not decision slippage and
-        # would corrupt the A5 dataset. Going forward, mark_transactions_live
-        # computes it at reconcile time, while `price` is still the decision quote.
+        # would corrupt the A5 dataset. No path computes it now (the decision price
+        # is the snapshot close, not an arrival quote) — see journal._reconcile_trade_log.
         if not r.get("broker_order_id"):
             r["broker_order_id"] = o["order_id"]
         if abs(decision_px - o["price"]) > 1e-4:
@@ -225,6 +233,8 @@ def main(argv: list[str]) -> int:
         print(f"   ⚠ LIVE transaction with NO broker fill in the evidence: {u}")
     for d in tx_report["duplicate_ids"]:
         print(f"   ⚠ duplicate broker id: {d}")
+    for m in tx_report["id_mismatch"]:
+        print(f"   ⚠ id mismatch (not changed — resolve by hand): {m}")
     print(f"trades.csv: repriced {csv_report['repriced']}; broker orders with no live row: "
           f"{csv_report['unmatched_orders'] or 'none'}")
     key = next((k for k in ("realized_gain_pretax", "realized_gain", "realized") if k in after), None)

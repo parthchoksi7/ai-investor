@@ -12462,9 +12462,11 @@ class TestUltraReviewFixes:
         txs = [{"ticker": "BAC", "action": "BUY", "qty": 1.0, "price": 55.2, "date": "2026-09-02",
                 "dry_run": False, "broker_order_id": "ref-uuid-typed-by-llm"}]
         rep = reconcile_transactions(txs, orders)
+        # Ambiguous (an LLM ref_id, or a cancelled order's genuine id?): never a
+        # duplicate lot, never a silent overwrite — reported for a human.
         assert len(txs) == 1 and rep["backfilled"] == []
-        assert txs[0]["broker_order_id"] == "real-1"
-        assert txs[0]["prior_broker_order_id"] == "ref-uuid-typed-by-llm"
+        assert txs[0]["broker_order_id"] == "ref-uuid-typed-by-llm"
+        assert rep["id_mismatch"] and "real-1" in rep["id_mismatch"][0]
 
     def test_exposure_unknown_when_no_name_has_a_beta(self):
         from analysis import _benchmark_exposure_block
@@ -12512,3 +12514,67 @@ class TestUltraReviewFixes:
         text = open("/".join(__file__.split("/")[:-1] + ["ROUTINE_DAILY_CYCLE.md"])).read()
         assert "FINAL-ATTEMPT FALLBACK (MODE == rebalance only)" in text
         assert "g._is_final_attempt()" in text and "python risk_watch.py" in text
+
+
+
+# ── focused review of the ultra fixes (2026-10-04) ───────────────────────────
+
+class TestUltraFixFollowups:
+    def test_cro_api_failure_is_visible_to_the_routine(self, monkeypatch, tmp_path):
+        """The routine's stamp-skip and final-attempt fallback read
+        checks.agent_7_cro.api_failed — it was never written, so a CRO outage was
+        stamped as a completed rebalance (consuming the week)."""
+        import json as _j
+        smoke = TestRunDailyCycleSmoke()
+        state = smoke._pipeline_state([])
+        state["cro"] = {"approved": False, "rejected_tickers": [], "api_failed": True}
+        smoke._run(monkeypatch, tmp_path, [], pipeline_state=state)
+        h = _j.loads((tmp_path / "system_health.json").read_text())
+        assert h["checks"]["agent_7_cro"]["api_failed"] is True
+
+    def test_hold_score_zero_is_a_thesis_exit(self):
+        import main
+        assert main.three_signal_exit({"recommended_action": "EXIT", "hold_score": 0},
+                                      {"recommend_reject": True})
+        assert not main.three_signal_exit({"recommended_action": "EXIT"},      # missing score
+                                          {"recommend_reject": True})
+
+    def test_fills_envelope_with_extra_keys_and_no_run_id_unwraps(self):
+        from journal import _coerce_fills
+        f = {"fills": {"BAC": {"order_id": "o1", "price": 55.0}}, "errors": {}, "date": "2026-10-07"}
+        assert _coerce_fills(f, "r1") == {"BAC": {"order_id": "o1", "price": 55.0}}
+        flat = {"BAC": {"order_id": "o1"}, "fills": {}}          # a flat map is not an envelope
+        assert "BAC" in _coerce_fills(flat, "r1")
+
+    def test_settled_budget_never_negative_and_shared(self):
+        import inspect, analysis, guardrails
+        assert guardrails.settled_budget({"buying_power": -12.4})[0] == 0.0
+        assert "settled_budget(" in inspect.getsource(guardrails.enforce_settled_cash)
+        assert inspect.getsource(analysis).count("settled_budget(") >= 2
+
+    def test_grouped_mode_carries_forward_recent_unrefreshable_names(self, monkeypatch, tmp_path):
+        """A name 1–5 days stale (e.g. grouped failed yesterday) must carry forward, as
+        on the per-ticker path — not vanish from the universe."""
+        tg = TestGroupedDailyRefresh()
+        md, calls = tg._setup(monkeypatch, tmp_path, "grouped")
+        from market_calendar import previous_trading_day, most_recent_complete_trading_day
+        fresh = most_recent_complete_trading_day()            # anchor like production (weekend-safe)
+        two_ago = (date.today() - timedelta(days=2)).isoformat()
+        store = md._load_history_store()
+        gap_hist = tg._hist_through(previous_trading_day(previous_trading_day(fresh)))  # 1-bar gap
+        store["EXPB"] = {"date": two_ago, "history": gap_hist}     # 1-bar gap → not refreshable
+        md._save_history_store(store)
+        snap = md.get_market_snapshot(force=True)
+        # Present either carried forward (price_as_of stamped) or — when it happens to
+        # be today's per-ticker batch name — freshly fetched; never silently dropped.
+        assert "EXPB" in snap["history"]
+        assert "EXPB" in snap.get("price_as_of_by_ticker", {}) or "EXPB" in calls
+
+    def test_local_trade_log_does_not_book_overnight_moves_as_slippage(self):
+        import inspect, execute
+        src = inspect.getsource(execute.log_trades)
+        assert "slippage_bps = None" in src and "fill_price / price" not in src
+
+    def test_final_attempt_is_decided_at_gate_time(self):
+        text = open("/".join(__file__.split("/")[:-1] + ["ROUTINE_DAILY_CYCLE.md"])).read()
+        assert "FINAL_ATTEMPT=$(python -c" in text and "do NOT re-evaluate the clock now" in text

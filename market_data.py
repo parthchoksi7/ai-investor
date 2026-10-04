@@ -912,8 +912,17 @@ def get_market_snapshot(force: bool = False) -> dict:
                     return False
                 if e.get("date") == today_str:
                     return True
-                return grouped_refresh(e, grouped_bars.get(t), expected_fresh_through,
-                                       split_tickers, t) is not None
+                if grouped_refresh(e, grouped_bars.get(t), expected_fresh_through,
+                                   split_tickers, t) is not None:
+                    return True
+                # Not refreshable today but still inside the carry-forward window →
+                # keep it in scope so it carries forward (price_as_of stamped), exactly
+                # as the per-ticker path does; only >CARRY_FORWARD_MAX_DAYS entries drop.
+                try:
+                    age = (date.fromisoformat(today_str) - date.fromisoformat(str(e.get("date")))).days
+                except ValueError:
+                    return False
+                return age <= CARRY_FORWARD_MAX_DAYS
             grouped_only = {t for t in expansion_only if t not in _in_scope and _refreshable(t)}
             scope_tickers += sorted(grouped_only)
             print(f"   📦 grouped refresh: {len(grouped_bars)} bars for {expected_fresh_through}; "

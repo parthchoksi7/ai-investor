@@ -31,7 +31,7 @@ from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, StalePortfolioError, DRY_RUN
 from journal      import assign_ref_ids, check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions, close_position, get_ticker_history, recently_exited, consecutive_cash_above, _load_list, TRANSACTIONS_FILE
-from guardrails   import enforce_kill_switch, enforce_turnover_circuit_breaker, enforce_settled_cash, validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, enforce_tax_aware_hold, enforce_safe_mode, enforce_capital_dependency, enforce_research_backed_buys, flag_wash_sale_presale, min_hold_days_remaining, position_gained, WASH_SALE_REENTRY_DAYS
+from guardrails   import TURNOVER_CIRCUIT_BREAKER_PCT, enforce_kill_switch, enforce_turnover_circuit_breaker, enforce_settled_cash, validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, enforce_tax_aware_hold, enforce_safe_mode, enforce_capital_dependency, enforce_research_backed_buys, flag_wash_sale_presale, min_hold_days_remaining, position_gained, WASH_SALE_REENTRY_DAYS
 from build_dossier import load_dossier, validate_dossier
 from policy       import policy_version as _policy_version
 from publish      import publish_to_supabase
@@ -99,8 +99,13 @@ def three_signal_exit(position_review: dict | None, devils_advocate: dict | None
     backstop (which adds the SELL) and mark_thesis_exits (which exempts it from the
     63-day gain hold) so the two can never drift apart."""
     pr, da = position_review or {}, devils_advocate or {}
+    try:
+        hold = float(pr.get("hold_score"))
+    except (TypeError, ValueError):
+        hold = None       # genuinely missing → not a thesis-break signal
+    # `(hold_score or 10)` read a hold_score of 0 — the strongest exit signal — as 10.
     return bool(pr.get("recommended_action") in ("REDUCE", "EXIT")
-                and (pr.get("hold_score") or 10) < 5
+                and hold is not None and hold < 5
                 and da.get("recommend_reject", False))
 
 
@@ -559,7 +564,10 @@ def run_daily_cycle():
     if breaker:
         health.record("circuit_breaker", FAILED,
                       message=f"SELL notional {breaker['turnover_pct']:.0%} of the book exceeds "
-                              "the 50% one-run limit — run halted, no orders",
+                              f"the {TURNOVER_CIRCUIT_BREAKER_PCT:.0%} one-run limit — run halted, "
+                              "no orders. The (empty) envelope is still stamped, so the week's "
+                              "rebalance is consumed: an anomalous proposal is a human-review "
+                              "event, not something to retry automatically",
                       **breaker)
 
     # Wash-sale PRE-sale FLAG (A6) — the post-sale re-buy block above covers one
@@ -766,7 +774,11 @@ def run_daily_cycle():
     if not cro:
         health.record("agent_7_cro", FAILED, message="No CRO output")
     elif cro.get("api_failed"):
+        # api_failed=True MUST be on the health record: the routine's stamp step and
+        # its final-attempt fallback both read checks.agent_7_cro.api_failed — without
+        # it, a CRO outage was stamped as a completed rebalance (consuming the week).
         health.record("agent_7_cro", DEGRADED, message="CRO API error — trades BLOCKED (safety default)",
+                      api_failed=True,
                       approved=cro.get("approved"),
                       vetoed=cro.get("rejected_tickers", []))
     else:
@@ -958,18 +970,10 @@ def run_daily_cycle():
     attempted: list        = []
     execution_errors: list = []
 
-    if kill_active:
-        attempted = [d for d in decisions if d.get("action", "").upper() == "SELL"]
-        blocked   = [d for d in decisions if d.get("action", "").upper() == "BUY"]
-        if blocked:
-            print(f"\n⛔  Step 6: Kill switch active — blocking {len(blocked)} BUY(s).")
-        if attempted:
-            print(f"\n⚡  Step 6: Executing {len(attempted)} SELL(s) (kill switch active)...")
-        else:
-            print("\n⛔  Step 6: Kill switch active — no SELL orders to execute.")
-    else:
-        attempted = decisions
-        print("\n⚡  Step 6: Executing trades...")
+    # enforce_kill_switch already removed every BUY upstream when the kill switch is
+    # active, so `decisions` here is exactly what may execute (no second filter).
+    attempted = decisions
+    print(f"\n⚡  Step 6: Executing trades{' (kill switch active — SELLs only)' if kill_active else ''}...")
 
     if attempted:
         # Claim the run BEFORE the first order (stamp-first). In the cloud the

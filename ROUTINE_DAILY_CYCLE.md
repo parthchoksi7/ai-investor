@@ -49,9 +49,12 @@ envelope and every later `git push` lands on `main`:
 git fetch origin main
 git checkout -B main origin/main      # reset local main to origin/main and switch to it
 
-Run the gate and capture its exit code:
+Run the gate and capture its exit code — and, at the SAME moment, whether this is the
+routine's final attempt (decided now, at gate time, never later: a slow 11:45 attempt that
+finishes after 12:40 is still NOT the final attempt):
 python preflight_gate.py
 GATE_EXIT=$?
+FINAL_ATTEMPT=$(python -c "import preflight_gate as g; print(1 if g._is_final_attempt() else 0)" | tail -n 1)
 
 Branch on GATE_EXIT — do not skip this:
   • 0  (PROCEED/REBALANCE)  → Wednesday (or Thu/Fri catch-up for a missed week), fresh
@@ -279,14 +282,12 @@ FINAL-ATTEMPT FALLBACK (MODE == rebalance only) — apply BEFORE stopping for an
 three reasons above (CRASH GUARD fired, the validation check failed, or the CRO itself
 failed: system_health.json → checks.agent_7_cro.api_failed is true). On the routine's
 LAST attempt there is no later retry, so stopping would skip the −25% stop for the whole
-day. Check whether this is the final attempt:
+day. Use the FINAL_ATTEMPT value recorded in STEP 0 (do NOT re-evaluate the clock now):
 
-python -c "import preflight_gate as g, sys; sys.exit(0 if g._is_final_attempt() else 1)"
-
-  • exit 1 (not final) → behave exactly as without this block: STOP for a crash or a failed
-                         validation; for a CRO failure continue to STEP 4 (its stamp step skips
-                         the stamp, so the next attempt re-runs the rebalance).
-  • exit 0 (final)     → do NOT stop. Set MODE=risk_watch, run `python risk_watch.py;
+  • FINAL_ATTEMPT=0 (not final) → behave exactly as without this block: STOP for a crash or
+                         a failed validation; for a CRO failure continue to STEP 4 (its stamp
+                         step skips the stamp, so the next attempt re-runs the rebalance).
+  • FINAL_ATTEMPT=1 (final)     → do NOT stop. Set MODE=risk_watch, run `python risk_watch.py;
                          MAIN_EXIT=$?`, push health again (same two git commands as above),
                          re-run the CRASH GUARD and the validation check, and — only if both
                          pass — continue to STEP 4 with the risk_watch envelope (SELL-only;

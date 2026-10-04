@@ -237,9 +237,11 @@ def log_trades(
                 fill_price = float(fill_price_raw) if fill_price_raw else None
             except (TypeError, ValueError):
                 fill_price = None
+            # slippage_bps is NOT computed: `price` is the snapshot close (the prior
+            # session, or older for a carried-forward name), so fill-vs-it books
+            # overnight moves as execution slippage. Same rule as the cloud reconciler
+            # (journal._reconcile_trade_log); real slippage needs an arrival quote.
             slippage_bps = None
-            if fill_price and price:
-                slippage_bps = round((fill_price / price - 1) * 10_000, 2)
 
             writer.writerow({
                 "date":            today,

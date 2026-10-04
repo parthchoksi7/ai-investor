@@ -303,8 +303,11 @@ def _coerce_fills(fills, run_id: str) -> dict:
     for THIS run; a mismatched envelope yields {} (→ reconciliation FAILED pages a
     human). A flat {ticker: {order_id, price}} dict is still accepted (an unsynced
     routine writes that shape)."""
+    def _is_fill(v):
+        return isinstance(v, dict) and "order_id" in v
     if isinstance(fills, dict) and isinstance(fills.get("fills"), dict) and (
-            "run_id" in fills or set(fills) == {"fills"}):
+            "run_id" in fills
+            or not any(_is_fill(v) for k, v in fills.items() if k != "fills")):
         # An envelope (with or without run_id — an LLM may drop it). Without the
         # unwrap, "fills" would be read as a ticker and every real fill reconciled
         # as "not accepted". A run_id that is present must match.

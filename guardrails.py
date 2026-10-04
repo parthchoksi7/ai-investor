@@ -1102,6 +1102,14 @@ def settled_buying_power(portfolio: dict) -> tuple[float, str]:
             return 0.0, "unparseable cash"
 
 
+def settled_budget(portfolio: dict, buffer_pct: float = SETTLED_CASH_BUFFER_PCT) -> tuple[float, float, str]:
+    """(budget, available, source) — what today's BUYs may spend: settled buying
+    power less the buffer, never negative. The guard and the PM/CRO prompts all call
+    this, so the agents are told exactly the figure the guard enforces."""
+    available, source = settled_buying_power(portfolio)
+    return max(0.0, available * (1 - buffer_pct)), available, source
+
+
 def enforce_settled_cash(
     decisions: list[dict],
     portfolio: dict,
@@ -1131,8 +1139,7 @@ def enforce_settled_cash(
     Returns (kept, rejected, clamped). The proceeds of an un-funded rotation are
     deployed at the next rebalance — the missed-trade failure direction.
     """
-    available, source = settled_buying_power(portfolio)
-    budget = max(0.0, available * (1 - buffer_pct))
+    budget, available, source = settled_budget(portfolio, buffer_pct)
 
     def _price(d: dict) -> float | None:
         p = (prices.get(d.get("ticker", ""), {}) or {}).get("close")

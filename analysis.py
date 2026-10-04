@@ -1162,12 +1162,11 @@ are never executed; this is your no-deploy justification, on the record."""
 
     # Settled buying power (Oct 3 2026 remediation 3.2) — a cash account cannot
     # spend today's SELL proceeds (they settle T+1); a guard scales BUYs to this.
-    from guardrails import settled_buying_power, SETTLED_CASH_BUFFER_PCT
-    buying_power, _ = settled_buying_power(portfolio)
-    # Show the guard's actual BUDGET (buying power less the buffer), not the raw
-    # figure — sizing to the raw number guarantees a scale-down and can push a
-    # small BUY under the $5 floor (a paging settled_cash drop the prompt caused).
-    buying_power = buying_power * (1 - SETTLED_CASH_BUFFER_PCT)
+    # The guard's actual BUDGET (buying power less the buffer, never negative) — the
+    # same helper the guard uses; sizing to the raw figure guarantees a scale-down
+    # and can push a small BUY under the $5 floor.
+    from guardrails import settled_budget
+    buying_power, _, _ = settled_budget(portfolio)
     exposure_block = _benchmark_exposure_block(
         {p["symbol"]: (p["market_value"] / total if total else 0.0)
          for p in portfolio.get("positions", [])},
@@ -1470,9 +1469,8 @@ def run_chief_risk_officer(
             )
 
     corr_block = _correlation_block(projected, history)
-    from guardrails import settled_buying_power, SETTLED_CASH_BUFFER_PCT
-    _settled_bp, _ = settled_buying_power(portfolio)
-    _settled_bp *= (1 - SETTLED_CASH_BUFFER_PCT)
+    from guardrails import settled_budget
+    _settled_bp, _, _ = settled_budget(portfolio)
 
     # Projected post-trade SECTOR weights, pre-computed against the same
     # SECTOR_MAP the deterministic guard uses. The CRO is told the hard 25% cap
