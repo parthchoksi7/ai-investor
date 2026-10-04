@@ -13,6 +13,10 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [2026-10-04] — Oct 3 remediation (PR #47) · ~12:59 PT · e6de46e
+
 ### Fixed — the Oct 3 2026 remediation: the experiment couldn't produce a clean answer
 
 A full investigation of the bot's underperformance found it ~$21 behind SPY, which is

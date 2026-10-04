@@ -1,6 +1,6 @@
 # Plan — Oct 3 2026 remediation (the performance investigation's fix list)
 
-**Status:** ✅ BUILT & REVIEWED (2026-10-03) — awaiting owner: `/code-review ultra`, merge, routine sync. Owner-directed 2026-10-03: "fix everything today."
+**Status:** ✅ MERGED 2026-10-04 (`e6de46e`, PR #47). Live-routine sync: final paste pending (MANUAL_TODO #26). Owner-directed 2026-10-03: "fix everything today."
 **Branch:** `fix/oct3-remediation`, one PR. **Deploy = merge to `main`**, only after owner OK.
 **Must be live before:** Wed 2026-10-07 rebalance. Every routine-prompt change is
 backward-compatible in both directions, so merge order versus routine sync cannot break a run.
@@ -119,8 +119,15 @@ Independent sources: Robinhood MCP (orders, buying power, realized P&L) and Poly
 - ✅ No `DRY_RUN main.py`. It is the weekend, so the stale snapshot would preflight-abort,
   and a dev run must never write `pending_decisions.json`. The `run_daily_cycle` smoke
   suite covers the wiring end to end.
-- ⬜ PR opened → owner launches `/code-review ultra` (execution path: 1.2, 1.3, `fills.json`)
-- ⬜ Owner OK → merge to `main`
+- ✅ PR #47 opened. `/code-review ultra` run 2026-10-04: 15 findings, including **two
+  pre-existing P0s**. The drawdown kill switch and the 50% turnover circuit breaker both
+  acted only after the envelope the routine executes, so neither ever worked in
+  production. All 13 actionable findings fixed in `3e51aff`; two altitude items logged
+  as MANUAL_TODO #31/#32. A focused re-review of those fixes found 10 more, fixed in
+  `824cf37`. Notable among them: the routine's CRO-outage check read
+  `agent_7_cro.api_failed`, which was never written.
+- ✅ Merged to `main` 2026-10-04 19:59 UTC (`e6de46e`). The merge's on-demand
+  `market_data.yml` run correctly skipped its fetch (request not dated today).
 - ⬜ Live routine sync of `ROUTINE_DAILY_CYCLE.md` (STEP 0/1/4/5) before Mon 2026-10-05
   9:45 ET. It is backward-compatible either way.
 
