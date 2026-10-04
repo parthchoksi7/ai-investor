@@ -202,13 +202,12 @@ def _reconcile_trade_log(run_id: str, fills: dict) -> int:
             if fill.get("order_id"):
                 row["broker_order_id"] = fill["order_id"]
             if fill.get("price"):
-                try:
-                    _decision_px = float(row.get("price") or 0)
-                except (TypeError, ValueError):
-                    _decision_px = 0.0
+                # fill_price is recorded; slippage_bps is NOT computed here — the
+                # logged decision price is the snapshot close (the PRIOR session, or
+                # older for a carried-forward name), so fill-vs-it would book
+                # overnight/multi-day moves as execution slippage. Real slippage
+                # needs an arrival quote captured at order time.
                 row["fill_price"] = f"{float(fill['price']):.4f}"
-                if _decision_px > 0 and not row.get("slippage_bps"):
-                    row["slippage_bps"] = f"{(float(fill['price']) / _decision_px - 1) * 1e4:.1f}"
                 row["price"] = f"{float(fill['price']):.4f}"
                 if row.get("qty"):
                     notional = float(row["qty"]) * float(fill["price"])
@@ -304,8 +303,12 @@ def _coerce_fills(fills, run_id: str) -> dict:
     for THIS run; a mismatched envelope yields {} (→ reconciliation FAILED pages a
     human). A flat {ticker: {order_id, price}} dict is still accepted (an unsynced
     routine writes that shape)."""
-    if isinstance(fills, dict) and "fills" in fills and "run_id" in fills:
-        if fills.get("run_id") != run_id:
+    if isinstance(fills, dict) and isinstance(fills.get("fills"), dict) and (
+            "run_id" in fills or set(fills) == {"fills"}):
+        # An envelope (with or without run_id — an LLM may drop it). Without the
+        # unwrap, "fills" would be read as a ticker and every real fill reconciled
+        # as "not accepted". A run_id that is present must match.
+        if "run_id" in fills and fills.get("run_id") != run_id:
             print(f"   ⚠ fills.json is for run {fills.get('run_id')}, not {run_id} — "
                   "ignored (treated as zero fills; verify against the broker)")
             return {}

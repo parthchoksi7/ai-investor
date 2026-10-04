@@ -75,19 +75,25 @@ def reconcile_transactions(txs: list[dict], orders: list[dict]) -> dict:
     """Mutates `txs` in place. Returns a report dict."""
     report = {"repriced": 0, "id_stamped": 0, "backfilled": [], "unchanged": 0,
               "unbacked_live": [], "duplicate_ids": []}
+    broker_ids_all = {o["order_id"] for o in orders}
     used: set[int] = set()
     for o in orders:
         idx = next((i for i, t in enumerate(txs)
                     if not t.get("dry_run") and t.get("broker_order_id") == o["order_id"]), None)
         if idx is None:
+            # Also consider rows whose id is NOT a broker order id (missing, or e.g. a
+            # ref_id an LLM recorded) — skipping them would append a DUPLICATE live lot
+            # for the same broker order and double-count it in basis and P&L.
             idx = next((i for i, t in enumerate(txs)
                         if i not in used and not t.get("dry_run")
-                        and not t.get("broker_order_id")
+                        and t.get("broker_order_id") not in broker_ids_all
                         and t.get("date") == o["date"]
                         and str(t.get("ticker", "")).upper() == o["ticker"]
                         and str(t.get("action", "")).upper() == o["action"]
                         and _same(t.get("qty") or 0, o["qty"])), None)
             if idx is not None:
+                if txs[idx].get("broker_order_id"):
+                    txs[idx]["prior_broker_order_id"] = txs[idx]["broker_order_id"]
                 txs[idx]["broker_order_id"] = o["order_id"]
                 report["id_stamped"] += 1
         if idx is None:

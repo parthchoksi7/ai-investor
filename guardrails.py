@@ -855,6 +855,64 @@ def enforce_safe_mode(
     return kept, rejected, reason
 
 
+def enforce_kill_switch(
+    decisions: list[dict],
+    kill_active: bool,
+    kill_reason: str = "",
+) -> tuple[list[dict], list[dict]]:
+    """Drop every BUY while the drawdown kill switch is active (SELLs/HOLDs pass).
+
+    The kill switch used to be applied ONLY on main.py's local execution path —
+    AFTER pending_decisions.json was written. The cloud routine places orders from
+    that envelope, so in production a >20% drawdown never blocked a single BUY
+    (found by /code-review ultra, 2026-10-04). As a guard it now acts on the
+    envelope itself."""
+    if not kill_active:
+        return list(decisions), []
+    kept, rejected = [], []
+    for d in decisions:
+        if str(d.get("action", "")).upper() == "BUY":
+            rejected.append({**d, "rejected_reason": f"kill switch active: {kill_reason or 'drawdown limit'}"})
+            print(f"   🛑 KILL-SWITCH REJECT: BUY {d.get('ticker', '?')}")
+        else:
+            kept.append(d)
+    return kept, rejected
+
+
+TURNOVER_CIRCUIT_BREAKER_PCT = 0.50   # SELL notional > this share of the book in one run = anomalous
+
+
+def enforce_turnover_circuit_breaker(
+    decisions: list[dict],
+    prices: dict,
+    total_value: float,
+    limit: float = TURNOVER_CIRCUIT_BREAKER_PCT,
+) -> tuple[list[dict], list[dict], dict | None]:
+    """Halt the WHOLE run when proposed SELL notional exceeds `limit` of the book.
+
+    Returns (kept, rejected, tripped). When tripped, kept holds only HOLDs, so the
+    envelope carries no orders — the missed-trades failure direction. This used to
+    run after pending_decisions.json was written and then return exit 0, so the
+    cloud routine still placed the SELLs it was meant to halt."""
+    sell_notional = 0.0
+    for d in decisions:
+        if str(d.get("action", "")).upper() == "SELL":
+            try:
+                sell_notional += float(d.get("qty") or 0) * float((prices.get(d.get("ticker", ""), {}) or {}).get("close") or 0)
+            except (TypeError, ValueError):
+                pass
+    pct = sell_notional / total_value if total_value else 0.0
+    if pct <= limit:
+        return list(decisions), [], None
+    reason = (f"turnover circuit breaker: SELL notional ${sell_notional:,.2f} = {pct:.0%} of the "
+              f"book > {limit:.0%} — whole run halted")
+    kept = [d for d in decisions if str(d.get("action", "")).upper() not in ("BUY", "SELL")]
+    rejected = [{**d, "rejected_reason": reason} for d in decisions
+                if str(d.get("action", "")).upper() in ("BUY", "SELL")]
+    print(f"\n🚨 CIRCUIT BREAKER: {reason}")
+    return kept, rejected, {"sell_notional": round(sell_notional, 2), "turnover_pct": round(pct, 4)}
+
+
 def flag_wash_sale_presale(
     decisions: list[dict],
     prices: dict,

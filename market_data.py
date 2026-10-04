@@ -901,8 +901,20 @@ def get_market_snapshot(force: bool = False) -> dict:
         else:
             split_tickers = _splits
             _in_scope = set(all_tickers)
-            grouped_only = {t for t in expansion_only if t not in _in_scope
-                            and isinstance(store.get(t), dict) and store[t].get("history")}
+            # Only names the grouped call can ACTUALLY refresh (contiguous history, in
+            # the response, no split) — or already fresh today. A stored name that is
+            # not refreshable is neither fetched nor kept, so counting it would push
+            # universe_fetched_pct toward ABORT after any outage (store entries >5 days
+            # old). Those names come back via the normal per-ticker batch sweep.
+            def _refreshable(t):
+                e = store.get(t)
+                if not (isinstance(e, dict) and e.get("history")):
+                    return False
+                if e.get("date") == today_str:
+                    return True
+                return grouped_refresh(e, grouped_bars.get(t), expected_fresh_through,
+                                       split_tickers, t) is not None
+            grouped_only = {t for t in expansion_only if t not in _in_scope and _refreshable(t)}
             scope_tickers += sorted(grouped_only)
             print(f"   📦 grouped refresh: {len(grouped_bars)} bars for {expected_fresh_through}; "
                   f"{len(split_tickers)} recent split(s); +{len(grouped_only)} stored expansion "
@@ -1040,6 +1052,10 @@ def get_market_snapshot(force: bool = False) -> dict:
               f"{carried} carried forward (≤{CARRY_FORWARD_MAX_DAYS}d, price_as_of stamped)")
 
     fundamentals = get_all_fundamentals(all_tickers)
+    # Young/reused-symbol names were excluded from scoring; they must not shrink the
+    # coverage / universe-fetched denominators either (they "do NOT degrade the run").
+    _young = set(young_history)
+    quality_scope = [t for t in scope_tickers if t not in _young]
     if grouped_only:
         # Grouped-only expansion names take CACHED fundamentals (any age) — fetching
         # them would reintroduce ~200 rate-limited per-ticker Polygon calls into the
@@ -1104,12 +1120,12 @@ def get_market_snapshot(force: bool = False) -> dict:
     earnings_calendar: dict = {}
     data_quality: dict | None = None
     try:
-        earnings_calendar, data_quality = _enrich_with_provider(scope_tickers, fundamentals)
+        earnings_calendar, data_quality = _enrich_with_provider(quality_scope, fundamentals)
     except Exception as e:
         print(f"   ⚠ provider enrichment skipped: {e}")
 
     if data_quality is None:
-        data_quality = _compute_fundamental_coverage(scope_tickers, fundamentals, None)
+        data_quality = _compute_fundamental_coverage(quality_scope, fundamentals, None)
 
     # Corporate-action / bad-print guard (P0-3): flag suspect 1-day moves so an
     # unhandled split or bad print is surfaced, not silently scored. Detection only.

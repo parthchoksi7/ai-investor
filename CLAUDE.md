@@ -239,7 +239,8 @@ DRY_RUN=true                # set false to actually execute
 - **Single-name stop:** −25% from cost basis, evaluated each trading-day morning by `risk_watch.py` on a live MCP quote — not the 4 PM close (the EOD routine places no orders) — no trailing; the risk_watch catastrophe brake
 - **Crisis safe-mode:** SPY 1-day drop ≥ 7% halts all new BUYs (risk SELLs still allowed)
 - **Default action:** HOLD — only trade when it improves portfolio expected value
-- **Kill switch:** blocks new BUYs when portfolio drawdown exceeds 20% from peak
+- **Kill switch:** blocks new BUYs when portfolio drawdown exceeds 20% from peak — `enforce_kill_switch`, in the guard chain since 2026-10-04 (before then it filtered only main.py's local execution path, AFTER the envelope was written, so in production it never blocked a BUY)
+- **Turnover circuit breaker:** SELL notional > 50% of the book in one run halts the whole run (empty envelope) — `enforce_turnover_circuit_breaker`, in the chain since 2026-10-04 (it used to trip after the envelope was written and exit 0, so the routine still traded)
 
 ## Trade Decision Format
 
@@ -362,6 +363,8 @@ Every run — including aborted runs — writes `system_health.json` to the repo
 | `reconciliation` | Decisions existed but zero fills reconciled live (FAILED — orders may have been placed with fills.json missing/empty) or partial (DEGRADED). Written by `mark_transactions_live` after `main.py`, via `health.append_check` |
 | `data_quality` | Snapshot breaches a §15.2 absolute floor (universe-fetched %, min history depth, quality coverage, NaN scan) → DEGRADED, or a hard floor → ABORTED. Classified by `data_quality.py`; report in `data_quality_report.json`, trend in `data_quality_history.jsonl` |
 | `supabase_publish` | Supabase publish failed |
+| `settled_cash` | A BUY was DROPPED because settled buying power couldn't fund it above the $5 floor (DEGRADED, pages); names any funding SELL that still executes |
+| `circuit_breaker` | Proposed SELL notional > 50% of the book — run halted, envelope empty (FAILED) |
 
 **Paging (Oct 2026):** `alert.yml` opens/closes issues on `actionable_status`, which is the worst status *excluding* informational checks' DEGRADED (`decision_validation`, `cash_discipline`, `wash_sale_presale` — guards working as designed). `overall_status` is unchanged for every other reader.
 
@@ -402,6 +405,17 @@ The real finding: the system was not producing a clean answer. Plan and status a
 | `feat(agents)` benchmark/exposure block for PM + CRO | Neither agent was ever told the benchmark. Book beta 0.55 vs Gate 2's 0.8–1.2; IT 0% vs 40% of SPY. Context only, never a veto trigger |
 | `fix(tax)` 63-trading-day hold for gained positions; wash-sale window inclusive | 5 of 8 weekly SELLs landed 42–49 days in (the minimum had become the holding period); EOG re-bought on day 30 after a loss sale |
 
+> **`/code-review ultra` (2026-10-04) found two PRE-EXISTING P0s, fixed in this batch:**
+> - The drawdown kill switch filtered only main.py's local execution path, AFTER the
+>   envelope was written. The cloud routine executes that envelope, so a >20% drawdown
+>   never blocked a BUY in production.
+> - The 50% turnover circuit breaker likewise tripped after the write and exited 0.
+>
+> Both are now guards in the chain. The same review produced a post-gate final-attempt
+> fallback (a crashed or CRO-failed 12:45 rebalance runs risk_watch) and one shared
+> data-readiness function (`preflight_gate.data_plane_ready`) used by the gate and
+> `market_data.yml`.
+>
 > **Governance:** policy v2.1, IPS v1.4.
 > - The measurement window is restarted **once**, with the contamination logged
 >   (`SCALE_DECISION_RULE.md` §7). `FORMULA_VERSION` is unchanged, so Gate 1a's clock

@@ -80,8 +80,10 @@ on:
 # in progress; only then does the request's `fetch` join the group.
 jobs:
   check:
-    # Decides whether an ON-DEMAND (push) run has anything to do. Scheduled and
-    # manual runs always proceed — their behavior is unchanged.
+    # Decides whether an ON-DEMAND (push) run has anything to do. Runs ONLY for push
+    # events — a scheduled/manual run skips it (no extra billed runner minute) and
+    # `fetch` proceeds on `needs.check.result == 'skipped'`.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -101,30 +103,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "${{ github.event_name }}" != "push" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
-          fi
           TODAY=$(TZ=America/New_York date +%F)
           REQ=$(python3 -c "import json;print(json.load(open('data_request.json')).get('date') or '')" 2>/dev/null || echo "")
-          # The gate's exit 11 covers a stale SNAPSHOT, a stale/invalid DOSSIER, or a
-          # snapshot under 22 bars deep — all produced by this workflow, so a run is
-          # needed whenever ANY of them is not ready (not only a stale snapshot).
-          READY=$(python3 - <<'PY' 2>/dev/null || echo "no"
-          import json, datetime, zoneinfo
-          today = datetime.datetime.now(zoneinfo.ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
-          s = json.load(open("market_snapshot.json"))
-          d = json.load(open("research_dossier.json"))
-          depth = min((len(h) for h in (s.get("history") or {}).values()), default=0)
-          bfd = [str(x) for x in (d.get("built_from_days") or [])]
-          # Mirrors preflight_gate._dossier_fresh + its snapshot checks exactly, so the
-          # job and the gate can never disagree about "ready" (a looser check here would
-          # no-op a request while the gate keeps returning 11 all day).
-          ok = (s.get("date") == today and depth >= 22
-                and d.get("as_of") == today and len(bfd) >= 2
-                and max(bfd) == today and bool(d.get("tickers")))
-          print("yes" if ok else "no")
-          PY
-          )
+          # "Ready" is defined ONCE, in preflight_gate.data_plane_ready (stdlib-only,
+          # runs before any pip install) — the same check that returned exit 11 — so
+          # the job and the gate can never disagree about whether a data run is needed.
+          # tail -n 1: importing preflight_gate can print a policy.py notice first (no
+          # PyYAML on the bare runner) — only the final yes/no line is the answer.
+          READY=$(python3 -c "import preflight_gate as g; ok, _ = g.data_plane_ready(); print('yes' if ok else 'no')" 2>/dev/null | tail -n 1)
+          [ "$READY" = "yes" ] || READY="no"
           # Another market_data run already queued/in progress will land the data —
           # stand down rather than compete with (or displace) it. The routine's next
           # hourly attempt re-checks and may re-request.
@@ -140,7 +127,9 @@ jobs:
 
   fetch:
     needs: check
-    if: needs.check.outputs.run == 'true'
+    # Scheduled/manual runs skip `check` (skipped ⇒ proceed); a push run proceeds
+    # only when check decided a fetch is needed.
+    if: ${{ !cancelled() && (needs.check.result == 'skipped' || needs.check.outputs.run == 'true') }}
     # Serialize fetches (see the long comment above). workflow_dispatch keeps its own
     # per-run group — the manual safety dispatch must never queue or be cancelled.
     concurrency:

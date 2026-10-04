@@ -193,6 +193,31 @@ def _dossier_fresh() -> tuple[bool, str]:
     return True, f"fresh ({d.get('n_tickers', len(d.get('tickers', {})))} tickers)"
 
 
+def data_plane_ready() -> tuple[bool, str]:
+    """The ONE definition of "today's data has landed": snapshot dated today with
+    ≥ MIN_BARS bars everywhere AND a fresh, valid dossier. The gate uses it, and
+    market_data.yml's on-demand `check` job imports it (stdlib-only) — so the two
+    can never disagree about whether a data run is needed."""
+    snap = _read_json("market_snapshot.json")
+    if snap is None:
+        return False, ("market_snapshot.json is missing or unreadable — the "
+                       "market_data.yml GitHub Actions job has not landed data yet")
+    if snap.get("date") != TODAY:
+        return False, (f"market_snapshot.json date={snap.get('date')}, expected {TODAY} — "
+                       "the market_data job has not pushed fresh data yet "
+                       "(did you `git pull` before running this gate?)")
+    depths = [len(h) for h in (snap.get("history") or {}).values()]
+    min_depth = min(depths) if depths else 0
+    if min_depth < MIN_BARS:
+        return False, (f"market_snapshot.json has only {min_depth} history bars "
+                       f"(need {MIN_BARS}+) — data is incomplete")
+    ok, msg = _dossier_fresh()
+    if not ok:
+        return False, (f"research dossier not ready — {msg}; the rebalance must not run "
+                       "against a stale/invalid dossier")
+    return True, f"fresh (min_depth={min_depth}; dossier {msg})"
+
+
 def _check_api_health() -> tuple[bool, str]:
     """Make a minimal Anthropic API call to verify the API is not overloaded.
     Returns (healthy: bool, message: str). Rebalance mode only — risk_watch is
@@ -344,37 +369,14 @@ def main() -> int:
               "will re-check.")
         return code
 
-    # 3. Freshness — is market_snapshot.json dated today with enough history?
-    snap = _read_json("market_snapshot.json")
-    if snap is None:
-        return _blocked(SKIP_RETRY_STALE,
-                        "market_snapshot.json is missing or unreadable — the "
-                        "market_data.yml GitHub Actions job has not landed data yet")
-
-    snap_date = snap.get("date")
-    depths = [len(h) for h in snap.get("history", {}).values()]
-    min_depth = min(depths) if depths else 0
-
-    if snap_date != TODAY:
-        return _blocked(SKIP_RETRY_STALE,
-                        f"market_snapshot.json date={snap_date}, expected {TODAY} — "
-                        "the market_data job has not pushed fresh data yet "
-                        "(did you `git pull` before running this gate?)")
-
-    if min_depth < MIN_BARS:
-        return _blocked(SKIP_RETRY_STALE,
-                        f"market_snapshot.json has only {min_depth} history bars "
-                        f"(need {MIN_BARS}+) — data is incomplete")
-
-    # 3b. Dossier freshness (§11.4 / P1-5) — the rebalance agents read the dossier;
-    #     a stale/invalid one must SKIP (the Thu/Fri catch-up or next attempt
-    #     re-checks), never be silently traded on. It is produced by the same
-    #     market_data.yml run as the snapshot, so a data request fixes both.
-    dossier_ok, dossier_msg = _dossier_fresh()
-    if not dossier_ok:
-        return _blocked(SKIP_RETRY_STALE,
-                        f"research dossier not ready — {dossier_msg}; the rebalance "
-                        "must not run against a stale/invalid dossier")
+    # 3. Data plane — snapshot dated today with ≥ MIN_BARS AND a fresh, valid dossier
+    #    (§11.4 / P1-5). Both come from the same market_data.yml run, so a data
+    #    request fixes either; the on-demand check job uses this same function.
+    data_ok, data_msg = data_plane_ready()
+    if not data_ok:
+        return _blocked(SKIP_RETRY_STALE, data_msg)
+    snap = _read_json("market_snapshot.json") or {}
+    min_depth = min((len(h) for h in (snap.get("history") or {}).values()), default=0)
 
     # 4. API health — canary call to catch Anthropic 529 overloads before burning
     #    the full pipeline against a degraded API.
@@ -385,7 +387,7 @@ def main() -> int:
     print(
         f"PROCEED/REBALANCE: fresh market_snapshot.json (date={TODAY}, "
         f"{len(snap.get('prices', {}))} tickers, min_depth={min_depth}), "
-        f"dossier {dossier_msg}, API healthy, and no rebalance this ISO week"
+        f"data plane {data_msg}, API healthy, and no rebalance this ISO week"
         f"{' (catch-up)' if catch_up else ''}. Run main.py."
     )
     return PROCEED

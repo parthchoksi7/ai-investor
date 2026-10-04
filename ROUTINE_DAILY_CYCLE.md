@@ -275,6 +275,25 @@ PY
 If this check fails, STOP. Do not attempt order execution. (Health was already pushed above,
 so the abort is visible to alert.yml.)
 
+FINAL-ATTEMPT FALLBACK (MODE == rebalance only) — apply BEFORE stopping for any of the
+three reasons above (CRASH GUARD fired, the validation check failed, or the CRO itself
+failed: system_health.json → checks.agent_7_cro.api_failed is true). On the routine's
+LAST attempt there is no later retry, so stopping would skip the −25% stop for the whole
+day. Check whether this is the final attempt:
+
+python -c "import preflight_gate as g, sys; sys.exit(0 if g._is_final_attempt() else 1)"
+
+  • exit 1 (not final) → behave exactly as without this block: STOP for a crash or a failed
+                         validation; for a CRO failure continue to STEP 4 (its stamp step skips
+                         the stamp, so the next attempt re-runs the rebalance).
+  • exit 0 (final)     → do NOT stop. Set MODE=risk_watch, run `python risk_watch.py;
+                         MAIN_EXIT=$?`, push health again (same two git commands as above),
+                         re-run the CRASH GUARD and the validation check, and — only if both
+                         pass — continue to STEP 4 with the risk_watch envelope (SELL-only;
+                         GUARD 4 applies). The weekly rebalance is NOT consumed: a risk_watch
+                         envelope never satisfies the ISO-week lock, so Thu/Fri catch-up remains.
+                         If the risk_watch run also fails, STOP.
+
 ═══════════════════════════════════════════════
 STEP 4 — Execute trades via Robinhood MCP  (both modes — same machinery)
 ═══════════════════════════════════════════════

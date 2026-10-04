@@ -31,7 +31,7 @@ from analysis     import get_trade_decisions
 from quant_engine import score_all_tickers
 from execute      import execute_trades, get_portfolio_summary, log_trades, get_trade_history, _compute_qty, order_executed, StalePortfolioError, DRY_RUN
 from journal      import assign_ref_ids, check_kill_switches, record_trade, record_run, record_transaction, mark_pending_executed, mark_execution_started, get_recent_decisions, close_position, get_ticker_history, recently_exited, consecutive_cash_above, _load_list, TRANSACTIONS_FILE
-from guardrails   import enforce_settled_cash, validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, enforce_tax_aware_hold, enforce_safe_mode, enforce_capital_dependency, enforce_research_backed_buys, flag_wash_sale_presale, min_hold_days_remaining, position_gained, WASH_SALE_REENTRY_DAYS
+from guardrails   import enforce_kill_switch, enforce_turnover_circuit_breaker, enforce_settled_cash, validate_decisions, enforce_sector_limits, enforce_min_holding_period, enforce_wash_sale_reentry, enforce_net_edge, enforce_tax_aware_hold, enforce_safe_mode, enforce_capital_dependency, enforce_research_backed_buys, flag_wash_sale_presale, min_hold_days_remaining, position_gained, WASH_SALE_REENTRY_DAYS
 from build_dossier import load_dossier, validate_dossier
 from policy       import policy_version as _policy_version
 from publish      import publish_to_supabase
@@ -93,6 +93,17 @@ def _record_supabase_health(health, exc: Exception) -> None:
         health.record("supabase_publish", FAILED, message=msg[:200])
 
 
+def three_signal_exit(position_review: dict | None, devils_advocate: dict | None) -> bool:
+    """The ONE definition of a thesis-break exit: position review REDUCE/EXIT AND
+    hold_score < 5 AND the Devil's Advocate recommends reject. Shared by the PM
+    backstop (which adds the SELL) and mark_thesis_exits (which exempts it from the
+    63-day gain hold) so the two can never drift apart."""
+    pr, da = position_review or {}, devils_advocate or {}
+    return bool(pr.get("recommended_action") in ("REDUCE", "EXIT")
+                and (pr.get("hold_score") or 10) < 5
+                and da.get("recommend_reject", False))
+
+
 def mark_thesis_exits(decisions: list, pipeline_state: dict) -> list[str]:
     """Decide `thesis_exit` deterministically for every SELL — never trust the flag
     from the PM's JSON (an LLM could set it to dodge the 63-day gain hold).
@@ -109,10 +120,7 @@ def mark_thesis_exits(decisions: list, pipeline_state: dict) -> list[str]:
             d.pop("thesis_exit", None)
             continue
         t = d.get("ticker")
-        pr, da = reviews.get(t, {}) or {}, devils.get(t, {}) or {}
-        is_exit = bool(pr.get("recommended_action") in ("REDUCE", "EXIT")
-                       and (pr.get("hold_score") or 10) < 5
-                       and da.get("recommend_reject", False))
+        is_exit = three_signal_exit(reviews.get(t), devils.get(t))
         d["thesis_exit"] = is_exit
         if is_exit:
             marked.append(t)
@@ -136,10 +144,7 @@ def apply_pm_backstop(decisions: list, portfolio: dict, pipeline_state: dict) ->
             d.get("ticker") == t and d.get("action") == "SELL"
             for d in decisions
         )
-        if (not already_selling
-                and pr.get("recommended_action") in ("REDUCE", "EXIT")
-                and (pr.get("hold_score") or 10) < 5
-                and da.get("recommend_reject", False)):
+        if not already_selling and three_signal_exit(pr, da):
             auto_exits.append(t)
             decisions.append({
                 "ticker": t,
@@ -491,6 +496,10 @@ def run_daily_cycle():
     # may re-admit a BUY during a crisis.
     _spy_chg = market_data["prices"].get("SPY", {}).get("change_pct")
     decisions, safemode_rejected, _safe_reason = enforce_safe_mode(decisions, _spy_chg)
+    # Drawdown kill switch — as a GUARD, so it acts on the envelope the cloud routine
+    # executes (it used to filter only main.py's local execution path, after the
+    # envelope was written: in production it never blocked a BUY).
+    decisions, killswitch_rejected = enforce_kill_switch(decisions, kill_active, kill_reason)
     if _safe_reason:
         health.record("crisis_safe_mode", DEGRADED,
                       message=_safe_reason, spy_change_pct=_spy_chg,
@@ -542,6 +551,17 @@ def run_daily_cycle():
     decisions, cash_rejected, cash_clamped = enforce_settled_cash(
         decisions, portfolio, market_data["prices"])
 
+    # Turnover circuit breaker — LAST, on the final order set, and BEFORE the envelope
+    # is written (it used to trip after the write and return exit 0, so the routine
+    # still placed the SELLs). Tripped → the envelope carries no orders.
+    decisions, breaker_rejected, breaker = enforce_turnover_circuit_breaker(
+        decisions, market_data["prices"], portfolio["total_value"])
+    if breaker:
+        health.record("circuit_breaker", FAILED,
+                      message=f"SELL notional {breaker['turnover_pct']:.0%} of the book exceeds "
+                              "the 50% one-run limit — run halted, no orders",
+                      **breaker)
+
     # Wash-sale PRE-sale FLAG (A6) — the post-sale re-buy block above covers one
     # side of IRS §1091; this flags (never blocks) a loss exit within 30d of a
     # purchase, the other side. Flag-and-allow: a wash sale only defers the loss,
@@ -560,9 +580,9 @@ def run_daily_cycle():
     except Exception as _e:
         print(f"   ⚠ wash-sale pre-sale flag skipped: {_e}")
 
-    for r in (research_rejected + safemode_rejected + holding_rejected
+    for r in (research_rejected + safemode_rejected + killswitch_rejected + holding_rejected
               + reentry_rejected + taxhold_rejected + dependency_rejected
-              + sector_rejected + netedge_rejected + cash_rejected):
+              + sector_rejected + netedge_rejected + cash_rejected + breaker_rejected):
         validation_report["rejected"].append(
             {"ticker": r.get("ticker", "?"), "action": r.get("action", "?"),
              "reason": r.get("rejected_reason", "turnover/sector/net-edge guard")})
@@ -931,21 +951,8 @@ def run_daily_cycle():
         )
 
     # ── Step 6: Execute ───────────────────────────────────────────────────────
-    # Circuit breaker: total SELL-side notional > 50% of portfolio is anomalous.
-    # The PM should never churn more than half the book in a single day.
-    _sell_notional = sum(
-        d.get("qty", 0) * market_data["prices"].get(d["ticker"], {}).get("close", 0)
-        for d in decisions if d.get("action", "").upper() == "SELL"
-    )
-    _turnover_pct = _sell_notional / portfolio["total_value"] if portfolio["total_value"] else 0
-    if _turnover_pct > 0.50:
-        print(f"\n🚨 CIRCUIT BREAKER: proposed SELL notional ${_sell_notional:,.2f} = {_turnover_pct:.0%} of portfolio — exceeds 50% daily turnover limit. Halting execution.")
-        health.record("execution", FAILED,
-                      message=f"Circuit breaker: SELL notional {_turnover_pct:.0%} exceeds 50% daily limit",
-                      sell_notional=round(_sell_notional, 2), turnover_pct=round(_turnover_pct, 4))
-        _write_health(health)
-        print("=" * 60 + "\n")
-        return
+    # (The 50% turnover circuit breaker and the kill-switch BUY block now run in
+    # the guard chain, BEFORE pending_decisions.json is written — see above.)
 
     order_results: dict    = {}
     attempted: list        = []

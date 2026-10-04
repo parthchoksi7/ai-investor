@@ -1162,8 +1162,12 @@ are never executed; this is your no-deploy justification, on the record."""
 
     # Settled buying power (Oct 3 2026 remediation 3.2) — a cash account cannot
     # spend today's SELL proceeds (they settle T+1); a guard scales BUYs to this.
-    from guardrails import settled_buying_power
+    from guardrails import settled_buying_power, SETTLED_CASH_BUFFER_PCT
     buying_power, _ = settled_buying_power(portfolio)
+    # Show the guard's actual BUDGET (buying power less the buffer), not the raw
+    # figure — sizing to the raw number guarantees a scale-down and can push a
+    # small BUY under the $5 floor (a paging settled_cash drop the prompt caused).
+    buying_power = buying_power * (1 - SETTLED_CASH_BUFFER_PCT)
     exposure_block = _benchmark_exposure_block(
         {p["symbol"]: (p["market_value"] / total if total else 0.0)
          for p in portfolio.get("positions", [])},
@@ -1177,7 +1181,7 @@ MARKET REGIME: {json.dumps(regime)}
 
 CURRENT PORTFOLIO:
   Cash: ${cash:,.2f} ({cash_pct:.1f}%)  Total: ${total:,.2f}
-  Settled buying power: ${buying_power:,.2f} — the most today's BUYs can spend. This is
+  Spendable for BUYs today: ${buying_power:,.2f} (settled buying power less a safety margin). This is
   a CASH account: today's SELL proceeds settle next business day and fund NEXT week's
   buys, so a rotation's BUY leg beyond this is scaled down by a guard.
   Holdings:
@@ -1294,11 +1298,17 @@ def _benchmark_exposure_block(weights: dict, quant_scores: dict, date: str = "",
     # the covered names' average so the band verdict is not an artefact of coverage.
     if missing and covered > 0:
         beta += (invested - covered) * (beta / covered)
-    where = ("BELOW the band" if beta < lo else "ABOVE the band" if beta > hi
-             else "inside the band")
-    lines = [f"  {label} market exposure (beta_stable, cash = 0): {beta:.2f} — {where} "
-             f"{lo:g}–{hi:g} | invested {invested:.0%}"]
-    if missing:
+    if invested > 0 and covered == 0:
+        lines = [f"  {label} market exposure: UNKNOWN — no held name has a usable beta "
+                 f"estimate (band {lo:g}–{hi:g}; invested {invested:.0%}). Do not act on exposure."]
+        missing_note = True
+    else:
+        where = ("BELOW the band" if beta < lo else "ABOVE the band" if beta > hi
+                 else "inside the band")
+        lines = [f"  {label} market exposure (beta_stable, cash = 0): {beta:.2f} — {where} "
+                 f"{lo:g}–{hi:g} | invested {invested:.0%}"]
+        missing_note = False
+    if missing and not missing_note:
         lines.append(f"  (no beta estimate, imputed at the covered average — not counted as "
                      f"cash; excluded: {', '.join(sorted(missing))})")
     ref = benchmark_reference(today=date or None)
@@ -1460,8 +1470,9 @@ def run_chief_risk_officer(
             )
 
     corr_block = _correlation_block(projected, history)
-    from guardrails import settled_buying_power
+    from guardrails import settled_buying_power, SETTLED_CASH_BUFFER_PCT
     _settled_bp, _ = settled_buying_power(portfolio)
+    _settled_bp *= (1 - SETTLED_CASH_BUFFER_PCT)
 
     # Projected post-trade SECTOR weights, pre-computed against the same
     # SECTOR_MAP the deterministic guard uses. The CRO is told the hard 25% cap
@@ -1504,7 +1515,7 @@ PROJECTED PORTFOLIO (post-trade weights):
 {(chr(10) + corr_block) if corr_block else ''}
 
 CURRENT CASH: ${portfolio['cash']:,.2f} ({portfolio['cash']/total*100:.1f}%)
-SETTLED BUYING POWER: ${_settled_bp:,.2f}
+SPENDABLE FOR BUYS TODAY: ${_settled_bp:,.2f} (settled buying power less a safety margin)
   — this is a cash account: today's SELL proceeds settle next business day. A
   downstream guard scales the BUY leg down to this amount, so a rotation's SELL can
   execute in full while its BUY is smaller (or dropped). Weigh the SELLs on their own

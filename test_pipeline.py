@@ -11637,7 +11637,9 @@ class TestRefIdsAndOrderErrors:
         journal._reconcile_trade_log("r1", {"JNJ": {"order_id": "o", "price": 256.1943}})
         row = next(csv.DictReader(open(execute.TRADE_LOG)))
         assert row["fill_price"] == "256.1943" and row["price"] == "256.1943"
-        assert float(row["slippage_bps"]) == pytest.approx((256.1943 / 258.66 - 1) * 1e4, abs=0.1)
+        # slippage_bps is deliberately NOT computed: the logged decision price is the
+        # prior session's snapshot close, so fill-vs-it would book overnight moves.
+        assert row["slippage_bps"] == ""
 
 
 
@@ -12030,7 +12032,7 @@ class TestBenchmarkExposureContext:
         analysis.run_portfolio_manager({}, {}, {}, {}, {}, self.QS, pf, [], date="2026-10-02")
         msg = captured["msg"]
         assert "BENCHMARK & MARKET EXPOSURE" in msg
-        assert "Settled buying power: $32.65" in msg
+        assert "Spendable for BUYs today: $31.02" in msg     # 32.65 less the 5% margin
         assert "which condition of the original thesis has broken" in msg
         assert "< 63 if the position is AT A GAIN" in msg
         assert "measured against SPY, after tax" in captured["system"]
@@ -12215,7 +12217,7 @@ class TestRemediationReviewFixes:
         import yaml
         wf = yaml.safe_load(open("/".join(__file__.split("/")[:-1] + [".github/workflows/market_data.yml"])))
         script = wf["jobs"]["check"]["steps"][1]["run"]
-        assert "research_dossier.json" in script and "depth >= 22" in script
+        assert "data_plane_ready" in script                  # the gate's own definition
         assert wf["jobs"]["fetch"]["steps"][0]["with"]["ref"].startswith("${{ github.event_name == 'push'")
 
 
@@ -12293,13 +12295,13 @@ class TestRemediationReviewPass2:
                             (captured.update(msg=user_msg), {"approved": True, "rejected_tickers": []})[1])
         pf = {"total_value": 500.0, "cash": 157.21, "buying_power": 32.65, "positions": []}
         analysis.run_chief_risk_officer([{"ticker": "V", "action": "BUY", "target_weight": 0.05}], pf, {})
-        assert "SETTLED BUYING POWER: $32.65" in captured["msg"]
+        assert "SPENDABLE FOR BUYS TODAY: $31.02" in captured["msg"]
 
     def test_workflow_check_mirrors_the_gate_and_never_displaces_a_run(self):
         import yaml
         wf = yaml.safe_load(open("/".join(__file__.split("/")[:-1] + [".github/workflows/market_data.yml"])))
         script = wf["jobs"]["check"]["steps"][1]["run"]
-        assert "max(bfd) == today" in script and 'd.get("tickers")' in script
+        assert "data_plane_ready" in script
         assert "other_active_runs" in script and wf["jobs"]["check"]["permissions"]["actions"] == "read"
         assert "concurrency" not in wf                       # moved off the workflow…
         assert wf["jobs"]["fetch"]["concurrency"]["cancel-in-progress"] is False   # …onto fetch
@@ -12338,7 +12340,7 @@ class TestRemediationReviewPass3:
                             (captured.update(msg=user_msg), {"approved": True, "rejected_tickers": []})[1])
         pf = {"total_value": 500.0, "cash": 157.21, "buying_power": "$32.65", "positions": []}
         analysis.run_chief_risk_officer([{"ticker": "V", "action": "BUY", "target_weight": 0.05}], pf, {})
-        assert "SETTLED BUYING POWER: $157.21" in captured["msg"]      # falls back to cash, no crash
+        assert "SPENDABLE FOR BUYS TODAY: $149.35" in captured["msg"]  # falls back to cash, no crash
 
     def test_settled_cash_target_tracks_the_scaled_delta(self):
         from guardrails import enforce_settled_cash
@@ -12388,3 +12390,125 @@ class TestRemediationReviewPass3:
         wf = yaml.safe_load(open("/".join(__file__.split("/")[:-1] + [".github/workflows/market_data.yml"])))
         assert 'select(.event != \\"push\\")' in wf["jobs"]["check"]["steps"][1]["run"] or \
                'select(.event != \"push\")' in wf["jobs"]["check"]["steps"][1]["run"]
+
+
+# ── /code-review ultra (2026-10-04) — regression tests ───────────────────────
+
+class TestUltraReviewFixes:
+    def test_kill_switch_blocks_buys_in_the_envelope_the_routine_executes(self, monkeypatch, tmp_path):
+        """Pre-existing P0: the kill switch filtered only main.py's local execution
+        path, AFTER pending_decisions.json was written — in production it never
+        blocked a BUY. It is now a guard acting on the envelope."""
+        import json as _j
+        smoke = TestRunDailyCycleSmoke()
+        decisions = [{"ticker": "MSFT", "action": "BUY", "target_weight": 0.05,
+                      "source_of_capital": "cash", "expected_return": 0.10, "rationale": "x"}]
+        smoke._run(monkeypatch, tmp_path, decisions, kill_active=True)
+        pending = _j.loads((tmp_path / "pending_decisions.json").read_text())
+        assert [d for d in pending["decisions"] if d["action"] == "BUY"] == []
+
+    def test_kill_switch_still_lets_sells_through(self):
+        from guardrails import enforce_kill_switch
+        kept, rej = enforce_kill_switch([{"ticker": "A", "action": "SELL"},
+                                         {"ticker": "B", "action": "BUY"}], True, "dd 22%")
+        assert [d["ticker"] for d in kept] == ["A"] and rej[0]["ticker"] == "B"
+        kept, rej = enforce_kill_switch([{"ticker": "B", "action": "BUY"}], False)
+        assert len(kept) == 1 and rej == []
+
+    def test_circuit_breaker_empties_the_envelope_and_pages(self, monkeypatch, tmp_path):
+        """Pre-existing P0: the 50% breaker tripped AFTER the envelope was written and
+        main.py exited 0, so the routine still placed the SELLs."""
+        import json as _j
+        smoke = TestRunDailyCycleSmoke()
+        portfolio = {"cash": 10.0, "buying_power": 10.0, "total_value": 500.0, "positions": [
+            {"symbol": "JPM", "qty": 2.4, "avg_price": 100.0, "available_qty": 2.4,
+             "current_price": 110.0, "market_value": 264.0, "unrealized_pnl": 24.0}]}
+        decisions = [{"ticker": "JPM", "action": "SELL", "target_weight": 0.0,
+                      "source_of_capital": "cash", "rationale": "x", "thesis_exit": True}]
+        state = smoke._pipeline_state(decisions)
+        state["position_reviews"] = {"JPM": {"recommended_action": "EXIT", "hold_score": 2}}
+        state["devils_advocate"] = {"JPM": {"recommend_reject": True}}
+        smoke._run(monkeypatch, tmp_path, decisions, portfolio=portfolio, pipeline_state=state)
+        pending = _j.loads((tmp_path / "pending_decisions.json").read_text())
+        assert pending["decisions"] == []
+        h = _j.loads((tmp_path / "system_health.json").read_text())
+        assert h["checks"]["circuit_breaker"]["status"] == "FAILED"
+
+    def test_fills_envelope_without_run_id_is_unwrapped(self):
+        from journal import _coerce_fills
+        f = {"fills": {"BAC": {"order_id": "o1", "price": 55.0}}}
+        assert _coerce_fills(f, "r1") == {"BAC": {"order_id": "o1", "price": 55.0}}
+        assert _coerce_fills({"run_id": "r0", "fills": {"BAC": {}}}, "r1") == {}
+
+    def test_grouped_mode_does_not_count_unrefreshable_stored_names(self, monkeypatch, tmp_path):
+        """After an outage the store's expansion entries are >5 days old: they must
+        not be counted in the universe (that collapsed universe_fetched_pct to ABORT)."""
+        tg = TestGroupedDailyRefresh()
+        md, calls = tg._setup(monkeypatch, tmp_path, "grouped")
+        old = (date.today() - timedelta(days=12)).isoformat()
+        from market_calendar import previous_trading_day
+        stale_hist = tg._hist_through(previous_trading_day(date.today() - timedelta(days=10)))
+        store = md._load_history_store()
+        for t in ("EXPA", "EXPB"):
+            store[t] = {"date": old, "history": stale_hist}
+        md._save_history_store(store)
+        snap = md.get_market_snapshot(force=True)
+        assert (snap.get("data_quality") or {}).get("active_universe", 0) <= len(snap["prices"]) + 1
+
+    def test_reconcile_replaces_a_non_broker_id_instead_of_duplicating(self):
+        from reconcile_fills import reconcile_transactions
+        orders = [{"order_id": "real-1", "ticker": "BAC", "action": "BUY", "qty": 1.0, "price": 55.0,
+                   "date": "2026-09-02", "timestamp": "2026-09-02T14:00:00Z"}]
+        txs = [{"ticker": "BAC", "action": "BUY", "qty": 1.0, "price": 55.2, "date": "2026-09-02",
+                "dry_run": False, "broker_order_id": "ref-uuid-typed-by-llm"}]
+        rep = reconcile_transactions(txs, orders)
+        assert len(txs) == 1 and rep["backfilled"] == []
+        assert txs[0]["broker_order_id"] == "real-1"
+        assert txs[0]["prior_broker_order_id"] == "ref-uuid-typed-by-llm"
+
+    def test_exposure_unknown_when_no_name_has_a_beta(self):
+        from analysis import _benchmark_exposure_block
+        out = _benchmark_exposure_block({"A": 0.5}, {"A": {"beta_stable": 2.0,
+                                                           "beta_stable_available": False}},
+                                        date="2026-10-02")
+        assert "UNKNOWN" in out and "BELOW" not in out and "imputed" not in out
+
+    def test_three_signal_predicate_is_shared(self):
+        import inspect, main
+        assert main.three_signal_exit({"recommended_action": "EXIT", "hold_score": 3},
+                                      {"recommend_reject": True})
+        assert not main.three_signal_exit({"recommended_action": "HOLD", "hold_score": 3},
+                                          {"recommend_reject": True})
+        assert "three_signal_exit(" in inspect.getsource(main.apply_pm_backstop)
+        assert "three_signal_exit(" in inspect.getsource(main.mark_thesis_exits)
+
+    def test_on_demand_check_runs_only_for_push_and_fetch_proceeds_when_skipped(self):
+        import yaml
+        wf = yaml.safe_load(open("/".join(__file__.split("/")[:-1] + [".github/workflows/market_data.yml"])))
+        assert wf["jobs"]["check"]["if"] == "github.event_name == 'push'"
+        assert "needs.check.result == 'skipped'" in wf["jobs"]["fetch"]["if"]
+
+    def test_gate_and_workflow_share_one_readiness_definition(self, tmp_path, monkeypatch):
+        import importlib, os, json as _j
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("PREFLIGHT_DATE_OVERRIDE", "2026-06-24")
+        import preflight_gate
+        g = importlib.reload(preflight_gate)
+        try:
+            ok, why = g.data_plane_ready()
+            assert not ok and "missing" in why
+            (tmp_path / "market_snapshot.json").write_text(_j.dumps(
+                {"date": "2026-06-24", "history": {"A": [{}] * 30}}))
+            (tmp_path / "research_dossier.json").write_text(_j.dumps(
+                {"as_of": "2026-06-24", "built_from_days": ["2026-06-23", "2026-06-24"],
+                 "tickers": {"A": {}}}))
+            ok, _ = g.data_plane_ready()
+            assert ok
+        finally:
+            monkeypatch.delenv("PREFLIGHT_DATE_OVERRIDE", raising=False)
+            importlib.reload(preflight_gate)     # never leak the pinned date to other tests
+
+    def test_routine_falls_back_to_risk_watch_after_a_failed_final_rebalance(self):
+        text = open("/".join(__file__.split("/")[:-1] + ["ROUTINE_DAILY_CYCLE.md"])).read()
+        assert "FINAL-ATTEMPT FALLBACK (MODE == rebalance only)" in text
+        assert "g._is_final_attempt()" in text and "python risk_watch.py" in text

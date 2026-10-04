@@ -21,6 +21,11 @@ experiment whichever way returns go. All are fixed in this batch
 (`PLAN_OCT3_REMEDIATION.md`).
 
 **Safety & execution**
+- **The 20% drawdown kill switch now actually blocks purchases.** A deep code review
+  found it had only ever filtered a local test path. The live routine trades from a
+  file written before that filter, so in production the kill switch never stopped a
+  buy. The 50% one-day selling limit had the same flaw. Both now act on the order file
+  itself.
 - **The stop-loss no longer goes dark when market data is late.** On a rebalance day
   whose data never arrives, the last morning attempt now runs the sell-only safety
   check instead of skipping. During the Sep 21–30 GitHub billing outage it was off for
