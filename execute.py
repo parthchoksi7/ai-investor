@@ -237,9 +237,11 @@ def log_trades(
                 fill_price = float(fill_price_raw) if fill_price_raw else None
             except (TypeError, ValueError):
                 fill_price = None
+            # slippage_bps is NOT computed: `price` is the snapshot close (the prior
+            # session, or older for a carried-forward name), so fill-vs-it books
+            # overnight moves as execution slippage. Same rule as the cloud reconciler
+            # (journal._reconcile_trade_log); real slippage needs an arrival quote.
             slippage_bps = None
-            if fill_price and price:
-                slippage_bps = round((fill_price / price - 1) * 10_000, 2)
 
             writer.writerow({
                 "date":            today,
@@ -322,6 +324,12 @@ def get_portfolio_summary() -> dict:
     holdings         = rh.account.build_holdings(account_number=AGENTIC_ACCOUNT) or {}
 
     cash        = float(account.get("cash", 0) or 0)
+    # Settled, spendable cash (Oct 3 2026 remediation): on a cash account `cash`
+    # includes unsettled sale proceeds; enforce_settled_cash needs buying power.
+    try:
+        buying_power = float(account.get("buying_power"))
+    except (TypeError, ValueError):
+        buying_power = max(0.0, cash - float(account.get("unsettled_funds", 0) or 0))
     total_equity = float(portfolio_profile.get("equity", 0) or 0)
 
     positions = []
@@ -340,9 +348,10 @@ def get_portfolio_summary() -> dict:
         })
 
     return {
-        "cash":        cash,
-        "total_value": total_equity,
-        "positions":   positions,
+        "cash":         cash,
+        "buying_power": buying_power,
+        "total_value":  total_equity,
+        "positions":    positions,
     }
 
 

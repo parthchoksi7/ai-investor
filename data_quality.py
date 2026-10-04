@@ -143,6 +143,17 @@ def classify_data_quality(snapshot: dict, expected_universe: int | None = None) 
         breaches.append(f"nan_inf_count DEGRADED: {nan_count} non-finite numeric value(s)")
         n_degraded += 1
 
+    # INFORMATIONAL, not a breach: the names were already kept OUT of scoring, so
+    # nothing traded is affected — degrading the run's status/score would mark every
+    # forecast's provenance stamp below-quality (contaminating the year-end partition)
+    # and page daily for ~6 months on a genuine new listing. Surfaced in the report
+    # and the fetch log so a stale universe.py entry still gets fixed.
+    young = sorted(snapshot.get("young_history_tickers") or [])
+    metrics["young_history_tickers"] = {"value": young, "status": OK, "informational": True,
+                                        "degraded_below": None, "abort_below": None,
+                                        "note": ("excluded from scoring — new listing or REUSED "
+                                                 "symbol; verify and fix universe.py") if young else ""}
+
     # Valuation coverage is REPORTED for transparency but does NOT gate. As of
     # PLAN_SEC_VALUATION Phase 3 it is SEC-derived, single-source, and climbs
     # toward the same ~90%+ level as quality — no longer structurally FMP-capped —

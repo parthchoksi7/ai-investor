@@ -24,7 +24,10 @@ jobs:
       - name: Read health status
         id: health
         run: |
-          STATUS=$(python3 -c "import json; d=json.load(open('system_health.json')); print(d['overall_status'])")
+          # Page on actionable_status (informational DEGRADED checks — guard clamps,
+          # cash-band notes — excluded; see health.INFORMATIONAL_CHECKS). Falls back
+          # to overall_status for health files written before the split.
+          STATUS=$(python3 -c "import json; d=json.load(open('system_health.json')); print(d.get('actionable_status') or d['overall_status'])")
           RUN_ID=$(python3 -c "import json; d=json.load(open('system_health.json')); print(d['run_id'])")
           DATE=$(python3 -c "import json; d=json.load(open('system_health.json')); print(d['date'])")
           echo "status=$STATUS"  >> $GITHUB_OUTPUT
@@ -39,7 +42,8 @@ jobs:
           script: |
             const fs   = require('fs');
             const h    = JSON.parse(fs.readFileSync('system_health.json', 'utf8'));
-            const icon = { DEGRADED: '⚠️', FAILED: '🔴', ABORTED: '🚫' }[h.overall_status] || '❓';
+            const act  = h.actionable_status || h.overall_status;
+            const icon = { DEGRADED: '⚠️', FAILED: '🔴', ABORTED: '🚫' }[act] || '❓';
 
             // Ensure the health-alert label exists (create idempotently)
             try {
@@ -74,7 +78,7 @@ jobs:
               ``,
               `**Run ID:** \`${h.run_id}\``,
               `**Date:** ${h.date}`,
-              `**Status:** **${h.overall_status}**`,
+              `**Action needed:** **${act}** (overall incl. informational checks: ${h.overall_status})`,
               `**Timestamp:** ${h.timestamp}`,
               ``,
               `## Alerts`,
@@ -115,7 +119,7 @@ jobs:
               });
               console.log(`Updated existing issue #${existing.data[0].number}`);
             } else {
-              const title = `${icon} Pipeline health alert — ${h.date} [${h.overall_status}]`;
+              const title = `${icon} Pipeline health alert — ${h.date} [${act}]`;
               const issue = await github.rest.issues.create({
                 owner:  context.repo.owner,
                 repo:   context.repo.repo,
@@ -146,7 +150,7 @@ jobs:
                 owner:        context.repo.owner,
                 repo:         context.repo.repo,
                 issue_number: issue.number,
-                body: `✅ Pipeline recovered — run \`${h.run_id}\` on ${h.date} completed with status **OK**. Auto-closing.`,
+                body: `✅ Pipeline recovered — run \`${h.run_id}\` on ${h.date}: nothing needs action (overall incl. informational checks: **${h.overall_status}**). Auto-closing.`,
               });
               await github.rest.issues.update({
                 owner:        context.repo.owner,

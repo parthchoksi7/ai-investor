@@ -26,9 +26,17 @@ Rules enforced per decision:
   8. Good-faith-violation guard (cash account): REJECT a SELL whose most
      recent broker-accepted BUY was within GFV_WINDOW_TRADING_DAYS trading
      days — unless the kill switch is active (risk exits always allowed).
-     The system deliberately places SELLs before BUYs so same-day BUYs are
-     routinely funded by unsettled proceeds; selling those positions the
-     next day risks a GFV and, repeated, a 90-day account restriction.
+     Defense in depth: this guard assumed same-day BUYs could be funded by
+     unsettled proceeds. On this Robinhood cash account they CANNOT —
+     unsettled proceeds are excluded from buying_power (verified 2026-10-03),
+     and rule 9 now sizes BUYs to settled cash. The GFV guard stays in case the
+     account type changes; a GFV would risk a 90-day restriction.
+
+  9. Settled-cash budget (cash account, v2.1): total BUY notional ≤ settled
+     buying power × (1 − settled_cash_buffer_pct); over budget, every BUY is
+     scaled by one factor (qty recomputed) and sub-floor BUYs dropped. Today's
+     SELL proceeds settle T+1 and cannot fund today's BUYs (Oct 2 2026).
+     Runs LAST in main.py's chain — enforce_settled_cash.
 
 HOLD decisions pass through untouched (no qty, no notional).
 
@@ -37,6 +45,7 @@ The result report is recorded to system_health.json under the
 or skipped) so the existing alert.yml path surfaces every intervention.
 """
 
+import math
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -63,10 +72,12 @@ MAX_SECTOR_WEIGHT        = _POLICY["max_sector_weight"]   # hard cap on projecte
 # 13.3% CA), so the dominant after-tax lever is simply trading LESS. These two
 # controls are deliberately stronger than the GFV guard above: they exist to cut
 # the documented weekly momentum-rotation churn, not to manage settlement.
+MIN_HOLDING_GAIN_DAYS    = _POLICY["min_holding_trading_days_gain"]  # discretionary SELL of a position AT A GAIN (v2.1, IPS §7.2)
 MIN_HOLDING_TRADING_DAYS = _POLICY["min_holding_trading_days"]  # don't SELL a name bought < N trading days ago (risk exits exempt) — 30 since policy v2.0 (IPS §7.2)
 WASH_SALE_REENTRY_DAYS   = _POLICY["wash_sale_reentry_days"]    # don't BUY a name SOLD within N calendar days (wash-sale + anti-churn)
 MIN_NET_EDGE             = _POLICY["min_net_edge"]              # $ floor: a BUY's expected edge must clear cost + CA ST tax (#6; tunable)
 TAX_AWARE_HOLD_WINDOW    = _POLICY["tax_aware_hold_window_trading_days"]  # block discretionary SELL of a gained lot near its 1-year LT date (IPS §7.5)
+SETTLED_CASH_BUFFER_PCT  = _POLICY["settled_cash_buffer_pct"]   # BUYs ≤ settled buying power × (1 − this) — cash account (v2.1)
 SAFE_MODE_INDEX_DROP_PCT = _POLICY["safe_mode_index_drop_pct"]  # PERCENT — SPY 1-day drop ≥ this halts all new BUYs (§18.5 crisis safe-mode)
 
 
@@ -164,7 +175,7 @@ SECTOR_MAP: dict[str, str] = {
     "CHTR": "Communication Services", "CMCSA": "Communication Services",
     "DIS": "Communication Services", "EA": "Communication Services",
     "FOXA": "Communication Services", "IPG": "Communication Services",
-    "OMC": "Communication Services", "PARA": "Communication Services",
+    "OMC": "Communication Services", "PSKY": "Communication Services",
     "PINS": "Communication Services", "RBLX": "Communication Services",
     "ROKU": "Communication Services", "SNAP": "Communication Services",
     "T": "Communication Services", "TMUS": "Communication Services",
@@ -509,6 +520,19 @@ def _last_live_sell_date(ticker: str, transactions: list) -> str | None:
     return _last_live_trade_date(ticker, transactions, "SELL")
 
 
+def position_gained(ticker: str, portfolio: dict | None) -> bool:
+    """True when the held position's current price is above its cost basis.
+    Unknown (not held / no prices) → False, i.e. the shorter loser threshold —
+    the gain-aware hold must never block an exit it cannot prove is a gain."""
+    for p in (portfolio or {}).get("positions", []) or []:
+        if p.get("symbol") == ticker:
+            try:
+                return float(p.get("current_price") or 0) > float(p.get("avg_price") or 0) > 0
+            except (TypeError, ValueError):
+                return False
+    return False
+
+
 def enforce_min_holding_period(
     decisions: list[dict],
     portfolio: dict,
@@ -516,8 +540,16 @@ def enforce_min_holding_period(
     kill_active: bool = False,
     min_holding_days: int = MIN_HOLDING_TRADING_DAYS,
     today: str | None = None,
+    min_holding_days_gain: int = MIN_HOLDING_GAIN_DAYS,
 ) -> tuple[list[dict], list[dict]]:
-    """Reject discretionary SELLs of names bought < min_holding_days trading days ago.
+    """Reject discretionary SELLs of names bought < min_holding_days trading days ago
+    — or < min_holding_days_gain when the position is AT A GAIN (policy v2.1).
+
+    Gain-aware (Oct 2026): with one 30-day threshold, 5 of the 8 weekly-regime
+    SELLs landed 42–49 calendar days after purchase — the minimum had become the
+    holding period, and every realized lot was short-term. Selling a WINNER early
+    surrenders ~54% of the gain to tax; selling a LOSER early harvests a loss, so
+    losers keep the shorter threshold.
 
     Anti-churn / tax control. In a CA top-bracket taxable account every sale is a
     short-term gain (~54%), so cutting round-trip frequency is the dominant
@@ -551,9 +583,12 @@ def enforce_min_holding_period(
             continue
         ticker   = d.get("ticker", "")
         buy_date = _last_live_buy_date(ticker, transactions)
-        if buy_date and _trading_days_since(buy_date, today) < min_holding_days:
-            reason = (f"min-holding: bought {buy_date}, < {min_holding_days} "
-                      f"trading days ago (anti-churn/tax)")
+        gained   = position_gained(ticker, portfolio) and not d.get("thesis_exit")
+        need     = min_holding_days_gain if gained else min_holding_days
+        if buy_date and _trading_days_since(buy_date, today) < need:
+            reason = (f"min-holding: bought {buy_date}, < {need} trading days ago"
+                      f"{' (position at a GAIN — selling a winner early pays ~54% tax)' if gained else ''}"
+                      f" (anti-churn/tax)")
             rejected.append({**d, "rejected_reason": reason})
             print(f"   🚫 HOLDING REJECT: SELL {ticker} — {reason}")
         else:
@@ -611,6 +646,8 @@ def min_hold_days_remaining(
     transactions: list | None = None,
     today: str | None = None,
     min_holding_days: int = MIN_HOLDING_TRADING_DAYS,
+    gained: bool = False,
+    min_holding_days_gain: int = MIN_HOLDING_GAIN_DAYS,
 ) -> int | None:
     """Trading days until `ticker` clears the min-holding guard, or None.
 
@@ -627,7 +664,8 @@ def min_hold_days_remaining(
     if not buy_date:
         return None
     today = today or datetime.now(_ET).strftime("%Y-%m-%d")
-    return max(0, min_holding_days - _trading_days_since(buy_date, today))
+    need = min_holding_days_gain if gained else min_holding_days
+    return max(0, need - _trading_days_since(buy_date, today))
 
 
 def wash_sale_days_remaining(
@@ -659,7 +697,7 @@ def wash_sale_days_remaining(
         return None
     if days < 0:  # future-dated SELL row — malformed; fail open like the guard
         return None
-    return max(0, window_days - days)
+    return max(0, window_days + 1 - days)   # inclusive window: buyable from day window_days+1
 
 
 def enforce_wash_sale_reentry(
@@ -695,9 +733,12 @@ def enforce_wash_sale_reentry(
                 days = (today_date - datetime.strptime(sell_date, "%Y-%m-%d").date()).days
             except ValueError:
                 days = None
-        if days is not None and 0 <= days < window_days:
+        # INCLUSIVE (v2.1): IRS §1091 covers a re-buy "within 30 days after" the
+        # sale, so day 30 is still inside the window (EOG sold at a loss 2026-06-22
+        # and re-bought 2026-07-22 — day 30 — was a wash sale the old `<` allowed).
+        if days is not None and 0 <= days <= window_days:
             reason = (f"wash-sale/anti-churn: sold {sell_date}, {days}d ago "
-                      f"(< {window_days}d re-entry block)")
+                      f"(≤ {window_days}d re-entry block)")
             rejected.append({**d, "rejected_reason": reason})
             print(f"   🚫 REENTRY REJECT: BUY {ticker} — {reason}")
         else:
@@ -814,6 +855,64 @@ def enforce_safe_mode(
     return kept, rejected, reason
 
 
+def enforce_kill_switch(
+    decisions: list[dict],
+    kill_active: bool,
+    kill_reason: str = "",
+) -> tuple[list[dict], list[dict]]:
+    """Drop every BUY while the drawdown kill switch is active (SELLs/HOLDs pass).
+
+    The kill switch used to be applied ONLY on main.py's local execution path —
+    AFTER pending_decisions.json was written. The cloud routine places orders from
+    that envelope, so in production a >20% drawdown never blocked a single BUY
+    (found by /code-review ultra, 2026-10-04). As a guard it now acts on the
+    envelope itself."""
+    if not kill_active:
+        return list(decisions), []
+    kept, rejected = [], []
+    for d in decisions:
+        if str(d.get("action", "")).upper() == "BUY":
+            rejected.append({**d, "rejected_reason": f"kill switch active: {kill_reason or 'drawdown limit'}"})
+            print(f"   🛑 KILL-SWITCH REJECT: BUY {d.get('ticker', '?')}")
+        else:
+            kept.append(d)
+    return kept, rejected
+
+
+TURNOVER_CIRCUIT_BREAKER_PCT = 0.50   # SELL notional > this share of the book in one run = anomalous
+
+
+def enforce_turnover_circuit_breaker(
+    decisions: list[dict],
+    prices: dict,
+    total_value: float,
+    limit: float = TURNOVER_CIRCUIT_BREAKER_PCT,
+) -> tuple[list[dict], list[dict], dict | None]:
+    """Halt the WHOLE run when proposed SELL notional exceeds `limit` of the book.
+
+    Returns (kept, rejected, tripped). When tripped, kept holds only HOLDs, so the
+    envelope carries no orders — the missed-trades failure direction. This used to
+    run after pending_decisions.json was written and then return exit 0, so the
+    cloud routine still placed the SELLs it was meant to halt."""
+    sell_notional = 0.0
+    for d in decisions:
+        if str(d.get("action", "")).upper() == "SELL":
+            try:
+                sell_notional += float(d.get("qty") or 0) * float((prices.get(d.get("ticker", ""), {}) or {}).get("close") or 0)
+            except (TypeError, ValueError):
+                pass
+    pct = sell_notional / total_value if total_value else 0.0
+    if pct <= limit:
+        return list(decisions), [], None
+    reason = (f"turnover circuit breaker: SELL notional ${sell_notional:,.2f} = {pct:.0%} of the "
+              f"book > {limit:.0%} — whole run halted")
+    kept = [d for d in decisions if str(d.get("action", "")).upper() not in ("BUY", "SELL")]
+    rejected = [{**d, "rejected_reason": reason} for d in decisions
+                if str(d.get("action", "")).upper() in ("BUY", "SELL")]
+    print(f"\n🚨 CIRCUIT BREAKER: {reason}")
+    return kept, rejected, {"sell_notional": round(sell_notional, 2), "turnover_pct": round(pct, 4)}
+
+
 def flag_wash_sale_presale(
     decisions: list[dict],
     prices: dict,
@@ -857,7 +956,7 @@ def flag_wash_sale_presale(
         for lot in open_lots(transactions, ticker):
             held = holding_days(lot.get("acquired"), today)
             basis = lot.get("cost_basis", 0) or 0
-            if held is not None and 0 <= held < window_days and float(sell_px) < basis:
+            if held is not None and 0 <= held <= window_days and float(sell_px) < basis:
                 recent_loss_lots.append({**lot, "held_days": held})
         if recent_loss_lots:
             info = {
@@ -987,6 +1086,123 @@ def validate_decisions(
         report["passed"] += 1
 
     return validated, report
+
+
+def settled_buying_power(portfolio: dict) -> tuple[float, str]:
+    """(amount, source) — settled, spendable cash. `buying_power` is written into
+    mcp_portfolio.json by the routine's LLM, so it is parsed defensively; anything
+    unparseable falls back to pre-trade `cash` (never looser than before). The ONE
+    parser for the guard and the PM/CRO prompts, so they cannot disagree."""
+    try:
+        return float(portfolio.get("buying_power")), "settled buying_power"
+    except (TypeError, ValueError):
+        try:
+            return float(portfolio.get("cash", 0) or 0), "pre-trade cash (buying_power not reported)"
+        except (TypeError, ValueError):
+            return 0.0, "unparseable cash"
+
+
+def settled_budget(portfolio: dict, buffer_pct: float = SETTLED_CASH_BUFFER_PCT) -> tuple[float, float, str]:
+    """(budget, available, source) — what today's BUYs may spend: settled buying
+    power less the buffer, never negative. The guard and the PM/CRO prompts all call
+    this, so the agents are told exactly the figure the guard enforces."""
+    available, source = settled_buying_power(portfolio)
+    return max(0.0, available * (1 - buffer_pct)), available, source
+
+
+def enforce_settled_cash(
+    decisions: list[dict],
+    portfolio: dict,
+    prices: dict,
+    buffer_pct: float = SETTLED_CASH_BUFFER_PCT,
+    min_notional: float = MIN_ORDER_NOTIONAL,
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Clamp the BUY leg to what the account can actually spend today.
+
+    This is a CASH account: proceeds from today's SELLs settle T+1 and are NOT
+    spendable until then. SELLs are placed before BUYs, but that ordering does not
+    make their proceeds available — on 2026-10-02 three SELLs filled and all three
+    BUYs they were meant to fund never reached the broker ($32.65 spendable against
+    $134 of BUYs; Robinhood's own buying_power read $32.65 with $157.21 of cash).
+
+    Budget = settled buying power × (1 − buffer_pct). The buffer covers the move
+    between the sizing close and the live price (Robinhood's market-buy collar
+    measured only 0.02–0.06% above the fill in this account's order history). When the
+    routine did not report `buying_power`, pre-trade `cash` is used — the
+    pre-existing behavior, never looser (today's SELL proceeds are not in it).
+
+    Over budget → every BUY is scaled by the same factor (qty floored to 6 dp so
+    the total cannot creep over), preserving the PM's relative sizing; a BUY that
+    falls under `min_notional` after scaling is dropped. SELLs and HOLDs pass
+    through untouched. Strictly subtractive: never adds or enlarges an order.
+
+    Returns (kept, rejected, clamped). The proceeds of an un-funded rotation are
+    deployed at the next rebalance — the missed-trade failure direction.
+    """
+    budget, available, source = settled_budget(portfolio, buffer_pct)
+
+    def _price(d: dict) -> float | None:
+        p = (prices.get(d.get("ticker", ""), {}) or {}).get("close")
+        try:
+            p = float(p)
+        except (TypeError, ValueError):
+            return None
+        return p if p > 0 else None
+
+    buys = [d for d in decisions
+            if str(d.get("action", "")).upper() == "BUY" and float(d.get("qty") or 0) > 0]
+    priced = [(d, _price(d)) for d in buys]
+    total = sum(float(d.get("qty") or 0) * p for d, p in priced if p)
+    unpriced = any(p is None for _, p in priced)
+
+    if not buys or (total <= budget + 1e-9 and not unpriced):
+        return list(decisions), [], []
+
+    scale = (budget / total) if total > 0 else 0.0
+    # target_weight is the FINAL position weight, while qty is only the DELTA. Lower
+    # the target by exactly the notional the clamp removed (same price the qty was
+    # sized at), so target and qty keep describing the same position: scaling the
+    # target itself sank an add-to-holding below its current weight, and a live
+    # held weight vs a snapshot-priced qty could disagree — either way the routine's
+    # stale-price re-quote (target − held) went ≤ 0 and silently skipped the BUY.
+    try:
+        _tv = float(portfolio.get("total_value") or 0)
+    except (TypeError, ValueError):
+        _tv = 0.0
+    kept, rejected, clamped = [], [], []
+    for d in decisions:
+        if not (str(d.get("action", "")).upper() == "BUY" and float(d.get("qty") or 0) > 0):
+            kept.append(d)
+            continue
+        p = _price(d)
+        if p is None:
+            reason = "settled-cash guard: no price to size this BUY against the cash budget"
+            rejected.append({**d, "rejected_reason": reason})
+            print(f"   🚫 SETTLED-CASH REJECT: BUY {d.get('ticker')} — {reason}")
+            continue
+        qty = float(d.get("qty") or 0)
+        if scale >= 1.0:
+            kept.append(d)
+            continue
+        new_qty = math.floor(qty * scale * 1e6) / 1e6
+        if new_qty * p < min_notional:
+            reason = (f"settled-cash guard: {source} ${available:,.2f} cannot fund this BUY "
+                      f"above the ${min_notional:.0f} floor (today's SELL proceeds settle T+1)")
+            rejected.append({**d, "rejected_reason": reason})
+            print(f"   🚫 SETTLED-CASH REJECT: BUY {d.get('ticker')} — {reason}")
+            continue
+        reason = (f"settled-cash clamp: BUYs total ${total:,.2f} > budget ${budget:,.2f} "
+                  f"({source} ${available:,.2f} less {buffer_pct:.0%}); scaled ×{scale:.3f} "
+                  f"— today's SELL proceeds settle T+1")
+        tw = float(d.get("target_weight") or 0)
+        new_tw = (tw - (qty - new_qty) * p / _tv) if _tv > 0 else tw * scale
+        out = {**d, "qty": new_qty,
+               "target_weight": round(max(0.0, new_tw), 4),
+               "clamped_reason": reason}
+        kept.append(out)
+        clamped.append(out)
+        print(f"   ✂️  SETTLED-CASH CLAMP: BUY {d.get('ticker')} qty {qty:g} → {new_qty:g}")
+    return kept, rejected, clamped
 
 
 def enforce_net_edge(

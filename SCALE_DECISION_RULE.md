@@ -205,6 +205,60 @@ The measurement is only valid if the thing being measured stops changing:
 
 ## 7. Decisions taken
 
+### Restart — 2026-10-03: the first window was contaminated; one restart, then a real freeze
+
+**No threshold in this document changed.** What changed is the system being measured,
+which §6 says restarts the window. This entry exists so the restart is on the record
+with its reasons, *before* the next result.
+
+**Contamination of the window that opened 2026-09-02** (logged per §6, independent of
+any decision to change the system):
+
+- **W39 (Sep 21–25) had no rebalance at all.** GitHub Actions was billing-blocked from
+  Sep 21 evening to Sep 30, so no market snapshot landed for 7 trading days.
+- **The alerting plane was dark for the same 8 days.** It shares the blocked billing
+  account; no alert fired until 2026-10-01.
+- **The −25% stop-loss check did not run on 5 trading days** (Sep 23–25, Sep 30–Oct 1).
+  `preflight_gate.py` skipped catch-up days with stale data. No loss resulted.
+- **The Oct 2 rotation half-executed.** Its SELLs filled; its three BUYs never reached
+  the broker, because this cash account cannot spend same-day sale proceeds.
+- **Throughout, the routine traded on different scores than this rule measures.** For
+  62 short-history names, the routine re-scored a slimmed snapshot. Gate 1a reads
+  `factor_history.jsonl`, which is computed on full history.
+
+**What the restart changes** (`PLAN_OCT3_REMEDIATION.md`, policy v2.1, IPS v1.4):
+- **Prompts:** the PM and CRO are told the benchmark and shown exposure/sector context.
+- **Universe:** PARA, now a reused micro-cap symbol, is replaced by PSKY; a
+  young/reused-ticker guard is added; and the expansion gate gets hysteresis.
+- **Sizing:** BUYs are sized to settled cash.
+- **Policy:** a 63-trading-day minimum hold for positions at a gain, and an inclusive
+  wash-sale window.
+- **Scoring source:** the routine now trades on the recorded full-history scores.
+
+**What it does NOT change:** `FORMULA_VERSION` (`3.0-beta-neutral`). Gate 1a's
+evidence clock therefore **continues uninterrupted**. Only Gate 1b (the AI) and Gate 2
+(the account) restart.
+
+**The honest tension, stated rather than buried.** This restart comes after a bad month.
+That is exactly the pattern §5's kill rule guards against: "the scoring formula has to be
+changed again to keep the result alive."
+
+It does not trip that clause, for three reasons:
+1. The formula is untouched.
+2. Every change is grounded in a defect that would be true whatever the returns were:
+   a missed week, a disabled stop, an unplaced order, a scoring mismatch, a reused
+   ticker, and agents never told the benchmark.
+3. The investigation that found them measured the return gap at ~0.6σ of this book's
+   tracking error, which is not evidence of failure.
+
+**The new window opens at the first rebalance executed after this batch is merged and the
+live routine is synced (target Wed 2026-10-07).**
+
+**Freeze commitment.** From that rebalance, prompts, universe, sizing, policy limits and
+`FORMULA_VERSION` are frozen. Bug fixes that do not alter decisions are allowed and must
+be dated in this section. Any other change restarts the window again **and counts
+against §5's kill rule as a second restart.**
+
 ### Amendment — 2026-08-27, before any result existed
 
 **Gate 1 split into 1a (deterministic foundation) + 1b (the AI adds something).** The

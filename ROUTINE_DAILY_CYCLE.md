@@ -49,24 +49,67 @@ envelope and every later `git push` lands on `main`:
 git fetch origin main
 git checkout -B main origin/main      # reset local main to origin/main and switch to it
 
-Run the gate and capture its exit code:
+Run the gate and capture its exit code — and, at the SAME moment, whether this is the
+routine's final attempt (decided now, at gate time, never later: a slow 11:45 attempt that
+finishes after 12:40 is still NOT the final attempt):
 python preflight_gate.py
 GATE_EXIT=$?
+FINAL_ATTEMPT=$(python -c "import preflight_gate as g; print(1 if g._is_final_attempt() else 0)" | tail -n 1)
 
 Branch on GATE_EXIT — do not skip this:
   • 0  (PROCEED/REBALANCE)  → Wednesday (or Thu/Fri catch-up for a missed week), fresh
                               market_snapshot.json AND fresh research_dossier.json, no
                               rebalance attempted this ISO week. Set MODE=rebalance and
                               continue to STEP 1.
-  • 30 (PROCEED/RISK-WATCH) → any other trading day. Set MODE=risk_watch and continue to
-                              STEP 1. You will run risk_watch.py (SELL-only, zero LLM) in
-                              STEP 3 — NEVER main.py in this mode.
-  • 10 (SKIP/RETRY)         → market closed, or (on a rebalance day) snapshot/dossier not
-                              fresh or API overloaded. STOP now — do NOT fetch the
-                              portfolio, run any pipeline, or place any orders. The next
-                              scheduled attempt (+60 min) re-checks.
+  • 30 (PROCEED/RISK-WATCH) → any other trading day — OR the FINAL attempt (12:45) of a
+                              rebalance day whose rebalance is still blocked (late data /
+                              API), so the −25% stop still runs today. Set MODE=risk_watch
+                              and continue to STEP 1. You will run risk_watch.py (SELL-only,
+                              zero LLM) in STEP 3 — NEVER main.py in this mode.
+  • 11 (SKIP/RETRY-STALE)   → rebalance day, but market_snapshot.json / research_dossier.json
+                              has not landed yet. Request an on-demand data run (below),
+                              then STOP — do NOT fetch the portfolio, run any pipeline, or
+                              place any orders. The next attempt (+60 min) re-checks.
+  • 10 (SKIP/RETRY)         → market closed, or (on a rebalance day) Anthropic API
+                              overloaded. STOP now — do NOT fetch the portfolio, run any
+                              pipeline, or place any orders. The next attempt re-checks.
   • 20 (SKIP/DONE)          → Today's pipeline (either mode) already executed or claimed.
                               STOP now — re-running would risk double-execution.
+
+ON GATE_EXIT == 11 ONLY — request market data, then STOP. Re-request only if the previous
+request is more than 75 minutes old (a requested run takes ~40 min; the next hourly attempt
+re-checks).
+Pushing data_request.json starts market_data.yml within seconds instead of waiting on
+GitHub's deferred cron. Stage ONLY data_request.json, and do NOT put [skip ci] in the
+message (it would suppress the very workflow this push exists to start):
+
+python - <<'PY'
+import json, datetime, zoneinfo
+today = datetime.datetime.now(zoneinfo.ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+try:
+    prev = json.load(open("data_request.json")).get("date")
+except Exception:
+    prev = None
+try:
+    prev_at = datetime.datetime.fromisoformat(json.load(open("data_request.json")).get("requested_at"))
+    age_min = (datetime.datetime.now(datetime.timezone.utc) - prev_at).total_seconds() / 60
+except Exception:
+    age_min = 1e9
+if prev == today and age_min < 75:
+    print(f"Market data requested {age_min:.0f} min ago — not re-requesting yet.")
+else:
+    json.dump({"date": today,
+               "requested_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+               "reason": "preflight exit 11 (snapshot/dossier not fresh on a rebalance day)"},
+              open("data_request.json", "w"), indent=2)
+    print("DATA_REQUESTED")
+PY
+git config user.email 'ai-investor-bot@users.noreply.github.com'
+git config user.name 'AI Investor Bot'
+git add data_request.json
+git diff --staged --quiet || (git commit -m 'chore: request market data' && (git push || (git pull --rebase && git push)))
+
+Then STOP this attempt. (If the push fails, just stop — the scheduled crons still run.)
 
 Only continue past this step when GATE_EXIT == 0 or GATE_EXIT == 30.
 (preflight_gate.py uses only the Python standard library, so it runs before pip install.)
@@ -78,13 +121,14 @@ STEP 1 — Fetch portfolio via Robinhood MCP  (both modes)
 Call in order:
 1. get_accounts() — confirm account YOUR_ACCOUNT_NUMBER is present with agentic_allowed=true.
    If not found or agentic_allowed=false, STOP immediately.
-2. get_portfolio(account_number='YOUR_ACCOUNT_NUMBER') — for cash and total_value
+2. get_portfolio(account_number='YOUR_ACCOUNT_NUMBER') — for cash, total_value and buying_power
 3. get_equity_positions(account_number='YOUR_ACCOUNT_NUMBER') — for holdings
 
 Write mcp_portfolio.json with this exact structure:
 {
   "as_of": "<ISO-8601 timestamp, US/Eastern, e.g. 2026-07-06T09:46:00-04:00>",
   "cash": <float>,
+  "buying_power": <float — buying_power.buying_power from get_portfolio>,
   "total_value": <float>,
   "positions": [
     {
@@ -103,6 +147,12 @@ as_of MUST be the current timestamp (ET) at which you fetched this portfolio. ex
 get_portfolio_summary() raises StalePortfolioError if as_of is missing or not dated today (ET),
 and the pipeline then aborts before sizing any orders — every order is sized from this file, so a
 stale copy would size today's trades against a prior day's cash/positions. Write it fresh every run.
+
+buying_power is the SETTLED, spendable cash Robinhood reports (get_portfolio →
+buying_power.buying_power). This is a CASH account: proceeds from a sale are NOT spendable
+until they settle the next business day, so buying_power can be far below cash (2026-10-02:
+cash $157.21, buying_power $32.65). The guard chain sizes every BUY against it — write the
+broker's number verbatim; never substitute cash.
 
 available_qty = shares_available_for_sells from get_equity_positions (falls back to qty if the
 field is absent). SELL orders are capped to available_qty to prevent oversell. In RISK-WATCH mode
@@ -228,6 +278,23 @@ PY
 If this check fails, STOP. Do not attempt order execution. (Health was already pushed above,
 so the abort is visible to alert.yml.)
 
+FINAL-ATTEMPT FALLBACK (MODE == rebalance only) — apply BEFORE stopping for any of the
+three reasons above (CRASH GUARD fired, the validation check failed, or the CRO itself
+failed: system_health.json → checks.agent_7_cro.api_failed is true). On the routine's
+LAST attempt there is no later retry, so stopping would skip the −25% stop for the whole
+day. Use the FINAL_ATTEMPT value recorded in STEP 0 (do NOT re-evaluate the clock now):
+
+  • FINAL_ATTEMPT=0 (not final) → behave exactly as without this block: STOP for a crash or
+                         a failed validation; for a CRO failure continue to STEP 4 (its stamp
+                         step skips the stamp, so the next attempt re-runs the rebalance).
+  • FINAL_ATTEMPT=1 (final)     → do NOT stop. Set MODE=risk_watch, run `python risk_watch.py;
+                         MAIN_EXIT=$?`, push health again (same two git commands as above),
+                         re-run the CRASH GUARD and the validation check, and — only if both
+                         pass — continue to STEP 4 with the risk_watch envelope (SELL-only;
+                         GUARD 4 applies). The weekly rebalance is NOT consumed: a risk_watch
+                         envelope never satisfies the ISO-week lock, so Thu/Fri catch-up remains.
+                         If the risk_watch run also fails, STOP.
+
 ═══════════════════════════════════════════════
 STEP 4 — Execute trades via Robinhood MCP  (both modes — same machinery)
 ═══════════════════════════════════════════════
@@ -290,8 +357,19 @@ Failing toward missed trades is correct; failing toward duplicate trades is not.
 (The claim commit carries the full artifact set so the audit trail of what was
 *intended* survives even if this attempt dies during order placement.)
 
-Maintain a fills accumulator as you place orders — a dict you will write to fills.json:
-  fills = {}   # ticker -> {"order_id": <str>, "price": <float or null>}
+Right after the claim push succeeds, RESET both result files for THIS run so a prior run's
+copy can never be read as today's (fills.json is what flips transactions live):
+
+python - <<'PY'
+import json
+rid = json.load(open('pending_decisions.json'))['run_id']
+json.dump({"run_id": rid, "fills": {}}, open('fills.json', 'w'))
+json.dump({"run_id": rid, "errors": {}}, open('order_errors.json', 'w'))
+PY
+
+Maintain two accumulators as you place orders — written to fills.json / order_errors.json:
+  fills  = {}   # ticker -> {"order_id": <str>, "price": <float or null>}   (broker ACCEPTED)
+  errors = {}   # ticker -> "<broker/MCP error text>"                       (NOT placed)
 
 For each decision where action is BUY or SELL:
 
@@ -337,9 +415,13 @@ For each decision where action is BUY or SELL:
      qty = 0.648 is a valid fractional order. Place it.
      Robinhood supports fractional shares down to 0.000001.
 
-  3. PLACE ORDER — generate a fresh UUID ref_id per order for broker-side idempotency
-     (re-send the SAME ref_id only if you retry the SAME order after a transport failure;
-     never reuse it for a different order):
+  3. PLACE ORDER — use decision["ref_id"] VERBATIM as the broker idempotency key. The
+     pipeline generated it in code (uuid4). NEVER type, invent, or pattern a ref_id yourself
+     — hand-typed keys (e.g. a1b2c3d4-0001-…) can repeat across weeks, and a repeated key can
+     make the broker return an OLD order for a NEW request. Re-send the same ref_id only
+     when retrying the SAME decision after a transport failure. Only if decision["ref_id"] is
+     missing (an envelope from older code), generate one with
+     `python -c "import uuid; print(uuid.uuid4())"` and use that output:
      place_equity_order(
        account_number='YOUR_ACCOUNT_NUMBER',
        symbol=<ticker>,
@@ -347,28 +429,40 @@ For each decision where action is BUY or SELL:
        quantity=<qty from step 1>,
        type='market',
        time_in_force='gfd',
-       ref_id=<fresh uuid4>
+       ref_id=<decision["ref_id"]>
      )
 
   4. RECORD THE RESULT:
-     • If the response carries an order id, the broker ACCEPTED the order. Record it:
-         fills[<ticker>] = {"order_id": <response id>, "price": <average/executed price or null>}
-       (If the response has no fill price yet for a market order, leave price null — the
-        decision-time quote in transactions.json is then kept.)
-     • If the response is an error / rejection (no id), DO NOT add it to fills. Log the error
-       to the session output. It will correctly remain dry_run=True (never published as a fill).
+     • If the response carries an order id, the broker ACCEPTED the order. Then call
+       get_equity_orders(account_number='YOUR_ACCOUNT_NUMBER', order_id=<that id>) once and
+       read its average_price (market orders normally fill within a second). Record:
+         fills[<ticker>] = {"order_id": <response id>, "price": <average_price, or null if not
+                            filled yet>}
+       The real fill price is what makes realized P&L and tax lots match the broker; leave
+       it null only when the order is genuinely not yet filled.
+     • If the response is an error / rejection (no id), DO NOT add it to fills. Record the
+       broker's message: errors[<ticker>] = "<the error text, verbatim, ≤300 chars>". It will
+       correctly remain dry_run=True (never published as a fill).
      • If place_equity_order itself ERRORS / throws (timeout, transport failure), treat it
-       exactly like a rejection: record the error, DO NOT add it to fills, and CONTINUE to the
-       next order. One order's exception must never abort the remaining orders — with SELLs
-       placed before BUYs, aborting would strand capital in cash with the BUYs never attempted.
+       exactly like a rejection: record errors[<ticker>], DO NOT add it to fills, and CONTINUE
+       to the next order. One order's exception must never abort the remaining orders — with
+       SELLs placed before BUYs, aborting would strand capital in cash with the BUYs never
+       attempted.
 
   5. LOG the result (ticker, qty, order id or error) to the session output.
 
 Skip HOLD decisions entirely.
 If pending_decisions["decisions"] is [], skip order placement (fills stays {}) and go to the stamp step.
 
-Write the accumulator to fills.json so the stamp step can read it:
-  Write fills.json = the fills dict you built above (e.g. {"BAC": {"order_id": "...", "price": 55.52}, ...}).
+Write both accumulators so the stamp step can read them:
+  Write fills.json        = {"run_id": <pending_decisions["run_id"]>, "fills": <the fills dict>}
+                            e.g. {"run_id": "20261007-134806", "fills": {"BAC": {"order_id": "...", "price": 55.52}}}
+                            (a fills.json whose run_id is not this run's is ignored and pages)
+  Write order_errors.json = {"run_id": <pending_decisions["run_id"]>, "errors": <the errors dict>}
+                            e.g. {"run_id": "20261007-134806", "errors": {"NVDA": "insufficient buying power"}}
+                            — write it on EVERY run, with "errors": {} when nothing failed, so a
+                            prior run's file can never be mistaken for today's.
+  An entry in order_errors.json NEVER marks an order live — only fills.json does.
 
 AFTER ALL ORDERS ARE PLACED (or if decisions was empty), stamp the execution —
 BUT (rebalance mode only) only if the CRO made a genuine decision. If the CRO itself
@@ -381,6 +475,16 @@ from journal import mark_pending_executed, mark_transactions_live
 p = json.load(open('pending_decisions.json'))
 h = json.load(open('system_health.json')) if os.path.exists('system_health.json') else {}
 fills = json.load(open('fills.json')) if os.path.exists('fills.json') else {}
+errors = json.load(open('order_errors.json')) if os.path.exists('order_errors.json') else {}
+# Unwrap the run-scoped envelopes HERE (works with old and new journal.py alike):
+# a file stamped for another run is stale and must count as zero fills / no errors.
+def _unwrap(doc, key):
+    if isinstance(doc, dict) and key in doc and 'run_id' in doc:
+        return (doc.get(key) or {}) if doc.get('run_id') == p['run_id'] else {}
+    return doc if isinstance(doc, dict) else {}
+fills, errors = _unwrap(fills, 'fills'), _unwrap(errors, 'errors')
+import inspect
+_kw = {'errors': errors} if 'errors' in inspect.signature(mark_transactions_live).parameters else {}
 cro_api_failed = h.get('checks', {}).get('agent_7_cro', {}).get('api_failed', False)
 if p.get('mode', 'rebalance') == 'risk_watch' or p['decisions'] or not cro_api_failed:
     mark_pending_executed(p['run_id'])
@@ -392,7 +496,7 @@ if p.get('mode', 'rebalance') == 'risk_watch' or p['decisions'] or not cro_api_f
     # reconciler records reconciliation=FAILED on system_health.json (paging).
     # NOTE: never call mark_transactions_live(run_id) with no fills arg — it
     # RAISES (a bare flip-all silently re-created the phantom-fill bug).
-    mark_transactions_live(p['run_id'], fills)
+    mark_transactions_live(p['run_id'], fills, **_kw)
     print(f"Execution stamped: run_id={p['run_id']} mode={p.get('mode')} ({len(fills)} fill(s) reconciled)")
 else:
     print("Skipping execution stamp — CRO blocked trades due to API error, not a risk decision. Next retry will re-run.")
@@ -404,7 +508,10 @@ STEP 5 — Commit artifacts  (both modes)
 
 git config user.email 'ai-investor-bot@users.noreply.github.com'
 git config user.name 'AI Investor Bot'
-git add portfolio_snapshot.json system_health.json mcp_portfolio.json trades.csv decision_journal.json fundamentals_cache.json portfolio_peak.json pending_decisions.json last_rebalance.json agent_log.json transactions.json fills.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json decisions_ledger.jsonl decisions_scored.jsonl counterfactual.json
+# order_errors.json must exist or the whole `git add` fails (one bad pathspec aborts
+# staging of every file) — e.g. a no-decision day before the file was first committed.
+[ -f order_errors.json ] || echo '{}' > order_errors.json
+git add portfolio_snapshot.json system_health.json mcp_portfolio.json trades.csv decision_journal.json fundamentals_cache.json portfolio_peak.json pending_decisions.json last_rebalance.json agent_log.json transactions.json fills.json order_errors.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json decisions_ledger.jsonl decisions_scored.jsonl counterfactual.json
 git diff --staged --quiet || git commit -m 'chore: daily cycle'
 
 # Push WITH a rebase retry. Orders are already LIVE — this push carries the executed_at stamp,

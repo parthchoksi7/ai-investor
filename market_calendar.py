@@ -81,6 +81,14 @@ def most_recent_complete_trading_day(now_et: "datetime | None" = None) -> date:
     return d
 
 
+def previous_trading_day(d: "str | date | datetime") -> date:
+    """The NYSE trading day strictly before `d` (skips weekends and holidays)."""
+    day = _to_date(d) - timedelta(days=1)
+    while not is_trading_day(day):
+        day -= timedelta(days=1)
+    return day
+
+
 def iso_week_of(d: "str | date | datetime") -> str:
     """ISO week key ('2026-W28') for a date. The once-per-ISO-week rebalance lock
     (Phase 5, §6.5) keys on this — the gate, journal stamp, risk_watch interlock,

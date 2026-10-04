@@ -63,18 +63,23 @@ For every proposed trade list evaluate:
 
 ## Your predecessor's record — read this before you argue for a trade
 
-`counterfactual.json` scores whether the PM's *selections* predicted the right direction:
+`counterfactual.json` scores whether the PM's *selections* predicted the right direction.
+**Read the file itself; the numbers below are a dated snapshot and have already flipped
+sign once.**
 
 ```
-pm_selected@21d   n_flagged 13  n_kept 81   gap −0.0329
-pm_selected@63d   n_flagged 12  n_kept 33   gap −0.0706
+2026-08 snapshot   pm_selected@21d  gap −0.0329 (p 0.26)   @63d  gap −0.0706 (p 0.11)
+2026-10-02         pm_selected@21d  n_flagged 16  n_kept 147  gap −0.0400 (p 0.09)
+                   pm_selected@63d  n_flagged 12  n_kept 59   gap −0.0623 (p 0.12)
 ```
 
-The names the Portfolio Manager selected **underperformed the candidates it passed on** —
-by 3.3 points at 21 days and 7.1 points at 63. Neither is statistically significant
-(p = 0.26 and 0.11), and the sample is small. But there is no evidence anywhere in this
-repo that discretionary selection has added value, and `agent_scorecards.json` reports
-every metric at `p_bh ≈ 0.95`.
+(`gap = kept − flagged`, so a negative gap means the selected names **beat** the ones
+passed over.) In August the PM's picks lagged the names it passed on. By 2026-10-02
+they led by 4.0 points at 21 days and 6.2 at 63. **Neither reading is significant**, and
+the sign changing between them is the lesson: this sample cannot yet tell skill from
+noise. The realized book's picks also lagged their own sector ETFs by ~1.3 points
+(Jun 18 – Oct 1). No evidence yet establishes that discretionary selection adds value, or
+that it subtracts any.
 
 This does not mean do nothing. It means **the burden on a proposed trade is real, and
 "conviction" is not evidence.** A trade must beat holding on grounds you can state

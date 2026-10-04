@@ -84,21 +84,28 @@ If this document and the code disagree, the code wins.
 
 Anchor your reasoning in what this account has really done, not in what it intends:
 
-* **Every realized lot to date is short-term.** `deliberation_stats.json`: 7 realized
-  round-trips, 7 short-term, 0 long-term, **average holding 11.7 days**. The account has
-  never once reached the long-term rate.
-* **11 uncovered SELLs** — sales with no in-log basis. That is a basis-tracking gap, not a
-  rounding issue, and it makes the after-tax figure an estimate rather than a measurement.
-* **Turnover destroys more than the signal produces.** In the `backtest/` harness the
-  weekly-rebalance arm realized $3,131 of short-term gains on a $50,000 book — **$1,691 of
-  tax, ~3.4% of NAV in a single year**, purely in friction, against a strategy with no
-  measured edge.
+* **Every realized lot to date is short-term.** `deliberation_stats.json` (as of
+  2026-09-02): 11 realized lots, all short-term, **average holding 23.5 days**. Under
+  the weekly regime, 5 of 8 SELLs landed 42–49 days after purchase, i.e. right when the
+  30-day minimum expired. Hence the v2.1 gain-aware hold: **63 trading days** for a
+  position at a gain. The account has never once reached the long-term rate.
+* **Uncovered SELLs: 12 → 0 (reconciled 2026-10-03).** The 2026-06-08 opening BUYs predated
+  transaction logging. `reconcile_fills.py` backfilled them from broker fills
+  (`evidence/broker_fills_2026-10-03.json`) and replaced decision-time quotes with real
+  fill prices. The log's realized P&L moved from −10.81 to −6.72 dollars, against the
+  broker's −6.70. It is still not a 1099.
+* **Turnover destroys more than the signal produces.** In a 2026-10-03 `backtest/` run, the
+  weekly-rebalance arm realized about 6,306 dollars of short-term gains on a 50,000-dollar
+  book, **about 3,405 dollars of tax**. Its after-tax return was +4.4% against +11.2%
+  pre-tax and SPY's +13.8%. That run carries a fundamentals look-ahead caveat
+  (`backtest/engine.py:42`); the tax drag is the mechanical, trustworthy part.
 * **The June 2026 churn is the canonical failure.** AAPL bought 6/08, sold 6/10, rebought
   6/12, sold 6/22 — four transactions, ten days, every gain at 54%. The 30-day min-hold
   and 30-day wash-sale guards exist because of exactly this.
-* **The books are UNRECONCILED.** `performance_report.json` carries
-  `tax_reconciliation.status: "UNRECONCILED"` — the after-tax figure is an estimate from
-  `cost_model`/`tax_lots`. **The broker's realized P&L and the 1099 are authoritative.**
+* **The books are reconciled to fills, not to a 1099.** Since 2026-10-03 the logs carry
+  broker fill prices and match the broker's realized P&L. The after-tax figure is still an
+  estimate from `cost_model`/`tax_lots`, which does not model wash-sale basis adjustments
+  the way the 1099 will. **The broker's realized P&L and the 1099 are authoritative.**
   Never present an estimate as a settled number.
 
 ## For every proposal evaluate

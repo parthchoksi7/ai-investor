@@ -13,6 +13,59 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+### Fixed — the Oct 3 2026 remediation: the experiment couldn't produce a clean answer
+
+A full investigation of the bot's underperformance found it ~$21 behind SPY, which is
+inside normal luck for a 10-stock book. It also found a list of defects that spoil the
+experiment whichever way returns go. All are fixed in this batch
+(`PLAN_OCT3_REMEDIATION.md`).
+
+**Safety & execution**
+- **The 20% drawdown kill switch now actually blocks purchases.** A deep code review
+  found it had only ever filtered a local test path. The live routine trades from a
+  file written before that filter, so in production the kill switch never stopped a
+  buy. The 50% one-day selling limit had the same flaw. Both now act on the order file
+  itself.
+- **The stop-loss no longer goes dark when market data is late.** On a rebalance day
+  whose data never arrives, the last morning attempt now runs the sell-only safety
+  check instead of skipping. During the Sep 21–30 GitHub billing outage it was off for
+  5 trading days.
+- **Purchases are sized to cash you can actually spend.** This is a cash account: money
+  from a sale isn't usable until the next business day. On Oct 2 the bot sold three
+  stocks and the three purchases they were meant to fund never reached Robinhood. A
+  new guard scales purchases to settled cash; the rest is deployed the following week.
+- **Order IDs come from code, not from the AI.** Hand-typed duplicate-protection keys
+  had started repeating a template, which can make the broker return an old order.
+- **Broker errors are recorded, and real fill prices are captured.** Previously an
+  unplaced order left no reason, and the logs stored the quoted price at decision time.
+- **Late data is requested on demand.** If the snapshot is stale on a rebalance
+  morning, the routine now starts the data job immediately instead of waiting on
+  GitHub's cron, which has been running 2–7 hours late.
+- **Alerts mean something again.** Routine guard adjustments no longer open an alert
+  every Wednesday, so a real failure stands out.
+
+**Data & measurement**
+- **The bot now trades on the exact scores the experiment records.** For 62 stocks it
+  had been re-scoring a trimmed copy of the data and getting slightly different numbers.
+- **"PARA" was no longer Paramount.** The symbol now belongs to a $2.4M penny stock; it
+  is replaced by PSKY. A new guard excludes any reused or brand-new ticker.
+- **The trade logs now match Robinhood.** Twelve opening purchases were missing and
+  every price was a quote rather than a fill. Logged realized P&L moved from −$10.81
+  to −$6.72, against the broker's −$6.70.
+
+**Decisions** (these restart the measurement window once; see `SCALE_DECISION_RULE.md` §7)
+- **The AI is told what it's measured against.** It now sees SPY, how much market
+  exposure the book carries (currently 0.55 against the 0.8–1.2 the scale rule
+  requires), and sector weights vs SPY. Technology is 0% of the book against 40% of
+  SPY. This is shown as information; nothing forces a trade.
+- **Selling a winner needs a quarter's hold (63 trading days); losers keep 30.** The
+  old 30-day minimum had become the holding period, so every gain was taxed at ~54%.
+  A discretionary sale must also name what broke in the original thesis.
+- **The wash-sale window now includes day 30**, as the IRS rule does.
+
+Policy v2.1 · IPS v1.4. Requires a live-routine sync (STEP 0/1/4/5). Every routine
+change is backward-compatible, so merge and sync can happen in either order.
+
 ### Changed — market data now fetches twice a day instead of four times, to stop overrunning the free GitHub Actions allowance
 
 The repo exhausted **100% of its 2,000 included GitHub Actions minutes** with 10 days left in

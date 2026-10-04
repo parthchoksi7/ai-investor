@@ -133,6 +133,18 @@ try:
     scores = score_all_tickers(snapshot)
     n = log_factor_history(scores, as_of=snapshot["date"])
     print(f"factor_history.jsonl: +{n} row(s) (formula {FORMULA_VERSION}, {len(scores)} scored)")
+    # Oct 3 2026 remediation 2.1 — the routine must TRADE on exactly these
+    # full-history scores (the ones factor_history records and Gate 1a measures),
+    # not re-score the slimmed snapshot below, whose expansion names keep only a
+    # 63-bar tail. Embedded before the slim step so the committed copy carries it.
+    snapshot["precomputed_scores"] = {
+        "as_of":           snapshot["date"],
+        "formula_version": FORMULA_VERSION,
+        "n":               len(scores),
+        "scores":          scores,
+    }
+    with open("market_snapshot.json", "w") as f:
+        json.dump(snapshot, f)
 except Exception as e:
     print(f"WARNING: factor_history append failed — {e}")
 

@@ -24,9 +24,22 @@
 #                                          safe-mode: halt BUYs on an index drop ≥ 7%)
 #   NOTE: universe size 100 → 400 remains gated on UNIVERSE_EXPANDED + coverage
 #   (universe.get_active_universe) — the flag, not this file, is the switch.
+#
+# v2.1 (Oct 3 2026 remediation, owner-directed — PLAN_OCT3_REMEDIATION.md):
+#   settled_cash_buffer_pct  : —  → 0.05  (BUYs sized to SETTLED buying power less
+#                                          this margin; a cash account cannot spend
+#                                          same-day sale proceeds — Oct 2 2026 incident)
+#   min_holding_trading_days_gain: — → 63 (IPS §7.2 — a discretionary SELL of a position
+#                                          AT A GAIN needs a quarter's hold; losers keep
+#                                          30. 5 of 8 weekly-regime SELLs landed 42–49
+#                                          days in: the min-hold had become the holding period)
+#   wash_sale_reentry_days   : 30 → 30, now INCLUSIVE (IRS §1091 "within 30 days after":
+#                                          a day-30 re-buy is a wash sale — EOG Jun 22 → Jul 22)
+#   target_beta_min / _max   : —  → 0.8 / 1.2 (SCALE_DECISION_RULE Gate 2 — shown to the
+#                                          PM/CRO as CONTEXT; never a guard or veto trigger)
 # ─────────────────────────────────────────────────────────────────────────────
 
-policy_version: "2.0-phase5-weekly"
+policy_version: "2.1-oct3-remediation"
 
 guardrails:
   max_target_weight:        0.10   # IPS max_position_pct (10%) — clamp + qty recompute
@@ -35,10 +48,21 @@ guardrails:
   gfv_window_trading_days:  2      # good-faith-violation guard (cash account)
   max_sector_weight:        0.25   # IPS max_sector_pct (25%)
   min_holding_trading_days: 30     # IPS §7.2 (v2.0 migration; was 5) — risk exits exempt
-  wash_sale_reentry_days:   30     # IPS §7.3 — no re-BUY of a name sold < 30 calendar days
+  wash_sale_reentry_days:   30     # IPS §7.3 — no re-BUY of a name sold ≤ 30 calendar days
+                                   # ago (INCLUSIVE since v2.1 — the IRS window includes day 30)
+  min_holding_trading_days_gain: 63  # v2.1 — discretionary SELL of a position AT A GAIN needs
+                                     # ≥ 63 trading days; losers keep min_holding_trading_days
   min_net_edge:             0.0    # USD — a BUY's expected edge must clear cost + CA ST tax
   tax_aware_hold_window_trading_days: 30  # IPS §7.5 — gained lot within ~30 trading days
                                           # of its 1-year date: block discretionary SELL
+  settled_cash_buffer_pct:  0.05   # v2.1 — total BUY notional ≤ settled buying power ×
+                                   # (1 − this). Cash account: same-day SELL proceeds
+                                   # are NOT spendable (Oct 2 2026: 3 funded BUYs never
+                                   # reached the broker). The margin mainly covers the
+                                   # move between the sizing close and the live price:
+                                   # Robinhood's market-buy collar measured only
+                                   # 0.02–0.06% above the fill (broker order history,
+                                   # 2026-06-08 → 2026-10-02).
 
 trading:
   rebalance_weekday: 2             # 0=Mon … 2=Wed … 4=Fri; Thu/Fri catch-up (§6.5)
@@ -51,6 +75,29 @@ risk:
                                    # catastrophe brake (§6.7)
   safe_mode_index_drop_pct: 7      # PERCENT — SPY 1-day drop ≥ this → halt all new BUYs
                                    # (risk SELLs still allowed); plan §18.5
+  target_beta_min: 0.8             # v2.1 — book beta band (beta_stable, cash = 0) required by
+  target_beta_max: 1.2             # SCALE_DECISION_RULE Gate 2. CONTEXT for the PM/CRO only:
+                                   # no guard enforces it and the CRO must never veto on it.
+
+# Benchmark REFERENCE data (not a limit) — shown to the PM/CRO so sector bets vs the
+# benchmark are deliberate. Refresh quarterly from the issuer; a block older than 120
+# days is omitted from prompts rather than shown stale (policy.benchmark_reference).
+benchmark:
+  ticker: SPY
+  sector_weights_as_of: "2026-10-01"
+  sector_weights_source: "State Street SPDR S&P 500 ETF (SPY) fund page, ssga.com — fetched 2026-10-03"
+  sector_weights:                  # FRACTIONS, keyed by guardrails.sector_of names
+    Technology:             0.3993   # GICS Information Technology
+    Financials:             0.1140
+    Communication Services: 0.0981
+    Health Care:            0.0912
+    Consumer Discretionary: 0.0857
+    Industrials:            0.0811
+    Consumer Staples:       0.0436
+    Energy:                 0.0345
+    Utilities:              0.0189
+    Materials:              0.0168
+    Real Estate:            0.0168
 
 universe:
   blocked_tickers: ["TSLA"]        # IPS §5 exclusions — never bought or sold

@@ -19,6 +19,16 @@ on:
     # In winter (EST = UTC-5): update to '0 10', '0 13' (update_dst.yml does this automatically)
     - cron: '0 9  * * 1-5'   # 5:00 AM EDT — early crawl (Stage D sweep + max retry buffer)
     - cron: '0 12 * * 1-5'   # 8:00 AM EDT — fallback, with worst-case margin before 9:45
+  # On-demand (Oct 2026 remediation 2.4): when the routine's preflight gate finds a
+  # stale snapshot on a rebalance day it exits 11 and the routine pushes
+  # data_request.json. A push-triggered run starts within seconds, unlike the
+  # scheduled crons, which GitHub has been starting 2-7 hours late (observed
+  # 9:52 AM-3:32 PM ET for the "5:00 / 8:00 AM" triggers in Sep-Oct 2026). The
+  # `check` job below makes an on-demand run a no-op when today's snapshot already
+  # exists or the request is not dated today (e.g. the merge that first adds the file).
+  push:
+    branches: [main]
+    paths: ['data_request.json']
   workflow_dispatch:
     inputs:
       full_refresh:
@@ -62,12 +72,69 @@ on:
 # and are re-fetched in full on every run, so the trading-critical set is unaffected.
 # If EXPANSION_BATCH_SIZE or the universe size changes, re-check that ~2-day cycle
 # against the 5-day tolerance.
-concurrency:
-  group: market-data-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'scheduled' }}
-  cancel-in-progress: false
-
+# NOTE (Oct 2026): the concurrency group now lives on the `fetch` JOB, not the
+# workflow, so an on-demand (push) run's `check` job is never queued behind — and
+# never displaces — a pending scheduled run (GitHub keeps one pending run per group,
+# so a workflow-level group let a data request cancel a waiting scheduled run and
+# then no-op). `check` stands down when a scheduled/manual run is already queued or
+# in progress; only then does the request's `fetch` join the group.
 jobs:
+  check:
+    # Decides whether an ON-DEMAND (push) run has anything to do. Runs ONLY for push
+    # events — a scheduled/manual run skips it (no extra billed runner minute) and
+    # `fetch` proceeds on `needs.check.result == 'skipped'`.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read        # to see whether another market_data run is already active
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      # ref: main, NOT the push SHA: the workflow-level concurrency group can hold
+      # this run behind an in-flight scheduled run, and the snapshot that run commits
+      # is only visible on the latest main.
+      - uses: actions/checkout@v5
+        if: github.event_name == 'push'
+        with:
+          ref: main
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TODAY=$(TZ=America/New_York date +%F)
+          REQ=$(python3 -c "import json;print(json.load(open('data_request.json')).get('date') or '')" 2>/dev/null || echo "")
+          # "Ready" is defined ONCE, in preflight_gate.data_plane_ready (stdlib-only,
+          # runs before any pip install) — the same check that returned exit 11 — so
+          # the job and the gate can never disagree about whether a data run is needed.
+          # tail -n 1: importing preflight_gate can print a policy.py notice first (no
+          # PyYAML on the bare runner) — only the final yes/no line is the answer.
+          READY=$(python3 -c "import preflight_gate as g; ok, _ = g.data_plane_ready(); print('yes' if ok else 'no')" 2>/dev/null | tail -n 1)
+          [ "$READY" = "yes" ] || READY="no"
+          # Another market_data run already queued/in progress will land the data —
+          # stand down rather than compete with (or displace) it. The routine's next
+          # hourly attempt re-checks and may re-request.
+          ACTIVE=$(gh api "repos/${{ github.repository }}/actions/workflows/market_data.yml/runs?per_page=20" \
+                     --jq "[.workflow_runs[] | select(.id != ${{ github.run_id }}) | select(.event != \"push\") | select(.status==\"queued\" or .status==\"in_progress\" or .status==\"waiting\" or .status==\"pending\")] | length" 2>/dev/null || echo 0)
+          echo "today=$TODAY request=$REQ data_ready=$READY other_active_runs=$ACTIVE"
+          if [ "$REQ" = "$TODAY" ] && [ "$READY" != "yes" ] && [ "$ACTIVE" = "0" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "On-demand request not needed (request not dated today, data already ready, or another run is active)."
+          fi
+
   fetch:
+    needs: check
+    # Scheduled/manual runs skip `check` (skipped ⇒ proceed); a push run proceeds
+    # only when check decided a fetch is needed.
+    if: ${{ !cancelled() && (needs.check.result == 'skipped' || needs.check.outputs.run == 'true') }}
+    # Serialize fetches (see the long comment above). workflow_dispatch keeps its own
+    # per-run group — the manual safety dispatch must never queue or be cancelled.
+    concurrency:
+      group: market-data-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'scheduled' }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     # Bounded so a wedged run can never hold the concurrency group above for
     # GitHub's 6-hour default. get_extended_history sleeps up to ~90s per ticker on
@@ -84,7 +151,12 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
+      # An on-demand (push) run may have waited behind an in-flight run in the
+      # concurrency group; build on the LATEST main, not the request commit, or the
+      # append-only artifacts are stale and the final push conflicts.
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'push' && 'main' || github.ref }}
 
       - uses: actions/setup-python@v6
         with:
@@ -134,6 +206,11 @@ jobs:
           # ~400-name expansion. Also gated in code on fundamental coverage ≥ 80%
           # (universe.get_active_universe) — the flag alone is not sufficient.
           UNIVERSE_EXPANDED: ${{ vars.UNIVERSE_EXPANDED || 'false' }}
+          # Phase 5 (Oct 2026) — set the Actions VARIABLE POLYGON_FETCH_MODE=grouped to
+          # refresh every stored ticker from ONE grouped-daily call (~38 min → seconds;
+          # expansion universe stops rotating). Default per_ticker = unchanged behavior.
+          # Owner decision: it changes the data substrate (PLAN_OCT3_REMEDIATION.md §5).
+          POLYGON_FETCH_MODE: ${{ vars.POLYGON_FETCH_MODE || 'per_ticker' }}
         run: python fetch_snapshot.py
 
       - name: Save provider + raw-history cache

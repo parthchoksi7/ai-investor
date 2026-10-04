@@ -20,10 +20,17 @@ Exit codes (the routine MUST branch on these):
   30 → PROCEED/RISK-WATCH: any other trading day, not yet executed today. Run
        ``risk_watch.py`` then execute its (SELL-only) envelope via MCP.
   10 → SKIP/RETRY: market closed today (weekend / NYSE holiday) OR — on a rebalance
-       day — data/dossier not fresh OR Anthropic API overloaded (529). Do NOT run.
-       The next scheduled attempt (+60 min) re-checks. If all attempts on a
-       rebalance day see stale data, the Thu/Fri catch-up picks the week up; if the
+       day — Anthropic API overloaded (529). Do NOT run. The next scheduled attempt
+       (+60 min) re-checks.
+  11 → SKIP/RETRY-STALE: on a rebalance day, the snapshot or dossier is not fresh
+       (the data plane is late). Do NOT run; push data_request.json so
+       market_data.yml starts now rather than on GitHub's deferred cron. If all
+       attempts see stale data, the Thu/Fri catch-up picks the week up; if the
        whole week misses, the heartbeat's missed-week check alerts (§15.3).
+       FINAL-ATTEMPT FALLBACK: from 12:40 ET (the routine's last scheduled attempt
+       is 12:45), a blocked rebalance returns 30 instead of 10/11 — the stop-loss
+       check must not be skipped all day because data or the API is late. The
+       risk_watch envelope never consumes the week's rebalance.
   20 → SKIP/DONE: today's pipeline (either mode) already executed or claimed
        (idempotency). Do NOT run again — re-running risks double-execution.
 
@@ -36,7 +43,7 @@ attempted: orders may exist — recover via Scenario B, never re-run).
 Usage in the routine (after ``git checkout -B main origin/main``):
     python preflight_gate.py
     # exit 0  → main.py rebalance path   exit 30 → risk_watch.py path
-    # exit 10/20 → stop cleanly, do NOT trade
+    # exit 11 → push data_request.json, then stop   exit 10/20 → stop, do NOT trade
 """
 
 import json
@@ -55,6 +62,13 @@ ET = ZoneInfo("America/New_York")
 _OVERRIDE = os.getenv("PREFLIGHT_DATE_OVERRIDE")
 _NOW_ET = (datetime.strptime(_OVERRIDE, "%Y-%m-%d").replace(tzinfo=ET)
            if _OVERRIDE else datetime.now(ET))
+# PREFLIGHT_TIME_OVERRIDE ("HH:MM", ET) pins the time of day — tests use it to
+# exercise the final-attempt fallback deterministically. With only the date
+# override set, the effective time is 00:00 (never the final attempt).
+_TIME_OVERRIDE = os.getenv("PREFLIGHT_TIME_OVERRIDE")
+if _TIME_OVERRIDE:
+    _hh, _mm = (int(x) for x in _TIME_OVERRIDE.split(":"))
+    _NOW_ET = _NOW_ET.replace(hour=_hh, minute=_mm)
 TODAY = _NOW_ET.strftime("%Y-%m-%d")
 
 # Minimum history bars required for any quant calculation — mirrors the
@@ -62,6 +76,28 @@ TODAY = _NOW_ET.strftime("%Y-%m-%d")
 MIN_BARS = 22
 
 PROCEED, SKIP_RETRY, SKIP_DONE, PROCEED_RISK_WATCH = 0, 10, 20, 30
+# SKIP/RETRY because the DATA PLANE is late (snapshot or dossier not fresh) — as
+# opposed to 10 (market closed / API overloaded). The routine answers 11 by
+# pushing data_request.json, which starts market_data.yml immediately instead of
+# waiting on GitHub's deferred cron (Oct 2026: crons landing 10 AM–3:30 PM ET).
+# An unsynced routine only continues on 0/30, so it treats 11 exactly like 10.
+SKIP_RETRY_STALE = 11
+
+# The routine's LAST scheduled attempt is 12:45 ET (crons 9:45/10:45/11:45/12:45).
+# On a rebalance-eligible day, an attempt at/after this time whose rebalance is
+# still blocked runs risk_watch instead of skipping — otherwise a late data plane
+# disables the −25% stop for the whole day (Sep 23–25 and Sep 30–Oct 1 2026: five
+# trading days with no stop check while GitHub Actions was billing-blocked).
+# 12:40, not earlier: the 11:45 attempt would have to start 55 min late to be
+# mistaken for the final one (which would consume the day with risk_watch). The ET
+# times hold year-round only while the routine cron is DST-adjusted (CLAUDE.md DST
+# note); if that update is missed the fallback simply never fires — no worse than
+# before it existed.
+FINAL_ATTEMPT_ET = (12, 40)
+
+
+def _is_final_attempt() -> bool:
+    return (_NOW_ET.hour, _NOW_ET.minute) >= FINAL_ATTEMPT_ET
 
 # The rebalance weekday (0=Mon … 2=Wed) is policy, not code (IPS Appendix A).
 # policy.py degrades to its built-in v2.0 defaults when PyYAML isn't installed
@@ -155,6 +191,31 @@ def _dossier_fresh() -> tuple[bool, str]:
     if not d.get("tickers"):
         return False, "dossier has no tickers"
     return True, f"fresh ({d.get('n_tickers', len(d.get('tickers', {})))} tickers)"
+
+
+def data_plane_ready() -> tuple[bool, str]:
+    """The ONE definition of "today's data has landed": snapshot dated today with
+    ≥ MIN_BARS bars everywhere AND a fresh, valid dossier. The gate uses it, and
+    market_data.yml's on-demand `check` job imports it (stdlib-only) — so the two
+    can never disagree about whether a data run is needed."""
+    snap = _read_json("market_snapshot.json")
+    if snap is None:
+        return False, ("market_snapshot.json is missing or unreadable — the "
+                       "market_data.yml GitHub Actions job has not landed data yet")
+    if snap.get("date") != TODAY:
+        return False, (f"market_snapshot.json date={snap.get('date')}, expected {TODAY} — "
+                       "the market_data job has not pushed fresh data yet "
+                       "(did you `git pull` before running this gate?)")
+    depths = [len(h) for h in (snap.get("history") or {}).values()]
+    min_depth = min(depths) if depths else 0
+    if min_depth < MIN_BARS:
+        return False, (f"market_snapshot.json has only {min_depth} history bars "
+                       f"(need {MIN_BARS}+) — data is incomplete")
+    ok, msg = _dossier_fresh()
+    if not ok:
+        return False, (f"research dossier not ready — {msg}; the rebalance must not run "
+                       "against a stale/invalid dossier")
+    return True, f"fresh (min_depth={min_depth}; dossier {msg})"
 
 
 def _check_api_health() -> tuple[bool, str]:
@@ -287,63 +348,46 @@ def main() -> int:
               f"{iso_week_of(TODAY)} and today ({_NOW_ET.strftime('%A')}) is past "
               f"the scheduled weekday — running the weekly rebalance today (§6.5.2).")
 
-    # 3. Freshness — is market_snapshot.json dated today with enough history?
-    snap = _read_json("market_snapshot.json")
-    if snap is None:
-        print(
-            "SKIP/RETRY: market_snapshot.json is missing or unreadable. "
-            "The market_data.yml GitHub Actions job has not landed data yet. "
-            "Not running; the next scheduled attempt (+60 min) will re-check."
-        )
-        return SKIP_RETRY
+    def _blocked(code: int, why: str) -> int:
+        """A rebalance that cannot run today must not ALSO disable the daily
+        safety net (P1-7). Before the final attempt: skip and let the next attempt
+        re-check. On the final attempt: run risk_watch (SELL-only, live MCP data,
+        no snapshot/dossier/LLM needed). Its envelope is mode="risk_watch", which
+        never satisfies the ISO-week rebalance lock — so the Thu/Fri catch-up
+        stays available."""
+        if _is_final_attempt():
+            print(
+                f"PROCEED/RISK-WATCH: rebalance blocked on the FINAL attempt "
+                f"({_NOW_ET.strftime('%H:%M')} ET) — {why}. Running risk_watch.py so "
+                "the −25% stop and kill-switch check still happen today. The weekly "
+                "rebalance is NOT consumed: a Thu/Fri catch-up remains available. "
+                "Do NOT run main.py."
+            )
+            return PROCEED_RISK_WATCH
+        label = "SKIP/RETRY-STALE" if code == SKIP_RETRY_STALE else "SKIP/RETRY"
+        print(f"{label}: {why}. Not running; the next scheduled attempt (+60 min) "
+              "will re-check.")
+        return code
 
-    snap_date = snap.get("date")
-    depths = [len(h) for h in snap.get("history", {}).values()]
-    min_depth = min(depths) if depths else 0
-
-    if snap_date != TODAY:
-        print(
-            f"SKIP/RETRY: market_snapshot.json date={snap_date}, expected {TODAY}. "
-            "GitHub Actions market_data job has not pushed fresh data yet. "
-            "Not running; the next scheduled attempt (+60 min) will re-check. "
-            "Did you `git pull` before running this gate?"
-        )
-        return SKIP_RETRY
-
-    if min_depth < MIN_BARS:
-        print(
-            f"SKIP/RETRY: market_snapshot.json has only {min_depth} history bars "
-            f"(need {MIN_BARS}+). Data is incomplete. Not running; the next "
-            "scheduled attempt (+60 min) will re-check."
-        )
-        return SKIP_RETRY
-
-    # 3b. Dossier freshness (§11.4 / P1-5) — the rebalance agents read the dossier;
-    #     a stale/invalid one must SKIP (the Thu/Fri catch-up or next attempt
-    #     re-checks), never be silently traded on.
-    dossier_ok, dossier_msg = _dossier_fresh()
-    if not dossier_ok:
-        print(
-            f"SKIP/RETRY: research dossier not ready — {dossier_msg}. "
-            "The rebalance must not run against a stale/invalid dossier. "
-            "Not running; the next scheduled attempt (+60 min) will re-check."
-        )
-        return SKIP_RETRY
+    # 3. Data plane — snapshot dated today with ≥ MIN_BARS AND a fresh, valid dossier
+    #    (§11.4 / P1-5). Both come from the same market_data.yml run, so a data
+    #    request fixes either; the on-demand check job uses this same function.
+    data_ok, data_msg = data_plane_ready()
+    if not data_ok:
+        return _blocked(SKIP_RETRY_STALE, data_msg)
+    snap = _read_json("market_snapshot.json") or {}
+    min_depth = min((len(h) for h in (snap.get("history") or {}).values()), default=0)
 
     # 4. API health — canary call to catch Anthropic 529 overloads before burning
     #    the full pipeline against a degraded API.
     api_ok, api_msg = _check_api_health()
     if not api_ok:
-        print(
-            f"SKIP/RETRY: {api_msg}. "
-            "Not running; the next scheduled attempt (+60 min) will re-check."
-        )
-        return SKIP_RETRY
+        return _blocked(SKIP_RETRY, api_msg)
 
     print(
         f"PROCEED/REBALANCE: fresh market_snapshot.json (date={TODAY}, "
         f"{len(snap.get('prices', {}))} tickers, min_depth={min_depth}), "
-        f"dossier {dossier_msg}, API healthy, and no rebalance this ISO week"
+        f"data plane {data_msg}, API healthy, and no rebalance this ISO week"
         f"{' (catch-up)' if catch_up else ''}. Run main.py."
     )
     return PROCEED

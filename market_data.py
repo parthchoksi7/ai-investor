@@ -9,11 +9,21 @@ import os
 import re
 import requests
 from datetime import date, datetime, timedelta, timezone
+
+from market_calendar import previous_trading_day
 from dotenv import load_dotenv
 
 load_dotenv()
 
 POLYGON_KEY = os.getenv("POLYGON_API_KEY")
+# Phase 5 (Oct 2026 remediation): "grouped" refreshes the daily bar of every stored
+# ticker from ONE Polygon grouped-daily call instead of one rate-limited range call
+# per ticker (~38 min of 5-calls/min sleep per run → seconds). Default OFF: turning
+# it on changes the data substrate (and makes the expansion universe stable instead
+# of rotating with the batch), so it is an owner decision — set the Actions variable
+# POLYGON_FETCH_MODE=grouped. Parity verified 2026-10-03: OHLCV identical to the
+# per-ticker endpoint for all 164 snapshot names on 2026-10-01.
+POLYGON_FETCH_MODE = os.getenv("POLYGON_FETCH_MODE", "per_ticker").strip().lower()
 FUNDAMENTALS_CACHE = "fundamentals_cache.json"
 PROVIDER_CACHE = "provider_cache.json"   # provider enrichment (#1), alternate-day 50/50 cache
 # Stage D: rolling raw-history store (gitignored; persisted across GH Actions runs via
@@ -31,6 +41,14 @@ CARRY_FORWARD_MAX_DAYS = 5   # a store entry older than this is dropped, not car
 # is_history_dead, below — deliberately scoped to expansion names only; a thin
 # core/held/SP500 ticker stays visible so the abort gate can still see and catch it).
 MIN_VIABLE_BARS = 22
+
+# A 210-trading-day request that comes back FRESH but with fewer bars than this is
+# not a long-lived large cap: it is either a new listing or a REUSED symbol. Both are
+# unfit to rank against a 252-day-beta universe. Confirmed live 2026-10-03: "PARA"
+# (listed here as Paramount) had become Banzai International, a $2.4M micro-cap —
+# 39 bars from 2026-08-07 at ~$0.60, scored daily as Paramount using Banzai's SEC
+# filings. Paramount itself trades as PSKY since the Aug 2025 Skydance merger.
+YOUNG_HISTORY_BARS = 126
 
 # MANUAL_TODO #6b: expansion-only names are swept in batches via universe.next_batch/
 # save_batch (fetch_progress.json, also cached across GH Actions runs) — ~300
@@ -119,29 +137,108 @@ def get_extended_history(ticker: str, days: int = 210) -> list[dict]:
         # Stage D: back off + retry on a 429 instead of silently falling through to
         # yfinance (which now 401s) — under an expanded universe a rate-limit burst
         # mid-sweep must degrade to "slower", not "ticker silently missing".
-        for attempt in range(3):
-            try:
-                r = requests.get(url, params=params, timeout=10)
-                if r.status_code == 429:
-                    import time as _time
-                    wait = 15 * (attempt + 1)
-                    print(f"   ⏳ Polygon 429 for {ticker} — backing off {wait}s "
-                          f"(attempt {attempt + 1}/3)")
-                    _time.sleep(wait)
-                    continue
-                results = r.json().get("results", [])
-                if results:
-                    return [
-                        {"date": res["t"], "open": res["o"], "high": res["h"],
-                         "low": res["l"], "close": res["c"], "volume": res["v"]}
-                        for res in results
-                    ]
-                break
-            except Exception as e:
-                print(f"   ⚠ Polygon history failed for {ticker}: {e}")
-                break
+        data = _polygon_json(url, params, ticker, timeout=10)
+        results = (data or {}).get("results") or []
+        if results:
+            return [
+                {"date": res["t"], "open": res["o"], "high": res["h"],
+                 "low": res["l"], "close": res["c"], "volume": res["v"]}
+                for res in results
+            ]
 
     return _history_yfinance(ticker, days)
+
+
+def _midnight_et_ms(day: date) -> int:
+    """Epoch-ms of 00:00 America/New_York on `day` — the timestamp the per-ticker
+    range endpoint stamps on a daily bar. The grouped endpoint stamps the 4 PM close
+    instead (verified 2026-10-03), so grouped bars are normalized to this before they
+    enter the store; mixed conventions would break every date-keyed join."""
+    from zoneinfo import ZoneInfo
+    return int(datetime(day.year, day.month, day.day,
+                        tzinfo=ZoneInfo("America/New_York")).timestamp() * 1000)
+
+
+def _polygon_json(url: str, params: dict, label: str, timeout: int = 30) -> dict | None:
+    """The ONE Polygon GET with 429 back-off (15/30/45 s, 3 attempts); None on any
+    failure. get_extended_history, get_grouped_daily and get_split_tickers all use it,
+    so the back-off cannot drift between the per-ticker and grouped paths."""
+    for attempt in range(3):
+        try:
+            r = requests.get(url, params=params, timeout=timeout)
+            if r.status_code == 429:
+                import time as _time
+                wait = 15 * (attempt + 1)
+                print(f"   ⏳ Polygon 429 for {label} — backing off {wait}s (attempt {attempt + 1}/3)")
+                _time.sleep(wait)
+                continue
+            if r.status_code != 200:
+                print(f"   ⚠ Polygon {label} HTTP {r.status_code}")
+                return None
+            return r.json()
+        except Exception as e:
+            print(f"   ⚠ Polygon {label} failed: {e}")
+            return None
+    return None
+
+
+def get_grouped_daily(day: date) -> dict[str, dict]:
+    """ONE call → {ticker: bar} for every US stock on `day` (adjusted), in exactly
+    the bar shape and timestamp convention of get_extended_history. {} on failure."""
+    if not POLYGON_KEY:
+        return {}
+    data = _polygon_json(
+        f"https://api.polygon.io/v2/aggs/grouped/locale/us/market/stocks/{day.isoformat()}",
+        {"apiKey": POLYGON_KEY, "adjusted": "true"}, f"grouped-daily {day}")
+    ts = _midnight_et_ms(day)
+    out = {}
+    for r in (data or {}).get("results") or []:
+        try:
+            out[str(r["T"])] = {"date": ts, "open": r["o"], "high": r["h"],
+                                "low": r["l"], "close": r["c"], "volume": r["v"]}
+        except (KeyError, TypeError):
+            continue
+    return out
+
+
+def get_split_tickers(since: date) -> set[str] | None:
+    """Tickers with a split executed on/after `since` — their stored history is
+    pre-split and must be re-fetched whole (adjusted), never appended to. None when
+    the lookup fails: the caller then disables grouped refresh entirely rather than
+    risk appending a post-split bar to unadjusted history."""
+    if not POLYGON_KEY:
+        return None
+    data = _polygon_json("https://api.polygon.io/v3/reference/splits",
+                         {"apiKey": POLYGON_KEY, "execution_date.gte": since.isoformat(),
+                          "limit": 1000}, f"splits since {since}")
+    if data is None:
+        return None
+    return {str(r.get("ticker")) for r in data.get("results") or [] if r.get("ticker")}
+
+
+def grouped_refresh(entry: dict | None, bar: dict | None, fresh_through: date,
+                    split_tickers: set[str], ticker: str,
+                    window_days: int = 210) -> list[dict] | None:
+    """Extend a stored history by today's grouped bar, or None if not eligible.
+
+    Eligible only when (a) the store holds this ticker's history, (b) its last bar
+    is exactly the trading day before `fresh_through` (contiguous — a gap means
+    missed days the grouped call cannot fill), (c) the grouped response has the
+    ticker, and (d) no split since — post-split bars need re-adjusted history.
+    The result is trimmed to the same calendar window get_extended_history
+    requests (window_days + 90), so both paths hold the same bars."""
+    if not (isinstance(entry, dict) and entry.get("history") and bar) or ticker in split_tickers:
+        return None
+    hist = entry["history"]
+    try:
+        last = datetime.fromtimestamp(hist[-1]["date"] / 1000, tz=timezone.utc).date()
+    except (KeyError, TypeError, ValueError, OSError):
+        return None
+    if last != previous_trading_day(fresh_through):
+        return None
+    cutoff_ms = _midnight_et_ms(date.today() - timedelta(days=window_days + 90))
+    merged = [b for b in hist if b.get("date", 0) >= cutoff_ms] + [bar]
+    return merged[-window_days:]
 
 
 def is_history_dead(hist: list[dict], as_of: date | None = None, max_age_days: int | None = None) -> bool:
@@ -171,6 +268,17 @@ def is_history_thin(hist: list[dict], min_bars: int | None = None) -> bool:
     when the fetch-time-only copy left the carry-forward path unguarded."""
     if min_bars is None:
         min_bars = MIN_VIABLE_BARS
+    return bool(hist) and len(hist) < min_bars
+
+
+def is_history_young(hist: list[dict], min_bars: int | None = None) -> bool:
+    """Third sibling: enough bars to compute *something*, but far fewer than a
+    long-listed name returns for a 210-day request — a new listing or a reused
+    ticker (see YOUNG_HISTORY_BARS for the PARA → Banzai case). Applied to
+    expansion-only names, like is_history_thin, for the same reason: a missing
+    core/held name must stay loud (the depth gate), never silently vanish."""
+    if min_bars is None:
+        min_bars = YOUNG_HISTORY_BARS
     return bool(hist) and len(hist) < min_bars
 
 
@@ -238,6 +346,16 @@ def _fetch_fundamentals(ticker: str) -> dict | None:
         return result if result else None
     except Exception:
         return _fundamentals_yfinance(ticker)
+
+
+def _cached_fundamentals(tickers: list[str]) -> dict:
+    """Fundamentals from fundamentals_cache.json without fetching (any age)."""
+    try:
+        with open(FUNDAMENTALS_CACHE) as f:
+            cache = json.load(f)
+    except Exception:
+        return {}
+    return {t: (cache.get(t) or {}).get("data") for t in tickers if t in cache}
 
 
 def get_all_fundamentals(tickers: list[str]) -> dict:
@@ -342,6 +460,12 @@ def _provider_group(ticker: str) -> int:
 # Absolute coverage floor (IPS Appendix A). A steady low coverage — not a drop —
 # was the June bug, so the gate is an ABSOLUTE floor, not a week-over-week delta.
 FUNDAMENTAL_COVERAGE_FLOOR_PCT = 80.0
+# Expansion-gate HYSTERESIS (MANUAL_TODO #24): once expanded, stay expanded unless
+# prior coverage falls below this lower bound. With a single 80% threshold, a run
+# whose rotating 75-name batch carried a few unenriched names read e.g. 72.9%,
+# closed the gate, the next (core-only, ~96%) run reopened it — so the candidate
+# universe flipped between ~100 and ~170 names on cron timing alone.
+FUNDAMENTAL_COVERAGE_EXIT_PCT = 70.0
 
 
 def _compute_fundamental_coverage(all_tickers: list, fundamentals: dict,
@@ -605,15 +729,27 @@ def select_fetch_batch(active: list[str], core: list[str], sp500_keys, held: set
 
 
 def _prior_coverage_ok() -> bool:
-    """Yesterday's fundamental-coverage verdict, from the previously-committed
-    snapshot's data_quality block. The expansion gate (universe.get_active_universe)
-    needs a coverage signal BEFORE today's enrichment has run — the prior day's is
-    the honest available one. Missing/unreadable → False (expansion stays closed)."""
+    """The expansion gate's coverage verdict, from the previously-committed
+    snapshot. The gate (universe.get_active_universe) needs a coverage signal
+    BEFORE today's enrichment has run — the prior run's is the honest available
+    one. Missing/unreadable → False (expansion stays closed).
+
+    Hysteresis (MANUAL_TODO #24): ENTER expansion at ≥ FUNDAMENTAL_COVERAGE_FLOOR_PCT
+    (the prior run's coverage_ok); once the prior run WAS expanded, STAY expanded
+    while its coverage is ≥ FUNDAMENTAL_COVERAGE_EXIT_PCT. A batch-mix dip just
+    under 80% no longer flips the candidate universe between runs."""
     try:
         with open("market_snapshot.json") as f:
-            return bool((json.load(f).get("data_quality") or {}).get("coverage_ok"))
+            prior = json.load(f)
     except Exception:
         return False
+    dq = prior.get("data_quality") or {}
+    if prior.get("universe_expanded"):
+        try:
+            return float(dq.get("fundamental_coverage_pct")) >= FUNDAMENTAL_COVERAGE_EXIT_PCT
+        except (TypeError, ValueError):
+            return bool(dq.get("coverage_ok"))
+    return bool(dq.get("coverage_ok"))
 
 
 def _load_history_store() -> dict:
@@ -742,8 +878,58 @@ def get_market_snapshot(force: bool = False) -> dict:
 
     store = _load_history_store() if force else {}
     expansion_batch_set = set(batch)
+    expansion_only_set = set(expansion_only)
+    young_history: list[str] = []
     fetched = failed = carried = dead = thin = 0
-    for i, ticker in enumerate(all_tickers):
+
+    # Phase 5 — grouped refresh (POLYGON_FETCH_MODE=grouped, default off). Two calls
+    # (grouped bars + recent splits) replace the per-ticker range call for every
+    # stored ticker whose history is contiguous. It also lets EVERY expansion name
+    # already in the store refresh daily for free, so the expansion universe stops
+    # rotating with the 75-name batch (MANUAL_TODO #24's non-determinism). Any
+    # failure falls back to the per-ticker path for everything.
+    grouped_bars: dict[str, dict] | None = None
+    split_tickers: set[str] = set()
+    grouped_only: set[str] = set()
+    scope_tickers = list(all_tickers)
+    if force and POLYGON_FETCH_MODE == "grouped":
+        grouped_bars = get_grouped_daily(expected_fresh_through) or None
+        _splits = get_split_tickers(expected_fresh_through - timedelta(days=CARRY_FORWARD_MAX_DAYS + 10))
+        if grouped_bars is None or _splits is None:
+            print("   ⚠ grouped refresh unavailable — falling back to per-ticker fetch for all names")
+            grouped_bars = None
+        else:
+            split_tickers = _splits
+            _in_scope = set(all_tickers)
+            # Only names the grouped call can ACTUALLY refresh (contiguous history, in
+            # the response, no split) — or already fresh today. A stored name that is
+            # not refreshable is neither fetched nor kept, so counting it would push
+            # universe_fetched_pct toward ABORT after any outage (store entries >5 days
+            # old). Those names come back via the normal per-ticker batch sweep.
+            def _refreshable(t):
+                e = store.get(t)
+                if not (isinstance(e, dict) and e.get("history")):
+                    return False
+                if e.get("date") == today_str:
+                    return True
+                if grouped_refresh(e, grouped_bars.get(t), expected_fresh_through,
+                                   split_tickers, t) is not None:
+                    return True
+                # Not refreshable today but still inside the carry-forward window →
+                # keep it in scope so it carries forward (price_as_of stamped), exactly
+                # as the per-ticker path does; only >CARRY_FORWARD_MAX_DAYS entries drop.
+                try:
+                    age = (date.fromisoformat(today_str) - date.fromisoformat(str(e.get("date")))).days
+                except ValueError:
+                    return False
+                return age <= CARRY_FORWARD_MAX_DAYS
+            grouped_only = {t for t in expansion_only if t not in _in_scope and _refreshable(t)}
+            scope_tickers += sorted(grouped_only)
+            print(f"   📦 grouped refresh: {len(grouped_bars)} bars for {expected_fresh_through}; "
+                  f"{len(split_tickers)} recent split(s); +{len(grouped_only)} stored expansion "
+                  f"name(s) refreshed without a per-ticker call")
+    grouped_used = 0
+    for i, ticker in enumerate(scope_tickers):
         entry = store.get(ticker)
         already_fetched_today = (isinstance(entry, dict) and entry.get("date") == today_str
                                   and entry.get("history"))
@@ -758,7 +944,14 @@ def get_market_snapshot(force: bool = False) -> dict:
             ).date()
             already_fetched_today = last_bar_date >= expected_fresh_through
         if not already_fetched_today:
-            hist = get_extended_history(ticker, days=210)
+            hist = None
+            if grouped_bars is not None:
+                hist = grouped_refresh(entry, grouped_bars.get(ticker), expected_fresh_through,
+                                       split_tickers, ticker)
+                if hist is not None:
+                    grouped_used += 1
+            if hist is None and ticker not in grouped_only:
+                hist = get_extended_history(ticker, days=210)
             # Treat a stale-tailed "success" (delisted ticker frozen at its last
             # traded bar — confirmed live: HOLX/Hologic delisted 2026-04-08 kept
             # scoring off its Apr-6 close with a fabricated near-zero volatility)
@@ -806,6 +999,14 @@ def get_market_snapshot(force: bool = False) -> dict:
         # three paths it arrives by.
         if ticker in expansion_batch_set and is_history_thin(entry["history"]):
             continue
+        # Young/reused-symbol screen (Oct 2026): unlike `thin`, applies to EVERY
+        # expansion-only name on every surfacing path (today's batch or carried
+        # forward), and is RECORDED — snapshot.young_history_tickers, an informational
+        # data_quality metric, and a fetch-log warning — so a stale universe entry gets
+        # fixed in universe.py. It does NOT degrade the run: nothing traded is affected.
+        if ticker in expansion_only_set and is_history_young(entry["history"]):
+            young_history.append(ticker)
+            continue
         entry_date = str(entry.get("date") or "")
         if entry_date != today_str:
             try:
@@ -844,6 +1045,12 @@ def get_market_snapshot(force: bool = False) -> dict:
         if expanded and expansion_only:
             new_cursor = save_batch(expansion_only, EXPANSION_BATCH_SIZE, batch_cursor)
             print(f"   🌐 expansion batch cursor advanced to {new_cursor}/{len(expansion_only)}")
+    if young_history:
+        print(f"   ⚠ young/reused-symbol history excluded from scoring: {sorted(young_history)} "
+              "— verify each and fix universe.py")
+    if grouped_bars is not None:
+        print(f"   📦 grouped refresh used for {grouped_used} ticker(s); "
+              f"{fetched - grouped_used} per-ticker fetch(es)")
     if failed or carried:
         _failed_detail = ", ".join(filter(None, [
             f"{dead} stale/likely-delisted" if dead else "",
@@ -854,6 +1061,15 @@ def get_market_snapshot(force: bool = False) -> dict:
               f"{carried} carried forward (≤{CARRY_FORWARD_MAX_DAYS}d, price_as_of stamped)")
 
     fundamentals = get_all_fundamentals(all_tickers)
+    # Young/reused-symbol names were excluded from scoring; they must not shrink the
+    # coverage / universe-fetched denominators either (they "do NOT degrade the run").
+    _young = set(young_history)
+    quality_scope = [t for t in scope_tickers if t not in _young]
+    if grouped_only:
+        # Grouped-only expansion names take CACHED fundamentals (any age) — fetching
+        # them would reintroduce ~200 rate-limited per-ticker Polygon calls into the
+        # one-call path. SEC enrichment below still refreshes them on its own schedule.
+        fundamentals.update(_cached_fundamentals(sorted(grouped_only)))
 
     # Per-ticker deep-dive for top 4 movers (|change_pct| > 3%) — 4 Polygon calls.
     # Cap at 4 so that together with get_news_summary() above we stay within 5 calls/min.
@@ -913,12 +1129,12 @@ def get_market_snapshot(force: bool = False) -> dict:
     earnings_calendar: dict = {}
     data_quality: dict | None = None
     try:
-        earnings_calendar, data_quality = _enrich_with_provider(all_tickers, fundamentals)
+        earnings_calendar, data_quality = _enrich_with_provider(quality_scope, fundamentals)
     except Exception as e:
         print(f"   ⚠ provider enrichment skipped: {e}")
 
     if data_quality is None:
-        data_quality = _compute_fundamental_coverage(all_tickers, fundamentals, None)
+        data_quality = _compute_fundamental_coverage(quality_scope, fundamentals, None)
 
     # Corporate-action / bad-print guard (P0-3): flag suspect 1-day moves so an
     # unhandled split or bad print is surfaced, not silently scored. Detection only.
@@ -944,6 +1160,9 @@ def get_market_snapshot(force: bool = False) -> dict:
         # the per-ticker records; the routine re-quotes any stale-priced order.
         "price_as_of_by_ticker": price_as_of_by_ticker,
         "universe_expanded": expanded,
+        # Expansion-only names excluded because their history is far too short for
+        # a long-listed name (new listing or reused ticker) — see is_history_young.
+        "young_history_tickers": sorted(young_history),
         "prices":           prices,
         "history":          history,
         "fundamentals":     fundamentals,

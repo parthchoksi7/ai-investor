@@ -88,6 +88,10 @@ Haiku runs for each of up to 20 candidates. Sonnet runs 3 times total. Prompt ca
 | `event_digest.py` | Phase 4 Step 4 — Haiku news→`events.jsonl` digest (material per-ticker events, deduped, no look-ahead); runs in GH Actions; enrichment only (never gates); reuses `analysis._safe_call`; **zero order code** |
 | `preflight_gate.py` | STEP 0 gate the routine runs first each attempt — PROCEED-REBALANCE (0) / PROCEED-RISK-WATCH (30) / SKIP-RETRY (10) / SKIP-DONE (20) (see below) |
 | `risk_watch.py` | Phase 5 Stage B — daily SELL-only safety net (non-rebalance trading days): −25% stop from cost basis on live MCP prices, kill-switch check, cross-mode ISO-week SELL interlock; decisions flow through the SAME envelope/claim/stamp machinery as the rebalance; **zero LLM, structurally zero BUYs** |
+| `reconcile_fills.py` | Applies an evidence file of broker fills (`evidence/broker_fills_*.json`) to `transactions.json` / `trades.csv`: real fill prices, missing broker ids, backfilled pre-logging lots. Idempotent; dry run unless `--apply` |
+| `data_request.json` | Written + pushed by the routine on gate exit 11 to start `market_data.yml` on demand (push trigger) |
+| `order_errors.json` | Routine STEP 4: broker/MCP error text for orders NOT placed → `mark_transactions_live(errors=)` → reconciliation check |
+| `PLAN_OCT3_REMEDIATION.md` | The Oct 3 2026 remediation plan + status (every fix from the performance investigation) |
 | `last_rebalance.json` | Durable once-per-ISO-week rebalance lock (§6.5) — mirrored by `journal.py` on the claim/executed stamps; read by the gate's Thu/Fri catch-up, risk_watch's interlock, and the heartbeat missed-week check. TRACKED (never gitignore) |
 | `ROUTINE_DAILY_CYCLE.md` | Canonical, version-controlled copy of the daily routine prompt (secrets redacted) |
 | `ROUTINE_EOD_CLOSE.md` | Canonical, version-controlled copy of the EOD close routine prompt (secrets redacted) |
@@ -133,14 +137,17 @@ python preflight_gate.py     # decide whether AND HOW to run
 case $? in
   0)  : REBALANCE — run main.py + execute (the full protocol below) ;;
   30) : RISK-WATCH — run risk_watch.py + execute its (SELL-only) envelope ;;
-  10) echo "closed market / stale data|dossier / 529 — skip; next cron (+60 min) retries"; exit 0 ;;
+  11) : STALE DATA — push data_request.json (starts market_data.yml now), then stop ;;
+  10) echo "closed market / 529 — skip; next cron (+60 min) retries"; exit 0 ;;
   20) echo "already executed or claimed today — skip"; exit 0 ;;
 esac
 ```
 
 - **Exit 0 (PROCEED/REBALANCE):** the rebalance weekday (policy `rebalance_weekday`, Wed) — or a Thu/Fri **catch-up** for an ISO week with no rebalance attempt — AND fresh snapshot (≥22 bars) AND fresh, valid `research_dossier.json` (`as_of` today, ≥2 `built_from_days`) AND API canary healthy AND no rebalance claimed/executed this ISO week → run `main.py`.
 - **Exit 30 (PROCEED/RISK-WATCH):** any other trading day → run `risk_watch.py` (−25% stop on live MCP prices). Deliberately requires **no snapshot/dossier** (a late GitHub cron must never disable the daily stop check, P1-7) and no API canary (zero LLM).
-- **Exit 10 (SKIP/RETRY):** market closed, or (rebalance day only) snapshot/dossier not fresh or Anthropic 529. If all Wednesday attempts fail, Thu/Fri catch up; if the whole week misses, Friday's heartbeat alerts (missed-week check).
+- **Exit 11 (SKIP/RETRY-STALE):** rebalance day, snapshot/dossier not fresh. The routine pushes `data_request.json` (once per day, no `[skip ci]`), which triggers `market_data.yml` immediately; a `check` job no-ops it if today's snapshot already exists. An unsynced routine treats 11 like 10.
+- **Exit 10 (SKIP/RETRY):** market closed, or (rebalance day only) Anthropic 529. If all Wednesday attempts fail, Thu/Fri catch up; if the whole week misses, Friday's heartbeat alerts (missed-week check).
+- **Final-attempt fallback (Oct 2026):** from 12:40 ET, a rebalance blocked by late data/dossier/API returns **30** (risk_watch) instead of 10/11 — the −25% stop must not be skipped all day. The risk_watch envelope never consumes the week's rebalance, so Thu/Fri catch-up remains available.
 - **Exit 20 (SKIP/DONE):** today already executed, **or** today's `execution_started_at` is set without `executed_at` (crashed mid-execution — orders may exist; recover via Scenario B) → **do not run again**.
 
 **The once-per-ISO-week lock:** rebalance claims/executions are mirrored by `journal.py` into `last_rebalance.json` (committed to main) — durable across risk_watch's daily overwrite of `pending_decisions.json`. A Wednesday claim-without-executed **disables** the Thu/Fri catch-up (fail toward a missed rebalance, never a duplicate). `reconcile.py --apply` keeps the mirror in sync when it stamps (ALL_FILLED) or clears (NONE_FILLED) a crashed claim.
@@ -159,7 +166,7 @@ Portfolio data is injected via `mcp_portfolio.json` (written by the routine from
 ```
 git config user.name "AI Investor Bot"
 git config user.email "ai-investor-bot@users.noreply.github.com"
-git add portfolio_snapshot.json system_health.json pending_decisions.json last_rebalance.json agent_log.json trades.csv decision_journal.json transactions.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json decisions_ledger.jsonl decisions_scored.jsonl counterfactual.json
+git add portfolio_snapshot.json system_health.json pending_decisions.json last_rebalance.json agent_log.json trades.csv decision_journal.json transactions.json fills.json order_errors.json forecasts.jsonl forecasts_scored.jsonl agent_scorecards.json decisions_ledger.jsonl decisions_scored.jsonl counterfactual.json
 git commit -m "chore: daily cycle"
 git push
 ```
@@ -224,12 +231,16 @@ DRY_RUN=true                # set false to actually execute
 - **Cash target:** 0–10%
 - **Horizon:** 9–12 months primary (IPS §7; policy v2.0 — was 1–3 months pre-Phase-5)
 - **Cadence:** decisions ONCE A WEEK (Wednesday rebalance; Thu/Fri catch-up); other days run only the SELL-only risk_watch safety net
-- **Min holding:** 30 trading days before a discretionary SELL (risk exits exempt)
+- **Min holding:** 30 trading days before a discretionary SELL — **63 if the position is at a gain** (policy v2.1); risk exits exempt. A discretionary SELL must name the thesis condition that broke
+- **Wash-sale re-entry:** no re-BUY within 30 calendar days of a sale, **inclusive of day 30** (IRS §1091)
+- **Settled cash:** BUYs are sized to settled buying power (cash account — same-day SELL proceeds settle T+1); `enforce_settled_cash`
+- **Benchmark context:** PM/CRO see book beta vs the Gate 2 band 0.8–1.2 and sector weights vs SPY — context only, never a guard or veto
 - **Tax-aware hold:** a gained lot within ~30 trading days of its 1-year LT-tax date is not sold discretionarily
 - **Single-name stop:** −25% from cost basis, evaluated each trading-day morning by `risk_watch.py` on a live MCP quote — not the 4 PM close (the EOD routine places no orders) — no trailing; the risk_watch catastrophe brake
 - **Crisis safe-mode:** SPY 1-day drop ≥ 7% halts all new BUYs (risk SELLs still allowed)
 - **Default action:** HOLD — only trade when it improves portfolio expected value
-- **Kill switch:** blocks new BUYs when portfolio drawdown exceeds 20% from peak
+- **Kill switch:** blocks new BUYs when portfolio drawdown exceeds 20% from peak — `enforce_kill_switch`, in the guard chain since 2026-10-04 (before then it filtered only main.py's local execution path, AFTER the envelope was written, so in production it never blocked a BUY)
+- **Turnover circuit breaker:** SELL notional > 50% of the book in one run halts the whole run (empty envelope) — `enforce_turnover_circuit_breaker`, in the chain since 2026-10-04 (it used to trip after the envelope was written and exit 0, so the routine still traded)
 
 ## Trade Decision Format
 
@@ -352,6 +363,10 @@ Every run — including aborted runs — writes `system_health.json` to the repo
 | `reconciliation` | Decisions existed but zero fills reconciled live (FAILED — orders may have been placed with fills.json missing/empty) or partial (DEGRADED). Written by `mark_transactions_live` after `main.py`, via `health.append_check` |
 | `data_quality` | Snapshot breaches a §15.2 absolute floor (universe-fetched %, min history depth, quality coverage, NaN scan) → DEGRADED, or a hard floor → ABORTED. Classified by `data_quality.py`; report in `data_quality_report.json`, trend in `data_quality_history.jsonl` |
 | `supabase_publish` | Supabase publish failed |
+| `settled_cash` | A BUY was DROPPED because settled buying power couldn't fund it above the $5 floor (DEGRADED, pages); names any funding SELL that still executes |
+| `circuit_breaker` | Proposed SELL notional > 50% of the book — run halted, envelope empty (FAILED) |
+
+**Paging (Oct 2026):** `alert.yml` opens/closes issues on `actionable_status`, which is the worst status *excluding* informational checks' DEGRADED (`decision_validation`, `cash_discipline`, `wash_sale_presale` — guards working as designed). `overall_status` is unchanged for every other reader.
 
 ### Pre-flight abort
 
@@ -362,6 +377,52 @@ The pipeline aborts before running any agents if either condition is true:
 This prevents the silent all-50 quant score failure mode where agents run but produce no trades because they have no quantitative signal. When aborted, `system_health.json` is written immediately and the alert fires.
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
+
+## Changelog — Oct 3 2026 (performance investigation → remediation: the experiment couldn't produce a clean answer)
+
+Owner asked why the bot trails SPY. **Verified result** (broker MCP and independent
+Polygon data, all nine review seats):
+- **The gap:** −0.80% vs SPY +3.35% (Jun 8 → Oct 1), about $21. Against cap-weighted
+  sector ETFs it splits roughly equally into **sector tilt −1.5 pts** (+3.7 through
+  Aug 24, −5.3 after, as tech alone rallied), **picks vs their own sector −1.3**, and
+  **cash −1.1**.
+- **Noise:** measured tracking error is 12.7%/yr, so the gap is ~0.6σ. That is not
+  evidence of skill or its absence.
+- **The late-summer slide matched the average S&P stock** (RSP −5.8% vs the bot −6.0%).
+
+The real finding: the system was not producing a clean answer. Plan and status are in
+**[`PLAN_OCT3_REMEDIATION.md`](PLAN_OCT3_REMEDIATION.md)**.
+
+| Change | Why it mattered |
+|--------|-----------------|
+| `fix(gate)` final-attempt (≥12:40 ET) fallback to risk_watch; stale data → exit **11** + on-demand `market_data.yml` via a pushed `data_request.json` | A GitHub billing block (Sep 21–30) killed every Actions job. **W39 had no rebalance**, nothing alerted for 8 days, and **the −25% stop skipped 5 trading days** because the gate SKIP-RETRYed catch-up days. Scheduled crons also start 2–7 h late |
+| `fix(guardrails)` **`enforce_settled_cash`** (last in the chain) + `buying_power` in `mcp_portfolio.json` | Oct 2: three SELLs filled and the three BUYs they funded never reached the broker. In a cash account, unsettled proceeds aren't buying power ($32.65 vs $157.21 cash) |
+| `fix(execution)` ref_ids generated in code; `order_errors.json`; fill prices read back | The LLM was hand-typing reusable ref_id templates (`a1b2c3d4-0001-…`). Unplaced orders left no reason. `trades.csv` stored quotes, not fills |
+| `fix(alerting)` `actionable_status` | Every weekly rebalance opened a DEGRADED issue; the real Oct 2 failure looked like noise |
+| `fix(scores)` routine trades on `precomputed_scores` (full-history, = `factor_history`) | 62 tail names were re-scored on a slimmed snapshot (MTB 74.5 traded vs 71.4 recorded) |
+| `fix(data)` PARA → PSKY + `is_history_young` guard; expansion-gate hysteresis (#24) | "PARA" had become Banzai International ($2.4M) and was scored daily as Paramount |
+| `fix(audit)` `reconcile_fills.py` + `evidence/broker_fills_2026-10-03.json` | 12 uncovered SELLs (pre-logging Jun 8 lots), all prices were quotes; logged realized P&L moved −$10.81 → −$6.72 against the broker's −$6.70 |
+| `feat(agents)` benchmark/exposure block for PM + CRO | Neither agent was ever told the benchmark. Book beta 0.55 vs Gate 2's 0.8–1.2; IT 0% vs 40% of SPY. Context only, never a veto trigger |
+| `fix(tax)` 63-trading-day hold for gained positions; wash-sale window inclusive | 5 of 8 weekly SELLs landed 42–49 days in (the minimum had become the holding period); EOG re-bought on day 30 after a loss sale |
+
+> **`/code-review ultra` (2026-10-04) found two PRE-EXISTING P0s, fixed in this batch:**
+> - The drawdown kill switch filtered only main.py's local execution path, AFTER the
+>   envelope was written. The cloud routine executes that envelope, so a >20% drawdown
+>   never blocked a BUY in production.
+> - The 50% turnover circuit breaker likewise tripped after the write and exited 0.
+>
+> Both are now guards in the chain. The same review produced a post-gate final-attempt
+> fallback (a crashed or CRO-failed 12:45 rebalance runs risk_watch) and one shared
+> data-readiness function (`preflight_gate.data_plane_ready`) used by the gate and
+> `market_data.yml`.
+>
+> **Governance:** policy v2.1, IPS v1.4.
+> - The measurement window is restarted **once**, with the contamination logged
+>   (`SCALE_DECISION_RULE.md` §7). `FORMULA_VERSION` is unchanged, so Gate 1a's clock
+>   continues. Freeze from the first rebalance after merge + sync.
+> - **Withdrawn after re-verification:** removing the low-vol factor. Since formula 3.0,
+>   tech appears in the candidate pool every week, so the reset would buy almost nothing.
+> - **Requires a live-routine sync** (daily routine STEP 0/1/4/5; backward-compatible).
 
 ## Changelog — Aug 26 2026 (the sector clamp fires in production — Aug 19 replayed, fixed)
 
@@ -836,7 +897,13 @@ Noise (non-fatal, safe to ignore): `$JPMPC: possibly delisted` and similar yfina
 >
 > 🔭 **The real fix, not yet done:** Polygon's **grouped-daily** endpoint (`/v2/aggs/grouped/locale/us/market/stocks/{date}`) returns **every US ticker in ONE call** — verified live on this repo's free-tier key: 12,592 tickers for 2026-09-18. Migrating to it would take a run from ~38 min to under a minute and make this whole cost problem, the 429 storms, the batch cursor, the carry-forward window and the cron redundancy design moot. Tracked as its own evaluation before any change — it moves the substrate the quant scores are computed from, so it is a measurement-integrity decision, not just an ops one.
 
-**The triggers must not overlap.** When the ~10-hour deferral bunched them 24-52 min apart (Aug 27-28), concurrent runs shared the single Polygon 5-calls/min budget → 429 storms → runs stretched from 12-40 min to 40-70 min → *more* overlap. Both runs also regenerated all eight committed artifacts, so the loser's `git pull --rebase` conflicted in every one and the push step aborted (3 failed runs; no data lost — the winner's snapshot landed). Fixed 2026-08-28 by a **`concurrency` group** (`cancel-in-progress: false`, `workflow_dispatch` exempt via a per-`run_id` key) plus **`timeout-minutes: 50`** so a wedged run cannot hold the group for GitHub's 6-hour default. Note the group cannot serialize against the **cloud routine**, which also commits `fundamentals_cache.json`, `forecasts_scored.jsonl` and `agent_scorecards.json` — that cross-plane race survives, and fails clean rather than corrupting.
+**The triggers must not overlap.** When the ~10-hour deferral bunched them 24-52 min apart (Aug 27-28), concurrent runs shared the single Polygon 5-calls/min budget → 429 storms → runs stretched from 12-40 min to 40-70 min → *more* overlap. Both runs also regenerated all eight committed artifacts, so the loser's `git pull --rebase` conflicted in every one and the push step aborted (3 failed runs; no data lost — the winner's snapshot landed). Fixed 2026-08-28 by a **`concurrency` group** (`cancel-in-progress: false`, `workflow_dispatch` exempt via a per-`run_id` key; moved to the `fetch` job on 2026-10-03 so an on-demand request can't displace a pending scheduled run) plus **`timeout-minutes: 50`** so a wedged run cannot hold the group for GitHub's 6-hour default. Note the group cannot serialize against the **cloud routine**, which also commits `fundamentals_cache.json`, `forecasts_scored.jsonl` and `agent_scorecards.json` — that cross-plane race survives, and fails clean rather than corrupting.
+
+**On-demand fetch (Oct 2026):** on a rebalance day the gate's exit 11 makes the routine
+push `data_request.json`, which triggers `market_data.yml` within seconds (push events
+are not subject to cron deferral). This is mitigation 4's first half; the routine still
+does not wait/poll for the result — the next hourly attempt picks it up. The final
+attempt (12:45) falls back to risk_watch, so a late data plane never disables the stop.
 
 Mitigations (in order of robustness):
 1. **Safety dispatch** (still the highest-reliability option): trigger `market_data.yml` manually if no fresh `chore: market snapshot` commit has landed by ~9:15 AM ET on a **Wednesday** (the rebalance day — other days run risk_watch, which needs no snapshot): `gh workflow run market_data.yml --repo parthchoksi7/ai-investor` then confirm the commit is on `main`. A manual dispatch is deliberately exempt from the concurrency group, so it never queues behind — or gets cancelled by — a scheduled run.
@@ -886,6 +953,9 @@ Manual checks (GitHub UI / `gh`):
 - [ ] (Optional) Settings → Actions → Workflow permissions = "Read and write" for defense-in-depth — not required since pushing workflows declare their own write permission.
 
 ## Known Limitations
+
+- **Cash account settlement.** Proceeds from a SELL settle the next business day and are excluded from Robinhood's `buying_power`. `enforce_settled_cash` sizes BUYs to settled cash; a rotation's BUY leg beyond it is scaled down and the proceeds deploy at the next weekly rebalance (risk_watch days never BUY).
+- **Universe hygiene.** A ticker can be reassigned (PARA → Banzai International, 2026). `is_history_young` excludes expansion names with fresh-but-short history and `data_quality` reports them; 11 universe names were absent from SEC's ticker map on 2026-10-03 (see MANUAL_TODO) — renamed names silently drop out until the list is updated.
 
 - Cloud quant scores are real (full 210-day history) because the committed `market_snapshot.json` is the primary source; they only degrade toward 50 in the `mcp_market_data.json` fallback, which the pre-flight gate + main.py abort prevent from running. So "no trades" from a missing snapshot is intended (the day is skipped), not a silent all-50 run.
 - **Fundamentals coverage (quality + valuation factors):** `SECProvider` (no key required) sources gross_margin / operating_margin / debt_to_equity from SEC EDGAR (annual 10-K basis) for virtually all US-listed equities. As of PLAN_SEC_VALUATION Phase 4 (2026-07-24, plan complete), P/E, FCF yield, and EV/EBITDA are also free, keyless, and **single-sourced from SEC EDGAR for every ticker** — `data_providers.CascadeProvider` always consults SEC and strips FMP's own valuation fields before merging. Flow components (EPS, CFO, capex, D&A, operating income) are **trailing-twelve-months** (sum of the 4 most recent contiguous fiscal quarters — `SECProvider._ttm_ex`, which derives the one quarter XBRL never discloses standalone as `annual − known 3 quarters`, and differences consecutive YTD figures for concepts like CFO that are commonly tagged YTD-only, never standalone); balance components (shares, debt, cash) are the **latest available value from any form** (10-K or 10-Q), not just the latest 10-K. `market_data.derive_valuation_ratios` turns these into the finished ratios once the snapshot price is in scope. `FMP_API_KEY`, when set, still sharpens quality (TTM, more current, wins on overlap) for the names it covers and supplies the earnings calendar (EDGAR has no forward calendar) — it no longer contributes to valuation at all. A name still shows N/A when EDGAR lacks the needed XBRL tags, a vintage-mismatch guard drops a combined metric, or a share count fails the `_MIN_PLAUSIBLE_SHARES` sanity floor (some filers report share counts scaled in millions with no way to detect the scale from the API). Verified live against the full 175-ticker universe: 94.3% valuation coverage, 0 errors. See `data_providers.py` / `market_data.py` for the full provider chain.

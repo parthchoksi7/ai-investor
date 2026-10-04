@@ -191,6 +191,11 @@ Prioritize:
 3. Portfolio diversification
 4. Opportunity cost
 
+You are measured against SPY, after tax. The book's market exposure (beta) and its
+sector weights relative to SPY are bets you are making whether or not you choose
+them — so choose them. A book far below the benchmark's exposure is not "safe"; it
+is a different wager from the one being scored.
+
 SELL decisions are independent of BUY decisions.
 When a holding shows recommended_action=REDUCE or EXIT in the position review
 AND Devil's Advocate has recommend_reject=True for that same holding, you MUST
@@ -218,7 +223,8 @@ _CRO_SYSTEM = """\
 You are the Chief Risk Officer.
 
 You are independent from the Portfolio Manager.
-Your objective is portfolio survival.
+Your objective is portfolio survival — and keeping the book a fair test against its
+benchmark (SPY), which the experiment is scored on.
 
 MANDATE LIMITS (from the IPS) — context for your risk judgment:
 - Max position:   10% of portfolio      - Max sector: 25% of portfolio
@@ -241,6 +247,10 @@ resized or to-be-dropped BUY is labelled as such. This has three consequences:
    policy and is never force-trimmed. Only a decision may not INCREASE it.
 3. Cash and holdings-count are TARGETS, not rejection triggers. High cash is
    never a reason to veto — and never a reason to wave a bad trade through.
+4. Market exposure (beta) versus the 0.8–1.2 band, and sector weights versus SPY,
+   are CONTEXT you are shown — never a veto trigger. Low exposure is not safety and
+   is not your concern to fix by rejecting; name it in largest_risk when it is the
+   biggest risk in the book.
 
 Your veto exists for RISK the caps cannot express — that is the whole job:
 - Correlation risk — several names that are one bet (the caps count sectors, not
@@ -983,7 +993,8 @@ def run_portfolio_manager(
     # holding's min-hold eligibility so the PM stops proposing discretionary
     # SELLs the turnover guard is guaranteed to reject (Jul 8 2026: both SELL
     # legs of a rotation rejected → DEGRADED health + orphaned BUYs).
-    from guardrails import sector_of, min_hold_days_remaining, wash_sale_days_remaining
+    from guardrails import (sector_of, min_hold_days_remaining, wash_sale_days_remaining,
+                            position_gained)
     from journal import _load_list, TRANSACTIONS_FILE
     _txs = _load_list(TRANSACTIONS_FILE)
     # Eligibility is computed as of the RUN's date, not wall-clock, so a replay /
@@ -996,8 +1007,10 @@ def run_portfolio_manager(
         t = p["symbol"]
         weight = (p["market_value"] / total * 100) if total else 0
         review = position_reviews.get(t, {})
-        rem = min_hold_days_remaining(t, transactions=_txs, today=_as_of)
-        hold_tag = "sellable" if not rem else f"min_hold: {rem}d left — NOT sellable"
+        gained = position_gained(t, portfolio)
+        rem = min_hold_days_remaining(t, transactions=_txs, today=_as_of, gained=gained)
+        hold_tag = ("sellable" if not rem else
+                    f"min_hold: {rem}d left{' (at a gain)' if gained else ''} — NOT sellable")
         holdings_lines.append(
             f"  {t}: {p['qty']} sh @ ${p['avg_price']:.2f} = ${p['market_value']:,.0f} ({weight:.1f}%) "
             f"| hold={review.get('hold_score','?')}/10 alpha={review.get('remaining_alpha','?')} "
@@ -1147,6 +1160,18 @@ are never executed; this is your no-deploy justification, on the record."""
                      "signals over one-day pops):\n" + "\n".join(dossier_lines)
                      ) if dossier_lines else ""
 
+    # Settled buying power (Oct 3 2026 remediation 3.2) — a cash account cannot
+    # spend today's SELL proceeds (they settle T+1); a guard scales BUYs to this.
+    # The guard's actual BUDGET (buying power less the buffer, never negative) — the
+    # same helper the guard uses; sizing to the raw figure guarantees a scale-down
+    # and can push a small BUY under the $5 floor.
+    from guardrails import settled_budget
+    buying_power, _, _ = settled_budget(portfolio)
+    exposure_block = _benchmark_exposure_block(
+        {p["symbol"]: (p["market_value"] / total if total else 0.0)
+         for p in portfolio.get("positions", [])},
+        quant_scores, date=date, label="Book")
+
     user_msg = f"""\
 Date: {date}
 
@@ -1155,6 +1180,9 @@ MARKET REGIME: {json.dumps(regime)}
 
 CURRENT PORTFOLIO:
   Cash: ${cash:,.2f} ({cash_pct:.1f}%)  Total: ${total:,.2f}
+  Spendable for BUYs today: ${buying_power:,.2f} (settled buying power less a safety margin). This is
+  a CASH account: today's SELL proceeds settle next business day and fund NEXT week's
+  buys, so a rotation's BUY leg beyond this is scaled down by a guard.
   Holdings:
 {chr(10).join(holdings_lines) or '  (none — all cash)'}
 
@@ -1173,6 +1201,13 @@ RESEARCH & DEVIL'S ADVOCATE:
 RECENT TRADES:
 {chr(10).join(history_lines) or '  (none)'}
 
+BENCHMARK & MARKET EXPOSURE (the experiment is scored against SPY, after tax):
+{exposure_block}
+  This is information, not an order: never buy a name only to move beta or close a
+  sector gap. But a book far outside the band, or a large sector gap held by
+  accident, is a bet against the benchmark — hold it on purpose or not at all, and
+  among names you would buy anyway prefer those that move the book toward the band.
+
 SECTOR ALLOCATION (25% hard cap per sector — enforced by risk controls):
 {sector_block}
   Rebalancing: if a sector is AT/NEAR CAP and you have higher conviction in a new
@@ -1184,10 +1219,14 @@ CONSTRAINTS:
   Hard-blocked (NEVER propose): TSLA{cash_block}
   HORIZON DISCIPLINE (weekly cadence, 9–12 month horizon): you decide ONCE A WEEK.
   Default is HOLD — a SELL needs a broken thesis or a real measured change, never
-  a one-day re-rank. A discretionary SELL of a name held < 30 trading days will be
-  REJECTED by the turnover guard — each holding above is tagged "sellable" or
-  "min_hold: Nd left — NOT sellable"; never propose a SELL of a NOT-sellable
-  holding, nor a BUY whose source_of_capital is one (both legs get rejected). TAX-AWARE HOLD: a gained position within ~30
+  a one-day re-rank or an expired timer. A discretionary SELL must name, in its
+  rationale, which condition of the original thesis has broken; "REDUCE + low
+  alpha" or a weaker rank is not one. A discretionary SELL of a name held < 30
+  trading days — < 63 if the position is AT A GAIN (selling a winner early pays
+  ~54% tax) — will be REJECTED by the turnover guard; each holding above is tagged
+  "sellable" or "min_hold: Nd left — NOT sellable"; never propose a SELL of a
+  NOT-sellable holding, nor a BUY whose source_of_capital is one (both legs get
+  rejected). TAX-AWARE HOLD: a gained position within ~30
   trading days of its 1-year date is taxed ~54% if sold now vs ~37% after — prefer
   HOLD across the boundary (a guard enforces this; risk exits are exempt).
 
@@ -1220,6 +1259,71 @@ worth it after ~54% CA short-term tax + trading cost."""
 
 
 # ── Agent 7: Chief Risk Officer ───────────────────────────────────────────────
+
+def _benchmark_exposure_block(weights: dict, quant_scores: dict, date: str = "",
+                              label: str = "Book") -> str:
+    """Benchmark + market-exposure context, computed in code (Oct 3 2026 remediation 3.1).
+
+    Neither the PM nor the CRO had ever been told what the experiment is scored
+    against. The book ran 0% Technology (39.9% of SPY on 2026-10-01) and a realized
+    beta of ~0.2 — bets nobody chose, while the scale rule's Gate 2 requires
+    0.8–1.2. `weights` maps ticker → fraction of total value (cash is the
+    remainder and counts as beta 0). Uses beta_stable (252-session, shrunk);
+    names without one are listed, never guessed. CONTEXT ONLY — no guard
+    enforces the band and the CRO must never veto on it.
+    """
+    from policy import get as _pget, benchmark_reference
+    from guardrails import sector_of
+    lo = float(_pget("target_beta_min", 0.8))
+    hi = float(_pget("target_beta_max", 1.2))
+    held = {t: w for t, w in weights.items() if w and w > 0.0005}
+    invested = sum(held.values())
+    beta, missing, covered = 0.0, [], 0.0
+    for t, w in held.items():
+        sc = quant_scores.get(t) or {}
+        b = sc.get("beta_stable")
+        # A short-window ('short' basis) estimate is deliberately left in beta_stable
+        # but flagged unavailable — quant_engine: a consumer gating on
+        # beta_stable_available must never be handed one. List it, never sum it.
+        if sc.get("beta_stable_available") is False:
+            missing.append(t)
+            continue
+        try:
+            beta += w * float(b)
+            covered += w
+        except (TypeError, ValueError):
+            missing.append(t)
+    # Names without a usable estimate are NOT beta 0 (that is cash): impute them at
+    # the covered names' average so the band verdict is not an artefact of coverage.
+    if missing and covered > 0:
+        beta += (invested - covered) * (beta / covered)
+    if invested > 0 and covered == 0:
+        lines = [f"  {label} market exposure: UNKNOWN — no held name has a usable beta "
+                 f"estimate (band {lo:g}–{hi:g}; invested {invested:.0%}). Do not act on exposure."]
+        missing_note = True
+    else:
+        where = ("BELOW the band" if beta < lo else "ABOVE the band" if beta > hi
+                 else "inside the band")
+        lines = [f"  {label} market exposure (beta_stable, cash = 0): {beta:.2f} — {where} "
+                 f"{lo:g}–{hi:g} | invested {invested:.0%}"]
+        missing_note = False
+    if missing and not missing_note:
+        lines.append(f"  (no beta estimate, imputed at the covered average — not counted as "
+                     f"cash; excluded: {', '.join(sorted(missing))})")
+    ref = benchmark_reference(today=date or None)
+    bench_w = ref.get("sector_weights") or {}
+    if bench_w:
+        book_w: dict[str, float] = {}
+        for t, w in held.items():
+            book_w[sector_of(t)] = book_w.get(sector_of(t), 0.0) + w
+        parts = []
+        for sec, bw in sorted(bench_w.items(), key=lambda x: -x[1]):
+            ow = book_w.get(sec, 0.0)
+            parts.append(f"{sec} {ow:.0%} vs {bw:.0%} ({(ow - bw) * 100:+.0f}pp)")
+        lines.append(f"  Sector weights, {label.lower()} vs {ref.get('ticker', 'SPY')} "
+                     f"(as of {ref.get('sector_weights_as_of')}): " + "; ".join(parts))
+    return "\n".join(lines)
+
 
 def _correlation_block(projected: dict, history: dict | None) -> str:
     """Build a real correlation + concentration section for the CRO from price
@@ -1365,6 +1469,8 @@ def run_chief_risk_officer(
             )
 
     corr_block = _correlation_block(projected, history)
+    from guardrails import settled_budget
+    _settled_bp, _, _ = settled_budget(portfolio)
 
     # Projected post-trade SECTOR weights, pre-computed against the same
     # SECTOR_MAP the deterministic guard uses. The CRO is told the hard 25% cap
@@ -1407,6 +1513,14 @@ PROJECTED PORTFOLIO (post-trade weights):
 {(chr(10) + corr_block) if corr_block else ''}
 
 CURRENT CASH: ${portfolio['cash']:,.2f} ({portfolio['cash']/total*100:.1f}%)
+SPENDABLE FOR BUYS TODAY: ${_settled_bp:,.2f} (settled buying power less a safety margin)
+  — this is a cash account: today's SELL proceeds settle next business day. A
+  downstream guard scales the BUY leg down to this amount, so a rotation's SELL can
+  execute in full while its BUY is smaller (or dropped). Weigh the SELLs on their own
+  merits; do not veto a BUY for size — it is clamped.
+
+BENCHMARK CONTEXT (scored against SPY — context only, never a veto trigger):
+{_benchmark_exposure_block(projected, quant_scores, label="Projected book")}
 
 Output JSON:
 {{
