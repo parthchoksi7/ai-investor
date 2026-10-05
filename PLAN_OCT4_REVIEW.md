@@ -10,9 +10,9 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · ⏸ owner decision
 | # | Item | Changes decisions? | Status |
 |---|------|--------------------|--------|
 | 1 | Evaluate the −25% stop on rebalance days too (`main.py` injects code-built risk-exit SELLs after the CRO, before the guards); strip any LLM-supplied `risk_exit`; min-hold + circuit breaker exempt risk exits | **yes** — ship before Wed | ✅ built + tested (PR pending merge) |
-| 2 | Cash-deployment producer (deploy cash above the 10% band at the rebalance) | yes | ⏸ owner — explained, not built |
-| 3 | Rotation proceeds idle a week (cash account, T+1 settlement) | yes | ⏸ owner — recommendation given |
-| 4 | Candidate funnel: skip unbuyable names, backfill from ranking | yes | ⏸ owner — recommendation given |
+| 2 | Cash-deployment producer (deploy cash above the 10% band at the rebalance) | yes | 🟡 owner approved 2026-10-04 — build blocked by the auto-mode permission check (code that creates BUY orders); awaiting owner go-ahead |
+| 3 | Rotation proceeds idle a week (cash account, T+1 settlement) | yes | ✅ owner decided 2026-10-04: do NOT build (rotations free ~$28/wk ≈ 6% of book; item 2 redeploys them the next Wednesday) |
+| 4 | Candidate funnel: skip unbuyable names, backfill from ranking | yes | ✅ owner decided 2026-10-04: do NOT build (Oct 2: 0 of 9 new candidates hard-unbuyable; sector tilt now measured by item 5) |
 | 5 | Gate 1a read on the FULL universe (`factor_history.jsonl`), per-period cross-sectional IC, non-overlapping periods, + sector-neutral diagnostic → `quant_ic_report.json` (GH plane) | no (measurement) | ✅ built + tested (PR pending merge) |
 | 6 | Counterfactual: date-demeaned returns + Benjamini-Hochberg `p_value_bh` (the field Gate 1b names) | no (measurement) | ✅ built + tested (PR pending merge) |
 | 7 | Performance report from daily 4 PM closes (git history of `portfolio_snapshot.json`), annualized at the real sampling frequency; paired-return beta | no (measurement) | ✅ built + tested (PR pending merge) |
