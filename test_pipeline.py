@@ -10418,6 +10418,19 @@ class TestPMBuyEligibilityInjection:
         assert "CASH DISCIPLINE" in captured["user_msg"]
         assert "8-holding floor" in captured["user_msg"]   # 0 positions < 8
 
+    def test_cash_over_band_states_the_holdings_arithmetic(self, monkeypatch, tmp_path):
+        """Oct 4 2026: the deployment rule never adds names, so the PM is told how many
+        names the cash band needs (8 names × 10% cap = 80% max invested)."""
+        analysis, captured = self._capture(monkeypatch, tmp_path, [])
+        pos = [{"symbol": t, "qty": 1.0, "avg_price": 40.0, "market_value": 42.0}
+               for t in ("JNJ", "PG", "XOM", "CAT", "NEE", "LIN", "HD", "MSFT")]
+        portfolio = {"total_value": 500.0, "cash": 164.0, "positions": pos}   # 32.8%
+        analysis.run_portfolio_manager({}, {}, {}, {}, {}, self._quant("JNJ"),
+                                       portfolio, [], date="2026-10-07")
+        msg = captured["user_msg"]
+        assert "You hold 8 name(s) — at most 80% invested" in msg
+        assert "at least 9 names" in msg and "it never adds a name" in msg
+
     def test_cash_within_band_no_discipline_block(self, monkeypatch, tmp_path):
         analysis, captured = self._capture(monkeypatch, tmp_path, [])
         portfolio = {"total_value": 500.0, "cash": 25.0, "positions": []}  # 5%

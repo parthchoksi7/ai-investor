@@ -296,7 +296,9 @@ the −25% stop now runs on the rebalance day (`main.inject_risk_stops`); and th
 mechanical cash deployment (`cash_deployment.py`, policy v2.2, IPS v1.5) — sizing, listed
 in §6 as a window-restarting change, which is why it lands now and not later. Its top-ups
 of existing holdings are excluded from `pm_selected`, so a deterministic rule can never
-satisfy Gate 1b on the AI's behalf.
+satisfy Gate 1b on the AI's behalf. With it, one PM prompt addition (a prompt change, same
+reason to land now): above the cash band the PM is told the holdings arithmetic — the rule
+adds no names, so only the AI's BUYs can bring cash into the band.
 
 ### Amendment — 2026-08-27, before any result existed
 

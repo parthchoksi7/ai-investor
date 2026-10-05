@@ -1177,6 +1177,22 @@ def run_portfolio_manager(
         floor_line = ("\n  The book also holds FEWER than the 8-holding floor — "
                       "both band violations point the same way: deploy."
                       if len(portfolio.get("positions", [])) < 8 else "")
+        # Oct 4 2026 (owner-directed, PLAN_OCT4_REVIEW item 2): the arithmetic the
+        # cash band implies. The mechanical deployment rule scales the PM's book up
+        # but never adds a name, so with N names at the per-name cap the book tops
+        # out at N × cap invested — only the PM's own BUYs can add names.
+        import math
+        from guardrails import MAX_TARGET_WEIGHT as _cap
+        _n_held = len(portfolio.get("positions", []))
+        _need = math.ceil((1 - 0.10) / _cap - 1e-9)
+        floor_line += (
+            f"\n  ARITHMETIC: no name may exceed {_cap:.0%}, so N names hold at most "
+            f"N×{_cap:.0%}. You hold {_n_held} name(s) — at most {_n_held * _cap:.0%} "
+            f"invested even if every one sat at the cap (now {100 - cash_pct:.0f}%). "
+            f"Reaching ≤10% cash needs at least {_need} names at the full cap, "
+            f"realistically {_need + 1}–{_need + 3}. After you decide, a mechanical rule "
+            f"scales YOUR book (your BUYs and the holdings you keep) up toward ~5% cash "
+            f"within the caps and settled cash — it never adds a name. Only your BUYs can.")
         cash_block = f"""
   ⚠ CASH DISCIPLINE: cash is {cash_pct:.1f}% — ABOVE the 0–10% band.{floor_line}
   You MUST either propose BUYs of ✓ BUY-eligible candidates to move toward the
