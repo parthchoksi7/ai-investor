@@ -1,82 +1,84 @@
 {
-  "is_close": false,
+  "is_close": true,
   "portfolio": {
-    "as_of": "2026-10-05T09:48:05-04:00",
+    "as_of": "2026-10-05T16:03:33-04:00",
     "cash": 157.21,
+    "total_value": 498.8659,
     "buying_power": 157.21,
-    "total_value": 496.0739933728,
+    "available_qty": {
+      "VRTX": 0.101027,
+      "ABNB": 0.303888,
+      "CVX": 0.237135,
+      "V": 0.116078,
+      "REGN": 0.032845,
+      "BKNG": 0.147316,
+      "GOOGL": 0.139755,
+      "META": 0.071934
+    },
     "positions": [
       {
         "symbol": "VRTX",
         "qty": 0.101027,
-        "available_qty": 0.101027,
         "avg_price": 464.73,
-        "current_price": 501.25,
-        "market_value": 50.639784,
-        "unrealized_pnl": 3.689506
+        "current_price": 503.7,
+        "market_value": 50.8873,
+        "unrealized_pnl": 3.937022
       },
       {
         "symbol": "ABNB",
         "qty": 0.303888,
-        "available_qty": 0.303888,
         "avg_price": 152.92,
-        "current_price": 163.89,
-        "market_value": 49.804204,
-        "unrealized_pnl": 3.333651
+        "current_price": 164.07,
+        "market_value": 49.858904,
+        "unrealized_pnl": 3.388351
       },
       {
         "symbol": "CVX",
         "qty": 0.237135,
-        "available_qty": 0.237135,
         "avg_price": 194.95,
-        "current_price": 202.53,
-        "market_value": 48.026952,
-        "unrealized_pnl": 1.797483
+        "current_price": 206.52,
+        "market_value": 48.97312,
+        "unrealized_pnl": 2.743652
       },
       {
         "symbol": "V",
         "qty": 0.116078,
-        "available_qty": 0.116078,
         "avg_price": 382.85,
-        "current_price": 362.17,
-        "market_value": 42.039969,
-        "unrealized_pnl": -2.400493
+        "current_price": 369.79,
+        "market_value": 42.924484,
+        "unrealized_pnl": -1.515978
       },
       {
         "symbol": "REGN",
         "qty": 0.032845,
-        "available_qty": 0.032845,
         "avg_price": 824.17,
-        "current_price": 730.0,
-        "market_value": 23.97685,
-        "unrealized_pnl": -3.093014
+        "current_price": 726.73,
+        "market_value": 23.869447,
+        "unrealized_pnl": -3.200417
       },
       {
         "symbol": "BKNG",
         "qty": 0.147316,
-        "available_qty": 0.147316,
         "avg_price": 198.76,
-        "current_price": 157.375,
-        "market_value": 23.183855,
-        "unrealized_pnl": -6.096673
+        "current_price": 158.31,
+        "market_value": 23.321596,
+        "unrealized_pnl": -5.958932
       },
       {
         "symbol": "GOOGL",
         "qty": 0.139755,
-        "available_qty": 0.139755,
         "avg_price": 345.6,
-        "current_price": 344.5199,
-        "market_value": 48.148379,
-        "unrealized_pnl": -0.150949
+        "current_price": 346.61,
+        "market_value": 48.440481,
+        "unrealized_pnl": 0.141153
       },
       {
         "symbol": "META",
         "qty": 0.071934,
-        "available_qty": 0.071934,
         "avg_price": 676.31,
-        "current_price": 738.7499,
-        "market_value": 53.141235,
-        "unrealized_pnl": 4.491552
+        "current_price": 742.0765,
+        "market_value": 53.380531,
+        "unrealized_pnl": 4.730847
       }
     ]
   },
@@ -7065,5 +7067,5 @@
     }
   },
   "regime": "RISK_ON",
-  "written_at": "2026-10-05T13:48:50.383745+00:00"
+  "written_at": "2026-10-05T20:04:17.196574+00:00"
 }
