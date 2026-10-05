@@ -14,7 +14,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.8676,
+    "p_value_bh": 0.8045,
     "significant_bh": false
   },
   "research.confidence@21d": {
@@ -32,7 +32,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.8676,
+    "p_value_bh": 0.8045,
     "significant_bh": false
   },
   "earnings.earnings_alpha_score@21d": {
@@ -50,7 +50,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9217,
+    "p_value_bh": 0.9301,
     "significant_bh": false
   },
   "devils_advocate.overall_risk_score@21d": {
@@ -68,7 +68,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9217,
+    "p_value_bh": 0.9301,
     "significant_bh": false
   },
   "position_review.hold_score@21d": {
@@ -86,7 +86,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9217,
+    "p_value_bh": 0.9301,
     "significant_bh": false
   },
   "quant.composite_score@21d~2.0-quality-tilt": {
@@ -104,7 +104,7 @@
     "horizon_days": 21,
     "formula_version": "2.0-quality-tilt",
     "is_primary": false,
-    "p_value_bh": 0.9217,
+    "p_value_bh": 0.9301,
     "significant_bh": false
   },
   "event_present.flag@21d": {
@@ -122,7 +122,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9217,
+    "p_value_bh": 0.9301,
     "significant_bh": false
   },
   "persist_mean.composite_7d_mean@21d": {
@@ -140,7 +140,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9217,
+    "p_value_bh": 0.9301,
     "significant_bh": false
   },
   "pm.expected_return@21d": {
@@ -180,21 +180,21 @@
     "significant_bh": false
   },
   "research.confidence@63d": {
-    "n": 431,
-    "n_effective": 65,
+    "n": 433,
+    "n_effective": 67,
     "n_eff_approx": 7,
     "ic": -0.053,
-    "ic_block": -0.083,
+    "ic_block": -0.122,
     "ic_shrunk": -0.048,
     "hit_rate": 0.49,
-    "hit_rate_block": 0.538,
-    "ci_halfwidth": 0.243,
-    "p_value": 0.5083,
+    "hit_rate_block": 0.537,
+    "ci_halfwidth": 0.239,
+    "p_value": 0.3204,
     "orientation": 1,
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9217,
+    "p_value_bh": 0.8045,
     "significant_bh": false
   },
   "earnings.earnings_alpha_score@63d": {
@@ -212,25 +212,25 @@
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9217,
+    "p_value_bh": 0.9301,
     "significant_bh": false
   },
   "devils_advocate.overall_risk_score@63d": {
-    "n": 392,
-    "n_effective": 63,
+    "n": 394,
+    "n_effective": 65,
     "n_eff_approx": 6,
-    "ic": -0.02,
-    "ic_block": 0.021,
-    "ic_shrunk": -0.018,
-    "hit_rate": 0.531,
-    "hit_rate_block": 0.492,
-    "ci_halfwidth": 0.247,
-    "p_value": 0.8709,
+    "ic": -0.022,
+    "ic_block": 0.011,
+    "ic_shrunk": -0.019,
+    "hit_rate": 0.528,
+    "hit_rate_block": 0.477,
+    "ci_halfwidth": 0.243,
+    "p_value": 0.9301,
     "orientation": -1,
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9217,
+    "p_value_bh": 0.9301,
     "significant_bh": false
   },
   "position_review.hold_score@63d": {
@@ -248,7 +248,7 @@
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9217,
+    "p_value_bh": 0.9301,
     "significant_bh": false
   },
   "quant.composite_score@21d~2.3-valuation-ttm": {
@@ -284,43 +284,43 @@
     "horizon_days": 63,
     "formula_version": "2.0-quality-tilt",
     "is_primary": false,
-    "p_value_bh": 0.9217,
+    "p_value_bh": 0.9301,
     "significant_bh": false
   },
   "event_present.flag@63d": {
-    "n": 778,
-    "n_effective": 309,
-    "n_eff_approx": 12,
-    "ic": 0.16,
-    "ic_block": -0.022,
-    "ic_shrunk": 0.15,
-    "hit_rate": 0.6,
-    "hit_rate_block": 0.602,
-    "ci_halfwidth": 0.112,
-    "p_value": 0.7015,
+    "n": 843,
+    "n_effective": 374,
+    "n_eff_approx": 13,
+    "ic": 0.151,
+    "ic_block": -0.054,
+    "ic_shrunk": 0.143,
+    "hit_rate": 0.607,
+    "hit_rate_block": 0.618,
+    "ci_halfwidth": 0.101,
+    "p_value": 0.2994,
     "orientation": 1,
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9217,
+    "p_value_bh": 0.8045,
     "significant_bh": false
   },
   "persist_mean.composite_7d_mean@63d": {
-    "n": 778,
-    "n_effective": 309,
-    "n_eff_approx": 12,
-    "ic": -0.123,
-    "ic_block": -0.041,
-    "ic_shrunk": -0.115,
-    "hit_rate": 0.5,
-    "hit_rate_block": 0.498,
-    "ci_halfwidth": 0.112,
-    "p_value": 0.4708,
+    "n": 843,
+    "n_effective": 374,
+    "n_eff_approx": 13,
+    "ic": -0.12,
+    "ic_block": -0.049,
+    "ic_shrunk": -0.113,
+    "hit_rate": 0.49,
+    "hit_rate_block": 0.468,
+    "ci_halfwidth": 0.101,
+    "p_value": 0.3448,
     "orientation": 1,
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9217,
+    "p_value_bh": 0.8045,
     "significant_bh": false
   },
   "pm.expected_return@63d": {
@@ -338,25 +338,25 @@
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9217,
+    "p_value_bh": 0.9301,
     "significant_bh": false
   },
   "quant.composite_score@63d~2.3-valuation-ttm": {
-    "n": 16,
-    "n_effective": 16,
+    "n": 18,
+    "n_effective": 18,
     "n_eff_approx": 1,
-    "ic": 0.038,
-    "ic_block": 0.038,
+    "ic": 0.034,
+    "ic_block": 0.034,
     "ic_shrunk": 0.009,
     "hit_rate": 0.5,
     "hit_rate_block": 0.5,
-    "ci_halfwidth": 0.49,
-    "p_value": 0.8823,
+    "ci_halfwidth": 0.462,
+    "p_value": 0.8883,
     "orientation": 1,
     "horizon_days": 63,
     "formula_version": "2.3-valuation-ttm",
     "is_primary": false,
-    "p_value_bh": 0.9217,
+    "p_value_bh": 0.9301,
     "significant_bh": false
   },
   "quant.composite_score@21d": {
