@@ -28,6 +28,21 @@ on an outage). The routine's last-attempt fallback or Thursday's check covers it
 added after every other safety check has run, using the live broker share count, so none of
 those checks (or the risk officer) can accidentally drop it.
 
+### Added — cash above 5% is put to work at the weekly rebalance (changes decisions)
+
+Cash sat at 32% on Oct 2. Cash can't move with the market, so the account could not take
+the same market risk as SPY, which the scale-up rule requires. Now, at each Wednesday
+rebalance, if the account would end with more than 5% cash, the extra is spread across the
+stocks the AI already chose to own or buy, in the same proportions, using only cash that
+has settled. It never picks a new stock, and never adds to a stock the AI is selling, has
+flagged, or that is already halfway to its stop-loss. Every existing safety limit still
+applies. Buying costs no tax.
+
+**What it cannot do:** it never adds new stocks, and no stock may exceed 10% of the
+account, so with 8 stocks the account can be at most 80% invested. On the Oct 2 book it
+would have added only about $8. Getting cash lower needs the AI to buy more names. Topping
+up a holding also restarts its minimum-hold clock (the rule uses the latest purchase date).
+
 ### Changed — the scale decision now reads honest numbers (measurement only)
 
 - **"Does the score predict?" (Gate 1a)** is now measured on every scored stock (~174),

@@ -290,9 +290,13 @@ July (mean −0.09; under `3.0-beta-neutral`, 10 matured dates, one non-overlapp
 p = 0.07, joint-family BH q = 0.54). None of these satisfies or comes near any gate; the
 amendment is made because the old reads were mis-specified, not because of what they showed.
 
-**Also shipped before the freeze, as part of the restart batch:** the −25% stop now runs on
-the rebalance day (`main.inject_risk_stops`). That changes decisions, so it ships before the
-first rebalance of the frozen window (Wed 2026-10-07), not during it.
+**Also shipped before the freeze, as part of the restart batch** (both change decisions, so
+both ship before the first rebalance of the frozen window, Wed 2026-10-07, not during it):
+the −25% stop now runs on the rebalance day (`main.inject_risk_stops`); and the bounded
+mechanical cash deployment (`cash_deployment.py`, policy v2.2, IPS v1.5) — sizing, listed
+in §6 as a window-restarting change, which is why it lands now and not later. Its top-ups
+of existing holdings are excluded from `pm_selected`, so a deterministic rule can never
+satisfy Gate 1b on the AI's behalf.
 
 ### Amendment — 2026-08-27, before any result existed
 

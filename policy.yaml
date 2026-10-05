@@ -37,9 +37,15 @@
 #                                          a day-30 re-buy is a wash sale — EOG Jun 22 → Jul 22)
 #   target_beta_min / _max   : —  → 0.8 / 1.2 (SCALE_DECISION_RULE Gate 2 — shown to the
 #                                          PM/CRO as CONTEXT; never a guard or veto trigger)
+#
+# v2.2 (Oct 4 2026 review, owner-directed — PLAN_OCT4_REVIEW.md item 2, IPS v1.5):
+#   cash_deploy_target_pct   : —  → 0.05  (cash_deployment.py: at the rebalance, projected
+#                                          post-trade cash above this is deployed pro-rata
+#                                          into the AI's intended book, within settled cash.
+#                                          Closes the 2026-07-05 ratified cash exception)
 # ─────────────────────────────────────────────────────────────────────────────
 
-policy_version: "2.1-oct3-remediation"
+policy_version: "2.2-cash-deployment"
 
 guardrails:
   max_target_weight:        0.10   # IPS max_position_pct (10%) — clamp + qty recompute
@@ -55,6 +61,9 @@ guardrails:
   min_net_edge:             0.0    # USD — a BUY's expected edge must clear cost + CA ST tax
   tax_aware_hold_window_trading_days: 30  # IPS §7.5 — gained lot within ~30 trading days
                                           # of its 1-year date: block discretionary SELL
+  cash_deploy_target_pct:   0.05   # v2.2 — mid-band of the IPS 0–10% cash target: projected
+                                   # post-trade cash above this is deployed by
+                                   # cash_deployment.py (a producer; guards still clamp)
   settled_cash_buffer_pct:  0.05   # v2.1 — total BUY notional ≤ settled buying power ×
                                    # (1 − this). Cash account: same-day SELL proceeds
                                    # are NOT spendable (Oct 2 2026: 3 funded BUYs never

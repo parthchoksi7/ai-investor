@@ -199,8 +199,10 @@ def log_decisions(run_id: str, date_str: str, pipeline_state: dict,
     """
     da       = pipeline_state.get("devils_advocate", {}) or {}
     vetoed   = set((pipeline_state.get("cro", {}) or {}).get("rejected_tickers", []) or [])
+    # A `cash_deployment` top-up of a holding is a deterministic rule, not a PM choice —
+    # counting it as "PM selected" would let the mechanical rule pass Gate 1b for the AI.
     selected = {d.get("ticker") for d in (pipeline_state.get("final_decisions", []) or [])
-                if str(d.get("action", "")).upper() == "BUY"}
+                if str(d.get("action", "")).upper() == "BUY" and not d.get("cash_deployment")}
     # `final_decisions` changed meaning on 2026-08-19 (post-CRO intent →
     # post-guard-chain traded set), so `pm_selected` rows written before and after
     # measure different things. Stamp the vintage on every row so a longitudinal

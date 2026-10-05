@@ -7475,7 +7475,7 @@ class TestPolicyParity:
         loaded = policy._load()  # reads the real policy.yaml next to the module
         for k, v in self.OPERATIVE.items():
             assert loaded[k] == v, f"policy.yaml {k}={loaded[k]!r} != operative {v!r}"
-        assert loaded["policy_version"] == "2.1-oct3-remediation"
+        assert loaded["policy_version"] == "2.2-cash-deployment"
 
     def test_guardrails_constants_sourced_from_policy(self):
         """guardrails.* constants equal the policy values AND the operative ones."""
@@ -7528,7 +7528,7 @@ class TestPolicyParity:
     def test_policy_version_helper(self):
         import policy
         assert policy.policy_version() == policy.VALUES["policy_version"]
-        assert policy.policy_version() == "2.1-oct3-remediation"
+        assert policy.policy_version() == "2.2-cash-deployment"
 
     def test_validation_rejects_units_typo_keeps_cap(self, tmp_path):
         """A percent/fraction units typo (10 instead of 0.10) must NOT disable the cap —
@@ -13012,3 +13012,130 @@ class TestOct4ReviewFindings:
         assert 'startswith("eod_close")' in src
         wf = open("/".join(__file__.split("/")[:-1] + [".github/workflows/publish.yml"])).read()
         assert "fetch-depth: 0" in wf
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Oct 4 2026 review — item 2: bounded mechanical cash deployment (IPS §6 v1.5)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCashDeployment:
+    TODAY = "2026-10-07"
+
+    def _book(self, weights, cash=None, buying_power=None, tv=1000.0, avg=None):
+        pos = []
+        for t, w in weights.items():
+            px = 100.0
+            pos.append({"symbol": t, "qty": w * tv / px, "available_qty": w * tv / px,
+                        "avg_price": (avg or {}).get(t, px), "current_price": px,
+                        "market_value": w * tv, "unrealized_pnl": 0.0})
+        cash = tv * (1 - sum(weights.values())) if cash is None else cash
+        port = {"cash": cash, "total_value": tv, "positions": pos}
+        if buying_power is not None:
+            port["buying_power"] = buying_power
+        return port
+
+    def _state(self, tickers, **over):
+        st = {"research": {t: {"thesis": "ok"} for t in tickers},
+              "devils_advocate": {}, "position_reviews": {},
+              "cro": {"approved": True, "rejected_tickers": []}}
+        st.update(over)
+        return st
+
+    def _prices(self, tickers):
+        return {t: {"close": 100.0} for t in tickers}
+
+    def _run(self, decisions, port, state, **kw):
+        from cash_deployment import plan_cash_deployment
+        tick = [p["symbol"] for p in port["positions"]] + [d["ticker"] for d in decisions]
+        return plan_cash_deployment(decisions, port, self._prices(tick), state, [],
+                                    self.TODAY, **kw)
+
+    def test_scales_the_book_pro_rata_up_to_the_cap(self):
+        port = self._book({"JPM": 0.04, "XOM": 0.02, "JNJ": 0.06})          # 88% cash
+        out, rep = self._run([], port, self._state(["JPM","XOM","JNJ"]), target_cash_pct=0.80)
+        tw = {d["ticker"]: d["target_weight"] for d in out}
+        # 8% to deploy over 12% invested → factor 1.667, C caps at 10% first
+        assert tw["JNJ"] == pytest.approx(0.10, abs=1e-4)
+        assert tw["JPM"] / tw["XOM"] == pytest.approx(2.0, rel=5e-3)        # relative sizing kept (4-dp weights)
+        assert sum(tw.values()) == pytest.approx(0.20, abs=1e-3)        # cash → 80%
+        assert all(d["cash_deployment"] and d["action"] == "BUY" for d in out)
+
+    def test_capped_book_deploys_little_and_says_why(self):
+        """8 names × the 10% cap = 80% max invested — the binding constraint is the
+        number of names, which this rule never adds."""
+        port = self._book({t: 0.099 for t in ["AAPL","MSFT","JPM","XOM","JNJ","PG","HD","CAT"]})
+        out, rep = self._run([], port, self._state(["AAPL","MSFT","JPM","XOM","JNJ","PG","HD","CAT"]))
+        assert out == []                       # every add < $5 on a $1,000 book
+        assert rep["projected_cash_pct"] == pytest.approx(0.208, abs=1e-3)
+
+    def test_stays_within_settled_budget(self):
+        port = self._book({"JPM": 0.04, "XOM": 0.04}, buying_power=30.0)
+        out, rep = self._run([], port, self._state(["JPM","XOM"]))
+        added = sum(r["add_usd"] for r in rep["names"].values())
+        assert added <= 30.0 * 0.95 + 1e-6
+
+    def test_exclusions(self):
+        port = self._book({"JPM": 0.04, "XOM": 0.04, "JNJ": 0.04, "PG": 0.04, "HD": 0.04, "CAT": 0.04},
+                          avg={"CAT": 200.0})                             # F is −50% from cost
+        state = self._state(["JPM","XOM","JNJ","PG","HD","CAT"],
+                            devils_advocate={"XOM": {"recommend_reject": True}},
+                            position_reviews={"JNJ": {"recommended_action": "REDUCE"}},
+                            cro={"approved": False, "rejected_tickers": ["PG"]})
+        state["research"]["HD"] = {"thesis": ""}
+        sells = [{"ticker": "JPM", "action": "SELL", "target_weight": 0.0}]
+        out, rep = self._run(sells, port, state)
+        assert set(rep["excluded"]) >= {"XOM", "JNJ", "PG", "HD", "CAT"}
+        assert not any(d.get("cash_deployment") for d in out)      # nothing eligible left
+        assert rep["skipped"] == "no eligible name to deploy into"
+
+    def test_skips_on_full_veto_outage_and_kill_switch(self):
+        port = self._book({"JPM": 0.04})
+        for state, kw, why in (
+                (self._state("JPM", cro={"approved": False, "rejected_tickers": []}), {}, "full veto"),
+                (self._state("JPM", cro={"approved": False, "api_failed": True}), {}, "CRO call failed"),
+                (self._state("JPM"), {"kill_active": True}, "kill switch")):
+            out, rep = self._run([], port, state, **kw)
+            assert out == [] and why in rep["skipped"]
+
+    def test_enlarged_pm_buy_is_a_copy_not_a_mutation(self):
+        port = self._book({"JPM": 0.04})
+        pm = {"ticker": "LIN", "action": "BUY", "target_weight": 0.05}
+        out, rep = self._run([pm], port, self._state(["JPM","LIN"]))
+        n = next(d for d in out if d["ticker"] == "LIN")
+        assert n is not pm and pm["target_weight"] == 0.05          # audit record intact
+        assert n["target_weight"] == pytest.approx(0.10) and not n.get("cash_deployment")
+        assert n["cash_deployment_added_weight"] == pytest.approx(0.05)
+
+    def test_within_target_is_a_noop(self):
+        port = self._book({t: 0.095 for t in ["AAPL","MSFT","JPM","XOM","JNJ","PG","HD","CAT","NEE","LIN"]})          # 5% cash
+        out, rep = self._run([], port, self._state(["AAPL","MSFT","JPM","XOM","JNJ","PG","HD","CAT","NEE","LIN"]))
+        assert out == [] and "within target" in rep["skipped"]
+
+    def test_deployment_buys_never_count_as_pm_selected(self, tmp_path):
+        from calibration import log_decisions
+        led = tmp_path / "d.jsonl"
+        state = {"candidates": ["JPM", "LIN"], "devils_advocate": {}, "cro": {},
+                 "final_decisions": [{"ticker": "JPM", "action": "BUY", "cash_deployment": True},
+                                     {"ticker": "LIN", "action": "BUY"}]}
+        log_decisions("r", "2026-10-07", state, {"JPM": {"close": 1}, "LIN": {"close": 1}},
+                      horizons=(21,), path=str(led))
+        sel = {json.loads(l)["ticker"]: json.loads(l)["value"] for l in led.read_text().splitlines()
+               if json.loads(l)["agent"] == "pm_selected"}
+        assert sel == {"JPM": 0.0, "LIN": 1.0}
+
+    def test_policy_validator_rejects_a_percent_typo(self):
+        import policy
+        assert policy._VALIDATORS["cash_deploy_target_pct"](0.05)
+        assert not policy._VALIDATORS["cash_deploy_target_pct"](5)
+        assert not policy._VALIDATORS["cash_deploy_target_pct"](0.2)
+
+    def test_end_to_end_deployment_passes_the_guard_chain(self, monkeypatch, tmp_path):
+        port = {"cash": 400.0, "total_value": 500.0, "positions": [
+            {"symbol": "JPM", "qty": 0.2, "avg_price": 110.0, "available_qty": 0.2,
+             "current_price": 110.0, "market_value": 22.0, "unrealized_pnl": 0.0}]}
+        TestRunDailyCycleSmoke()._run(monkeypatch, tmp_path, [], portfolio=port)
+        pending = json.loads((tmp_path / "pending_decisions.json").read_text())
+        dep = [d for d in pending["decisions"] if d.get("cash_deployment")]
+        assert [d["ticker"] for d in dep] == ["JPM"] and dep[0]["qty"] > 0
+        health = json.loads((tmp_path / "system_health.json").read_text())
+        assert health["checks"]["cash_deployment"]["names"]["JPM"]["to"] == pytest.approx(0.10)

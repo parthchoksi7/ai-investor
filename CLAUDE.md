@@ -90,6 +90,7 @@ Haiku runs for each of up to 20 candidates (Research, Earnings) and each holding
 | `risk_watch.py` | Phase 5 Stage B — daily SELL-only safety net (non-rebalance trading days): −25% stop from cost basis on live MCP prices, kill-switch check, cross-mode ISO-week SELL interlock; decisions flow through the SAME envelope/claim/stamp machinery as the rebalance; **zero LLM, structurally zero BUYs** |
 | `reconcile_fills.py` | Applies an evidence file of broker fills (`evidence/broker_fills_*.json`) to `transactions.json` / `trades.csv`: real fill prices, missing broker ids, backfilled pre-logging lots. Idempotent; dry run unless `--apply` |
 | `data_request.json` | Written + pushed by the routine on gate exit 11 to start `market_data.yml` on demand (push trigger) |
+| `cash_deployment.py` | IPS §6 v1.5 bounded mechanical cash deployment — a PRODUCER between the CRO and the guard chain; top-ups of holdings carry `cash_deployment: True` and are excluded from `pm_selected` |
 | `quant_ic_report.json` | **The Gate 1a read** (since 2026-10-04): one IC per date over the full `factor_history.jsonl` universe, non-overlapping 21-day periods, Student-t CI, sector-neutral diagnostic. Written by `calibration.universe_ic_report` in `fetch_snapshot.py` (GH plane — only it has full history); committed by `market_data.yml`; summarized in `pipeline_digest.md` |
 | `quant_ic_history.jsonl` | Append-only per-date full-universe IC ledger behind `quant_ic_report.json`; written ONLY by the GH plane (full history), never recomputed. Tests must pass `history_path=None` (`test_repo_ic_ledger_holds_no_test_fixtures` is the tripwire) |
 | `PLAN_OCT4_REVIEW.md` | The Oct 4 2026 nine-seat end-to-end review: what shipped, what is an owner decision, what was logged but not acted on |
@@ -231,7 +232,7 @@ DRY_RUN=true                # set false to actually execute
 - **Max sector:** 25% of portfolio — **enforced at entry only** (IPS §6.1): an over-cap BUY is
   clamped to the remaining headroom (dropped only if unplaceable); drift above a cap from price
   appreciation is surfaced, never auto-trimmed
-- **Cash target:** 0–10%
+- **Cash target:** 0–10% — since 2026-10-04 (IPS v1.5) `cash_deployment.py` deploys projected post-trade cash above 5% at the rebalance, pro-rata into the AI's own intended book (approved BUYs + holdings in good standing), within settled cash; it adds no names, so the per-name 10% cap bounds it
 - **Horizon:** 9–12 months primary (IPS §7; policy v2.0 — was 1–3 months pre-Phase-5)
 - **Cadence:** decisions ONCE A WEEK (Wednesday rebalance; Thu/Fri catch-up); other days run only the SELL-only risk_watch safety net
 - **Min holding:** 30 trading days before a discretionary SELL — **63 if the position is at a gain** (policy v2.1); risk exits exempt. A discretionary SELL must name the thesis condition that broke
@@ -369,6 +370,7 @@ Every run — including aborted runs — writes `system_health.json` to the repo
 | `settled_cash` | A BUY was DROPPED because settled buying power couldn't fund it above the $5 floor (DEGRADED, pages); names any funding SELL that still executes |
 | `circuit_breaker` | Proposed SELL notional > 50% of the book — run halted, no discretionary orders (FAILED); code-built stop-loss exits are neither counted nor halted |
 | `risk_stop` | Rebalance-day −25% stop: OK with the fired list; DEGRADED when a breached stop was NOT injected because the CRO call failed (left to the final-attempt / next-day risk_watch), or a holding has no provable cost basis |
+| `cash_deployment` | Informational (OK): what the mechanical deployment proposed (names, $, projected cash) or why it did not run (within target / settled cash exhausted / no eligible name / CRO veto / kill switch) |
 | `llm_cost` | Informational: this run's API-list-price LLM cost and its annualized share of AUM (`agent_log.json` → `llm_usage`) |
 
 **Paging (Oct 2026):** `alert.yml` opens/closes issues on `actionable_status`, which is the worst status *excluding* informational checks' DEGRADED (`decision_validation`, `cash_discipline`, `wash_sale_presale` — guards working as designed). `overall_status` is unchanged for every other reader.
@@ -391,6 +393,7 @@ Wed 2026-10-07 freeze; everything else is measurement.
 | Change | Why it mattered |
 |--------|-----------------|
 | `fix(risk)` **the −25% stop runs on the rebalance day** — `main.inject_risk_stops` reuses `risk_watch.evaluate_triggers` on the live MCP portfolio and is appended to the FINAL post-guard list (after the circuit breaker), so no guard or the CRO can drop it — no per-guard exemptions; a fired stop replaces any surviving decision on that ticker; `strip_llm_risk_exit` runs before the guards so the LLM can never set the flag. On a CRO outage with an otherwise-empty envelope it is not injected (keeps the week retryable) | `risk_watch` runs only on gate exit 30, so one morning a week had no catastrophe brake, and a PM SELL of a crashed name inside min-hold was blocked. The tax-aware hold already trusted `risk_exit`, and nothing stopped the LLM from setting it |
+| `feat(cash)` **bounded mechanical cash deployment** (`cash_deployment.py`, policy v2.2 `cash_deploy_target_pct` 0.05, IPS v1.5 closes the cash exception) | 31.7% cash on Oct 2; cash has beta 0, so Gate 2's 0.8–1.2 band was unreachable. Honest bound: it adds no names — on the Oct 2 book (8 names, 4 near the 10% cap, 3 excluded by the AI's own flags) it would deploy only ~$8; it matters when the PM proposes new BUYs below the cap |
 | `feat(calibration)` **Gate 1a on the full universe** → `quant_ic_report.json` | The calibration ledger scores only the ~20 weekly candidates (top of the ranking + holdings): range-restricted, and ~20 names/week against the ~174 the scale rule's power math assumes. It also pooled every date into one Spearman and counted names moving together in one month as independent |
 | `feat(calibration)` **Gate 1b's corrected counterfactual** — date-demeaned gap, Welch **t** (was z), ONE Benjamini-Hochberg pass over the whole Gate 1b family (counterfactual + scorecard agent signals, `_gate_1b`) | The rule named a `p_value_bh` the counterfactual never had; raw gaps let market timing read as selection skill; two separate BH passes would double the family-wide false-discovery rate |
 | `fix(calibration)` NaN closes no longer score (14 NaN rows reached the ledgers in June; filtered at read, ledgers untouched); tied values get average ranks; `_ic_hit` filters pairs | A NaN inside a rank silently corrupts an IC |

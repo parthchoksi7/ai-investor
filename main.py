@@ -521,6 +521,26 @@ def run_daily_cycle():
     mark_thesis_exits(decisions, pipeline_state)
     strip_llm_risk_exit(decisions)
 
+    # Executed-trade log, read ONCE and shared by the deployment producer and every
+    # guard below (one consistent view instead of independent reads of the same file).
+    _txs = _load_list(TRANSACTIONS_FILE)
+
+    # ── Bounded mechanical cash deployment (IPS §6 v1.5, Oct 4 2026) ─────────────
+    # A PRODUCER, upstream of every guard: when projected post-trade cash exceeds the
+    # policy target, scale the AI's own intended book up pro-rata within today's
+    # settled cash. The guards below still clamp/drop whatever it proposes.
+    from cash_deployment import plan_cash_deployment
+    decisions, deploy_report = plan_cash_deployment(
+        decisions, portfolio, market_data["prices"], pipeline_state, _txs, today,
+        kill_active=kill_active)
+    pipeline_state["cash_deployment"] = deploy_report
+    health.record("cash_deployment", OK,
+                  message=(f"${deploy_report['deployed_usd']:.2f} proposed across "
+                           f"{sorted(deploy_report['names'])}" if deploy_report["names"]
+                           else f"no deployment: {deploy_report.get('skipped')}"),
+                  **{k: v for k, v in deploy_report.items() if k != "excluded"},
+                  excluded=deploy_report.get("excluded"))
+
 
     # Pre-compute fractional qty
     for _d in decisions:
@@ -533,10 +553,7 @@ def run_daily_cycle():
     # ── Validation gate: deterministic guardrails on LLM output ──────────────
     # Runs AFTER qty pre-computation (notional checks need qty) and BEFORE the
     # decisions reach pending_decisions.json / execution. See guardrails.py.
-    # Load the executed-trade log ONCE and pass it to every guard that needs it
-    # (validate's GFV check + both turnover guards) — one disk read and a single
-    # consistent view, instead of three independent reads of the same file.
-    _txs = _load_list(TRANSACTIONS_FILE)
+    # (_txs was loaded once above, before the deployment producer.)
 
     decisions, validation_report = validate_decisions(
         decisions, portfolio, market_data["prices"],
