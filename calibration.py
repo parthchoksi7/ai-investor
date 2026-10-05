@@ -408,6 +408,11 @@ def score_matured(snapshot: dict, ledger_path: str = LEDGER,
         exit_px = _close_on_or_after(s, target)
         if exit_px is None:
             continue  # horizon not yet elapsed in the available history
+        if not (math.isfinite(entry) and math.isfinite(exit_px) and entry > 0):
+            # A NaN close in the snapshot (the Jun 16 2026 class) must not become a NaN
+            # realized_return: 14 such rows reached the ledgers in June and a NaN
+            # inside a Spearman rank silently corrupts the IC. Left unscored, not guessed.
+            continue
 
         out.append({**fc, "entry_date": entry_date, "entry_price": round(entry, 4),
                     "future_price": exit_px,
@@ -426,10 +431,19 @@ def _spearman(xs: list, ys: list):
         return None
 
     def ranks(v):
+        # Ties get their AVERAGE rank. Order-based ranks (the original) gave tied
+        # values arbitrary, input-order-dependent ranks — composites are rounded to
+        # 0.1 and agent scores are small integers, so ties are the common case.
         order = sorted(range(n), key=lambda i: v[i])
         r = [0.0] * n
-        for rank, i in enumerate(order):
-            r[i] = rank
+        i = 0
+        while i < n:
+            j = i
+            while j + 1 < n and v[order[j + 1]] == v[order[i]]:
+                j += 1
+            for k in range(i, j + 1):
+                r[order[k]] = (i + j) / 2
+            i = j + 1
         return r
 
     rx, ry = ranks(xs), ranks(ys)
@@ -447,9 +461,50 @@ def _norm_sf(z: float) -> float:
     return math.erfc(abs(z) / math.sqrt(2))
 
 
+def _betacf(a: float, b: float, x: float) -> float:
+    """Continued fraction for the regularized incomplete beta (Numerical Recipes 6.4)."""
+    tiny, qab, qap, qam = 1e-300, a + b, a + 1.0, a - 1.0
+    c, d = 1.0, 1.0 - qab * x / qap
+    d = 1.0 / (d if abs(d) > tiny else tiny)
+    h = d
+    for m in range(1, 300):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d; d = 1.0 / (d if abs(d) > tiny else tiny)
+        c = 1.0 + aa / c; c = c if abs(c) > tiny else tiny
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + aa * d; d = 1.0 / (d if abs(d) > tiny else tiny)
+        c = 1.0 + aa / c; c = c if abs(c) > tiny else tiny
+        delta = d * c
+        h *= delta
+        if abs(delta - 1.0) < 3e-14:
+            break
+    return h
+
+
+def _t_sf2(t: float, df: float) -> float:
+    """Two-sided Student-t tail probability P(|T| > |t|), no scipy: I_{df/(df+t²)}(df/2, 1/2)."""
+    if df <= 0 or not math.isfinite(t):
+        return 0.0 if math.isinf(t) else 1.0
+    x = df / (df + t * t)
+    a, b = df / 2.0, 0.5
+    if x <= 0:
+        return 0.0
+    if x >= 1:
+        return 1.0
+    lbeta = math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+    front = math.exp(lbeta + a * math.log(x) + b * math.log(1.0 - x))
+    if x < (a + 1.0) / (a + b + 2.0):
+        return min(1.0, front * _betacf(a, b, x) / a)
+    return min(1.0, 1.0 - front * _betacf(b, a, 1.0 - x) / b)
+
+
 def _welch_p(a: list, b: list):
-    """Two-sided p-value for H0: mean(a) == mean(b), via Welch's z-approximation
-    (unequal variances, no scipy). None if either sample has < 2 observations or
+    """Two-sided p-value for H0: mean(a) == mean(b) — Welch's t with Welch–Satterthwaite
+    degrees of freedom (unequal variances, no scipy). Student-t, not the normal
+    approximation (Oct 4 2026 review): at the gate's n ≥ 10-per-side floor a z read
+    understates p (z=2.2 → 0.028 vs t≈0.044 at df 15), enough to pass Gate 1b on noise. None if either sample has < 2 observations or
     is CONSTANT (a single distinct value — checked via set(), not `variance == 0`:
     summing many copies of the same float accumulates rounding noise, so a truly
     constant sample can compute a variance of ~1e-35 instead of exact 0 — small
@@ -467,8 +522,9 @@ def _welch_p(a: list, b: list):
     se = math.sqrt(va / na + vb / nb)
     if se == 0:
         return None
-    z = (mb - ma) / se
-    return round(min(1.0, _norm_sf(z)), 4)
+    t = (mb - ma) / se
+    df = (va / na + vb / nb) ** 2 / ((va / na) ** 2 / (na - 1) + (vb / nb) ** 2 / (nb - 1))
+    return round(min(1.0, _t_sf2(t, df)), 4)
 
 
 def _ic_pvalue(ic, n: int):
@@ -530,14 +586,23 @@ def _drop_zero_variance_days(rows: list) -> list:
     return kept
 
 
+def _finite_pair(row: dict) -> bool:
+    """True when the row carries a finite numeric value AND realized_return. The
+    ledgers are append-only, so historical NaN rows are excluded at read time."""
+    v, r = row.get("value"), row.get("realized_return")
+    return (isinstance(v, (int, float)) and isinstance(r, (int, float))
+            and math.isfinite(v) and math.isfinite(r))
+
+
 def _ic_hit(rows: list, sign: int):
     """(ic, hit_rate, n) over rows carrying numeric value + realized_return."""
-    vals = [x["value"] for x in rows if isinstance(x.get("value"), (int, float))]
-    rets = [x["realized_return"] for x in rows if isinstance(x.get("realized_return"), (int, float))]
-    n = min(len(vals), len(rets))
+    # Filter PAIRS, not each list separately: two independent filters truncated to a
+    # common length would misalign every pair after the first row missing one side.
+    pairs = [(x["value"], x["realized_return"]) for x in rows if _finite_pair(x)]
+    n = len(pairs)
     if n == 0:
         return None, None, 0
-    vals, rets = vals[:n], rets[:n]
+    vals, rets = [v for v, _ in pairs], [r for _, r in pairs]
     ic = _spearman(vals, rets)
     mean = sum(vals) / n
     hits = sum(1 for v, rr in zip(vals, rets) if (sign * (v - mean)) * rr > 0)
@@ -662,17 +727,9 @@ def agent_scorecard(scored_path: str = SCORED, out_path: str = SCORECARD,
     for k in card:
         card[k]["p_value_bh"] = None
         card[k]["significant_bh"] = None
-    if m:
-        pvals.sort(key=lambda x: x[1])
-        adj = []
-        for rank, (k, p) in enumerate(pvals, start=1):
-            adj.append((k, min(1.0, p * m / rank)))
-        # step-up monotonicity: a smaller-rank q can't exceed a larger-rank q
-        for i in range(len(adj) - 2, -1, -1):
-            adj[i] = (adj[i][0], min(adj[i][1], adj[i + 1][1]))
-        for k, q in adj:
-            card[k]["p_value_bh"] = round(q, 4)
-            card[k]["significant_bh"] = q < BH_ALPHA
+    for k, q in _bh_adjust(pvals).items():
+        card[k]["p_value_bh"] = round(q, 4)
+        card[k]["significant_bh"] = q < BH_ALPHA
 
     primary_key = f"{PRIMARY_METRIC[0]}.{PRIMARY_METRIC[1]}@{PRIMARY_HORIZON}d"
     card["_meta"] = {
@@ -684,6 +741,10 @@ def agent_scorecard(scored_path: str = SCORED, out_path: str = SCORECARD,
         "note": ("Headline skill = the primary metric only; all others are "
                  "BH-adjusted secondary. Read ic_block / p_value_bh on the "
                  "effective (block-sampled) N, not the raw overlapping ic."),
+        "gate_1b": ("p_value_bh here is BH over THIS file's metrics (the preregistered "
+                    "secondary family). SCALE_DECISION_RULE Gate 1b uses a different, "
+                    "joint family — read counterfactual.json → _gate_1b, never this "
+                    "file's significant_bh, for the scale decision."),
     }
 
     with open(out_path, "w") as f:
@@ -691,8 +752,230 @@ def agent_scorecard(scored_path: str = SCORED, out_path: str = SCORECARD,
     return card
 
 
+# ── Gate 1a on the FULL universe (Oct 4 2026 review, item 5) ──────────────────
+# The preregistered calibration ledger logs the quant score only for the ~20 weekly
+# CANDIDATES — holdings plus the top of the ranking — so its IC is range-restricted
+# and accrues ~20 names a week, while SCALE_DECISION_RULE §2's power math assumes the
+# whole scored universe (~174 names). factor_history.jsonl already records every
+# scored name daily (GH plane, full history). This report measures the preregistered
+# hypothesis — cross-sectional rank association of composite_score with the 21-day
+# next-open forward return — on that full cross-section, ONE IC PER DATE, and infers
+# on non-overlapping dates only (one 21-day window cannot count as many independent
+# observations just because 170 stocks moved through it together).
+QUANT_IC_REPORT   = "quant_ic_report.json"
+# Append-only per-date IC ledger. The snapshot keeps ~210 bars, so recomputing every
+# date from it each day would silently DROP old periods as their prices age out and
+# move the greedy non-overlap anchor — a rolling, re-anchoring window instead of the
+# cumulative fixed record a preregistered gate needs. A date is computed once (when
+# its forward window has matured) and never recomputed.
+QUANT_IC_HISTORY  = "quant_ic_history.jsonl"
+MIN_CROSS_SECTION = 30     # fewer scored names on a date → that date's IC is skipped
+# A date is PERSISTED only once its exit date is this many calendar days behind the
+# newest bar in the snapshot. Expansion names refresh in batches and may carry a price
+# up to market_data.CARRY_FORWARD_MAX_DAYS (5 trading days ≈ 7 calendar) stale, so on
+# the morning a window first matures many of them have no exit bar yet — persisting
+# then would freeze a thinner cross-section forever. Before the grace passes the date
+# is still computed and shown, marked provisional, and recomputed next run.
+PERSIST_GRACE_DAYS = 10
+# Two-sided 95% Student-t critical values by degrees of freedom (df ≥ 30 → normal).
+# The per-period IC sample is small for a long time; a normal interval on 3 periods
+# would be badly overconfident.
+_T95 = {1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365,
+        8: 2.306, 9: 2.262, 10: 2.228, 11: 2.201, 12: 2.179, 13: 2.160, 14: 2.145,
+        15: 2.131, 16: 2.120, 17: 2.110, 18: 2.101, 19: 2.093, 20: 2.086, 21: 2.080,
+        22: 2.074, 23: 2.069, 24: 2.064, 25: 2.060, 26: 2.056, 27: 2.052, 28: 2.048,
+        29: 2.045}
+# SCALE_DECISION_RULE §3 Gate 1a thresholds — read here, never tuned here.
+_GATE_1A_ROUTES = {"fast": {"min_ic": 0.08, "min_obs": 400},
+                   "slow": {"min_ic": 0.05, "min_obs": 1600}}
+
+
+def _sector_demeaned_ic(pairs: list, sector_of) -> float | None:
+    """IC after removing each sector's mean score and mean return: what the score says
+    about a stock RELATIVE TO ITS SECTOR. Sectors with < 3 scored names are dropped."""
+    by_sec: dict = {}
+    for t, v, r in pairs:
+        by_sec.setdefault(sector_of(t), []).append((v, r))
+    xs, ys = [], []
+    for _sec, rows in by_sec.items():
+        if len(rows) < 3:
+            continue
+        mv = sum(v for v, _ in rows) / len(rows)
+        mr = sum(r for _, r in rows) / len(rows)
+        xs += [v - mv for v, _ in rows]
+        ys += [r - mr for _, r in rows]
+    return _spearman(xs, ys) if len(xs) >= MIN_CROSS_SECTION else None
+
+
+def _mean_ci(values: list) -> dict:
+    n = len(values)
+    if n == 0:
+        return {"n": 0, "mean": None, "sd": None, "t_stat": None, "ci95": None}
+    mean = sum(values) / n
+    if n < 2:
+        return {"n": n, "mean": round(mean, 4), "sd": None, "t_stat": None, "ci95": None}
+    sd = math.sqrt(sum((v - mean) ** 2 for v in values) / (n - 1))
+    se = sd / math.sqrt(n)
+    crit = _T95.get(n - 1, 1.96)
+    return {"n": n, "mean": round(mean, 4), "sd": round(sd, 4),
+            "t_stat": round(mean / se, 3) if se > 0 else None,
+            "ci95": [round(mean - crit * se, 4), round(mean + crit * se, 4)]}
+
+
+def universe_ic_report(snapshot: dict, factor_history_path: str = FACTOR_HISTORY,
+                       out_path: str = QUANT_IC_REPORT, horizon: int = PRIMARY_HORIZON,
+                       formula_version: str = _CURRENT_QUANT_FORMULA,
+                       history_path: str | None = QUANT_IC_HISTORY) -> dict:
+    """Per-date full-universe IC of composite_score under ONE formula version, with
+    inference on non-overlapping dates. Writes and returns the report.
+
+    Entry/exit match the preregistration (A1): next-session open after the signal date
+    to the close on/after entry + `horizon` calendar days. Only rows stamped exactly
+    `formula_version` count — the `~raw` degrade variant is a different population.
+    Non-overlapping dates are chosen greedily from the FIRST eligible date with
+    spacing > horizon days, so the selection is mechanical, not picked.
+
+    Per-date ICs are persisted append-only to `history_path` (None = in-memory only,
+    for tests/diagnostics): a persisted date is never recomputed, so the record and its
+    anchor stay fixed as the snapshot's price window rolls forward. ONLY the GH plane
+    (full history for every scored name) should persist — a run on the slimmed
+    committed snapshot would freeze a thinner cross-section into the ledger.
+    """
+    from guardrails import sector_of
+    series = _history_to_series(snapshot.get("history", {}))
+    by_date: dict = {}
+    for r in _iter_jsonl(factor_history_path):
+        if r.get("formula_version") != formula_version or r.get("ticker") in ("SPY", "QQQ"):
+            continue
+        v = r.get("composite_score")
+        if isinstance(v, (int, float)) and math.isfinite(v):
+            by_date.setdefault(r.get("date"), []).append((r.get("ticker"), float(v)))
+
+    newest = max((s[-1][0] for s in series.values() if s), default=None)
+    persisted = {r["date"]: r for r in _iter_jsonl(history_path)
+                 if r.get("formula_version") == formula_version and r.get("horizon_days") == horizon
+                 } if history_path else {}
+    periods = []
+    for d in sorted(k for k in by_date if k and k not in persisted):
+        pairs = []
+        for t, v in by_date[d]:
+            s = series.get(t)
+            if not s:
+                continue
+            entry_date, entry = _next_open_after(s, d)
+            if not entry or not math.isfinite(entry) or entry <= 0:
+                continue
+            target = (date.fromisoformat(entry_date) + timedelta(days=horizon)).isoformat()
+            exit_px = _close_on_or_after(s, target)
+            if exit_px is None or not math.isfinite(exit_px):
+                continue
+            pairs.append((t, v, exit_px / entry - 1))
+        if len(pairs) < MIN_CROSS_SECTION:
+            continue          # immature (forward window not elapsed) or too thin
+        ic = _spearman([v for _, v, _ in pairs], [r for _, _, r in pairs])
+        if ic is None:
+            continue
+        sn = _sector_demeaned_ic(pairs, sector_of)
+        exit_by = (date.fromisoformat(d) + timedelta(days=horizon + 1)).isoformat()
+        final = bool(newest and (date.fromisoformat(newest)
+                                 - date.fromisoformat(exit_by)).days >= PERSIST_GRACE_DAYS)
+        periods.append({"date": d, "n": len(pairs), "ic": round(ic, 4),
+                        "ic_sector_neutral": round(sn, 4) if sn is not None else None,
+                        "formula_version": formula_version, "horizon_days": horizon,
+                        "provisional": not final,
+                        "computed_at": datetime.now(timezone.utc).isoformat()})
+    to_persist = [p for p in periods if not p["provisional"]]
+    if history_path and to_persist:
+        _append_jsonl(history_path, to_persist)
+    periods = sorted(list(persisted.values()) + periods, key=lambda p: p["date"])
+
+    # Only FINAL (persisted-grade) periods count toward the gate; provisional ones are
+    # reported but may still change as late names refresh.
+    chosen, last = [], None
+    for p in (q for q in periods if not q.get("provisional")):
+        dd = date.fromisoformat(p["date"])
+        if last is None or (dd - last).days > horizon:
+            chosen.append(p)
+            last = dd
+    ics = [p["ic"] for p in chosen]
+    sn_ics = [p["ic_sector_neutral"] for p in chosen if p["ic_sector_neutral"] is not None]
+    stats = _mean_ci(ics)
+    n_obs = sum(p["n"] for p in chosen)
+    ci = stats["ci95"]
+    ci_excludes_zero = bool(ci and (ci[0] > 0 or ci[1] < 0))
+    routes = {name: {**cfg,
+                     "met": bool(stats["mean"] is not None and stats["mean"] >= cfg["min_ic"]
+                                 and n_obs >= cfg["min_obs"] and ci and ci[0] > 0)}
+              for name, cfg in _GATE_1A_ROUTES.items()}
+    report = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "formula_version": formula_version,
+        "horizon_days": horizon,
+        "basis": "next_open → close on/after entry + horizon calendar days (A1)",
+        "history_ledger": history_path,
+        "non_overlapping": {**stats, "n_obs": n_obs,
+                            "dates": [p["date"] for p in chosen],
+                            "ci_excludes_zero": ci_excludes_zero,
+                            "sector_neutral": _mean_ci(sn_ics)},
+        "provisional_dates": [p["date"] for p in periods if p.get("provisional")],
+        "all_dates_descriptive": {
+            "n_dates": len(periods),
+            "mean_ic": round(sum(p["ic"] for p in periods) / len(periods), 4) if periods else None,
+            "note": "Consecutive dates share most of their 21-day window — descriptive only, "
+                    "never a significance input."},
+        "gate_1a": {"routes": routes,
+                    "status": "PASS" if any(r["met"] for r in routes.values()) else "NOT_YET",
+                    "rule": "SCALE_DECISION_RULE §3 Gate 1a + §7 measurement amendment "
+                            "2026-10-04: mean per-period IC ≥ route IC, n_obs (names summed "
+                            "over non-overlapping periods) ≥ route minimum, and the per-period "
+                            "Student-t 95% CI strictly above zero."},
+        "periods": periods,
+        "caveats": [
+            "Survivorship: the universe is current members only — historical ICs are biased upward.",
+            "Sector-neutral IC is a DIAGNOSTIC (how much of the signal is sector rotation), "
+            "not the gate.",
+            "One IC per non-overlapping period: n_periods, not n_obs, sets the width of the CI.",
+        ],
+    }
+    _atomic_write_json(out_path, report)
+    return report
+
+
+def _atomic_write_json(path: str, obj) -> None:
+    """Write via a temp file + os.replace, so a crash mid-dump never leaves a
+    truncated file for a workflow to commit."""
+    tmp = f"{path}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(obj, f, indent=2)
+    os.replace(tmp, path)
+
+
+def _bh_adjust(pvals: list) -> dict:
+    """Benjamini-Hochberg step-up adjustment. `pvals` is [(key, p)]; returns {key: q}.
+    Shared by agent_scorecard and counterfactual_report so both apply the identical
+    multiplicity control (SCALE_DECISION_RULE Gate 1b names both outputs)."""
+    m = len(pvals)
+    if not m:
+        return {}
+    ranked = sorted(pvals, key=lambda x: x[1])
+    adj = [(k, min(1.0, p * m / rank)) for rank, (k, p) in enumerate(ranked, start=1)]
+    # step-up monotonicity: a smaller-rank q can't exceed a larger-rank q
+    for i in range(len(adj) - 2, -1, -1):
+        adj[i] = (adj[i][0], min(adj[i][1], adj[i + 1][1]))
+    return dict(adj)
+
+
+# SCALE_DECISION_RULE §3 Gate 1b — the ONE family the "any one of these signals"
+# allowance is corrected over. cro_veto and pm.expected_return are excluded by the rule
+# as structurally unmeasurable, so they are not in the family (and get no p_value_bh).
+GATE_1B_AGENT_SIGNALS  = ("research.confidence", "devils_advocate.overall_risk_score",
+                          "position_review.hold_score")
+GATE_1B_DECISION_SIGNALS = ("pm_selected", "da_reject")
+
+
 def counterfactual_report(scored_path: str = DECISIONS_SCORED,
-                          out_path: str = COUNTERFACTUAL, min_n: int = 10) -> dict:
+                          out_path: str = COUNTERFACTUAL, min_n: int = 10,
+                          scorecard_path: str = SCORECARD) -> dict:
     """§7.5 — per (signal, horizon): mean forward return of FLAGGED (value=1) vs KEPT
     (value=0) names, the gap, and whether the model added value in its expected direction.
 
@@ -702,7 +985,7 @@ def counterfactual_report(scored_path: str = DECISIONS_SCORED,
     inflate the count.
 
     `significant` requires BOTH `min_n` on each side AND a real two-sample test
-    (Welch's z-approximation, `_welch_p`) clearing BH_ALPHA — matching the rigor
+    (Welch's t, `_welch_p`) clearing BH_ALPHA — matching the rigor
     agent_scorecard applies to the forecast metrics next to it (Phase 1, 2026-07-05).
     Before this fix, `significant` was `n_flagged >= min_n and n_kept >= min_n` alone
     — a sample-size floor with no actual significance test — which could label a
@@ -710,6 +993,20 @@ def counterfactual_report(scored_path: str = DECISIONS_SCORED,
     noise. At ~weekly cadence this stays NOT_SIGNIFICANT for months (plan §7.4), by
     design; `p_value` is still reported once both sides reach `min_n`, so the read
     is honest about HOW insignificant, not just a boolean.
+
+    GATE 1b FIELDS (Oct 4 2026 review). The raw fields above pool returns across run
+    dates, so a decision taken before a market-wide rise looks like skill: the PM
+    selecting more names on a date the whole market then rallied raises the flagged
+    mean without any selection ability. `*_demeaned` subtracts each run date's mean
+    forward return (over every candidate scored that date, flagged and kept) before
+    comparing — a pure cross-sectional read. `p_value_bh` is the Benjamini-Hochberg
+    adjustment over the WHOLE Gate 1b family at once: the demeaned p of pm_selected and
+    da_reject at every horizon here, PLUS the block-IC p of the three agent signals in
+    agent_scorecards.json (current-formula keys, every horizon). One correction across
+    every way the gate can be passed — two separate BH passes would roughly double the
+    family-wide false-discovery rate the rule promises. `significant_bh` additionally
+    requires the `min_n` floor on both sides. The joint family is written to
+    `_gate_1b`. The raw fields are kept unchanged for continuity with earlier reports.
     """
     groups: dict = {}
     for r in _iter_jsonl(scored_path):
@@ -717,12 +1014,20 @@ def counterfactual_report(scored_path: str = DECISIONS_SCORED,
         groups.setdefault((r.get("agent"), h), []).append(r)
 
     report: dict = {}
+    demeaned_p: list = []
     for (agent, horizon), rows in groups.items():
+        rows = [r for r in rows if _finite_pair(r)]
+        by_date: dict = {}
+        for r in rows:
+            by_date.setdefault(r.get("date"), []).append(r["realized_return"])
+        date_mean = {d: sum(v) / len(v) for d, v in by_date.items()}
         block = _block_sample(rows, horizon)
-        flagged = [r["realized_return"] for r in block
-                   if r.get("value") == 1.0 and isinstance(r.get("realized_return"), (int, float))]
-        kept = [r["realized_return"] for r in block
-                if r.get("value") == 0.0 and isinstance(r.get("realized_return"), (int, float))]
+        flagged = [r["realized_return"] for r in block if r.get("value") == 1.0]
+        kept = [r["realized_return"] for r in block if r.get("value") == 0.0]
+        flagged_dm = [r["realized_return"] - date_mean[r.get("date")]
+                      for r in block if r.get("value") == 1.0]
+        kept_dm = [r["realized_return"] - date_mean[r.get("date")]
+                   for r in block if r.get("value") == 0.0]
         if not flagged or not kept:
             continue
         mf, mk = sum(flagged) / len(flagged), sum(kept) / len(kept)
@@ -732,7 +1037,10 @@ def counterfactual_report(scored_path: str = DECISIONS_SCORED,
         n_floor_met = len(flagged) >= min_n and len(kept) >= min_n
         p_value = _welch_p(flagged, kept)
         significant = n_floor_met and p_value is not None and p_value < BH_ALPHA
-        report[f"{agent}@{horizon}d"] = {
+        gap_dm = round(sum(kept_dm) / len(kept_dm) - sum(flagged_dm) / len(flagged_dm), 5)
+        p_dm = _welch_p(flagged_dm, kept_dm)
+        key = f"{agent}@{horizon}d"
+        report[key] = {
             "n_flagged": len(flagged), "n_kept": len(kept),
             "mean_return_flagged": round(mf, 5), "mean_return_kept": round(mk, 5),
             "gap_kept_minus_flagged": gap, "expected_direction": direction,
@@ -740,7 +1048,42 @@ def counterfactual_report(scored_path: str = DECISIONS_SCORED,
             "adds_value": bool(adds_value), "significant": bool(significant),
             "verdict": ("NOT_SIGNIFICANT" if not significant
                         else ("ADDS_VALUE" if adds_value else "NO_VALUE")),
+            "gap_demeaned": gap_dm,
+            "adds_value_demeaned": bool((gap_dm > 0) if direction == "underperform"
+                                        else (gap_dm < 0)),
+            "p_value_demeaned": p_dm,
+            "p_value_bh": None, "significant_bh": None,
         }
+        if p_dm is not None and agent in GATE_1B_DECISION_SIGNALS:
+            demeaned_p.append((f"counterfactual:{key}", p_dm))
+
+    # The agent-signal half of the family, from the scorecard (current formula only —
+    # a `~version` key is an older population and not part of this window's gate).
+    try:
+        card = json.load(open(scorecard_path))
+    except (OSError, ValueError):
+        card = {}
+    agent_p = [(f"scorecard:{k}", v["p_value"]) for k, v in card.items()
+               if isinstance(v, dict) and "~" not in k
+               and k.split("@")[0] in GATE_1B_AGENT_SIGNALS
+               and isinstance(v.get("p_value"), (int, float))]
+    family = demeaned_p + agent_p
+    qs = _bh_adjust(family)
+    for fk, q in qs.items():
+        if not fk.startswith("counterfactual:"):
+            continue
+        e = report[fk.split(":", 1)[1]]
+        e["p_value_bh"] = round(q, 4)
+        e["significant_bh"] = bool(e["n_floor_met"] and q < BH_ALPHA)
+        e["verdict_bh"] = ("NOT_SIGNIFICANT" if not e["significant_bh"]
+                           else ("ADDS_VALUE" if e["adds_value_demeaned"] else "NO_VALUE"))
+    report["_gate_1b"] = {
+        "family_size": len(family),
+        "members": {fk: {"p": p, "q_bh": round(qs[fk], 4)} for fk, p in family},
+        "note": ("Benjamini-Hochberg across every Gate 1b route at once. A scorecard "
+                 "member's q is necessary but not sufficient — the rule also needs that "
+                 "signal's IC and observation bar (Gate 1a's) in its expected direction."),
+    }
     report["_meta"] = {
         "note": ("Counterfactual: does each model's reject/veto/select decision predict "
                  "the right forward-return direction? gap = mean_kept − mean_flagged. "
@@ -749,6 +1092,11 @@ def counterfactual_report(scored_path: str = DECISIONS_SCORED,
                  "agent_scorecard's rigor — a sample-size floor alone is not a "
                  "significance test). At ~weekly cadence this stays NOT_SIGNIFICANT "
                  "for months (§7.4), by design."),
+        "gate_1b_fields": ("p_value_bh / significant_bh / verdict_bh: date-demeaned "
+                           "(cross-sectional) gap, Welch t, Benjamini-Hochberg across the "
+                           f"whole {len(family)}-test Gate 1b family (see _gate_1b). Use "
+                           "THESE for SCALE_DECISION_RULE Gate 1b, not the raw `significant`. "
+                           "cro_veto is excluded from the gate by the rule: no p_value_bh."),
         "min_n": min_n,
         "alpha": BH_ALPHA,
         "signals": _CF_SIGNALS,

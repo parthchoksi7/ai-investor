@@ -69,10 +69,11 @@ trading:
 
 risk:
   single_name_stop_pct: 0.25       # −25% from entry (cost basis), evaluated each
-                                   # trading-day morning via risk_watch.py on a live
-                                   # MCP quote (not the 4 PM close — the EOD routine
-                                   # places no orders), no trailing — the risk_watch
-                                   # catastrophe brake (§6.7)
+                                   # trading-day morning on a live MCP quote — by
+                                   # risk_watch.py, and on the rebalance day by
+                                   # main.inject_risk_stops (since 2026-10-04) — not the
+                                   # 4 PM close (the EOD routine places no orders), no
+                                   # trailing — the catastrophe brake (§6.7)
   safe_mode_index_drop_pct: 7      # PERCENT — SPY 1-day drop ≥ this → halt all new BUYs
                                    # (risk SELLs still allowed); plan §18.5
   target_beta_min: 0.8             # v2.1 — book beta band (beta_stable, cash = 0) required by

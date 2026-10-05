@@ -168,6 +168,38 @@ def render_markdown(d: dict) -> str:
     except Exception:
         pass
 
+    # Gate 1a on the full universe (quant_ic_report.json, GH plane) + Gate 1b's
+    # corrected counterfactual read — the two numbers the scale decision turns on.
+    # Each half is read independently so one missing artifact never hides the other.
+    ev = []
+    try:
+        q = json.load(open("quant_ic_report.json"))
+        no = q.get("non_overlapping")
+        if no:
+            ev.append(f"- **Gate 1a** (`{q.get('formula_version')}`, full universe): "
+                      f"{no['n']} non-overlapping period(s), mean IC {no['mean']}, "
+                      f"95% CI {no['ci95']}, n_obs {no['n_obs']} → "
+                      f"**{q['gate_1a']['status']}** · sector-neutral mean IC "
+                      f"{no['sector_neutral']['mean']}")
+        else:
+            ev.append(f"- **Gate 1a**: {q.get('status', 'no report')} — {q.get('note', '')}")
+    except Exception:
+        pass
+    try:
+        cf = json.load(open("counterfactual.json"))
+        for k in ("pm_selected@21d", "da_reject@21d"):
+            e = cf.get(k) or {}
+            if e.get("p_value_bh") is not None:
+                ev.append(f"- **Gate 1b** `{k}`: demeaned gap {e.get('gap_demeaned')}, "
+                          f"q_bh {e['p_value_bh']} (family of "
+                          f"{(cf.get('_gate_1b') or {}).get('family_size')}) → {e.get('verdict_bh')}")
+    except Exception:
+        pass
+    if ev:
+        lines.append("## Scale-rule evidence")
+        lines.extend(ev)
+        lines.append("")
+
     lines.append(f"_Generated {datetime.now().isoformat(timespec='seconds')}_")
     return "\n".join(lines)
 

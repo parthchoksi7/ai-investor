@@ -19,6 +19,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Full history: performance.build_report reads every daily 4 PM close from the
+          # git history of portfolio_snapshot.json to compute realized_beta (Oct 4 2026).
+          # A depth-1 clone would fall back to weekly marks and publish.py skips beta.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v6
         with:

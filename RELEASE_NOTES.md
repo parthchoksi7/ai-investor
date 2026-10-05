@@ -13,7 +13,44 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed — the stop-loss now runs on rebalance days too (changes decisions; ships before the Oct 7 freeze)
+
+The −25% stop-loss only ran on non-rebalance days. On Wednesdays nothing checked it, and if
+the AI tried to sell a crashed stock it had bought less than 30 trading days earlier, the
+anti-churn rule blocked the sale. Now the Wednesday run checks every holding against its
+cost basis first, and a stock 25% under its purchase price is sold no matter what the AI
+proposed. The AI can no longer mark its own sales as "risk exits" to skip the holding rules;
+only code sets that flag.
+
+One deliberate exception: if the Chief Risk Officer call itself fails that day and there is
+nothing else to trade, the stop is not added (adding it would use up the week's rebalance
+on an outage). The routine's last-attempt fallback or Thursday's check covers it. The stop is
+added after every other safety check has run, using the live broker share count, so none of
+those checks (or the risk officer) can accidentally drop it.
+
+### Changed — the scale decision now reads honest numbers (measurement only)
+
+- **"Does the score predict?" (Gate 1a)** is now measured on every scored stock (~174),
+  one reading per month-long window, in `quant_ic_report.json`. Each window's reading is
+  saved permanently (`quant_ic_history.jsonl`) so old evidence never drops out. Before, it only looked at
+  the 20 stocks the system was already considering. It also treated 20 stocks moving
+  together in one month as 20 separate pieces of evidence. Current reading: one window
+  finished under the current formula, so there is no verdict yet.
+- **"Does the AI add value?" (Gate 1b)** now removes each week's overall market move
+  before comparing the stocks the AI picked against the ones it passed on, and applies the
+  multiple-test correction the rule requires, once across all five ways the gate can be
+  passed (`p_value_bh` in `counterfactual.json`). Current reading: the AI's picks beat the
+  rest by about 4 points over a month, but after correction q = 0.54, so not significant.
+  The significance test now uses the t-distribution, which is honest at small sample sizes.
+- **The performance report** now uses the daily 4 PM account value instead of one reading
+  per week. The old report overstated risk-adjusted return badly (Sharpe +4.82; really −0.52)
+  and understated the worst drop (−1.3%; really −6.0%).
+- **AI cost** is now recorded every run, including what it costs as a share of the account
+  per year (`agent_log.json` → `llm_usage`).
+- Fourteen June records with a missing price had slipped into the scoring files; they are
+  now ignored rather than silently distorting the scores.
+
+No routine re-paste is needed for these changes.
 
 ## [2026-10-04] — Oct 3 remediation (PR #47) · ~12:59 PT · e6de46e
 

@@ -259,6 +259,41 @@ live routine is synced (target Wed 2026-10-07).**
 be dated in this section. Any other change restarts the window again **and counts
 against §5's kill rule as a second restart.**
 
+### Measurement amendment — 2026-10-04, before the frozen window opens (no threshold changed)
+
+Owner-directed, from the 2026-10-04 end-to-end review (`PLAN_OCT4_REVIEW.md`). **Every
+threshold in §3 is unchanged.** What changes is how two of them are *read*, because the
+existing reads could not support the decision this rule makes:
+
+- **Gate 1a is read from `quant_ic_report.json`.** IC = the mean of one cross-sectional
+  Spearman IC per date over the **full** scored universe in `factor_history.jsonl`, using
+  only non-overlapping 21-day periods (greedy, from the first eligible date). "Independent
+  observations" = names summed over those periods (so the §3 floors of 400 / 1,600 keep
+  their meaning). "CI excluding zero" = the Student-t 95% interval on the per-period ICs,
+  which is **stricter** than the pooled read it replaces (a single month cannot count as
+  hundreds of independent observations). The calibration ledger's candidate-only IC
+  (`agent_scorecards.json`) continues to be reported as registered.
+  Per-date ICs are written once to the append-only `quant_ic_history.jsonl` (GH plane
+  only), so periods never drop out as the ~210-bar price window rolls and the greedy
+  non-overlap anchor never moves.
+- **Gate 1b is read from `counterfactual.json`**: each run date's mean return is removed
+  before flagged and kept names are compared (Welch's **t**, not z), and ONE
+  Benjamini-Hochberg correction covers the whole Gate 1b family at once — `pm_selected` and
+  `da_reject` at every horizon plus the three agent signals' scorecard p-values (listed in
+  `_gate_1b`). `p_value_bh` / `significant_bh` are those joint-family values. The field this
+  rule always named did not exist until today.
+
+**Disclosure — what was seen before this was written.** While building the full-universe
+read on 2026-10-04 the reviewer looked at per-date ICs across *all* formula versions since
+July (mean −0.09; under `3.0-beta-neutral`, 10 matured dates, one non-overlapping period at
+−0.11) and at the counterfactual (PM selection, demeaned: −4.3 points at 21 days; Welch-t
+p = 0.07, joint-family BH q = 0.54). None of these satisfies or comes near any gate; the
+amendment is made because the old reads were mis-specified, not because of what they showed.
+
+**Also shipped before the freeze, as part of the restart batch:** the −25% stop now runs on
+the rebalance day (`main.inject_risk_stops`). That changes decisions, so it ships before the
+first rebalance of the frozen window (Wed 2026-10-07), not during it.
+
 ### Amendment — 2026-08-27, before any result existed
 
 **Gate 1 split into 1a (deterministic foundation) + 1b (the AI adds something).** The

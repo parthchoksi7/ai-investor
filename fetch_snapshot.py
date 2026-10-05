@@ -157,6 +157,20 @@ try:
         from event_digest import digest as _digest
         from universe import CORE_UNIVERSE as _UNIV
         _stats = _digest(snapshot, set(_UNIV))
+        try:   # item 8 (Oct 4 2026): the one LLM spend billed per token, every weekday
+            from analysis import usage_summary
+            try:
+                _tv = float(json.load(open("mcp_portfolio.json")).get("total_value") or 0)
+            except (OSError, ValueError, TypeError):
+                _tv = None
+            # Two scheduled market_data.yml runs per weekday each call Haiku (dedup is
+            # after extraction); on-demand runs add more — so this is a floor. Latest
+            # run only in data_quality_report.json; the series is its git history.
+            _stats["llm_usage"] = usage_summary(
+                total_value=_tv, runs_per_year=2 * 252,
+                scope="event_digest (GH plane, metered key) — THIS run; ~2 runs/weekday")
+        except Exception as _ue:
+            print(f"   ⚠ event_digest usage not recorded — {_ue}")
         print(f"event_digest: written={_stats.get('events_written')} "
               f"deduped={_stats.get('events_deduped')} "
               f"parse_ok_rate={_stats.get('parse_success_rate')}")
@@ -186,6 +200,33 @@ try:
     print(f"calibration: {_n} matured forecast(s) scored on the GH plane")
 except Exception as e:
     print(f"WARNING: GH-plane forecast scoring failed — {e}")
+
+# Gate 1a on the FULL universe (Oct 4 2026 review, item 5): one IC per date from
+# factor_history.jsonl against next-open forward returns, inferred on non-overlapping
+# periods. Must run HERE — only this plane holds full-depth history for every scored
+# name (the committed snapshot below is slimmed). Observational; never fails the fetch.
+# market_data.yml `git add`s both artifacts by name — a missing path would fail the
+# WHOLE commit step and strand today's snapshot (the Jul 4 last_rebalance.json class),
+# so they are guaranteed to exist even when the report itself fails.
+try:
+    from calibration import universe_ic_report
+    _q = universe_ic_report(snapshot)["non_overlapping"]
+    print(f"quant_ic_report.json: {_q['n']} non-overlapping period(s), mean IC {_q['mean']}, "
+          f"95% CI {_q['ci95']}")
+except Exception as e:
+    print(f"WARNING: universe IC report failed — {e}")
+    # OVERWRITE (atomically) — leaving yesterday's report in place would re-commit it
+    # as if it were today's evidence.
+    try:
+        with open("quant_ic_report.json.tmp", "w") as f:
+            json.dump({"status": "UNAVAILABLE", "failed_at": snapshot.get("date"),
+                       "note": f"universe_ic_report failed this run: {str(e)[:200]}"}, f)
+        os.replace("quant_ic_report.json.tmp", "quant_ic_report.json")
+    except OSError as _we:
+        print(f"WARNING: could not write the IC-report failure stub — {_we}")
+finally:
+    if not os.path.exists("quant_ic_history.jsonl"):
+        open("quant_ic_history.jsonl", "a").close()
 
 # Step 5 (§11.3) — build the per-ticker research dossier: the single synthesis point
 # that collapses the raw layer (snapshot + factor_history + fundamentals + events +

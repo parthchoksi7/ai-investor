@@ -174,6 +174,62 @@ def apply_pm_backstop(decisions: list, portfolio: dict, pipeline_state: dict) ->
     return auto_exits
 
 
+def strip_llm_risk_exit(decisions: list) -> None:
+    """`risk_exit` exempts a SELL from the tax-aware hold, so only code may set it —
+    never trust it from the PM's JSON (the rule mark_thesis_exits applies to
+    `thesis_exit`). Must run BEFORE the guard chain. Mutates in place."""
+    for d in decisions:
+        d.pop("risk_exit", None)
+
+
+def inject_risk_stops(decisions: list, portfolio: dict, today: str,
+                      cro_api_failed: bool = False) -> tuple[list, dict]:
+    """Evaluate the −25% single-name stop on the REBALANCE path too (Oct 4 2026 review).
+
+    risk_watch.py runs the stop only on gate exit 30 — every trading day EXCEPT the
+    rebalance day — so one morning a week the catastrophe brake did not run, and a PM
+    SELL of a crashed name bought < 30 trading days ago was blocked by min-hold. Same
+    trigger function as risk_watch (one definition of the stop), evaluated on the
+    live MCP prices in `portfolio`.
+
+    Called on the FINAL, post-guard-chain decision list, just before the envelope is
+    written — so no guard (CRO veto, min-hold, GFV, the $5 floor, the circuit
+    breaker) can remove or count a stop, by construction rather than by a per-guard
+    exemption a future guard could forget. risk_watch's envelope has never passed
+    through those guards either. Everything else stays strictly subtractive.
+
+    A fired stop REPLACES whatever survived the chain for that ticker (a BUY into a
+    name that just breached its stop, or a partial SELL): the stop is a full exit.
+
+    CRO OUTAGE. The routine's stamp step leaves an EMPTY envelope unstamped when the
+    CRO call failed, so a later attempt re-runs the rebalance; a stop would make it
+    non-empty and get it stamped — consuming the week on an outage. So when the CRO
+    failed AND the final list is empty, nothing is injected (that day's stop is
+    covered by the routine's final-attempt risk_watch fallback / the next risk_watch
+    day). Checked on the final list, it mirrors the routine's `p['decisions']` test
+    exactly. If the list is non-empty (apply_pm_backstop's 3-signal exits survive a CRO
+    failure — pre-existing), it will be stamped anyway, so the stop IS injected.
+
+    Also strips any LLM-supplied `risk_exit` (see strip_llm_risk_exit). Returns
+    (decisions, report)."""
+    from risk_watch import evaluate_triggers
+    strip_llm_risk_exit(decisions)
+    report: dict = {"fired": [], "skipped_cro_api_failed": False}
+    stops, trig = evaluate_triggers(portfolio, today, interlocked=set())
+    report.update({k: trig.get(k, []) for k in ("fired", "blocked", "skipped_no_basis")})
+    if not stops:
+        return decisions, report
+    if cro_api_failed and not decisions:
+        report["skipped_cro_api_failed"] = True
+        return decisions, report
+    stopped = {s["ticker"] for s in stops}
+    kept = [d for d in decisions if d.get("ticker") not in stopped]
+    for s in stops:
+        s["price_as_of"] = today     # live MCP quote — never re-quoted as stale
+        print(f"   🛑 STOP-LOSS (rebalance day): SELL {s['ticker']} — {s['rationale']}")
+    return kept + stops, report
+
+
 def select_quant_scores(market_data: dict, held=None) -> tuple[dict, str, str]:
     """Trade on the scores the experiment RECORDS (Oct 3 2026 remediation 2.1).
 
@@ -463,6 +519,8 @@ def run_daily_cycle():
     # ── PM backstop: auto-exit when 3 signals agree ──────────────────────────
     apply_pm_backstop(decisions, portfolio, pipeline_state)
     mark_thesis_exits(decisions, pipeline_state)
+    strip_llm_risk_exit(decisions)
+
 
     # Pre-compute fractional qty
     for _d in decisions:
@@ -565,10 +623,33 @@ def run_daily_cycle():
         health.record("circuit_breaker", FAILED,
                       message=f"SELL notional {breaker['turnover_pct']:.0%} of the book exceeds "
                               f"the {TURNOVER_CIRCUIT_BREAKER_PCT:.0%} one-run limit — run halted, "
-                              "no orders. The (empty) envelope is still stamped, so the week's "
+                              "no discretionary orders (code-built stop-loss exits still "
+                              "place). The envelope is still stamped, so the week's "
                               "rebalance is consumed: an anomalous proposal is a human-review "
                               "event, not something to retry automatically",
                       **breaker)
+
+    # ── −25% stop on the rebalance day (risk_watch covers every other day) ──────
+    # AFTER the whole guard chain: no guard may remove or count a catastrophe exit.
+    # qty is the broker's available_qty from the live MCP portfolio, not a snapshot
+    # recompute (a halted/crashed name may have no snapshot price at all).
+    decisions, stop_report = inject_risk_stops(
+        decisions, portfolio, today,
+        cro_api_failed=bool((pipeline_state.get("cro") or {}).get("api_failed")))
+    if stop_report["skipped_cro_api_failed"]:
+        health.record("risk_stop", DEGRADED,
+                      message=f"Stop breached for {[f['ticker'] for f in stop_report['fired']]} "
+                              "but NOT injected — the CRO call failed, so this envelope must stay "
+                              "retryable. Covered by the final-attempt risk_watch fallback / the "
+                              "next risk_watch day.", **stop_report)
+    elif stop_report["fired"] or stop_report.get("skipped_no_basis"):
+        health.record("risk_stop", DEGRADED if stop_report.get("skipped_no_basis") else OK,
+                      message=f"{len(stop_report['fired'])} stop(s) fired"
+                              + (f"; no cost basis/price for {stop_report['skipped_no_basis']}"
+                                 if stop_report.get("skipped_no_basis") else ""),
+                      **stop_report)
+    else:
+        health.record("risk_stop", OK, fired=[])
 
     # Wash-sale PRE-sale FLAG (A6) — the post-sale re-buy block above covers one
     # side of IRS §1091; this flags (never blocks) a loss exit within 30d of a
@@ -817,6 +898,15 @@ def run_daily_cycle():
     # confound `formula_version` was introduced to fix in the forecast ledger.
     # Absent stamp ⇒ pre-2026-08-19 ⇒ post-CRO vintage.
     pipeline_state["final_decisions_vintage"] = "post_guard_chain"
+    # Item 8 (Oct 4 2026 review): what this run's agents cost, against the book they
+    # manage. agent_log.json is committed by the routine, so the series is durable
+    # (reproducibility.json, which also carries usage, never was).
+    from analysis import usage_summary
+    pipeline_state["llm_usage"] = usage_summary(portfolio.get("total_value"))
+    _u = pipeline_state["llm_usage"]
+    health.record("llm_cost", OK, est_cost_usd=_u.get("est_cost_usd"),
+                  cost_pct_aum_annualized=_u.get("cost_pct_aum_annualized"),
+                  unpriced_models=_u.get("unpriced_models"))
     record_run(run_id, pipeline_state)
     print(f"   📋 Agent log written (run_id={run_id})")
 
@@ -889,6 +979,11 @@ def run_daily_cycle():
     # date is not today (a stale-slice price under Stage D's rotating fetch must
     # never silently size an order).
     for _d in decisions:
+        if _d.get("risk_exit"):
+            _d.setdefault("sizing_price", next(
+                (p.get("current_price") for p in portfolio.get("positions", [])
+                 if p.get("symbol") == _d.get("ticker")), None))
+            continue                         # stop: priced live by evaluate_triggers
         if _d.get("action", "").upper() in ("BUY", "SELL"):
             _t = _d.get("ticker", "")
             _d["price_as_of"] = (dossier.get("tickers", {}).get(_t, {}).get("price_as_of")

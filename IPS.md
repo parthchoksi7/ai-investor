@@ -160,7 +160,7 @@ the system holds (no new BUYs) rather than continuing to trade against its own v
 |-----------|--------|
 | **Time horizon** | 9–12 months primary holding horizon; positions underwritten on a 9–12 month fundamental thesis |
 | **Drawdown tolerance** | Hard kill switch at **−20% portfolio drawdown from peak** → blocks all new BUYs (SELLs still permitted). Graduated de-risking optional (§7.6) |
-| **Single-name loss limit** | Hard stop-loss at **−25% from entry** (cost basis, evaluated each trading-day morning via `risk_watch.py` on a live Robinhood MCP quote — not the 4 PM close, since the EOD routine places no orders — no trailing) — a catastrophe brake, not a thesis tool |
+| **Single-name loss limit** | Hard stop-loss at **−25% from entry** (cost basis, evaluated each trading-day morning on a live Robinhood MCP quote — by `risk_watch.py`, and on the rebalance day by `main.py` (since 2026-10-04; before then the rebalance day was skipped) — not the 4 PM close, since the EOD routine places no orders — no trailing) — a catastrophe brake, not a thesis tool |
 | **Volatility** | No explicit vol target; risk is controlled via position/sector caps and the kill switch. Risk *contribution* is monitored and reported (§7.5) even though not hard-enforced |
 | **Liquidity** | Universe restricted to liquid names (Appendix A admission floor); the book must be fully liquidatable within one trading day at negligible impact |
 | **Tax sensitivity** | **CA top-bracket taxable account** — short-term gains taxed ~54%, long-term ~37%. After-tax return is the only return that counts; turnover is treated as a primary risk |
@@ -419,8 +419,9 @@ trading:
 
 risk:
   kill_switch_drawdown_pct: 20
-  single_name_stop_pct: 25       # from entry, evaluated each trading-day morning via
-                                  # risk_watch.py (live MCP quote), no trailing
+  single_name_stop_pct: 25       # from entry, evaluated each trading-day morning
+                                  # (risk_watch.py; main.py on the rebalance day),
+                                  # live MCP quote, no trailing
   safe_mode_index_intraday_drop_pct: 7     # market-wide circuit breaker (tunable)
   safe_mode_vix_level: 40                   # tunable
 

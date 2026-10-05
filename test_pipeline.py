@@ -3340,7 +3340,7 @@ class TestPerformanceReport:
         ]}}
         lp = tmp_path / "agent_log.json"; lp.write_text(json.dumps(log))
         sp = tmp_path / "snap.json";       sp.write_text(json.dumps(snap))
-        report = performance.build_report(str(lp), str(sp))
+        report = performance.build_report(str(lp), str(sp), close_snapshot_path=None)
         assert report["inception"] == "2026-06-08"
         assert report["as_of"] == "2026-06-09"
         assert report["trading_days"] == 2
@@ -3351,7 +3351,8 @@ class TestPerformanceReport:
     def test_missing_files_are_safe(self, tmp_path):
         import performance
         report = performance.build_report(str(tmp_path / "none.json"),
-                                          str(tmp_path / "none2.json"))
+                                          str(tmp_path / "none2.json"),
+                                          close_snapshot_path=None)
         assert report["trading_days"] == 0
         assert report["inception"] is None
 
@@ -3496,7 +3497,8 @@ class TestAfterTaxScorecard:
                 "date": "2026-01-09", "timestamp": "2026-01-09T00:00:00+00:00"}]
         s = performance.after_tax_scorecard(
             transactions=txs, portfolio={"positions": [], "total_value": 1200.0},
-            agent_log_path=lp, snapshot_path=sp)
+            agent_log_path=lp, snapshot_path=sp,
+            close_snapshot_path=None)
         assert s["realized"]["realized_gain_pretax"] == 200.0
         assert s["realized"]["realized_tax_estimate"] == 108.0       # 200 * 0.54
         assert s["realized"]["realized_gain_after_tax"] == 92.0      # separate tracking
@@ -3515,7 +3517,8 @@ class TestAfterTaxScorecard:
             [("2026-01-02", 1000.0), ("2026-01-09", 1010.0)],
             [("2026-01-02", 100.0),  ("2026-01-09", 101.0)])
         s = performance.after_tax_scorecard(transactions=[], portfolio={"positions": []},
-                                            agent_log_path=lp, snapshot_path=sp)
+                                            agent_log_path=lp, snapshot_path=sp,
+            close_snapshot_path=None)
         assert s["not_significant"] is True
         assert any("NOT STATISTICALLY SIGNIFICANT" in c for c in s["caveats"])
 
@@ -3525,7 +3528,8 @@ class TestAfterTaxScorecard:
         txs = [{"action": "SELL", "ticker": "MRK", "qty": 0.3, "price": 122.0,
                 "date": "2026-01-02", "timestamp": "2026-01-02T00:00:00+00:00"}]
         s = performance.after_tax_scorecard(transactions=txs, portfolio={"positions": []},
-                                            agent_log_path=lp, snapshot_path=sp)
+                                            agent_log_path=lp, snapshot_path=sp,
+            close_snapshot_path=None)
         assert s["realized"]["realized_gain_pretax"] == 0.0
         assert len(s["uncovered_sells"]) == 1 and s["uncovered_sells"][0]["ticker"] == "MRK"
 
@@ -12578,3 +12582,433 @@ class TestUltraFixFollowups:
     def test_final_attempt_is_decided_at_gate_time(self):
         text = open("/".join(__file__.split("/")[:-1] + ["ROUTINE_DAILY_CYCLE.md"])).read()
         assert "FINAL_ATTEMPT=$(python -c" in text and "do NOT re-evaluate the clock now" in text
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Oct 4 2026 review — item 1: the −25% stop on the rebalance day
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _stop_portfolio(cur=140.0, avg=200.0):
+    return {"cash": 400.0, "total_value": 500.0, "positions": [
+        {"symbol": "JPM", "qty": 0.5, "avg_price": avg, "available_qty": 0.5,
+         "current_price": cur, "market_value": 0.5 * cur, "unrealized_pnl": 0.0}]}
+
+
+class TestInjectRiskStops:
+    """main.inject_risk_stops — the producer that runs the risk_watch stop on the
+    rebalance path. risk_watch only runs on gate exit 30, so before this the stop
+    skipped one morning a week."""
+
+    def test_breached_stop_is_injected_as_code_built_risk_exit(self):
+        import main
+        out, rep = main.inject_risk_stops([], _stop_portfolio(), "2026-10-07")
+        assert [(d["ticker"], d["action"], d["risk_exit"]) for d in out] == [("JPM", "SELL", True)]
+        assert out[0]["target_weight"] == 0.0 and out[0]["qty"] == 0.5
+        assert [f["ticker"] for f in rep["fired"]] == ["JPM"]
+
+    def test_unbreached_position_injects_nothing(self):
+        import main
+        out, rep = main.inject_risk_stops([], _stop_portfolio(cur=190.0), "2026-10-07")
+        assert out == [] and rep["fired"] == []
+
+    def test_stop_replaces_pm_decision_on_same_ticker(self):
+        """A PM BUY into the crashed name would make validate_decisions reject BOTH
+        legs as a same-ticker BUY+SELL — the stop must win, alone."""
+        import main
+        pm = [{"ticker": "JPM", "action": "BUY", "target_weight": 0.08},
+              {"ticker": "MSFT", "action": "BUY", "target_weight": 0.05}]
+        out, _ = main.inject_risk_stops(pm, _stop_portfolio(), "2026-10-07")
+        jpm = [d for d in out if d["ticker"] == "JPM"]
+        assert len(jpm) == 1 and jpm[0]["action"] == "SELL" and jpm[0]["risk_exit"] is True
+        assert any(d["ticker"] == "MSFT" for d in out)
+
+    def test_llm_supplied_risk_exit_flag_is_stripped(self):
+        """risk_exit exempts a SELL from the min-hold and tax-aware-hold guards; an
+        LLM must never be able to set it (pre-existing hole closed by this change)."""
+        import main
+        pm = [{"ticker": "MSFT", "action": "SELL", "target_weight": 0.0, "risk_exit": True}]
+        out, _ = main.inject_risk_stops(pm, _stop_portfolio(cur=190.0), "2026-10-07")
+        assert "risk_exit" not in out[0]
+
+    def test_cro_api_failure_injects_nothing(self):
+        """A non-empty envelope would be stamped by the routine and consume the week
+        on a CRO outage — the stop is left to the final-attempt / next-day risk_watch."""
+        import main
+        out, rep = main.inject_risk_stops([], _stop_portfolio(), "2026-10-07", cro_api_failed=True)
+        assert out == [] and rep["skipped_cro_api_failed"] is True
+
+
+class TestRebalanceDayStopEndToEnd:
+    """Through the real run_daily_cycle() guard chain: a held name 30% under its cost
+    basis, bought 5 days ago (inside min-hold), is exited on the rebalance day."""
+
+    def test_stop_reaches_the_envelope_through_the_guard_chain(self, monkeypatch, tmp_path):
+        import json as _j
+        from datetime import datetime, timedelta
+        import main  # noqa: F401
+        recent = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+        (tmp_path / "transactions.json").write_text(_j.dumps([
+            {"ticker": "JPM", "action": "BUY", "date": recent, "dry_run": False}]))
+        smoke = TestRunDailyCycleSmoke()
+        pm = [{"ticker": "JPM", "action": "HOLD", "target_weight": 0.2}]
+        smoke._run(monkeypatch, tmp_path, pm, portfolio=_stop_portfolio())
+        pending = _j.loads((tmp_path / "pending_decisions.json").read_text())
+        sells = [d for d in pending["decisions"] if d["action"] == "SELL"]
+        assert [(d["ticker"], d["risk_exit"]) for d in sells] == [("JPM", True)]
+        assert sells[0]["qty"] == 0.5 and sells[0].get("ref_id")
+        health = _j.loads((tmp_path / "system_health.json").read_text())
+        assert health["checks"]["risk_stop"]["status"] == "OK"
+        assert [f["ticker"] for f in health["checks"]["risk_stop"]["fired"]] == ["JPM"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Oct 4 2026 review — items 5–8 (measurement only; no decision changes)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _daily_bars(start: str, closes: list) -> list:
+    """Weekday bars from `start` with open == close (ISO dates)."""
+    d = date.fromisoformat(start)
+    out = []
+    for c in closes:
+        while d.weekday() >= 5:
+            d += timedelta(days=1)
+        out.append({"date": d.isoformat(), "open": c, "close": c})
+        d += timedelta(days=1)
+    return out
+
+
+class TestSpearmanTies:
+    def test_tied_values_get_average_ranks(self):
+        """Order-based ranks made a tied series' IC depend on input order."""
+        from calibration import _spearman
+        a = _spearman([1, 1, 2, 3], [10, 20, 30, 40])
+        b = _spearman([1, 1, 2, 3], [20, 10, 30, 40])
+        assert a == pytest.approx(b)
+
+
+class TestScoringNanGuard:
+    def test_nan_close_is_not_scored(self, tmp_path):
+        from calibration import score_matured
+        led, sc = tmp_path / "f.jsonl", tmp_path / "s.jsonl"
+        led.write_text(json.dumps({"run_id": "r", "agent": "quant", "field": "composite_score",
+                                   "ticker": "X", "value": 60, "date": "2026-01-02",
+                                   "horizon_days": 21}) + "\n")
+        bars = _daily_bars("2026-01-05", [100.0] * 40)
+        for b in bars:
+            b["close"] = float("nan")             # every candidate exit bar is NaN
+        n = score_matured({"history": {"X": bars}}, ledger_path=str(led), scored_path=str(sc))
+        assert n == 0 and not (sc.exists() and sc.read_text().strip())
+
+    def test_ic_hit_pairs_rows_and_drops_nan(self):
+        from calibration import _ic_hit
+        rows = [{"value": 1, "realized_return": 0.01}, {"value": 2, "realized_return": None},
+                {"value": 3, "realized_return": 0.03}, {"value": 4, "realized_return": float("nan")},
+                {"value": 5, "realized_return": 0.05}]
+        ic, hit, n = _ic_hit(rows, +1)
+        assert n == 3 and ic == pytest.approx(1.0)
+
+
+class TestUniverseIcReport:
+    """Item 5: one IC per date over the FULL factor_history cross-section."""
+
+    def _setup(self, tmp_path, n_names=40, perfect=True):
+        hist, rows = {}, []
+        for i in range(n_names):
+            t = f"T{i:02d}"
+            growth = 1 + (i / n_names) * 0.2
+            closes = [100.0 * (growth ** (k / 60)) for k in range(80)]
+            hist[t] = _daily_bars("2026-01-05", closes)
+            for d in ("2026-01-05", "2026-02-16"):    # two non-overlapping dates
+                score = i if perfect else (i * 7) % n_names
+                rows.append({"date": d, "ticker": t, "composite_score": float(score),
+                             "formula_version": "3.0-beta-neutral"})
+            rows.append({"date": "2026-01-06", "ticker": t, "composite_score": 1.0,
+                         "formula_version": "3.0-beta-neutral~raw"})   # other population
+        fh = tmp_path / "fh.jsonl"
+        fh.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+        return {"history": hist}, str(fh)
+
+    def test_perfect_ranking_reads_ic_one_on_non_overlapping_dates(self, tmp_path):
+        from calibration import universe_ic_report
+        snap, fh = self._setup(tmp_path)
+        r = universe_ic_report(snap, factor_history_path=fh,
+                               out_path=str(tmp_path / "q.json"),
+                               formula_version="3.0-beta-neutral",
+                               history_path=None)
+        no = r["non_overlapping"]
+        assert no["dates"] == ["2026-01-05", "2026-02-16"]
+        assert no["mean"] == pytest.approx(1.0) and no["n_obs"] == 80
+        assert (tmp_path / "q.json").exists()
+        # the ~raw rows are a different population and never enter the read
+        assert all(p["date"] != "2026-01-06" for p in r["periods"])
+
+    def test_gate_needs_the_observation_floor(self, tmp_path):
+        from calibration import universe_ic_report
+        snap, fh = self._setup(tmp_path)
+        r = universe_ic_report(snap, factor_history_path=fh,
+                               out_path=str(tmp_path / "q.json"),
+                               formula_version="3.0-beta-neutral",
+                               history_path=None)
+        assert r["gate_1a"]["status"] == "NOT_YET"      # n_obs 80 < 400
+
+    def test_thin_cross_section_is_skipped(self, tmp_path):
+        from calibration import universe_ic_report
+        snap, fh = self._setup(tmp_path, n_names=10)
+        r = universe_ic_report(snap, factor_history_path=fh,
+                               out_path=str(tmp_path / "q.json"),
+                               formula_version="3.0-beta-neutral",
+                               history_path=None)
+        assert r["periods"] == [] and r["non_overlapping"]["n"] == 0
+
+
+class TestCounterfactualDemeaned:
+    """Item 6: a market-wide move must not read as selection skill."""
+
+    def _rows(self):
+        rows = []
+        # Date A: market +10% for everyone; date B: market −10% for everyone.
+        # The PM "selects" heavily on A only → raw gap looks like skill, demeaned is 0.
+        for d, mkt, n_sel in (("2026-01-05", 0.10, 8), ("2026-03-02", -0.10, 2)):
+            for i in range(12):
+                rows.append({"run_id": d, "date": d, "agent": "pm_selected", "field": "flag",
+                             "ticker": f"T{i}{d}", "value": 1.0 if i < n_sel else 0.0,
+                             "horizon_days": 21, "realized_return": mkt + 0.001 * (i % 3)})
+        return rows
+
+    def test_market_timing_does_not_read_as_selection(self, tmp_path):
+        from calibration import counterfactual_report
+        p = tmp_path / "d.jsonl"
+        p.write_text("\n".join(json.dumps(r) for r in self._rows()) + "\n")
+        rep = counterfactual_report(scored_path=str(p), out_path=str(tmp_path / "c.json"),
+                                    scorecard_path=str(tmp_path / "no_card.json"))
+        e = rep["pm_selected@21d"]
+        assert e["gap_kept_minus_flagged"] < -0.05          # raw: looks like +skill
+        assert abs(e["gap_demeaned"]) < 0.005               # cross-sectional: none
+        assert e["p_value_bh"] is not None and e["significant_bh"] is False
+        assert "gate_1b_fields" in rep["_meta"]
+
+    def test_bh_adjustment_is_shared_and_monotone(self):
+        from calibration import _bh_adjust
+        q = _bh_adjust([("a", 0.01), ("b", 0.04), ("c", 0.03)])
+        assert q["a"] == pytest.approx(0.03) and q["b"] == pytest.approx(0.04)
+        assert q["c"] == pytest.approx(0.04)                # step-up monotonicity
+        assert _bh_adjust([]) == {}
+
+
+class TestPerformanceDailyCloses:
+    """Item 7: annualize at the real sampling frequency; daily closes from git."""
+
+    def test_periods_per_year_tracks_sampling(self):
+        import performance
+        daily = [d["date"] for d in _daily_bars("2026-01-05", [1.0] * 60)]
+        weekly = [(date(2026, 1, 7) + timedelta(weeks=k)).isoformat() for k in range(12)]
+        assert performance._periods_per_year(daily) == pytest.approx(252, abs=1)
+        assert performance._periods_per_year(weekly) == pytest.approx(52.2, abs=0.5)
+
+    def test_weekly_marks_are_not_annualized_as_daily(self):
+        import performance
+        curve = [100.0, 102.0, 99.0, 103.0, 101.0]
+        as_daily = performance._metrics(curve)["annualized_vol"]
+        as_weekly = performance._metrics(curve, 52.0)["annualized_vol"]
+        assert as_daily / as_weekly == pytest.approx((252 / 52) ** 0.5, rel=1e-3)
+
+    def test_beta_pairs_returns_by_index(self):
+        import performance
+        pv = [100.0, 101.0, 0.0, 103.0, 104.0, 105.0]
+        sv = [100.0, 101.0, 102.0, 103.0, 104.0, 105.0]
+        # a zero base drops that PERIOD from both series, never shifts one against the other
+        assert performance._beta(pv, sv) is not None
+
+    def test_eod_curve_reads_closes_from_git_history(self, tmp_path, monkeypatch):
+        import subprocess, performance
+        monkeypatch.chdir(tmp_path)
+        run = lambda *a: subprocess.run(a, check=True, capture_output=True)
+        run("git", "init", "-q")
+        run("git", "config", "user.email", "t@t"); run("git", "config", "user.name", "t")
+        for d, v, close in (("2026-09-28", 500.0, False), ("2026-09-28", 501.0, True),
+                            ("2026-09-29", 505.0, True), ("2026-09-30", 499.0, True)):
+            (tmp_path / "portfolio_snapshot.json").write_text(json.dumps(
+                {"is_close": close, "portfolio": {"as_of": f"{d}T16:00:00-04:00",
+                                                  "total_value": v}}))
+            run("git", "add", "portfolio_snapshot.json"); run("git", "commit", "-qm", d)
+        assert performance._eod_close_curve() == [
+            ("2026-09-28", 501.0), ("2026-09-29", 505.0), ("2026-09-30", 499.0)]
+
+    def test_no_git_falls_back_to_agent_log(self, tmp_path, monkeypatch):
+        import performance
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "agent_log.json").write_text(json.dumps([
+            {"date": "2026-06-08", "portfolio_snapshot": {"total_value": 500.0}}]))
+        curve, source, daily_from = performance._performance_curve("agent_log.json")
+        assert source.startswith("agent_log") and daily_from is None and len(curve) == 1
+
+
+class TestLlmUsageCost:
+    """Item 8: per-run LLM cost, and cost as a share of AUM."""
+
+    def test_cost_from_manifest(self, monkeypatch):
+        import analysis
+        monkeypatch.setattr(analysis, "_RUN_MANIFEST", {"calls": {
+            "claude-sonnet-4-6": {"n_calls": 3, "input_tokens": 1_000_000, "output_tokens": 100_000,
+                                  "cache_read_tokens": 0, "cache_creation_tokens": 0},
+            "claude-haiku-4-5-20251001": {"n_calls": 40, "input_tokens": 0, "output_tokens": 0,
+                                          "cache_read_tokens": 1_000_000,
+                                          "cache_creation_tokens": 1_000_000},
+            "mystery-model": {"n_calls": 1, "input_tokens": 10, "output_tokens": 10}}})
+        u = analysis.usage_summary(total_value=500.0)
+        # Sonnet: 3.00 + 1.50 = 4.50 ; Haiku: 0.10 read + 1.25 write = 1.35
+        assert u["est_cost_usd"] == pytest.approx(5.85)
+        assert u["unpriced_models"] == ["mystery-model"]
+        assert u["cost_pct_aum_per_run"] == pytest.approx(1.17)
+        assert u["cost_pct_aum_annualized"] == pytest.approx(60.84)
+
+    def test_deliberation_stats_aggregates_logged_runs(self):
+        from deliberation_stats import _llm_cost
+        log = [{"llm_usage": {"est_cost_usd": 0.5, "cost_pct_aum_annualized": 5.2}},
+               {"llm_usage": {"est_cost_usd": 0.7, "cost_pct_aum_annualized": 7.3}}, {}]
+        c = _llm_cost(log)
+        assert c["n_runs_logged"] == 2 and c["mean_cost_usd_per_run"] == pytest.approx(0.6)
+        assert _llm_cost([])["n_runs_logged"] == 0
+
+    def test_run_records_llm_usage_in_agent_log(self, monkeypatch, tmp_path):
+        smoke = TestRunDailyCycleSmoke()
+        smoke._run(monkeypatch, tmp_path, [])
+        log = json.loads((tmp_path / "agent_log.json").read_text())
+        assert "est_cost_usd" in log[-1]["llm_usage"]
+        health = json.loads((tmp_path / "system_health.json").read_text())
+        assert health["checks"]["llm_cost"]["status"] == "OK"
+
+
+class TestOct4ReviewFindings:
+    """Regression nets for the /code-review high findings on the Oct 4 batch."""
+
+    def test_stop_injected_when_cro_failed_but_envelope_nonempty(self):
+        """A backstop SELL makes the CRO-outage envelope non-empty, so it is stamped
+        anyway — skipping the stop then drops it for nothing."""
+        import main
+        backstop = [{"ticker": "MSFT", "action": "SELL", "target_weight": 0.0}]
+        out, rep = main.inject_risk_stops(backstop, _stop_portfolio(), "2026-10-07",
+                                          cro_api_failed=True)
+        assert rep["skipped_cro_api_failed"] is False
+        assert any(d.get("risk_exit") and d["ticker"] == "JPM" for d in out)
+
+    def test_stop_survives_gfv_floor_and_a_tripped_breaker(self, monkeypatch, tmp_path):
+        """Appended AFTER the guard chain: a tiny (< $5) position bought today (GFV
+        window) still exits, and a discretionary SELL that trips the 50% circuit
+        breaker halts only itself — the stop places regardless."""
+        import datetime as _dt, zoneinfo as _zi
+        today = _dt.datetime.now(_zi.ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+        (tmp_path / "transactions.json").write_text(json.dumps([
+            {"ticker": "JPM", "action": "BUY", "date": today, "dry_run": False}]))
+        port = _stop_portfolio()
+        port["positions"][0].update(qty=0.02, available_qty=0.02, market_value=2.8)
+        port["positions"].append({"symbol": "MSFT", "qty": 3.0, "avg_price": 100.0,
+                                  "available_qty": 3.0, "current_price": 100.0,
+                                  "market_value": 300.0, "unrealized_pnl": 0.0})
+        pm = [{"ticker": "MSFT", "action": "SELL", "target_weight": 0.0}]   # 60% of the book
+        TestRunDailyCycleSmoke()._run(monkeypatch, tmp_path, pm, portfolio=port)
+        pending = json.loads((tmp_path / "pending_decisions.json").read_text())
+        assert [(d["ticker"], d.get("risk_exit")) for d in pending["decisions"]
+                if d["action"] in ("BUY", "SELL")] == [("JPM", True)]
+        health = json.loads((tmp_path / "system_health.json").read_text())
+        assert health["checks"]["circuit_breaker"]["status"] == "FAILED"
+
+    def test_stop_is_not_subject_to_the_cro_or_guards_but_strip_runs_first(self):
+        """The early strip runs before the guards: an LLM risk_exit can never reach the
+        tax-aware hold, even though the stop itself is appended later."""
+        import inspect, main
+        src = inspect.getsource(main.run_daily_cycle)
+        assert src.index("strip_llm_risk_exit(decisions)") < src.index("validate_decisions(")
+        assert src.index("inject_risk_stops(") > src.index("enforce_turnover_circuit_breaker(")
+
+    def test_stop_qty_survives_a_snapshot_with_no_price(self, monkeypatch, tmp_path):
+        smoke = TestRunDailyCycleSmoke()
+        orig = smoke._market_data
+        def no_jpm(today, extra=()):
+            md = orig(today, extra)
+            md["prices"].pop("JPM", None)
+            return md
+        smoke._market_data = no_jpm
+        smoke._run(monkeypatch, tmp_path, [], portfolio=_stop_portfolio())
+        pending = json.loads((tmp_path / "pending_decisions.json").read_text())
+        stops = [d for d in pending["decisions"] if d.get("risk_exit")]
+        assert [(d["ticker"], d["qty"]) for d in stops] == [("JPM", 0.5)]
+
+    def test_welch_uses_student_t(self):
+        from calibration import _t_sf2
+        assert _t_sf2(2.228, 10) == pytest.approx(0.05, abs=5e-4)   # t-table
+        assert _t_sf2(2.2, 15) > 0.04                                # z would give 0.028
+        assert _t_sf2(1.96, 1e6) == pytest.approx(0.05, abs=5e-4)
+
+    def test_gate_1b_bh_is_one_family_across_both_files(self, tmp_path):
+        from calibration import counterfactual_report
+        p = tmp_path / "d.jsonl"
+        p.write_text("\n".join(json.dumps(r) for r in TestCounterfactualDemeaned()._rows()) + "\n")
+        card = tmp_path / "card.json"
+        card.write_text(json.dumps({
+            "research.confidence@21d": {"p_value": 0.001},
+            "research.confidence@21d~2.0-quality-tilt": {"p_value": 0.0001},  # other population
+            "quant.composite_score@21d": {"p_value": 0.0001},                 # not a 1b signal
+            "_meta": {}}))
+        rep = counterfactual_report(scored_path=str(p), out_path=str(tmp_path / "c.json"),
+                                    scorecard_path=str(card))
+        members = rep["_gate_1b"]["members"]
+        assert set(members) == {"counterfactual:pm_selected@21d",
+                                "scorecard:research.confidence@21d"}
+        assert rep["pm_selected@21d"]["p_value_bh"] == members["counterfactual:pm_selected@21d"]["q_bh"]
+
+    def test_ic_history_is_append_only_and_anchor_is_fixed(self, tmp_path):
+        from calibration import universe_ic_report
+        snap, fh = TestUniverseIcReport()._setup(tmp_path)
+        hist = tmp_path / "h.jsonl"
+        kw = dict(factor_history_path=fh, out_path=str(tmp_path / "q.json"),
+                  formula_version="3.0-beta-neutral", history_path=str(hist))
+        first = universe_ic_report(snap, **kw)
+        n_rows = len(hist.read_text().splitlines())
+        # Prices age out of the rolling window: the persisted periods must remain.
+        aged = {"history": {t: bars[60:] for t, bars in snap["history"].items()}}
+        second = universe_ic_report(aged, **kw)
+        assert second["non_overlapping"]["dates"] == first["non_overlapping"]["dates"]
+        assert len(hist.read_text().splitlines()) == n_rows       # nothing recomputed
+
+    def test_trading_days_count_uses_the_calendar(self):
+        import performance
+        # Jun 19 2026 (Juneteenth) is an NYSE holiday; Jun 20–21 a weekend.
+        assert performance._trading_days_spanned(["2026-06-18", "2026-06-22"]) == 2
+
+    def test_fetch_snapshot_guarantees_ic_artifacts_exist(self):
+        # (fetch_snapshot is a SCRIPT — importing it would run a live fetch; read it as text)
+        src = open("/".join(__file__.split("/")[:-1] + ["fetch_snapshot.py"])).read()
+        assert 'open("quant_ic_history.jsonl", "a")' in src and "finally:" in src
+        # a failed run must overwrite (not keep) yesterday's report
+        assert 'os.replace("quant_ic_report.json.tmp", "quant_ic_report.json")' in src
+        wf = open("/".join(__file__.split("/")[:-1] + [".github/workflows/market_data.yml"])).read()
+        assert "quant_ic_report.json quant_ic_history.jsonl" in wf
+
+    def test_repo_ic_ledger_holds_no_test_fixtures(self):
+        """Tripwire: universe_ic_report persists to a RELATIVE default path, so a test that
+        forgets history_path=None writes fake IC rows into the real Gate 1a ledger
+        (happened once while building this). No genuine row predates 3.0-beta-neutral."""
+        path = "/".join(__file__.split("/")[:-1] + ["quant_ic_history.jsonl"])
+        rows = [json.loads(l) for l in open(path) if l.strip()]
+        assert all(r["date"] >= "2026-08-27" and r["ic"] < 1.0 for r in rows)
+
+    def test_recently_matured_date_is_provisional_not_persisted(self, tmp_path):
+        """A window that matured days ago may still lack late-refreshing names; it is
+        shown as provisional and never frozen into the append-only ledger yet."""
+        from calibration import universe_ic_report
+        snap, fh = TestUniverseIcReport()._setup(tmp_path)
+        short = {"history": {t: bars[:52] for t, bars in snap["history"].items()}}  # newest ≈ Mar 17
+        hist = tmp_path / "h.jsonl"
+        r = universe_ic_report(short, factor_history_path=fh, out_path=str(tmp_path / "q.json"),
+                               formula_version="3.0-beta-neutral", history_path=str(hist))
+        assert r["non_overlapping"]["dates"] == ["2026-01-05"]
+        assert r["provisional_dates"] == ["2026-02-16"]
+        assert [json.loads(l)["date"] for l in hist.read_text().splitlines()] == ["2026-01-05"]
+
+    def test_publish_skips_beta_from_weekly_marks(self, monkeypatch):
+        import inspect, publish
+        src = inspect.getsource(publish)
+        assert 'startswith("eod_close")' in src
+        wf = open("/".join(__file__.split("/")[:-1] + [".github/workflows/publish.yml"])).read()
+        assert "fetch-depth: 0" in wf
