@@ -266,8 +266,11 @@ threshold in §3 is unchanged.** What changes is how two of them are *read*, bec
 existing reads could not support the decision this rule makes:
 
 - **Gate 1a is read from `quant_ic_report.json`.** IC = the mean of one cross-sectional
-  Spearman IC per date over the **full** scored universe in `factor_history.jsonl`, using
-  only non-overlapping 21-day periods (greedy, from the first eligible date). "Independent
+  Spearman IC per date over the **core universe** (`universe.CORE_UNIVERSE`, ~98 names
+  scored every day — the full cross-section swings 100↔240 with the expansion gate, which
+  would mix two populations into one mean), from `factor_history.jsonl`, using only
+  non-overlapping 21-day periods (greedy from the first eligible date; the next period's
+  signal date must be on/after the previous period's actual exit date). "Independent
   observations" = names summed over those periods (so the §3 floors of 400 / 1,600 keep
   their meaning). "CI excluding zero" = the Student-t 95% interval on the per-period ICs,
   which is **stricter** than the pooled read it replaces (a single month cannot count as

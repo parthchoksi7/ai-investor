@@ -448,8 +448,13 @@ def _mirror_rebalance_stamp(pending: dict) -> None:
     Only rebalance runs are mirrored (a missing `mode` = a legacy/daily-era
     envelope = rebalance semantics). risk_watch envelopes never touch this file,
     so the week lock survives their daily overwrite of pending_decisions.json.
-    `tickers` feeds the cross-mode SELL interlock: risk_watch must not SELL a
-    name the rebalance already traded this ISO week (§6.5.3).
+    `sell_tickers` feeds the cross-mode SELL interlock: risk_watch must not SELL a
+    name the rebalance already SOLD this ISO week (§6.5.3 — a Wednesday SELL and a
+    Thursday stop on the residual would double-sell). `tickers` (every traded name) is
+    kept for the audit/heartbeat. Before 2026-10-04 the interlock read `tickers`, so a
+    Wednesday BUY also switched off that name's stop for the rest of the week
+    (MANUAL_TODO #14) — and the cash-deployment top-ups would have extended that to
+    most of the book.
 
     A claim WITHOUT executed_at still counts as "rebalance attempted this week"
     — orders may exist (Scenario B), so a Thu/Fri catch-up must not re-run.
@@ -470,6 +475,9 @@ def _mirror_rebalance_stamp(pending: dict) -> None:
         "tickers": sorted({d.get("ticker") for d in pending.get("decisions", [])
                            if isinstance(d, dict) and d.get("ticker")
                            and str(d.get("action", "")).upper() in ("BUY", "SELL")}),
+        "sell_tickers": sorted({d.get("ticker") for d in pending.get("decisions", [])
+                                if isinstance(d, dict) and d.get("ticker")
+                                and str(d.get("action", "")).upper() == "SELL"}),
     })
 
 

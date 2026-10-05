@@ -174,6 +174,34 @@ def _performance_curve(agent_log_path: str = AGENT_LOG,
     return pre + eod, "eod_close (4 PM, git history of portfolio_snapshot.json)", first
 
 
+CASH_FLOWS = "cash_flows.json"   # optional {"YYYY-MM-DD": net external flow in USD}
+
+
+def _load_cash_flows(path: str = CASH_FLOWS) -> dict:
+    """External deposits (+) / withdrawals (−) by date. Absent file → no flows."""
+    try:
+        with open(path) as f:
+            raw = json.load(f)
+        return {str(k)[:10]: float(v) for k, v in raw.items()}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {}
+
+
+def _flow_adjusted(dates: list[str], pv: list[float], flows: dict) -> list[float]:
+    """Turn a total-value curve into a performance index that ignores external cash
+    flows: each day's return is (value − that day's flow) / previous value. Without it,
+    a $500 → $1,000 deposit reads as a +100% day — and the daily curve now feeds the
+    PUBLISHED realized_beta (MANUAL_TODO #25). Record every deposit in cash_flows.json."""
+    if not flows or not pv:
+        return list(pv)
+    out = [pv[0]]
+    for i in range(1, len(pv)):
+        base = pv[i - 1]
+        r = (pv[i] - flows.get(dates[i], 0.0)) / base if base else 1.0
+        out.append(out[-1] * r)
+    return out
+
+
 def _periods_per_year(dates: list[str]) -> float:
     """Sampling frequency from the actual calendar gaps: ~252 for daily trading closes,
     ~52 for weekly marks. Annualizing weekly returns with √252 overstated volatility
@@ -527,6 +555,8 @@ def build_report(agent_log_path: str = AGENT_LOG,
                                                "agent_log (intraday run marks)", None)
     spy       = _spy_curve(snapshot_path)
     dates, pv, sv = _align(portfolio, spy)
+    flows = _load_cash_flows()
+    pv = _flow_adjusted(dates, pv, flows)          # deposit-neutral performance index
 
     # A4: total-return SPY (dividend-inclusive, same basis as the portfolio's
     # total-value curve) is the honest benchmark; price-return is kept for
@@ -771,17 +801,20 @@ def after_tax_scorecard(transactions: list | None = None,
     curve = (_performance_curve(agent_log_path, close_snapshot_path)[0]
              if close_snapshot_path else _portfolio_curve(agent_log_path))
     dates, pv, sv = _align(curve, _spy_curve(snapshot_path))
+    idx = _flow_adjusted(dates, pv, _load_cash_flows())   # deposit-neutral returns
     sv_tr = _spy_total_return(dates, sv)
-    have_curve = len(pv) >= 2 and pv[0]
-    strat_ret = round(pv[-1] / pv[0] - 1, 4) if have_curve else None
+    have_curve = len(idx) >= 2 and idx[0]
+    strat_ret = round(idx[-1] / idx[0] - 1, 4) if have_curve else None
     spy_ret   = round(sv_tr[-1] / sv_tr[0] - 1, 4) if (len(sv_tr) >= 2 and sv_tr[0]) else None
 
+    # Dollars stay dollars (the raw curve); returns come from the flow-adjusted index.
     current_value = pv[-1] if pv else (portfolio.get("total_value") if portfolio else None)
     # After-tax mark: subtract the (future) tax liability on realized gains.
     after_tax_value = (round(current_value - rs["realized_tax_estimate"], 2)
                        if current_value is not None else None)
-    strat_after_tax_ret = (round(after_tax_value / pv[0] - 1, 4)
-                           if (after_tax_value is not None and have_curve) else None)
+    strat_after_tax_ret = (round((idx[-1] / idx[0]) * (after_tax_value / current_value) - 1, 4)
+                           if (after_tax_value is not None and have_curve and current_value)
+                           else None)
     after_tax_alpha = (round(strat_after_tax_ret - spy_ret, 4)
                        if (strat_after_tax_ret is not None and spy_ret is not None) else None)
 

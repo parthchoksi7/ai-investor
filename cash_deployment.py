@@ -24,9 +24,11 @@ half-way to its stop-loss (averaging down toward a catastrophe exit). Run on a C
 or outage, or while the kill switch is active. Spend unsettled sale proceeds (they are the
 next week's deployment — PLAN_OCT4_REVIEW item 3).
 
-KNOWN SIDE EFFECT (disclosed, accepted): a top-up BUY on a holding is a new lot, so the
-min-hold guard (which keys on the LATEST buy) restarts that holding's 30/63-trading-day
-discretionary-sell clock. Risk exits are unaffected. Consistent with the 9–12-month horizon.
+MIN-HOLD: a top-up is a new lot, but it does NOT restart the position's discretionary-
+sell clock — enforce_min_holding_period keys on the last AGENT-chosen buy
+(guardrails._last_discretionary_buy_date skips source_of_capital == "cash_deployment").
+Otherwise one deployment week would re-lock the whole book against the PM for 30–63
+trading days. Top-ups also write no thesis entry to the decision journal (main.py).
 
 Top-ups of holdings carry `cash_deployment: True` so measurement can tell them apart from
 the AI's own selections (calibration.log_decisions excludes them from `pm_selected`).
@@ -101,7 +103,19 @@ def plan_cash_deployment(decisions: list, portfolio: dict, prices: dict,
         return decisions, report
 
     holdings = {p.get("symbol"): p for p in portfolio.get("positions", []) if p.get("symbol")}
-    weight = {t: float(p.get("market_value") or 0) / tv for t, p in holdings.items()}
+
+    # Value every holding EXACTLY as execute._compute_qty will size the orders —
+    # qty × the snapshot close — so the planned notional equals what
+    # enforce_settled_cash later sums. Sizing on the live MCP market_value instead
+    # made the real total exceed the settled budget, and that guard then scaled
+    # EVERY BUY down — the AI's own picks included (ultra review, Oct 4 2026).
+    def _value(t: str, p: dict) -> float:
+        close = (prices.get(t) or {}).get("close")
+        try:
+            return float(p.get("qty") or 0) * float(close) if close else float(p.get("market_value") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+    weight = {t: _value(t, p) / tv for t, p in holdings.items()}
     sells = {d.get("ticker") for d in decisions if str(d.get("action", "")).upper() == "SELL"}
     buy_dec = {d.get("ticker"): d for d in decisions if str(d.get("action", "")).upper() == "BUY"}
     planned_buy_usd = 0.0
@@ -130,7 +144,8 @@ def plan_cash_deployment(decisions: list, portfolio: dict, prices: dict,
         report["skipped"] = (f"settled cash exhausted by today's BUYs ({src}); the excess "
                              "deploys next rebalance")
         return decisions, report
-    to_deploy = min(excess * tv, spendable)
+    # 0.5% headroom for qty rounding (6 dp) so the plan never brushes the guard.
+    to_deploy = min(excess * tv, spendable * 0.995)
 
     eligible = {}
     for t, w in weight.items():

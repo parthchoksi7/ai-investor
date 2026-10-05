@@ -12723,6 +12723,7 @@ class TestScoringNanGuard:
 
 class TestUniverseIcReport:
     """Item 5: one IC per date over the FULL factor_history cross-section."""
+    POP = {f"T{i:02d}" for i in range(40)}
 
     def _setup(self, tmp_path, n_names=40, perfect=True):
         hist, rows = {}, []
@@ -12747,7 +12748,7 @@ class TestUniverseIcReport:
         r = universe_ic_report(snap, factor_history_path=fh,
                                out_path=str(tmp_path / "q.json"),
                                formula_version="3.0-beta-neutral",
-                               history_path=None)
+                               history_path=None, population=self.POP)
         no = r["non_overlapping"]
         assert no["dates"] == ["2026-01-05", "2026-02-16"]
         assert no["mean"] == pytest.approx(1.0) and no["n_obs"] == 80
@@ -12761,7 +12762,7 @@ class TestUniverseIcReport:
         r = universe_ic_report(snap, factor_history_path=fh,
                                out_path=str(tmp_path / "q.json"),
                                formula_version="3.0-beta-neutral",
-                               history_path=None)
+                               history_path=None, population=self.POP)
         assert r["gate_1a"]["status"] == "NOT_YET"      # n_obs 80 < 400
 
     def test_thin_cross_section_is_skipped(self, tmp_path):
@@ -12770,7 +12771,7 @@ class TestUniverseIcReport:
         r = universe_ic_report(snap, factor_history_path=fh,
                                out_path=str(tmp_path / "q.json"),
                                formula_version="3.0-beta-neutral",
-                               history_path=None)
+                               history_path=None, population=self.POP)
         assert r["periods"] == [] and r["non_overlapping"]["n"] == 0
 
 
@@ -12975,7 +12976,8 @@ class TestOct4ReviewFindings:
         snap, fh = TestUniverseIcReport()._setup(tmp_path)
         hist = tmp_path / "h.jsonl"
         kw = dict(factor_history_path=fh, out_path=str(tmp_path / "q.json"),
-                  formula_version="3.0-beta-neutral", history_path=str(hist))
+                  formula_version="3.0-beta-neutral", history_path=str(hist),
+                  population=TestUniverseIcReport.POP)
         first = universe_ic_report(snap, **kw)
         n_rows = len(hist.read_text().splitlines())
         # Prices age out of the rolling window: the persisted periods must remain.
@@ -13014,7 +13016,8 @@ class TestOct4ReviewFindings:
         short = {"history": {t: bars[:52] for t, bars in snap["history"].items()}}  # newest ≈ Mar 17
         hist = tmp_path / "h.jsonl"
         r = universe_ic_report(short, factor_history_path=fh, out_path=str(tmp_path / "q.json"),
-                               formula_version="3.0-beta-neutral", history_path=str(hist))
+                               formula_version="3.0-beta-neutral", history_path=str(hist),
+                               population=TestUniverseIcReport.POP)
         assert r["non_overlapping"]["dates"] == ["2026-01-05"]
         assert r["provisional_dates"] == ["2026-02-16"]
         assert [json.loads(l)["date"] for l in hist.read_text().splitlines()] == ["2026-01-05"]
@@ -13152,3 +13155,109 @@ class TestCashDeployment:
         assert [d["ticker"] for d in dep] == ["JPM"] and dep[0]["qty"] > 0
         health = json.loads((tmp_path / "system_health.json").read_text())
         assert health["checks"]["cash_deployment"]["names"]["JPM"]["to"] == pytest.approx(0.10)
+
+
+class TestUltraReviewOct4:
+    """Regression nets for the PR #48 ultra-review findings."""
+
+    def test_interlock_blocks_only_rebalance_sells(self, monkeypatch, tmp_path):
+        import journal, risk_watch
+        monkeypatch.chdir(tmp_path)
+        today = "2026-10-08"
+        journal._mirror_rebalance_stamp({"mode": "rebalance", "date": "2026-10-07", "run_id": "r",
+            "decisions": [{"ticker": "AAA", "action": "SELL"}, {"ticker": "BBB", "action": "BUY"}]})
+        assert risk_watch._interlocked_tickers(today) == {"AAA"}
+        # a lock file written before sell_tickers existed keeps the old, wider interlock
+        (tmp_path / "last_rebalance.json").write_text(json.dumps(
+            {"iso_week": "2026-W41", "tickers": ["AAA", "BBB"]}))
+        assert risk_watch._interlocked_tickers(today) == {"AAA", "BBB"}
+
+    def test_deployment_never_trips_the_settled_cash_clamp(self):
+        """Live $100 vs snapshot close $98: the plan must be sized on the close basis the
+        qty math uses, or enforce_settled_cash scales the AI's own BUY down."""
+        from cash_deployment import plan_cash_deployment
+        from execute import _compute_qty
+        from guardrails import enforce_settled_cash
+        names = ["JPM", "XOM", "JNJ", "PG", "HD", "CAT"]
+        pos = [{"symbol": t, "qty": 0.4, "avg_price": 100.0, "current_price": 100.0,
+                "market_value": 40.0, "available_qty": 0.4} for t in names]
+        port = {"cash": 260.0, "buying_power": 80.0, "total_value": 500.0, "positions": pos}
+        prices = {t: {"close": 98.0} for t in names + ["MSFT"]}
+        state = {"research": {t: {"thesis": "ok"} for t in names + ["MSFT"]},
+                 "cro": {"approved": True, "rejected_tickers": []}}
+        pm = [{"ticker": "MSFT", "action": "BUY", "target_weight": 0.012}]
+        out, rep = plan_cash_deployment(pm, port, prices, state, [], "2026-10-07")
+        for d in out:
+            d["qty"] = _compute_qty(d["target_weight"], "BUY", d["ticker"], port, prices)
+        kept, rejected, clamped = enforce_settled_cash(out, port, prices)
+        assert not clamped and not rejected
+
+    def test_min_hold_ignores_cash_deployment_topups(self):
+        from guardrails import enforce_min_holding_period
+        tx = [{"ticker": "JPM", "action": "BUY", "date": "2026-06-01", "dry_run": False},
+              {"ticker": "JPM", "action": "BUY", "date": "2026-10-01", "dry_run": False,
+               "source_of_capital": "cash_deployment"}]
+        port = {"positions": [{"symbol": "JPM", "avg_price": 100, "current_price": 90}]}
+        sell = {"ticker": "JPM", "action": "SELL", "target_weight": 0.0}
+        kept, rej = enforce_min_holding_period([sell], port, transactions=tx, today="2026-10-07")
+        assert kept == [sell] and not rej          # clock is the June AI buy, not the top-up
+
+    def test_topup_gets_no_thesis_journal_entry(self, monkeypatch, tmp_path):
+        port = {"cash": 400.0, "total_value": 500.0, "positions": [
+            {"symbol": "JPM", "qty": 0.2, "avg_price": 110.0, "available_qty": 0.2,
+             "current_price": 110.0, "market_value": 22.0, "unrealized_pnl": 0.0}]}
+        TestRunDailyCycleSmoke()._run(monkeypatch, tmp_path, [], portfolio=port)
+        tx = json.loads((tmp_path / "transactions.json").read_text())
+        assert any(t["ticker"] == "JPM" and t["source_of_capital"] == "cash_deployment" for t in tx)
+        jp = tmp_path / "decision_journal.json"
+        journal = json.loads(jp.read_text()) if jp.exists() else []
+        assert not any(e.get("ticker") == "JPM" for e in journal)
+
+    def test_gate_1a_default_population_is_the_core_universe(self, tmp_path):
+        from calibration import universe_ic_report
+        snap, fh = TestUniverseIcReport()._setup(tmp_path)        # T00..T39 — not core names
+        r = universe_ic_report(snap, factor_history_path=fh, out_path=str(tmp_path / "q.json"),
+                               formula_version="3.0-beta-neutral", history_path=None)
+        assert r["periods"] == [] and "core universe" in r["population"]
+
+    def test_window_exit_blocks_friday_overlap(self):
+        from calibration import _window_exit
+        # Fri 2026-09-04 → entry Tue 09-08 (Mon is Labor Day) → exit on/after 09-29
+        assert _window_exit("2026-09-04", 21) == "2026-09-29"
+        # a signal 22 calendar days later (09-26) is past the old "> 21 days" spacing rule
+        # yet still inside this window — selection now waits for the 09-29 exit
+        assert "2026-09-26" < _window_exit("2026-09-04", 21)
+
+    def test_deposit_is_not_a_return(self):
+        import performance
+        dates = ["2026-11-02", "2026-11-03", "2026-11-04"]
+        pv = [500.0, 1005.0, 1015.05]                 # +$500 deposit on 11-03, then +1%
+        idx = performance._flow_adjusted(dates, pv, {"2026-11-03": 500.0})
+        assert idx[1] / idx[0] - 1 == pytest.approx(0.01)
+        assert idx[2] / idx[1] - 1 == pytest.approx(0.01)
+
+    def test_gate_1b_family_recomputes_from_current_files(self):
+        from calibration import gate_1b_family
+        cf = {"pm_selected@21d": {"p_value_demeaned": 0.01},
+              "cro_veto@21d": {"p_value_demeaned": 0.001}}          # not in the family
+        card = {"research.confidence@21d": {"p_value": 0.04}, "_meta": {}}
+        fam = gate_1b_family(cf, card)
+        assert fam["family_size"] == 2
+        assert fam["members"]["counterfactual:pm_selected@21d"]["q_bh"] == pytest.approx(0.02)
+
+    def test_strip_copies_and_records_the_attempt(self):
+        import main
+        pm = {"ticker": "X", "action": "SELL", "risk_exit": True}
+        out, attempted = main.strip_llm_risk_exit([pm])
+        assert attempted == ["X"] and "risk_exit" not in out[0]
+        assert pm["risk_exit"] is True                 # audited PM output untouched
+
+    def test_pm_prompt_reads_the_policy_deploy_target(self, monkeypatch, tmp_path):
+        import cash_deployment
+        monkeypatch.setattr(cash_deployment, "CASH_DEPLOY_TARGET_PCT", 0.02)
+        cap = TestPMBuyEligibilityInjection()
+        analysis, captured = cap._capture(monkeypatch, tmp_path, [])
+        portfolio = {"total_value": 500.0, "cash": 230.0, "positions": []}
+        analysis.run_portfolio_manager({}, {}, {}, {}, {}, cap._quant("JNJ"),
+                                       portfolio, [], date="2026-10-07")
+        assert "toward ~2% cash" in captured["user_msg"]

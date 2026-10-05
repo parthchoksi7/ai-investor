@@ -186,13 +186,20 @@ def render_markdown(d: dict) -> str:
     except Exception:
         pass
     try:
+        from calibration import gate_1b_family
         cf = json.load(open("counterfactual.json"))
+        try:
+            card = json.load(open("agent_scorecards.json"))
+        except Exception:
+            card = {}
+        fam = gate_1b_family(cf, card)       # recomputed on TODAY's scorecard
         for k in ("pm_selected@21d", "da_reject@21d"):
-            e = cf.get(k) or {}
-            if e.get("p_value_bh") is not None:
+            e, m = cf.get(k) or {}, fam["members"].get(f"counterfactual:{k}")
+            if m:
+                sig = bool(e.get("n_floor_met") and m["q_bh"] < 0.05)
                 ev.append(f"- **Gate 1b** `{k}`: demeaned gap {e.get('gap_demeaned')}, "
-                          f"q_bh {e['p_value_bh']} (family of "
-                          f"{(cf.get('_gate_1b') or {}).get('family_size')}) → {e.get('verdict_bh')}")
+                          f"q_bh {m['q_bh']} (family of {fam['family_size']}) → "
+                          f"{'SIGNIFICANT' if sig else 'NOT_SIGNIFICANT'}")
     except Exception:
         pass
     if ev:

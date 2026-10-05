@@ -1183,6 +1183,7 @@ def run_portfolio_manager(
         # out at N × cap invested — only the PM's own BUYs can add names.
         import math
         from guardrails import MAX_TARGET_WEIGHT as _cap
+        from cash_deployment import CASH_DEPLOY_TARGET_PCT as _deploy_to
         _n_held = len(portfolio.get("positions", []))
         _need = math.ceil((1 - 0.10) / _cap - 1e-9)
         floor_line += (
@@ -1191,7 +1192,7 @@ def run_portfolio_manager(
             f"invested even if every one sat at the cap (now {100 - cash_pct:.0f}%). "
             f"Reaching ≤10% cash needs at least {_need} names at the full cap, "
             f"realistically {_need + 1}–{_need + 3}. After you decide, a mechanical rule "
-            f"scales YOUR book (your BUYs and the holdings you keep) up toward ~5% cash "
+            f"scales YOUR book (your BUYs and the holdings you keep) up toward ~{_deploy_to:.0%} cash "
             f"within the caps and settled cash — it never adds a name. Only your BUYs can.")
         cash_block = f"""
   ⚠ CASH DISCIPLINE: cash is {cash_pct:.1f}% — ABOVE the 0–10% band.{floor_line}

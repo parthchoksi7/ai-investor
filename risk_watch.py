@@ -25,8 +25,8 @@ to kill):
            misreads as a stock stop). Wire this only when a structured ``price_stop``
            field exists at entry.
 
-Cross-mode SELL interlock (§6.5.3): a ticker the rebalance already traded this ISO
-week (from ``last_rebalance.json``) is NEVER sold here — a Wednesday rebalance SELL
+Cross-mode SELL interlock (§6.5.3): a ticker the rebalance already SOLD this ISO
+week (``last_rebalance.json`` → ``sell_tickers``) is NEVER sold here — a Wednesday rebalance SELL
 and a Thursday stop on the same name's residual would double-sell. An interlocked
 stop is surfaced as DEGRADED health for human review instead.
 
@@ -60,11 +60,16 @@ STOP_PCT = float(_policy_get("single_name_stop_pct", 0.25))
 
 
 def _interlocked_tickers(today: str) -> set[str]:
-    """Tickers the rebalance already traded this ISO week — never SELL them here."""
+    """Tickers the rebalance already SOLD this ISO week — never SELL them here (a
+    Wednesday SELL + a Thursday stop on the residual would double-sell). A name the
+    rebalance only BOUGHT keeps its stop (MANUAL_TODO #14, closed 2026-10-04). A lock
+    file written before `sell_tickers` existed falls back to every traded name — the
+    old, more conservative behavior."""
     lr = _load(LAST_REBALANCE_FILE, {})
     if not isinstance(lr, dict) or lr.get("iso_week") != iso_week_of(today):
         return set()
-    return {t for t in (lr.get("tickers") or []) if isinstance(t, str)}
+    names = lr.get("sell_tickers") if "sell_tickers" in lr else lr.get("tickers")
+    return {t for t in (names or []) if isinstance(t, str)}
 
 
 def evaluate_triggers(portfolio: dict, today: str,

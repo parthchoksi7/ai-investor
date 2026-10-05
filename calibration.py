@@ -824,10 +824,24 @@ def _mean_ci(values: list) -> dict:
             "ci95": [round(mean - crit * se, 4), round(mean + crit * se, 4)]}
 
 
+def _window_exit(signal_iso: str, horizon: int) -> str:
+    """Calendar exit of a signal's forward window: next trading session after the
+    signal (the A1 entry), then the first trading day on/after entry + horizon days."""
+    from market_calendar import is_trading_day
+    d = date.fromisoformat(signal_iso) + timedelta(days=1)
+    while not is_trading_day(d):
+        d += timedelta(days=1)
+    x = d + timedelta(days=horizon)
+    while not is_trading_day(x):
+        x += timedelta(days=1)
+    return x.isoformat()
+
+
 def universe_ic_report(snapshot: dict, factor_history_path: str = FACTOR_HISTORY,
                        out_path: str = QUANT_IC_REPORT, horizon: int = PRIMARY_HORIZON,
                        formula_version: str = _CURRENT_QUANT_FORMULA,
-                       history_path: str | None = QUANT_IC_HISTORY) -> dict:
+                       history_path: str | None = QUANT_IC_HISTORY,
+                       population: set | None = None) -> dict:
     """Per-date full-universe IC of composite_score under ONE formula version, with
     inference on non-overlapping dates. Writes and returns the report.
 
@@ -837,6 +851,17 @@ def universe_ic_report(snapshot: dict, factor_history_path: str = FACTOR_HISTORY
     Non-overlapping dates are chosen greedily from the FIRST eligible date with
     spacing > horizon days, so the selection is mechanical, not picked.
 
+    POPULATION. The gate reads the CORE universe (`universe.CORE_UNIVERSE`, ~98 scored
+    names every day). factor_history's full cross-section swings between ~100 and
+    ~240 names as the expansion gate and batch sweep move (MANUAL_TODO #24/#30), so an
+    IC "per date" over it would mix two populations into one mean and one n_obs, with
+    which one a period measures decided by that morning's run. Pass `population` to
+    override (tests; a deliberate later re-specification).
+
+    NON-OVERLAP is enforced on the actual forward windows: a period is chosen only
+    when its signal date is on/after the previous chosen period's EXIT date
+    (`_window_exit`), so a Friday or pre-holiday signal cannot share return days.
+
     Per-date ICs are persisted append-only to `history_path` (None = in-memory only,
     for tests/diagnostics): a persisted date is never recomputed, so the record and its
     anchor stay fixed as the snapshot's price window rolls forward. ONLY the GH plane
@@ -844,10 +869,14 @@ def universe_ic_report(snapshot: dict, factor_history_path: str = FACTOR_HISTORY
     committed snapshot would freeze a thinner cross-section into the ledger.
     """
     from guardrails import sector_of
+    if population is None:
+        from universe import CORE_UNIVERSE
+        population = set(CORE_UNIVERSE)
     series = _history_to_series(snapshot.get("history", {}))
     by_date: dict = {}
     for r in _iter_jsonl(factor_history_path):
-        if r.get("formula_version") != formula_version or r.get("ticker") in ("SPY", "QQQ"):
+        if (r.get("formula_version") != formula_version or r.get("ticker") in ("SPY", "QQQ")
+                or r.get("ticker") not in population):
             continue
         v = r.get("composite_score")
         if isinstance(v, (int, float)) and math.isfinite(v):
@@ -883,6 +912,7 @@ def universe_ic_report(snapshot: dict, factor_history_path: str = FACTOR_HISTORY
                                  - date.fromisoformat(exit_by)).days >= PERSIST_GRACE_DAYS)
         periods.append({"date": d, "n": len(pairs), "ic": round(ic, 4),
                         "ic_sector_neutral": round(sn, 4) if sn is not None else None,
+                        "exit_date": _window_exit(d, horizon),
                         "formula_version": formula_version, "horizon_days": horizon,
                         "provisional": not final,
                         "computed_at": datetime.now(timezone.utc).isoformat()})
@@ -893,12 +923,11 @@ def universe_ic_report(snapshot: dict, factor_history_path: str = FACTOR_HISTORY
 
     # Only FINAL (persisted-grade) periods count toward the gate; provisional ones are
     # reported but may still change as late names refresh.
-    chosen, last = [], None
+    chosen, last_exit = [], None
     for p in (q for q in periods if not q.get("provisional")):
-        dd = date.fromisoformat(p["date"])
-        if last is None or (dd - last).days > horizon:
+        if last_exit is None or p["date"] >= last_exit:
             chosen.append(p)
-            last = dd
+            last_exit = p.get("exit_date") or _window_exit(p["date"], horizon)
     ics = [p["ic"] for p in chosen]
     sn_ics = [p["ic_sector_neutral"] for p in chosen if p["ic_sector_neutral"] is not None]
     stats = _mean_ci(ics)
@@ -915,6 +944,8 @@ def universe_ic_report(snapshot: dict, factor_history_path: str = FACTOR_HISTORY
         "horizon_days": horizon,
         "basis": "next_open → close on/after entry + horizon calendar days (A1)",
         "history_ledger": history_path,
+        "population": f"core universe ({len(set(population) - {'SPY', 'QQQ'})} names, "
+                      "SPY/QQQ excluded)",
         "non_overlapping": {**stats, "n_obs": n_obs,
                             "dates": [p["date"] for p in chosen],
                             "ci_excludes_zero": ci_excludes_zero,
@@ -975,6 +1006,31 @@ GATE_1B_AGENT_SIGNALS  = ("research.confidence", "devils_advocate.overall_risk_s
 GATE_1B_DECISION_SIGNALS = ("pm_selected", "da_reject")
 
 
+def gate_1b_family(counterfactual: dict, scorecard: dict) -> dict:
+    """The ONE Benjamini-Hochberg family for SCALE_DECISION_RULE Gate 1b, computed from
+    whatever the two files say NOW: the demeaned p of pm_selected / da_reject (every
+    horizon) in counterfactual.json + the block-IC p of the three agent signals in
+    agent_scorecards.json (current-formula keys — a `~version` key is an older
+    population). counterfactual.json is rewritten only on the weekly rebalance while the
+    GH plane refreshes the scorecard every weekday, so readers (pipeline_digest) call
+    this on the fresh files rather than trusting the copy stored in counterfactual.json."""
+    family = [(f"counterfactual:{k}", v["p_value_demeaned"]) for k, v in counterfactual.items()
+              if isinstance(v, dict) and k.split("@")[0] in GATE_1B_DECISION_SIGNALS
+              and isinstance(v.get("p_value_demeaned"), (int, float))]
+    family += [(f"scorecard:{k}", v["p_value"]) for k, v in scorecard.items()
+               if isinstance(v, dict) and "~" not in k
+               and k.split("@")[0] in GATE_1B_AGENT_SIGNALS
+               and isinstance(v.get("p_value"), (int, float))]
+    qs = _bh_adjust(family)
+    return {
+        "family_size": len(family),
+        "members": {fk: {"p": p, "q_bh": round(qs[fk], 4)} for fk, p in family},
+        "note": ("Benjamini-Hochberg across every Gate 1b route at once. A scorecard "
+                 "member's q is necessary but not sufficient — the rule also needs that "
+                 "signal's IC and observation bar (Gate 1a's) in its expected direction."),
+    }
+
+
 def counterfactual_report(scored_path: str = DECISIONS_SCORED,
                           out_path: str = COUNTERFACTUAL, min_n: int = 10,
                           scorecard_path: str = SCORECARD) -> dict:
@@ -1016,7 +1072,6 @@ def counterfactual_report(scored_path: str = DECISIONS_SCORED,
         groups.setdefault((r.get("agent"), h), []).append(r)
 
     report: dict = {}
-    demeaned_p: list = []
     for (agent, horizon), rows in groups.items():
         rows = [r for r in rows if _finite_pair(r)]
         by_date: dict = {}
@@ -1056,36 +1111,20 @@ def counterfactual_report(scored_path: str = DECISIONS_SCORED,
             "p_value_demeaned": p_dm,
             "p_value_bh": None, "significant_bh": None,
         }
-        if p_dm is not None and agent in GATE_1B_DECISION_SIGNALS:
-            demeaned_p.append((f"counterfactual:{key}", p_dm))
 
-    # The agent-signal half of the family, from the scorecard (current formula only —
-    # a `~version` key is an older population and not part of this window's gate).
     try:
         card = json.load(open(scorecard_path))
     except (OSError, ValueError):
         card = {}
-    agent_p = [(f"scorecard:{k}", v["p_value"]) for k, v in card.items()
-               if isinstance(v, dict) and "~" not in k
-               and k.split("@")[0] in GATE_1B_AGENT_SIGNALS
-               and isinstance(v.get("p_value"), (int, float))]
-    family = demeaned_p + agent_p
-    qs = _bh_adjust(family)
-    for fk, q in qs.items():
+    report["_gate_1b"] = gate_1b_family(report, card)
+    for fk, m in report["_gate_1b"]["members"].items():
         if not fk.startswith("counterfactual:"):
             continue
         e = report[fk.split(":", 1)[1]]
-        e["p_value_bh"] = round(q, 4)
-        e["significant_bh"] = bool(e["n_floor_met"] and q < BH_ALPHA)
+        e["p_value_bh"] = m["q_bh"]
+        e["significant_bh"] = bool(e["n_floor_met"] and m["q_bh"] < BH_ALPHA)
         e["verdict_bh"] = ("NOT_SIGNIFICANT" if not e["significant_bh"]
                            else ("ADDS_VALUE" if e["adds_value_demeaned"] else "NO_VALUE"))
-    report["_gate_1b"] = {
-        "family_size": len(family),
-        "members": {fk: {"p": p, "q_bh": round(qs[fk], 4)} for fk, p in family},
-        "note": ("Benjamini-Hochberg across every Gate 1b route at once. A scorecard "
-                 "member's q is necessary but not sufficient — the rule also needs that "
-                 "signal's IC and observation bar (Gate 1a's) in its expected direction."),
-    }
     report["_meta"] = {
         "note": ("Counterfactual: does each model's reject/veto/select decision predict "
                  "the right forward-return direction? gap = mean_kept − mean_flagged. "
@@ -1096,7 +1135,7 @@ def counterfactual_report(scored_path: str = DECISIONS_SCORED,
                  "for months (§7.4), by design."),
         "gate_1b_fields": ("p_value_bh / significant_bh / verdict_bh: date-demeaned "
                            "(cross-sectional) gap, Welch t, Benjamini-Hochberg across the "
-                           f"whole {len(family)}-test Gate 1b family (see _gate_1b). Use "
+                           f"whole {report['_gate_1b']['family_size']}-test Gate 1b family (see _gate_1b). Use "
                            "THESE for SCALE_DECISION_RULE Gate 1b, not the raw `significant`. "
                            "cro_veto is excluded from the gate by the rule: no p_value_bh."),
         "min_n": min_n,

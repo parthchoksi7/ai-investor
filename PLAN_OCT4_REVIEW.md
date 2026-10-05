@@ -30,6 +30,12 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · ⏸ owner decision
   SELLs, so the envelope is non-empty and the routine stamps it — consuming the week's
   rebalance on an outage. (Item 1 injects the stop in that case, since the envelope is
   stamped anyway.) Owner decision whether the backstop should also stand down.
-- `/code-review ultra` on this batch (item 1 is execution-path) — owner-launched.
+- `/code-review ultra` on PR #48 (owner-requested, 2026-10-04) — **ran locally in a single
+  session, not as the multi-agent cloud review**; 10 findings, all fixed: interlock narrowed
+  to rebalance SELLs (MANUAL_TODO #14 closed); deployment sized on the qty price basis;
+  min-hold ignores cash-deployment top-ups; top-ups write no journal thesis; Gate 1a
+  population = core universe + exit-date non-overlap; deposit-neutral performance index
+  (`cash_flows.json`); Gate 1b family recomputed from current files; `risk_exit` strip
+  copies and records attempts; PM prompt reads the policy deploy target.
 - Live daily routine lacks the post-gate FINAL-ATTEMPT FALLBACK block (pasted before
   commit `824cf37`) — re-paste before Wed.

@@ -174,12 +174,16 @@ def apply_pm_backstop(decisions: list, portfolio: dict, pipeline_state: dict) ->
     return auto_exits
 
 
-def strip_llm_risk_exit(decisions: list) -> None:
+def strip_llm_risk_exit(decisions: list) -> tuple[list, list]:
     """`risk_exit` exempts a SELL from the tax-aware hold, so only code may set it —
     never trust it from the PM's JSON (the rule mark_thesis_exits applies to
-    `thesis_exit`). Must run BEFORE the guard chain. Mutates in place."""
-    for d in decisions:
-        d.pop("risk_exit", None)
+    `thesis_exit`). Must run BEFORE the guard chain. Returns (decisions, attempted):
+    flagged dicts are REPLACED by copies, never edited, because the same objects are
+    the audited record of the agents' output (portfolio_manager_proposed /
+    post_cro_decisions) — and the attempt itself is worth keeping on the record."""
+    attempted = [d.get("ticker") for d in decisions if d.get("risk_exit")]
+    return ([{k: v for k, v in d.items() if k != "risk_exit"} if d.get("risk_exit") else d
+             for d in decisions], attempted)
 
 
 def inject_risk_stops(decisions: list, portfolio: dict, today: str,
@@ -213,7 +217,7 @@ def inject_risk_stops(decisions: list, portfolio: dict, today: str,
     Also strips any LLM-supplied `risk_exit` (see strip_llm_risk_exit). Returns
     (decisions, report)."""
     from risk_watch import evaluate_triggers
-    strip_llm_risk_exit(decisions)
+    decisions, _ = strip_llm_risk_exit(decisions)
     report: dict = {"fired": [], "skipped_cro_api_failed": False}
     stops, trig = evaluate_triggers(portfolio, today, interlocked=set())
     report.update({k: trig.get(k, []) for k in ("fired", "blocked", "skipped_no_basis")})
@@ -519,7 +523,10 @@ def run_daily_cycle():
     # ── PM backstop: auto-exit when 3 signals agree ──────────────────────────
     apply_pm_backstop(decisions, portfolio, pipeline_state)
     mark_thesis_exits(decisions, pipeline_state)
-    strip_llm_risk_exit(decisions)
+    decisions, _risk_exit_attempts = strip_llm_risk_exit(decisions)
+    if _risk_exit_attempts:
+        pipeline_state["llm_risk_exit_attempts"] = _risk_exit_attempts
+        print(f"   ⚠ PM set risk_exit on {_risk_exit_attempts} — stripped (code-only flag)")
 
     # Executed-trade log, read ONCE and shared by the deployment producer and every
     # guard below (one consistent view instead of independent reads of the same file).
@@ -1190,6 +1197,13 @@ def run_daily_cycle():
             "broker_order_id":        broker_id,
             "dry_run":                DRY_RUN,
         })
+
+        # A mechanical cash-deployment top-up is not a thesis: no journal entry, or
+        # journal.close_position (which closes the NEWEST open BUY) would later book
+        # the exit against the top-up and leave the AI's own thesis open forever.
+        if d.get("cash_deployment"):
+            print(f"   💵 {ticker}: cash-deployment top-up — transaction logged, no thesis entry")
+            continue
 
         trade_id = record_trade(
             ticker          = ticker,

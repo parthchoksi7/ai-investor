@@ -40,11 +40,17 @@ applies. Buying costs no tax.
 
 **What it cannot do:** it never adds new stocks, and no stock may exceed 10% of the
 account, so with 8 stocks the account can be at most 80% invested. On the Oct 2 book it
-would have added only about $8. Getting cash lower needs the AI to buy more names, so whenever cash is above 10% the
+would have added only about $8. Three protections ship with it. A stock the Wednesday run only *bought* (including a
+top-up) keeps its daily stop-loss on Thursday and Friday; before, any Wednesday trade
+switched that name's stop off for the rest of the week. A top-up does not restart the
+holding's minimum-hold clock, which still counts from the AI's own purchase. And a top-up
+writes no thesis to the decision journal, so a later sale is scored against the AI's
+original thesis. A deposit recorded in `cash_flows.json` is no longer counted as a return.
+
+Getting cash lower needs the AI to buy more names, so whenever cash is above 10% the
 Portfolio Manager is now also told the arithmetic: how many names it holds, the most that
 can be invested with them, and that at least 9 names at the cap are needed to reach the
-band. The AI remains the only thing that picks stocks. Topping
-up a holding also restarts its minimum-hold clock (the rule uses the latest purchase date).
+band. The AI remains the only thing that picks stocks.
 
 ### Changed — the scale decision now reads honest numbers (measurement only)
 
