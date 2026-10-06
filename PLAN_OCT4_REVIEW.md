@@ -37,5 +37,11 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · ⏸ owner decision
   population = core universe + exit-date non-overlap; deposit-neutral performance index
   (`cash_flows.json`); Gate 1b family recomputed from current files; `risk_exit` strip
   copies and records attempts; PM prompt reads the policy deploy target.
+- Focused `/code-review high` on those fixes (2026-10-05): 9 findings, all fixed — flows
+  summed over each curve interval; after-tax return taxes the pre-deposit capital base;
+  digest shows Gate 1b direction (WRONG-way significance is evidence against the AI);
+  deep copy of agent output at the main.py boundary (audit record never rewritten);
+  deployment's projected cash from the real cash balance; IC ledger keyed by population;
+  one flow convention (_twr reuses _flow_adjusted); one live-trade definition.
 - Live daily routine lacks the post-gate FINAL-ATTEMPT FALLBACK block (pasted before
   commit `824cf37`) — re-paste before Wed.

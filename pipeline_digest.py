@@ -186,7 +186,7 @@ def render_markdown(d: dict) -> str:
     except Exception:
         pass
     try:
-        from calibration import gate_1b_family
+        from calibration import gate_1b_family, BH_ALPHA
         cf = json.load(open("counterfactual.json"))
         try:
             card = json.load(open("agent_scorecards.json"))
@@ -196,10 +196,13 @@ def render_markdown(d: dict) -> str:
         for k in ("pm_selected@21d", "da_reject@21d"):
             e, m = cf.get(k) or {}, fam["members"].get(f"counterfactual:{k}")
             if m:
-                sig = bool(e.get("n_floor_met") and m["q_bh"] < 0.05)
+                sig = bool(e.get("n_floor_met") and m["q_bh"] < BH_ALPHA)
+                # Direction matters: significant the WRONG way is evidence against the AI.
+                verdict = ("NOT_SIGNIFICANT" if not sig else
+                           "ADDS_VALUE" if e.get("adds_value_demeaned") else
+                           "NO_VALUE (significant in the WRONG direction)")
                 ev.append(f"- **Gate 1b** `{k}`: demeaned gap {e.get('gap_demeaned')}, "
-                          f"q_bh {m['q_bh']} (family of {fam['family_size']}) → "
-                          f"{'SIGNIFICANT' if sig else 'NOT_SIGNIFICANT'}")
+                          f"q_bh {m['q_bh']} (family of {fam['family_size']}) → {verdict}")
     except Exception:
         pass
     if ev:

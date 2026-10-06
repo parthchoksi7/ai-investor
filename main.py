@@ -520,6 +520,13 @@ def run_daily_cycle():
         dossier=dossier,
     )
 
+    # Every decision dict below is edited in place (thesis_exit, qty, sizing stamps,
+    # guard clamps). analysis.py hands back the SAME objects it recorded as the agents'
+    # intent (portfolio_manager_proposed / post_cro_decisions), so take a deep copy at
+    # the boundary — the audit record must stay exactly what the agents produced.
+    import copy as _copy
+    decisions = _copy.deepcopy(decisions)
+
     # ── PM backstop: auto-exit when 3 signals agree ──────────────────────────
     apply_pm_backstop(decisions, portfolio, pipeline_state)
     mark_thesis_exits(decisions, pipeline_state)

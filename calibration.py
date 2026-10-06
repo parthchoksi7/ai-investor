@@ -848,8 +848,8 @@ def universe_ic_report(snapshot: dict, factor_history_path: str = FACTOR_HISTORY
     Entry/exit match the preregistration (A1): next-session open after the signal date
     to the close on/after entry + `horizon` calendar days. Only rows stamped exactly
     `formula_version` count — the `~raw` degrade variant is a different population.
-    Non-overlapping dates are chosen greedily from the FIRST eligible date with
-    spacing > horizon days, so the selection is mechanical, not picked.
+    Non-overlapping dates are chosen greedily from the FIRST eligible date (see
+    NON-OVERLAP below), so the selection is mechanical, not picked.
 
     POPULATION. The gate reads the CORE universe (`universe.CORE_UNIVERSE`, ~98 scored
     names every day). factor_history's full cross-section swings between ~100 and
@@ -883,8 +883,14 @@ def universe_ic_report(snapshot: dict, factor_history_path: str = FACTOR_HISTORY
             by_date.setdefault(r.get("date"), []).append((r.get("ticker"), float(v)))
 
     newest = max((s[-1][0] for s in series.values() if s), default=None)
+    import hashlib
+    pop_key = hashlib.sha256(",".join(sorted(set(population) - {"SPY", "QQQ"})).encode()
+                             ).hexdigest()[:12]
+    # Keyed by formula, horizon AND population: rows written for one cross-section are
+    # never reused for another (a CORE_UNIVERSE edit or a deliberate re-specification).
     persisted = {r["date"]: r for r in _iter_jsonl(history_path)
-                 if r.get("formula_version") == formula_version and r.get("horizon_days") == horizon
+                 if r.get("formula_version") == formula_version
+                 and r.get("horizon_days") == horizon and r.get("population_key") == pop_key
                  } if history_path else {}
     periods = []
     for d in sorted(k for k in by_date if k and k not in persisted):
@@ -913,6 +919,7 @@ def universe_ic_report(snapshot: dict, factor_history_path: str = FACTOR_HISTORY
         periods.append({"date": d, "n": len(pairs), "ic": round(ic, 4),
                         "ic_sector_neutral": round(sn, 4) if sn is not None else None,
                         "exit_date": _window_exit(d, horizon),
+                        "population_key": pop_key,
                         "formula_version": formula_version, "horizon_days": horizon,
                         "provisional": not final,
                         "computed_at": datetime.now(timezone.utc).isoformat()})
@@ -946,6 +953,7 @@ def universe_ic_report(snapshot: dict, factor_history_path: str = FACTOR_HISTORY
         "history_ledger": history_path,
         "population": f"core universe ({len(set(population) - {'SPY', 'QQQ'})} names, "
                       "SPY/QQQ excluded)",
+        "population_key": pop_key,
         "non_overlapping": {**stats, "n_obs": n_obs,
                             "dates": [p["date"] for p in chosen],
                             "ci_excludes_zero": ci_excludes_zero,

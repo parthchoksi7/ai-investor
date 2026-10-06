@@ -13261,3 +13261,88 @@ class TestUltraReviewOct4:
         analysis.run_portfolio_manager({}, {}, {}, {}, {}, cap._quant("JNJ"),
                                        portfolio, [], date="2026-10-07")
         assert "toward ~2% cash" in captured["user_msg"]
+
+
+class TestFocusedReviewOct4:
+    """Regression nets for the focused review of the PR #48 ultra fixes."""
+
+    def test_deposit_between_curve_points_is_still_removed(self):
+        import performance
+        dates = ["2026-11-06", "2026-11-09"]           # Fri → Mon; deposit on Saturday
+        idx = performance._flow_adjusted(dates, [500.0, 1010.0], {"2026-11-07": 500.0})
+        assert idx[1] / idx[0] - 1 == pytest.approx(0.02)
+
+    def test_after_tax_return_is_not_diluted_by_a_later_deposit(self, tmp_path, monkeypatch):
+        """$500 → $600 with a realized gain, then +$500 deposit → value $1,100.
+        After-tax return must be computed on the pre-deposit capital base."""
+        import performance
+        lp = tmp_path / "log.json"
+        lp.write_text(json.dumps([
+            {"date": d, "portfolio_snapshot": {"total_value": v}}
+            for d, v in (("2026-01-02", 500.0), ("2026-01-09", 600.0), ("2026-01-16", 1100.0))]))
+        sp = tmp_path / "snap.json"
+        sp.write_text(json.dumps({"history": {"SPY": [
+            {"date": d, "close": 100.0} for d in ("2026-01-02", "2026-01-09", "2026-01-16")]}}))
+        monkeypatch.setattr(performance, "_load_cash_flows", lambda path=None: {"2026-01-16": 500.0})
+        txs = [{"action": "BUY", "ticker": "X", "qty": 1, "price": 100.0, "date": "2026-01-02",
+                "timestamp": "2026-01-02T00:00:00+00:00"},
+               {"action": "SELL", "ticker": "X", "qty": 1, "price": 200.0, "date": "2026-01-09",
+                "timestamp": "2026-01-09T00:00:00+00:00"}]
+        s = performance.after_tax_scorecard(transactions=txs, portfolio={"positions": []},
+                                            agent_log_path=str(lp), snapshot_path=str(sp),
+                                            close_snapshot_path=None)
+        tax = s["realized"]["realized_tax_estimate"]                 # 100 gain × 54% = 54
+        assert s["strategy_return"] == pytest.approx(0.20)
+        assert s["strategy_return_after_tax"] == pytest.approx((600 - tax) / 500 - 1, abs=1e-4)
+
+    def test_digest_flags_significance_in_the_wrong_direction(self, monkeypatch, tmp_path):
+        import pipeline_digest as pdg
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "counterfactual.json").write_text(json.dumps({"pm_selected@21d": {
+            "p_value_demeaned": 0.0001, "n_floor_met": True, "adds_value_demeaned": False,
+            "gap_demeaned": 0.05}}))
+        md = pdg.render_markdown(pdg.build_digest())
+        assert "WRONG direction" in md
+
+    def test_agent_audit_record_is_not_rewritten(self, monkeypatch, tmp_path):
+        """qty, thesis_exit and sizing stamps must not leak into post_cro_decisions."""
+        smoke = TestRunDailyCycleSmoke()
+        pm = [{"ticker": "MSFT", "action": "BUY", "target_weight": 0.05,
+               "source_of_capital": "cash", "rationale": "x"}]
+        state = smoke._pipeline_state(pm)
+        smoke._run(monkeypatch, tmp_path, pm, pipeline_state=state)
+        log = json.loads((tmp_path / "agent_log.json").read_text())
+        rec = log[-1]["post_cro_decisions"][0]
+        assert "qty" not in rec and "sizing_price" not in rec and "ref_id" not in rec
+
+    def test_projected_cash_uses_the_real_cash_balance(self):
+        """Holdings up 3% since the snapshot close must not inflate projected cash."""
+        from cash_deployment import plan_cash_deployment
+        names = ["JPM", "XOM", "JNJ", "PG", "HD", "CAT", "AAPL", "MSFT", "NEE", "LIN"]
+        pos = [{"symbol": t, "qty": 0.9, "avg_price": 100.0, "current_price": 103.0,
+                "market_value": 92.7, "available_qty": 0.9} for t in names]
+        port = {"cash": 103.0, "total_value": 1030.0, "positions": pos}       # 10% real cash
+        prices = {t: {"close": 100.0} for t in names}
+        state = {"research": {t: {"thesis": "ok"} for t in names},
+                 "cro": {"approved": True, "rejected_tickers": []}}
+        out, rep = plan_cash_deployment([], port, prices, state, [], "2026-10-07")
+        assert rep["projected_cash_pct"] == pytest.approx(0.10, abs=1e-4)
+
+    def test_ic_ledger_rows_are_keyed_by_population(self, tmp_path):
+        from calibration import universe_ic_report
+        snap, fh = TestUniverseIcReport()._setup(tmp_path)
+        hist = tmp_path / "h.jsonl"
+        kw = dict(factor_history_path=fh, out_path=str(tmp_path / "q.json"),
+                  formula_version="3.0-beta-neutral", history_path=str(hist))
+        universe_ic_report(snap, population=TestUniverseIcReport.POP, **kw)
+        other = {f"T{i:02d}" for i in range(35)}
+        r = universe_ic_report(snap, population=other, **kw)
+        assert all(p["n"] == 35 for p in r["periods"])        # not the 40-name rows
+
+    def test_discretionary_buy_date_shares_the_live_trade_definition(self):
+        from guardrails import _last_discretionary_buy_date
+        tx = [{"ticker": "X", "action": "BUY", "date": "2026-09-01", "dry_run": False},
+              {"ticker": "X", "action": "BUY", "date": "2026-10-01", "dry_run": True},
+              {"ticker": "X", "action": "BUY", "date": "2026-10-02", "dry_run": False,
+               "source_of_capital": "cash_deployment"}]
+        assert _last_discretionary_buy_date("X", tx) == "2026-09-01"

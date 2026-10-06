@@ -197,7 +197,10 @@ def _flow_adjusted(dates: list[str], pv: list[float], flows: dict) -> list[float
     out = [pv[0]]
     for i in range(1, len(pv)):
         base = pv[i - 1]
-        r = (pv[i] - flows.get(dates[i], 0.0)) / base if base else 1.0
+        # Every flow dated in (previous point, this point] — a deposit on a weekend, a
+        # holiday or between weekly marks must still be removed, not read as return.
+        flow = sum(v for d, v in flows.items() if dates[i - 1] < d <= dates[i])
+        r = (pv[i] - flow) / base if base else 1.0
         out.append(out[-1] * r)
     return out
 
@@ -450,14 +453,10 @@ def _twr(dates: list[str], pv: list[float], cash_flows: dict | None = None) -> f
     external flow that day (deposit > 0, withdrawal < 0), applied at period start."""
     if len(pv) < 2 or len(dates) != len(pv):
         return None
-    cf = cash_flows or {}
-    factor = 1.0
-    for i in range(1, len(pv)):
-        base = pv[i - 1] + cf.get(dates[i], 0.0)     # capital base after the flow
-        if base <= 0:
-            continue
-        factor *= pv[i] / base
-    return round(factor - 1, 4)
+    # ONE flow convention for the whole module (_flow_adjusted): a flow dated in
+    # (previous point, this point] is removed from this point's value.
+    idx = _flow_adjusted(dates, pv, cash_flows or {})
+    return round(idx[-1] / idx[0] - 1, 4) if idx[0] else None
 
 
 def _information_ratio(pv: list[float], bench: list[float],
@@ -554,9 +553,8 @@ def build_report(agent_log_path: str = AGENT_LOG,
         portfolio, curve_source, daily_from = (_portfolio_curve(agent_log_path),
                                                "agent_log (intraday run marks)", None)
     spy       = _spy_curve(snapshot_path)
-    dates, pv, sv = _align(portfolio, spy)
-    flows = _load_cash_flows()
-    pv = _flow_adjusted(dates, pv, flows)          # deposit-neutral performance index
+    dates, pv_dollars, sv = _align(portfolio, spy)
+    pv = _flow_adjusted(dates, pv_dollars, _load_cash_flows())   # deposit-neutral index
 
     # A4: total-return SPY (dividend-inclusive, same basis as the portfolio's
     # total-value curve) is the honest benchmark; price-return is kept for
@@ -621,7 +619,7 @@ def build_report(agent_log_path: str = AGENT_LOG,
         "cash_drag":        cash_drag_report(agent_log_path, snapshot_path),
         "alpha_cumulative_return":           alpha_tr,   # vs SPY TOTAL return (headline)
         "alpha_cumulative_return_vs_price":  alpha_pr,   # vs price return (reference)
-        "portfolio_curve": [{"date": d, "value": round(v, 2)} for d, v in zip(dates, pv)],
+        "portfolio_curve": [{"date": d, "value": round(v, 2)} for d, v in zip(dates, pv_dollars)],
     }
 
 
@@ -812,9 +810,21 @@ def after_tax_scorecard(transactions: list | None = None,
     # After-tax mark: subtract the (future) tax liability on realized gains.
     after_tax_value = (round(current_value - rs["realized_tax_estimate"], 2)
                        if current_value is not None else None)
-    strat_after_tax_ret = (round((idx[-1] / idx[0]) * (after_tax_value / current_value) - 1, 4)
-                           if (after_tax_value is not None and have_curve and current_value)
-                           else None)
+    # The tax comes off the INDEX, converted at the capital base each gain was realized
+    # on (index/dollars at its sell date): tax on a gain made before a deposit must not
+    # be diluted by money added later. With no flows the factor is 1 and this is
+    # exactly (value − tax) / start − 1. Tax is allocated to lots pro rata to their
+    # positive gains (netting is annual, so per-lot tax is an allocation, not a fact).
+    tax_idx = 0.0
+    if have_curve and rs["realized_tax_estimate"]:
+        pos = [lot for lot in realized_lots if lot.get("gain", 0) > 0]
+        tot = sum(lot["gain"] for lot in pos)
+        for lot in pos:
+            k = next((idx[i] / pv[i] for i in range(len(dates) - 1, -1, -1)
+                      if dates[i] <= str(lot.get("sell_date")) and pv[i]), 1.0)
+            tax_idx += rs["realized_tax_estimate"] * lot["gain"] / tot * k
+    strat_after_tax_ret = (round((idx[-1] - tax_idx) / idx[0] - 1, 4)
+                           if (after_tax_value is not None and have_curve) else None)
     after_tax_alpha = (round(strat_after_tax_ret - spy_ret, 4)
                        if (strat_after_tax_ret is not None and spy_ret is not None) else None)
 

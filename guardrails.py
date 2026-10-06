@@ -486,7 +486,8 @@ def enforce_research_backed_buys(
     return kept, rejected
 
 
-def _last_live_trade_date(ticker: str, transactions: list, side: str) -> str | None:
+def _last_live_trade_date(ticker: str, transactions: list, side: str,
+                          exclude=None) -> str | None:
     """Most recent broker-accepted (non-dry-run) `side` ('BUY'|'SELL') date for ticker.
 
     Single source of truth for "what counts as a real prior trade" — both the
@@ -500,6 +501,7 @@ def _last_live_trade_date(ticker: str, transactions: list, side: str) -> str | N
         and str(tx.get("action", "")).upper() == side
         and not tx.get("dry_run")
         and tx.get("date")
+        and not (exclude and exclude(tx))
     ]
     return max(dates) if dates else None
 
@@ -524,12 +526,9 @@ def _last_discretionary_buy_date(ticker: str, transactions: list) -> str | None:
     discretionary-sell clock. Keying on every BUY would let one deployment week re-lock
     the whole book against the PM for months (ultra review, Oct 4 2026). The GFV check
     keeps using _last_live_buy_date (every lot), the conservative broker-side reading."""
-    dates = [tx.get("date") for tx in transactions
-             if tx.get("ticker") == ticker
-             and str(tx.get("action", "")).upper() == "BUY"
-             and not tx.get("dry_run") and tx.get("date")
-             and tx.get("source_of_capital") != "cash_deployment"]
-    return max(dates) if dates else None
+    return _last_live_trade_date(
+        ticker, transactions, "BUY",
+        exclude=lambda tx: tx.get("source_of_capital") == "cash_deployment")
 
 
 def _last_live_sell_date(ticker: str, transactions: list) -> str | None:

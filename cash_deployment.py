@@ -119,6 +119,7 @@ def plan_cash_deployment(decisions: list, portfolio: dict, prices: dict,
     sells = {d.get("ticker") for d in decisions if str(d.get("action", "")).upper() == "SELL"}
     buy_dec = {d.get("ticker"): d for d in decisions if str(d.get("action", "")).upper() == "BUY"}
     planned_buy_usd = 0.0
+    sold_frac = 0.0
     for d in decisions:
         a, t = str(d.get("action", "")).upper(), d.get("ticker")
         try:
@@ -126,12 +127,23 @@ def plan_cash_deployment(decisions: list, portfolio: dict, prices: dict,
         except (TypeError, ValueError):
             continue
         if a == "SELL":
+            sold_frac += max(0.0, weight.get(t, 0.0) - tw)
             weight[t] = min(weight.get(t, 0.0), tw)
         elif a == "BUY":
             planned_buy_usd += max(0.0, tw - weight.get(t, 0.0)) * tv
             weight[t] = max(weight.get(t, 0.0), tw)
 
-    projected_cash = 1.0 - sum(weight.values())
+    # Projected cash from the account's REAL cash (live), moved only by the planned
+    # trades' notional on the order-pricing basis — not 1 − Σ(close-basis weights)
+    # over a LIVE total, which drifts with the overnight move and over-/under-deploys.
+    try:
+        cash_frac = float(portfolio.get("cash")) / tv
+    except (TypeError, ValueError):
+        cash_frac = None
+    if cash_frac is None:
+        projected_cash = 1.0 - sum(weight.values())
+    else:
+        projected_cash = cash_frac + sold_frac - planned_buy_usd / tv
     report["projected_cash_pct"] = round(projected_cash, 4)
     excess = projected_cash - target_cash_pct
     if excess <= 1e-9:
