@@ -43,5 +43,5 @@ Status: ⬜ not started · 🟡 in progress · ✅ done · ⏸ owner decision
   deep copy of agent output at the main.py boundary (audit record never rewritten);
   deployment's projected cash from the real cash balance; IC ledger keyed by population;
   one flow convention (_twr reuses _flow_adjusted); one live-trade definition.
-- Live daily routine lacks the post-gate FINAL-ATTEMPT FALLBACK block (pasted before
-  commit `824cf37`) — re-paste before Wed.
+- ~~Live daily routine lacks the FINAL-ATTEMPT FALLBACK block~~ — re-pasted and verified
+  identical to `ROUTINE_DAILY_CYCLE.md` on 2026-10-05.
