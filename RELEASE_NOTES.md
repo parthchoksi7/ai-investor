@@ -13,6 +13,10 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [2026-10-05] — Oct 4 review (PR #48) · ~20:44 PT · 7f70fb2
+
 ### Fixed — the stop-loss now runs on rebalance days too (changes decisions; ships before the Oct 7 freeze)
 
 The −25% stop-loss only ran on non-rebalance days. On Wednesdays nothing checked it, and if
