@@ -74,6 +74,151 @@ def _portfolio_curve(agent_log_path: str = AGENT_LOG) -> list[tuple[str, float]]
     return sorted(by_date.items())
 
 
+PORTFOLIO_SNAPSHOT = "portfolio_snapshot.json"
+
+
+_EOD_CACHE: dict = {}
+
+
+def _eod_close_curve(snapshot_path: str = PORTFOLIO_SNAPSHOT) -> list[tuple[str, float]]:
+    """date → 4 PM close total_value, one point per trading day, from the git history
+    of portfolio_snapshot.json (Oct 4 2026 review, item 7).
+
+    The EOD routine commits that file every weekday with is_close=true — git is the
+    durable, append-only record of every official daily close (Supabase holds the same
+    value as close_value but is unreachable from the cloud plane). agent_log.json, the
+    old source, has one INTRADAY mark per weekly run, so its returns were weekly yet
+    annualized as daily. The latest is_close commit of a date wins; the working-tree
+    copy counts if it is an uncommitted close. Any git failure → [] (caller falls back)."""
+    import subprocess
+    # One scan per (repo, HEAD, working-tree file) per process: build_report and
+    # after_tax_scorecard both need the curve, and each scan parses every historical
+    # version (~190 KB each, two commits a weekday).
+    try:
+        head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
+                              text=True, timeout=10).stdout.strip()
+        mtime = os.path.getmtime(snapshot_path) if os.path.isfile(snapshot_path) else None
+    except (OSError, subprocess.SubprocessError):
+        head, mtime = "", None
+    key = (os.getcwd(), snapshot_path, head, mtime)
+    if head and key in _EOD_CACHE:
+        return list(_EOD_CACHE[key])
+    by_date: dict[str, float] = {}
+
+    def _take(doc: dict) -> None:
+        if not (isinstance(doc, dict) and doc.get("is_close") is True):
+            return
+        port = doc.get("portfolio") or {}
+        tv = port.get("total_value")
+        d = str(port.get("as_of") or "")[:10]
+        if not d and doc.get("written_at"):
+            from zoneinfo import ZoneInfo
+            d = (datetime.fromisoformat(str(doc["written_at"]).replace("Z", "+00:00"))
+                 .astimezone(ZoneInfo("America/New_York")).strftime("%Y-%m-%d"))
+        try:
+            tv = float(tv)
+        except (TypeError, ValueError):
+            return
+        if d and math.isfinite(tv) and tv > 0 and d not in by_date:
+            by_date[d] = tv            # newest-first walk: first seen = latest close
+
+    try:
+        if os.path.isfile(snapshot_path):
+            with open(snapshot_path) as f:
+                _take(json.load(f))
+        shas = subprocess.run(["git", "log", "--format=%H", "--", snapshot_path],
+                              capture_output=True, text=True, timeout=30, check=True
+                              ).stdout.split()
+        # ONE `git cat-file --batch` process for every historical version (newest first),
+        # not one `git show` per commit — hundreds of commits a year and growing.
+        out = subprocess.run(["git", "cat-file", "--batch"],
+                             input="".join(f"{s}:{snapshot_path}\n" for s in shas).encode(),
+                             capture_output=True, timeout=60, check=True).stdout
+        i = 0
+        while i < len(out):
+            nl = out.index(b"\n", i)
+            header = out[i:nl].split()
+            i = nl + 1
+            if len(header) < 3 or header[1] != b"blob":
+                continue                       # "<obj> missing" — path absent there
+            size = int(header[2])
+            blob, i = out[i:i + size], i + size + 1   # +1: the LF after each object
+            try:
+                _take(json.loads(blob))
+            except ValueError:
+                continue
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return []
+    # The EOD routine also fires (and commits a flat close) on NYSE holidays; a holiday
+    # point is a fake zero-return day that dilutes volatility and inflates the day count.
+    from market_calendar import is_trading_day
+    curve = sorted((d, v) for d, v in by_date.items()
+                   if is_trading_day(datetime.strptime(d, "%Y-%m-%d").date()))
+    if head:
+        _EOD_CACHE[key] = list(curve)
+    return curve
+
+
+def _performance_curve(agent_log_path: str = AGENT_LOG,
+                       snapshot_path: str = PORTFOLIO_SNAPSHOT
+                       ) -> tuple[list[tuple[str, float]], str, str | None]:
+    """(curve, source, daily_from). Daily 4 PM closes where they exist, preceded by the
+    agent_log marks that predate the first recorded close (inception, Jun 8 2026, is only
+    in agent_log). `daily_from` is the first date of the clean daily segment — the only
+    part volatility / Sharpe / beta / IR are computed on."""
+    eod = _eod_close_curve(snapshot_path)
+    if len(eod) < 3:
+        return _portfolio_curve(agent_log_path), "agent_log (intraday run marks)", None
+    first = eod[0][0]
+    pre = [(d, v) for d, v in _portfolio_curve(agent_log_path) if d < first]
+    return pre + eod, "eod_close (4 PM, git history of portfolio_snapshot.json)", first
+
+
+CASH_FLOWS = "cash_flows.json"   # optional {"YYYY-MM-DD": net external flow in USD}
+
+
+def _load_cash_flows(path: str = CASH_FLOWS) -> dict:
+    """External deposits (+) / withdrawals (−) by date. Absent file → no flows."""
+    try:
+        with open(path) as f:
+            raw = json.load(f)
+        return {str(k)[:10]: float(v) for k, v in raw.items()}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return {}
+
+
+def _flow_adjusted(dates: list[str], pv: list[float], flows: dict) -> list[float]:
+    """Turn a total-value curve into a performance index that ignores external cash
+    flows: each day's return is (value − that day's flow) / previous value. Without it,
+    a $500 → $1,000 deposit reads as a +100% day — and the daily curve now feeds the
+    PUBLISHED realized_beta (MANUAL_TODO #25). Record every deposit in cash_flows.json."""
+    if not flows or not pv:
+        return list(pv)
+    out = [pv[0]]
+    for i in range(1, len(pv)):
+        base = pv[i - 1]
+        # Every flow dated in (previous point, this point] — a deposit on a weekend, a
+        # holiday or between weekly marks must still be removed, not read as return.
+        flow = sum(v for d, v in flows.items() if dates[i - 1] < d <= dates[i])
+        r = (pv[i] - flow) / base if base else 1.0
+        out.append(out[-1] * r)
+    return out
+
+
+def _periods_per_year(dates: list[str]) -> float:
+    """Sampling frequency from the actual calendar gaps: ~252 for daily trading closes,
+    ~52 for weekly marks. Annualizing weekly returns with √252 overstated volatility
+    and Sharpe by ~√5 (SPY read 23% annualized vol over a ~13% quarter)."""
+    try:
+        ds = [datetime.strptime(d[:10], "%Y-%m-%d").date() for d in dates]
+    except (ValueError, TypeError):
+        return float(TRADING_DAYS)
+    if len(ds) < 2:
+        return float(TRADING_DAYS)
+    mean_gap = (ds[-1] - ds[0]).days / (len(ds) - 1)
+    return min(float(TRADING_DAYS), 365.25 / mean_gap) if mean_gap > 0 else float(TRADING_DAYS)
+
+
 def _spy_curve(snapshot_path: str = SNAPSHOT) -> dict[str, float]:
     """SPY {iso_date: close} from market_snapshot.json's 210-day history.
 
@@ -241,12 +386,14 @@ def _beta(pv: list[float], sv: list[float]) -> float | None:
     not as a precise estimate."""
     if len(pv) < 3 or len(sv) < 3:
         return None
-    rp = [pv[i] / pv[i - 1] - 1 for i in range(1, len(pv)) if pv[i - 1]]
-    rm = [sv[i] / sv[i - 1] - 1 for i in range(1, len(sv)) if sv[i - 1]]
-    n = min(len(rp), len(rm))
+    # Pair the two series by index in ONE pass (same fix as _information_ratio):
+    # independent filters truncated to a common length misalign every later pair.
+    pairs = [(pv[i] / pv[i - 1] - 1, sv[i] / sv[i - 1] - 1)
+             for i in range(1, min(len(pv), len(sv))) if pv[i - 1] and sv[i - 1]]
+    n = len(pairs)
     if n < 2:
         return None
-    rp, rm = rp[:n], rm[:n]
+    rp, rm = [a for a, _ in pairs], [b for _, b in pairs]
     mp, mm = sum(rp) / n, sum(rm) / n
     var_m = sum((x - mm) ** 2 for x in rm)
     if var_m == 0:
@@ -268,8 +415,9 @@ def _pstdev(xs: list[float]) -> float:
     return (sum((x - m) ** 2 for x in xs) / len(xs)) ** 0.5
 
 
-def _metrics(curve: list[float]) -> dict:
-    """Cumulative return, max drawdown, annualized vol, daily-return Sharpe (rf=0)."""
+def _metrics(curve: list[float], periods_per_year: float = TRADING_DAYS) -> dict:
+    """Cumulative return, max drawdown, annualized vol, Sharpe (rf=0). Annualized at
+    `periods_per_year` — pass _periods_per_year(dates) for anything not daily."""
     if len(curve) < 2 or curve[0] == 0:
         return {"cumulative_return": 0.0, "max_drawdown": 0.0,
                 "annualized_vol": None, "sharpe": None}
@@ -279,12 +427,12 @@ def _metrics(curve: list[float]) -> dict:
         peak = max(peak, v)
         mdd  = min(mdd, v / peak - 1)
     mean, sd = _mean(rets), _pstdev(rets)
-    ann_vol = sd * (TRADING_DAYS ** 0.5)
-    sharpe  = (mean / sd) * (TRADING_DAYS ** 0.5) if sd > 0 else None
+    ann_vol = sd * (periods_per_year ** 0.5)
+    sharpe  = (mean / sd) * (periods_per_year ** 0.5) if sd > 0 else None
     # Sortino (§7.6): downside deviation vs a 0 target — penalizes only losses, the
     # honest risk-adjusted read for an asymmetric book. Return alone is insufficient.
     dd = (sum(min(r, 0.0) ** 2 for r in rets) / len(rets)) ** 0.5 if rets else 0.0
-    sortino = (mean / dd) * (TRADING_DAYS ** 0.5) if dd > 0 else None
+    sortino = (mean / dd) * (periods_per_year ** 0.5) if dd > 0 else None
     return {
         "cumulative_return": round(curve[-1] / curve[0] - 1, 4),
         "max_drawdown":      round(mdd, 4),
@@ -305,17 +453,14 @@ def _twr(dates: list[str], pv: list[float], cash_flows: dict | None = None) -> f
     external flow that day (deposit > 0, withdrawal < 0), applied at period start."""
     if len(pv) < 2 or len(dates) != len(pv):
         return None
-    cf = cash_flows or {}
-    factor = 1.0
-    for i in range(1, len(pv)):
-        base = pv[i - 1] + cf.get(dates[i], 0.0)     # capital base after the flow
-        if base <= 0:
-            continue
-        factor *= pv[i] / base
-    return round(factor - 1, 4)
+    # ONE flow convention for the whole module (_flow_adjusted): a flow dated in
+    # (previous point, this point] is removed from this point's value.
+    idx = _flow_adjusted(dates, pv, cash_flows or {})
+    return round(idx[-1] / idx[0] - 1, 4) if idx[0] else None
 
 
-def _information_ratio(pv: list[float], bench: list[float]) -> float | None:
+def _information_ratio(pv: list[float], bench: list[float],
+                       periods_per_year: float = TRADING_DAYS) -> float | None:
     """Annualized active-return / tracking-error vs the benchmark curve (§7.6). Beating
     the benchmark's RETURN while running materially higher vol is not a win — this is the
     risk-adjusted active-management read."""
@@ -329,7 +474,7 @@ def _information_ratio(pv: list[float], bench: list[float]) -> float | None:
     if len(active) < 2:
         return None
     te = _pstdev(active)
-    return round((_mean(active) / te) * (TRADING_DAYS ** 0.5), 2) if te > 0 else None
+    return round((_mean(active) / te) * (periods_per_year ** 0.5), 2) if te > 0 else None
 
 
 def breadth_ceiling(scorecard_path: str = "agent_scorecards.json") -> dict:
@@ -362,27 +507,72 @@ def breadth_ceiling(scorecard_path: str = "agent_scorecards.json") -> dict:
 
 # ── report ──────────────────────────────────────────────────────────────────
 
+def _trading_days_spanned(dates: list[str]) -> int:
+    """NYSE sessions from inception to as-of — what the 60-day significance threshold
+    means. len(dates) counted weekly run marks (26 'days' for three months). Counted on
+    the single-source market calendar, NOT the snapshot's ~210-bar SPY window, which
+    would freeze the count near 210 once inception ages out of it."""
+    if not dates:
+        return 0
+    from datetime import timedelta
+    from market_calendar import is_trading_day
+    d = datetime.strptime(dates[0][:10], "%Y-%m-%d").date()
+    end = datetime.strptime(dates[-1][:10], "%Y-%m-%d").date()
+    n = 0
+    while d <= end:
+        n += is_trading_day(d)
+        d += timedelta(days=1)
+    return n
+
+
+def _daily_start(dates: list[str], daily_from: str | None) -> int:
+    """Index where the clean daily segment begins (0 when there is none). The ONE
+    definition, so vol/Sharpe and beta/IR are always computed on the same segment."""
+    return next((k for k, d in enumerate(dates) if daily_from and d >= daily_from), 0)
+
+
+def _segment_metrics(dates: list[str], curve: list[float], daily_from: str | None) -> dict:
+    """Cumulative return + max drawdown over the WHOLE curve; volatility / Sharpe /
+    Sortino over the clean daily segment only, annualized at its real frequency."""
+    full = _metrics(curve, _periods_per_year(dates))
+    i = _daily_start(dates, daily_from)
+    seg = _metrics(curve[i:], _periods_per_year(dates[i:]))
+    for k in ("annualized_vol", "sharpe", "sortino"):
+        full[k] = seg.get(k)
+    return full
+
+
 def build_report(agent_log_path: str = AGENT_LOG,
-                 snapshot_path: str = SNAPSHOT) -> dict:
-    portfolio = _portfolio_curve(agent_log_path)
+                 snapshot_path: str = SNAPSHOT,
+                 close_snapshot_path: str | None = PORTFOLIO_SNAPSHOT) -> dict:
+    """`close_snapshot_path=None` uses the agent_log run marks only (tests / no git)."""
+    if close_snapshot_path:
+        portfolio, curve_source, daily_from = _performance_curve(agent_log_path,
+                                                                 close_snapshot_path)
+    else:
+        portfolio, curve_source, daily_from = (_portfolio_curve(agent_log_path),
+                                               "agent_log (intraday run marks)", None)
     spy       = _spy_curve(snapshot_path)
-    dates, pv, sv = _align(portfolio, spy)
+    dates, pv_dollars, sv = _align(portfolio, spy)
+    pv = _flow_adjusted(dates, pv_dollars, _load_cash_flows())   # deposit-neutral index
 
     # A4: total-return SPY (dividend-inclusive, same basis as the portfolio's
     # total-value curve) is the honest benchmark; price-return is kept for
     # transparency. Alpha is reported against TOTAL return.
     sv_tr = _spy_total_return(dates, sv)
 
-    port_m   = _metrics(pv)
-    spy_m    = _metrics(sv)        # price return (reference)
-    spy_tr_m = _metrics(sv_tr)     # total return (headline benchmark)
+    port_m   = _segment_metrics(dates, pv, daily_from)
+    spy_m    = _segment_metrics(dates, sv, daily_from)        # price return (reference)
+    spy_tr_m = _segment_metrics(dates, sv_tr, daily_from)     # total return (headline benchmark)
 
     net_exposure = _avg_net_exposure(agent_log_path)
-    beta = _beta(pv, sv_tr)
+    # Beta / IR on the daily segment only, at its real sampling frequency.
+    i0 = _daily_start(dates, daily_from)
+    beta = _beta(pv[i0:], sv_tr[i0:])
 
     # §7.6: time-weighted return (deposit-neutral) + risk-adjusted active read vs SPY-TR.
     twr = _twr(dates, pv)
-    info_ratio = _information_ratio(pv, sv_tr)
+    info_ratio = _information_ratio(pv[i0:], sv_tr[i0:], _periods_per_year(dates[i0:]))
 
     alpha_tr = alpha_pr = None
     if pv and sv:
@@ -393,7 +583,11 @@ def build_report(agent_log_path: str = AGENT_LOG,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "inception":    dates[0] if dates else None,
         "as_of":        dates[-1] if dates else None,
-        "trading_days": len(dates),
+        "trading_days": _trading_days_spanned(dates),
+        "n_curve_points": len(dates),
+        "curve_source":  curve_source,
+        "daily_segment_from": daily_from,
+        "periods_per_year": round(_periods_per_year(dates[i0:]), 1),
         "time_weighted_return":  twr,                 # §7.6 — deposit-neutral; == cumulative until a flow is logged
         "information_ratio":     info_ratio,          # §7.6 — risk-adjusted active return vs SPY-TR
         "breadth_ceiling":       breadth_ceiling(),   # §7.6 — Grinold IR ≈ IC×√breadth
@@ -425,7 +619,7 @@ def build_report(agent_log_path: str = AGENT_LOG,
         "cash_drag":        cash_drag_report(agent_log_path, snapshot_path),
         "alpha_cumulative_return":           alpha_tr,   # vs SPY TOTAL return (headline)
         "alpha_cumulative_return_vs_price":  alpha_pr,   # vs price return (reference)
-        "portfolio_curve": [{"date": d, "value": round(v, 2)} for d, v in zip(dates, pv)],
+        "portfolio_curve": [{"date": d, "value": round(v, 2)} for d, v in zip(dates, pv_dollars)],
     }
 
 
@@ -578,7 +772,8 @@ def realized_summary(realized_lots: list[dict]) -> dict:
 def after_tax_scorecard(transactions: list | None = None,
                         portfolio: dict | None = None,
                         agent_log_path: str = AGENT_LOG,
-                        snapshot_path: str = SNAPSHOT) -> dict:
+                        snapshot_path: str = SNAPSHOT,
+                        close_snapshot_path: str | None = PORTFOLIO_SNAPSHOT) -> dict:
     """The honest scorecard: after-CA-tax net return vs holding SPY in this account.
 
     Realized gain and after-tax realized gain are reported separately. Unrealized
@@ -601,22 +796,39 @@ def after_tax_scorecard(transactions: list | None = None,
     # Strategy vs SPY-hold from the equity curve. A4: SPY on a TOTAL-return basis
     # (dividend-inclusive) to match the portfolio's total-value curve — comparing
     # against price-return SPY would flatter the strategy by ~the dividend yield.
-    dates, pv, sv = _align(_portfolio_curve(agent_log_path), _spy_curve(snapshot_path))
+    curve = (_performance_curve(agent_log_path, close_snapshot_path)[0]
+             if close_snapshot_path else _portfolio_curve(agent_log_path))
+    dates, pv, sv = _align(curve, _spy_curve(snapshot_path))
+    idx = _flow_adjusted(dates, pv, _load_cash_flows())   # deposit-neutral returns
     sv_tr = _spy_total_return(dates, sv)
-    have_curve = len(pv) >= 2 and pv[0]
-    strat_ret = round(pv[-1] / pv[0] - 1, 4) if have_curve else None
+    have_curve = len(idx) >= 2 and idx[0]
+    strat_ret = round(idx[-1] / idx[0] - 1, 4) if have_curve else None
     spy_ret   = round(sv_tr[-1] / sv_tr[0] - 1, 4) if (len(sv_tr) >= 2 and sv_tr[0]) else None
 
+    # Dollars stay dollars (the raw curve); returns come from the flow-adjusted index.
     current_value = pv[-1] if pv else (portfolio.get("total_value") if portfolio else None)
     # After-tax mark: subtract the (future) tax liability on realized gains.
     after_tax_value = (round(current_value - rs["realized_tax_estimate"], 2)
                        if current_value is not None else None)
-    strat_after_tax_ret = (round(after_tax_value / pv[0] - 1, 4)
+    # The tax comes off the INDEX, converted at the capital base each gain was realized
+    # on (index/dollars at its sell date): tax on a gain made before a deposit must not
+    # be diluted by money added later. With no flows the factor is 1 and this is
+    # exactly (value − tax) / start − 1. Tax is allocated to lots pro rata to their
+    # positive gains (netting is annual, so per-lot tax is an allocation, not a fact).
+    tax_idx = 0.0
+    if have_curve and rs["realized_tax_estimate"]:
+        pos = [lot for lot in realized_lots if lot.get("gain", 0) > 0]
+        tot = sum(lot["gain"] for lot in pos)
+        for lot in pos:
+            k = next((idx[i] / pv[i] for i in range(len(dates) - 1, -1, -1)
+                      if dates[i] <= str(lot.get("sell_date")) and pv[i]), 1.0)
+            tax_idx += rs["realized_tax_estimate"] * lot["gain"] / tot * k
+    strat_after_tax_ret = (round((idx[-1] - tax_idx) / idx[0] - 1, 4)
                            if (after_tax_value is not None and have_curve) else None)
     after_tax_alpha = (round(strat_after_tax_ret - spy_ret, 4)
                        if (strat_after_tax_ret is not None and spy_ret is not None) else None)
 
-    n_days = len(dates)
+    n_days = _trading_days_spanned(dates)
     return {
         "generated_at":      datetime.now(timezone.utc).isoformat(),
         "inception":         dates[0] if dates else None,

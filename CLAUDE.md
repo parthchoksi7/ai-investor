@@ -59,12 +59,12 @@ Scheduled Routine (Anthropic Cloud, 9:45 AM ET weekdays)
 | 1 | Market Regime Strategist | Sonnet | Portfolio-level: Risk-On / Neutral / Risk-Off |
 | 2 | Research Analyst | Haiku (cached) | Per-ticker: variant perception, catalysts |
 | 3 | Earnings & Catalyst Analyst | Haiku (cached) | Per-ticker: 90-day events |
-| 4 | Devil's Advocate | Haiku (cached) | Per-ticker: bear case, reject flag |
+| 4 | Devil's Advocate | **Sonnet** (cached) | Per-ticker: bear case, reject flag (`analysis.py` calls `MODEL_SMART` — this table said Haiku until 2026-10-04) |
 | 5 | Position Review Analyst | Haiku (cached) | Per-holding: hold/reduce/exit |
 | 6 | Portfolio Manager | Sonnet | Capital allocation, final trade list |
 | 7 | Chief Risk Officer | Sonnet | Veto power — can reject all trades or specific tickers |
 
-Haiku runs for each of up to 20 candidates. Sonnet runs 3 times total. Prompt caching is applied to all Haiku system prompts.
+Haiku runs for each of up to 20 candidates (Research, Earnings) and each holding (Position Review); the Devil's Advocate runs **Sonnet** per candidate; Sonnet also runs the 3 portfolio-level agents. Per-run token cost is logged to `agent_log.json` → `llm_usage` (since 2026-10-04). Prompt caching is applied to every per-ticker system prompt (the three Haiku agents and the Devil's Advocate).
 
 ## Key Files
 
@@ -90,6 +90,10 @@ Haiku runs for each of up to 20 candidates. Sonnet runs 3 times total. Prompt ca
 | `risk_watch.py` | Phase 5 Stage B — daily SELL-only safety net (non-rebalance trading days): −25% stop from cost basis on live MCP prices, kill-switch check, cross-mode ISO-week SELL interlock; decisions flow through the SAME envelope/claim/stamp machinery as the rebalance; **zero LLM, structurally zero BUYs** |
 | `reconcile_fills.py` | Applies an evidence file of broker fills (`evidence/broker_fills_*.json`) to `transactions.json` / `trades.csv`: real fill prices, missing broker ids, backfilled pre-logging lots. Idempotent; dry run unless `--apply` |
 | `data_request.json` | Written + pushed by the routine on gate exit 11 to start `market_data.yml` on demand (push trigger) |
+| `cash_deployment.py` | IPS §6 v1.5 bounded mechanical cash deployment — a PRODUCER between the CRO and the guard chain; top-ups of holdings carry `cash_deployment: True` and are excluded from `pm_selected` |
+| `quant_ic_report.json` | **The Gate 1a read** (since 2026-10-04): one IC per date over the full `factor_history.jsonl` universe, non-overlapping 21-day periods, Student-t CI, sector-neutral diagnostic. Written by `calibration.universe_ic_report` in `fetch_snapshot.py` (GH plane — only it has full history); committed by `market_data.yml`; summarized in `pipeline_digest.md` |
+| `quant_ic_history.jsonl` | Append-only per-date full-universe IC ledger behind `quant_ic_report.json`; written ONLY by the GH plane (full history), never recomputed. Tests must pass `history_path=None` (`test_repo_ic_ledger_holds_no_test_fixtures` is the tripwire) |
+| `PLAN_OCT4_REVIEW.md` | The Oct 4 2026 nine-seat end-to-end review: what shipped, what is an owner decision, what was logged but not acted on |
 | `order_errors.json` | Routine STEP 4: broker/MCP error text for orders NOT placed → `mark_transactions_live(errors=)` → reconciliation check |
 | `PLAN_OCT3_REMEDIATION.md` | The Oct 3 2026 remediation plan + status (every fix from the performance investigation) |
 | `last_rebalance.json` | Durable once-per-ISO-week rebalance lock (§6.5) — mirrored by `journal.py` on the claim/executed stamps; read by the gate's Thu/Fri catch-up, risk_watch's interlock, and the heartbeat missed-week check. TRACKED (never gitignore) |
@@ -228,7 +232,7 @@ DRY_RUN=true                # set false to actually execute
 - **Max sector:** 25% of portfolio — **enforced at entry only** (IPS §6.1): an over-cap BUY is
   clamped to the remaining headroom (dropped only if unplaceable); drift above a cap from price
   appreciation is surfaced, never auto-trimmed
-- **Cash target:** 0–10%
+- **Cash target:** 0–10% — since 2026-10-04 (IPS v1.5) `cash_deployment.py` deploys projected post-trade cash above 5% at the rebalance, pro-rata into the AI's own intended book (approved BUYs + holdings in good standing), within settled cash; it adds no names, so the per-name 10% cap bounds it. Its top-ups never restart a holding's min-hold clock (`_last_discretionary_buy_date`), write no journal thesis, and do not interlock the next days' stop (risk_watch interlocks only rebalance SELLs — `last_rebalance.json` `sell_tickers`)
 - **Horizon:** 9–12 months primary (IPS §7; policy v2.0 — was 1–3 months pre-Phase-5)
 - **Cadence:** decisions ONCE A WEEK (Wednesday rebalance; Thu/Fri catch-up); other days run only the SELL-only risk_watch safety net
 - **Min holding:** 30 trading days before a discretionary SELL — **63 if the position is at a gain** (policy v2.1); risk exits exempt. A discretionary SELL must name the thesis condition that broke
@@ -236,7 +240,7 @@ DRY_RUN=true                # set false to actually execute
 - **Settled cash:** BUYs are sized to settled buying power (cash account — same-day SELL proceeds settle T+1); `enforce_settled_cash`
 - **Benchmark context:** PM/CRO see book beta vs the Gate 2 band 0.8–1.2 and sector weights vs SPY — context only, never a guard or veto
 - **Tax-aware hold:** a gained lot within ~30 trading days of its 1-year LT-tax date is not sold discretionarily
-- **Single-name stop:** −25% from cost basis, evaluated each trading-day morning by `risk_watch.py` on a live MCP quote — not the 4 PM close (the EOD routine places no orders) — no trailing; the risk_watch catastrophe brake
+- **Single-name stop:** −25% from cost basis, evaluated each trading-day morning on a live MCP quote — by `risk_watch.py`, and on the rebalance day by `main.inject_risk_stops` (a code-built `risk_exit` SELL appended AFTER the CRO and the whole guard chain, so nothing can remove it; added 2026-10-04 — the rebalance day used to skip the stop) — not the 4 PM close (the EOD routine places no orders) — no trailing
 - **Crisis safe-mode:** SPY 1-day drop ≥ 7% halts all new BUYs (risk SELLs still allowed)
 - **Default action:** HOLD — only trade when it improves portfolio expected value
 - **Kill switch:** blocks new BUYs when portfolio drawdown exceeds 20% from peak — `enforce_kill_switch`, in the guard chain since 2026-10-04 (before then it filtered only main.py's local execution path, AFTER the envelope was written, so in production it never blocked a BUY)
@@ -364,7 +368,10 @@ Every run — including aborted runs — writes `system_health.json` to the repo
 | `data_quality` | Snapshot breaches a §15.2 absolute floor (universe-fetched %, min history depth, quality coverage, NaN scan) → DEGRADED, or a hard floor → ABORTED. Classified by `data_quality.py`; report in `data_quality_report.json`, trend in `data_quality_history.jsonl` |
 | `supabase_publish` | Supabase publish failed |
 | `settled_cash` | A BUY was DROPPED because settled buying power couldn't fund it above the $5 floor (DEGRADED, pages); names any funding SELL that still executes |
-| `circuit_breaker` | Proposed SELL notional > 50% of the book — run halted, envelope empty (FAILED) |
+| `circuit_breaker` | Proposed SELL notional > 50% of the book — run halted, no discretionary orders (FAILED); code-built stop-loss exits are neither counted nor halted |
+| `risk_stop` | Rebalance-day −25% stop: OK with the fired list; DEGRADED when a breached stop was NOT injected because the CRO call failed (left to the final-attempt / next-day risk_watch), or a holding has no provable cost basis |
+| `cash_deployment` | Informational (OK): what the mechanical deployment proposed (names, $, projected cash) or why it did not run (within target / settled cash exhausted / no eligible name / CRO veto / kill switch) |
+| `llm_cost` | Informational: this run's API-list-price LLM cost and its annualized share of AUM (`agent_log.json` → `llm_usage`) |
 
 **Paging (Oct 2026):** `alert.yml` opens/closes issues on `actionable_status`, which is the worst status *excluding* informational checks' DEGRADED (`decision_validation`, `cash_discipline`, `wash_sale_presale` — guards working as designed). `overall_status` is unchanged for every other reader.
 
@@ -377,6 +384,22 @@ The pipeline aborts before running any agents if either condition is true:
 This prevents the silent all-50 quant score failure mode where agents run but produce no trades because they have no quantitative signal. When aborted, `system_health.json` is written immediately and the alert fires.
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
+
+## Changelog — Oct 4 2026 (nine-seat end-to-end review — the stop on rebalance days + the scale-rule measurements)
+
+Plan and status: **[`PLAN_OCT4_REVIEW.md`](PLAN_OCT4_REVIEW.md)**. One decision-path change, shipped before the
+Wed 2026-10-07 freeze; everything else is measurement.
+
+| Change | Why it mattered |
+|--------|-----------------|
+| `fix(risk)` **the −25% stop runs on the rebalance day** — `main.inject_risk_stops` reuses `risk_watch.evaluate_triggers` on the live MCP portfolio and is appended to the FINAL post-guard list (after the circuit breaker), so no guard or the CRO can drop it — no per-guard exemptions; a fired stop replaces any surviving decision on that ticker; `strip_llm_risk_exit` runs before the guards so the LLM can never set the flag. On a CRO outage with an otherwise-empty envelope it is not injected (keeps the week retryable) | `risk_watch` runs only on gate exit 30, so one morning a week had no catastrophe brake, and a PM SELL of a crashed name inside min-hold was blocked. The tax-aware hold already trusted `risk_exit`, and nothing stopped the LLM from setting it |
+| `feat(cash)` **bounded mechanical cash deployment** (`cash_deployment.py`, policy v2.2 `cash_deploy_target_pct` 0.05, IPS v1.5 closes the cash exception) | 31.7% cash on Oct 2; cash has beta 0, so Gate 2's 0.8–1.2 band was unreachable. Honest bound: it adds no names — on the Oct 2 book (8 names, 4 near the 10% cap, 3 excluded by the AI's own flags) it would deploy only ~$8; it matters when the PM proposes new BUYs below the cap. Paired with a **PM prompt line** (cash above band only): names held, the N×10% ceiling, ≥9 names needed — the AI stays the only selector (owner choice over a quant auto-fill) |
+| `fix` **PR #48 ultra review (ran locally, 10 findings, all fixed)** — interlock narrowed to rebalance SELLs (MANUAL_TODO #14 closed); deployment sized on the qty price basis; top-ups don't restart min-hold or write a thesis; Gate 1a population = core universe + exit-date non-overlap; deposit-neutral performance index (`cash_flows.json`); Gate 1b family recomputed on read; `risk_exit` strip copies + records attempts; PM prompt reads the policy deploy target | Without them, a deployment week would have switched off the Thu/Fri stop for most of the book, re-locked every holding against PM sells for 30–63 days, and shrunk the AI's own BUYs |
+| `feat(calibration)` **Gate 1a on the full universe** → `quant_ic_report.json` | The calibration ledger scores only the ~20 weekly candidates (top of the ranking + holdings): range-restricted, and ~20 names/week against the ~174 the scale rule's power math assumes. It also pooled every date into one Spearman and counted names moving together in one month as independent |
+| `feat(calibration)` **Gate 1b's corrected counterfactual** — date-demeaned gap, Welch **t** (was z), ONE Benjamini-Hochberg pass over the whole Gate 1b family (counterfactual + scorecard agent signals, `_gate_1b`) | The rule named a `p_value_bh` the counterfactual never had; raw gaps let market timing read as selection skill; two separate BH passes would double the family-wide false-discovery rate |
+| `fix(calibration)` NaN closes no longer score (14 NaN rows reached the ledgers in June; filtered at read, ledgers untouched); tied values get average ranks; `_ic_hit` filters pairs | A NaN inside a rank silently corrupts an IC |
+| `fix(perf)` **performance from daily 4 PM closes** (git history of `portfolio_snapshot.json`), annualized at the real sampling rate; paired-return beta | Weekly run marks were annualized as daily: Sharpe read +4.82 (real −0.52), SPY vol 23% (real 11%), drawdown −1.3% (real −6.0%), "26 trading days" (real 81) |
+| `feat(cost)` **LLM cost per run** → `agent_log.json` `llm_usage`, `llm_cost` health check, `deliberation_stats` aggregate | Cost against a ~$500 book was never measured; the Devil's Advocate runs Sonnet per candidate (this file said Haiku) |
 
 ## Changelog — Oct 3 2026 (performance investigation → remediation: the experiment couldn't produce a clean answer)
 

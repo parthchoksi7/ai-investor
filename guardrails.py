@@ -486,7 +486,8 @@ def enforce_research_backed_buys(
     return kept, rejected
 
 
-def _last_live_trade_date(ticker: str, transactions: list, side: str) -> str | None:
+def _last_live_trade_date(ticker: str, transactions: list, side: str,
+                          exclude=None) -> str | None:
     """Most recent broker-accepted (non-dry-run) `side` ('BUY'|'SELL') date for ticker.
 
     Single source of truth for "what counts as a real prior trade" — both the
@@ -500,6 +501,7 @@ def _last_live_trade_date(ticker: str, transactions: list, side: str) -> str | N
         and str(tx.get("action", "")).upper() == side
         and not tx.get("dry_run")
         and tx.get("date")
+        and not (exclude and exclude(tx))
     ]
     return max(dates) if dates else None
 
@@ -513,6 +515,20 @@ def _last_live_buy_date(ticker: str, transactions: list) -> str | None:
     to look up here. Do not "fix" this by including pending decisions.
     """
     return _last_live_trade_date(ticker, transactions, "BUY")
+
+
+def _last_discretionary_buy_date(ticker: str, transactions: list) -> str | None:
+    """Most recent broker-accepted BUY of ticker that the AGENTS chose — excluding the
+    mechanical cash-deployment top-ups (source_of_capital == "cash_deployment").
+
+    The min-hold guard keys on this: a top-up is the deployment rule scaling the book,
+    not a new decision to own the name, so it must not restart the position's 30/63-day
+    discretionary-sell clock. Keying on every BUY would let one deployment week re-lock
+    the whole book against the PM for months (ultra review, Oct 4 2026). The GFV check
+    keeps using _last_live_buy_date (every lot), the conservative broker-side reading."""
+    return _last_live_trade_date(
+        ticker, transactions, "BUY",
+        exclude=lambda tx: tx.get("source_of_capital") == "cash_deployment")
 
 
 def _last_live_sell_date(ticker: str, transactions: list) -> str | None:
@@ -582,7 +598,7 @@ def enforce_min_holding_period(
             kept.append(d)
             continue
         ticker   = d.get("ticker", "")
-        buy_date = _last_live_buy_date(ticker, transactions)
+        buy_date = _last_discretionary_buy_date(ticker, transactions)
         gained   = position_gained(ticker, portfolio) and not d.get("thesis_exit")
         need     = min_holding_days_gain if gained else min_holding_days
         if buy_date and _trading_days_since(buy_date, today) < need:
@@ -660,7 +676,7 @@ def min_hold_days_remaining(
     """
     if transactions is None:
         transactions = _load_list(TRANSACTIONS_FILE)
-    buy_date = _last_live_buy_date(ticker, transactions)
+    buy_date = _last_discretionary_buy_date(ticker, transactions)
     if not buy_date:
         return None
     today = today or datetime.now(_ET).strftime("%Y-%m-%d")

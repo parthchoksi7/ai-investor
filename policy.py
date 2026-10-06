@@ -30,7 +30,7 @@ import os
 # historical constants; each §18.4 migration updates BOTH policy.yaml and this
 # baseline together (TestPolicyParity asserts they stay identical).
 _DEFAULTS: dict = {
-    "policy_version":           "2.1-builtin-defaults",
+    "policy_version":           "2.2-builtin-defaults",
     "max_target_weight":        0.10,
     "max_buy_notional_pct":     0.12,
     "min_order_notional":       5.00,
@@ -50,6 +50,8 @@ _DEFAULTS: dict = {
     "min_holding_trading_days_gain": 63,        # discretionary SELL of a GAINED position (IPS §7.2)
     "target_beta_min":          0.8,            # Gate 2 band — PM/CRO context only
     "target_beta_max":          1.2,
+    # v2.2 (Oct 4 2026) — bounded mechanical cash deployment (IPS §6 v1.5)
+    "cash_deploy_target_pct":   0.05,           # deploy projected post-trade cash above this
     # data-quality: 1-day move > this PERCENT with no corporate action = suspect print
     "price_outlier_pct":        35,
 }
@@ -84,6 +86,9 @@ _VALIDATORS = {
     "tax_aware_hold_window_trading_days": lambda v: _is_int(v) and v >= 0,
     # a FRACTION margin in [0, 0.5) — `5` (percent typo) would leave no budget at all
     "settled_cash_buffer_pct":  lambda v: _is_num(v) and 0 <= v < 0.5,
+    # a FRACTION inside the IPS 0–10% cash band — `5` (percent typo) would never deploy,
+    # and anything above the band would re-ratify idle cash by config
+    "cash_deploy_target_pct":   lambda v: _is_num(v) and 0 <= v <= 0.10,
     "min_holding_trading_days_gain": lambda v: _is_int(v) and v >= 0,
     # beta band bounds — plausible market-exposure range (a percent typo like 80 fails)
     "target_beta_min":          lambda v: _is_num(v) and 0 <= v <= 3,

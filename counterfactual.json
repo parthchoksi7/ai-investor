@@ -6,11 +6,17 @@
     "mean_return_kept": -0.0043,
     "gap_kept_minus_flagged": 0.00343,
     "expected_direction": "underperform",
-    "p_value": 0.7933,
+    "p_value": 0.794,
     "n_floor_met": true,
     "adds_value": true,
     "significant": false,
-    "verdict": "NOT_SIGNIFICANT"
+    "verdict": "NOT_SIGNIFICANT",
+    "gap_demeaned": 0.00223,
+    "adds_value_demeaned": true,
+    "p_value_demeaned": 0.8578,
+    "p_value_bh": 0.9217,
+    "significant_bh": false,
+    "verdict_bh": "NOT_SIGNIFICANT"
   },
   "cro_veto@21d": {
     "n_flagged": 3,
@@ -19,11 +25,16 @@
     "mean_return_kept": -0.00569,
     "gap_kept_minus_flagged": -0.03343,
     "expected_direction": "underperform",
-    "p_value": 0.1298,
+    "p_value": 0.248,
     "n_floor_met": false,
     "adds_value": false,
     "significant": false,
-    "verdict": "NOT_SIGNIFICANT"
+    "verdict": "NOT_SIGNIFICANT",
+    "gap_demeaned": -0.01527,
+    "adds_value_demeaned": false,
+    "p_value_demeaned": 0.6584,
+    "p_value_bh": null,
+    "significant_bh": null
   },
   "pm_selected@21d": {
     "n_flagged": 16,
@@ -32,11 +43,17 @@
     "mean_return_kept": -0.009,
     "gap_kept_minus_flagged": -0.03996,
     "expected_direction": "outperform",
-    "p_value": 0.0935,
+    "p_value": 0.1111,
     "n_floor_met": true,
     "adds_value": true,
     "significant": false,
-    "verdict": "NOT_SIGNIFICANT"
+    "verdict": "NOT_SIGNIFICANT",
+    "gap_demeaned": -0.04275,
+    "adds_value_demeaned": true,
+    "p_value_demeaned": 0.0711,
+    "p_value_bh": 0.543,
+    "significant_bh": false,
+    "verdict_bh": "NOT_SIGNIFICANT"
   },
   "da_reject@63d": {
     "n_flagged": 12,
@@ -45,11 +62,17 @@
     "mean_return_kept": 0.02265,
     "gap_kept_minus_flagged": -0.02892,
     "expected_direction": "underperform",
-    "p_value": 0.5326,
+    "p_value": 0.5422,
     "n_floor_met": true,
     "adds_value": false,
     "significant": false,
-    "verdict": "NOT_SIGNIFICANT"
+    "verdict": "NOT_SIGNIFICANT",
+    "gap_demeaned": -0.02413,
+    "adds_value_demeaned": false,
+    "p_value_demeaned": 0.5934,
+    "p_value_bh": 0.9217,
+    "significant_bh": false,
+    "verdict_bh": "NOT_SIGNIFICANT"
   },
   "cro_veto@63d": {
     "n_flagged": 1,
@@ -62,7 +85,12 @@
     "n_floor_met": false,
     "adds_value": true,
     "significant": false,
-    "verdict": "NOT_SIGNIFICANT"
+    "verdict": "NOT_SIGNIFICANT",
+    "gap_demeaned": 0.11828,
+    "adds_value_demeaned": true,
+    "p_value_demeaned": null,
+    "p_value_bh": null,
+    "significant_bh": null
   },
   "pm_selected@63d": {
     "n_flagged": 12,
@@ -71,14 +99,67 @@
     "mean_return_kept": 0.01701,
     "gap_kept_minus_flagged": -0.06226,
     "expected_direction": "outperform",
-    "p_value": 0.1214,
+    "p_value": 0.1405,
     "n_floor_met": true,
     "adds_value": true,
     "significant": false,
-    "verdict": "NOT_SIGNIFICANT"
+    "verdict": "NOT_SIGNIFICANT",
+    "gap_demeaned": -0.06397,
+    "adds_value_demeaned": true,
+    "p_value_demeaned": 0.1086,
+    "p_value_bh": 0.543,
+    "significant_bh": false,
+    "verdict_bh": "NOT_SIGNIFICANT"
+  },
+  "_gate_1b": {
+    "family_size": 10,
+    "members": {
+      "counterfactual:da_reject@21d": {
+        "p": 0.8578,
+        "q_bh": 0.9217
+      },
+      "counterfactual:pm_selected@21d": {
+        "p": 0.0711,
+        "q_bh": 0.543
+      },
+      "counterfactual:da_reject@63d": {
+        "p": 0.5934,
+        "q_bh": 0.9217
+      },
+      "counterfactual:pm_selected@63d": {
+        "p": 0.1086,
+        "q_bh": 0.543
+      },
+      "scorecard:research.confidence@21d": {
+        "p": 0.3053,
+        "q_bh": 0.879
+      },
+      "scorecard:devils_advocate.overall_risk_score@21d": {
+        "p": 0.3516,
+        "q_bh": 0.879
+      },
+      "scorecard:position_review.hold_score@21d": {
+        "p": 0.7405,
+        "q_bh": 0.9217
+      },
+      "scorecard:research.confidence@63d": {
+        "p": 0.4535,
+        "q_bh": 0.907
+      },
+      "scorecard:devils_advocate.overall_risk_score@63d": {
+        "p": 0.8256,
+        "q_bh": 0.9217
+      },
+      "scorecard:position_review.hold_score@63d": {
+        "p": 0.9217,
+        "q_bh": 0.9217
+      }
+    },
+    "note": "Benjamini-Hochberg across every Gate 1b route at once. A scorecard member's q is necessary but not sufficient \u2014 the rule also needs that signal's IC and observation bar (Gate 1a's) in its expected direction."
   },
   "_meta": {
     "note": "Counterfactual: does each model's reject/veto/select decision predict the right forward-return direction? gap = mean_kept \u2212 mean_flagged. Block-sampled effective N. `significant` requires BOTH sides >= 10 AND a Welch's-z two-sample p-value < 0.05 (matches agent_scorecard's rigor \u2014 a sample-size floor alone is not a significance test). At ~weekly cadence this stays NOT_SIGNIFICANT for months (\u00a77.4), by design.",
+    "gate_1b_fields": "p_value_bh / significant_bh / verdict_bh: date-demeaned (cross-sectional) gap, Welch t, Benjamini-Hochberg across the whole 10-test Gate 1b family (see _gate_1b). Use THESE for SCALE_DECISION_RULE Gate 1b, not the raw `significant`. cro_veto is excluded from the gate by the rule: no p_value_bh.",
     "min_n": 10,
     "alpha": 0.05,
     "signals": {

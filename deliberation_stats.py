@@ -142,8 +142,33 @@ def deliberation_stats(log: list) -> dict:
             "reduce_exit_rate": _rate(pr_reduce_exit, pr_total),
         },
         "regime_mix": dict(regime_mix),
+        "llm_cost": _llm_cost(log),
         "caveat": (f"n={n_runs} runs — base rates with wide error, not conclusions. "
-                   "Per-agent token/cost not logged (see A12)."),
+                   "LLM cost is logged per run only since 2026-10-04 (llm_usage)."),
+    }
+
+
+def _llm_cost(log: list) -> dict:
+    """API-list-price cost of the agent pipeline from agent_log `llm_usage` (logged from
+    2026-10-04). Cost relative to AUM is the number that matters on a ~$500 book: a
+    pipeline costing ~1% of AUM a year is larger than most plausible alpha."""
+    runs = [r.get("llm_usage") for r in log
+            if isinstance(r, dict) and isinstance(r.get("llm_usage"), dict)
+            and isinstance(r["llm_usage"].get("est_cost_usd"), (int, float))]
+    if not runs:
+        return {"n_runs_logged": 0, "note": "no run has logged llm_usage yet"}
+    costs = [u["est_cost_usd"] for u in runs]
+    ann = [u["cost_pct_aum_annualized"] for u in runs
+           if isinstance(u.get("cost_pct_aum_annualized"), (int, float))]
+    return {
+        "n_runs_logged": len(runs),
+        "mean_cost_usd_per_run": round(sum(costs) / len(costs), 4),
+        "total_cost_usd": round(sum(costs), 4),
+        "mean_cost_pct_aum_annualized": round(sum(ann) / len(ann), 2) if ann else None,
+        "basis": runs[-1].get("basis"),
+        "scope": ("weekly rebalance agents only — the GH-plane event_digest (metered key, "
+                  "every weekday) is recorded per day in data_quality_report.json → "
+                  "event_digest.llm_usage and is NOT in these totals"),
     }
 
 

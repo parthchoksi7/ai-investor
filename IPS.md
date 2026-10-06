@@ -160,7 +160,7 @@ the system holds (no new BUYs) rather than continuing to trade against its own v
 |-----------|--------|
 | **Time horizon** | 9–12 months primary holding horizon; positions underwritten on a 9–12 month fundamental thesis |
 | **Drawdown tolerance** | Hard kill switch at **−20% portfolio drawdown from peak** → blocks all new BUYs (SELLs still permitted). Graduated de-risking optional (§7.6) |
-| **Single-name loss limit** | Hard stop-loss at **−25% from entry** (cost basis, evaluated each trading-day morning via `risk_watch.py` on a live Robinhood MCP quote — not the 4 PM close, since the EOD routine places no orders — no trailing) — a catastrophe brake, not a thesis tool |
+| **Single-name loss limit** | Hard stop-loss at **−25% from entry** (cost basis, evaluated each trading-day morning on a live Robinhood MCP quote — by `risk_watch.py`, and on the rebalance day by `main.py` (since 2026-10-04; before then the rebalance day was skipped) — not the 4 PM close, since the EOD routine places no orders — no trailing) — a catastrophe brake, not a thesis tool |
 | **Volatility** | No explicit vol target; risk is controlled via position/sector caps and the kill switch. Risk *contribution* is monitored and reported (§7.5) even though not hard-enforced |
 | **Liquidity** | Universe restricted to liquid names (Appendix A admission floor); the book must be fully liquidatable within one trading day at negligible impact |
 | **Tax sensitivity** | **CA top-bracket taxable account** — short-term gains taxed ~54%, long-term ~37%. After-tax return is the only return that counts; turnover is treated as a primary risk |
@@ -187,9 +187,12 @@ the system holds (no new BUYs) rather than continuing to trade against its own v
 | **Holdings count** | 8–15 positions | PM target; monitored |
 | **Max position** | **10%** of portfolio | `guardrails.py` clamp, qty recomputed |
 | **Max sector** | **25%** of portfolio, **enforced at entry** (§6.1) | `enforce_sector_limits` — SELLs applied before BUYs; an over-cap BUY is **clamped to the remaining headroom**, and dropped only when the clamp is unplaceable |
-| **Cash target** | **0–10%** (discipline flag > 15% idle) | Observability only — cash is a position; never force deployment |
+| **Cash target** | **0–10%** (discipline flag > 15% idle) | **Bounded mechanical deployment** (v1.5, `cash_deployment.py`): at the rebalance, projected post-trade cash above `cash_deploy_target_pct` (5%) is deployed pro-rata into the AI's own intended book, within settled cash, never into a name the AI is selling/flagging or the CRO vetoed; every guard still clamps it. Bounded by the per-name cap: it adds no names, so with N holdings at the 10% cap the book cannot exceed N×10% invested |
 | **Concentration** | Correlation-aware — five correlated names is one bet; CRO receives the return-correlation matrix | CRO review |
 
+> **✅ CLOSED 2026-10-04 (v1.5) — superseded by the bounded mechanical re-deployment rule
+> above, the first of the two closing options this exception named.** Kept for the record:
+>
 > **⚠ Ratified interim exception — cash target (owner-approved 2026-07-05).** The book has
 > run persistently above the 0–10% target (observed ~63% cash / 4 holdings, 26+ consecutive
 > `cash_discipline` DEGRADED health runs as of early July 2026). **This is a ratified,
@@ -402,6 +405,7 @@ construction:
   max_position_pct: 10
   max_sector_pct: 25
   cash_target_pct: [0, 10]
+  cash_deploy_target_pct: 5       # v1.5 — projected cash above this is deployed at the rebalance
   cash_discipline_flag_pct: 15
 
 horizon:
@@ -419,8 +423,9 @@ trading:
 
 risk:
   kill_switch_drawdown_pct: 20
-  single_name_stop_pct: 25       # from entry, evaluated each trading-day morning via
-                                  # risk_watch.py (live MCP quote), no trailing
+  single_name_stop_pct: 25       # from entry, evaluated each trading-day morning
+                                  # (risk_watch.py; main.py on the rebalance day),
+                                  # live MCP quote, no trailing
   safe_mode_index_intraday_drop_pct: 7     # market-wide circuit breaker (tunable)
   safe_mode_vix_level: 40                   # tunable
 
@@ -477,3 +482,4 @@ tax:
 | 1.3 | 2026-08-19 | §6 Max-sector control amended: an over-cap BUY is **clamped to the remaining headroom** rather than rejected outright | The Aug 19 2026 rebalance rejected two fully-researched BUYs for being 2–4pp oversized and traded nothing, leaving 18.1% cash idle for the 34th consecutive run when 6.6% / 5.3% positions were compliant. Rejecting a fixable *size* discards the thesis; clamping enforces the same cap while preserving the decision | Owner |
 | 1.4 | 2026-10-03 | §7.2 gain-aware minimum hold (63 trading days for a position at a gain; losers keep 30) + a discretionary SELL must name the broken thesis condition; §7.3 wash-sale window made inclusive of day 30; Appendix A `settled_cash_buffer_pct` (BUYs sized to settled cash) | Oct 2026 investigation (`PLAN_OCT3_REMEDIATION.md`): 5 of 8 weekly-regime SELLs landed 42–49 days after purchase — the 30-day floor had become the holding period and 11/11 realized lots were short-term; EOG was re-bought on day 30 after a loss sale (a wash sale the old guard allowed); the Oct 2 rotation's three BUYs never reached the broker because a cash account cannot spend same-day proceeds | Owner |
 | 1.4 | 2026-10-03 | §8 corrected (the "tech-tilted" QQQ rationale was false) and an exposure-context row added: book beta vs the Gate 2 band 0.8–1.2 and sector weights vs SPY are shown to the PM/CRO | Neither agent had ever been told the benchmark; the book ran ~0.2 realized beta and 0% IT (≈40% of SPY) as unchosen bets. Context, not a control — the Aug 19 2026 lesson is that a risk agent told to reject on a limit hard-drops trades upstream of the clamps |
+| 1.5 | 2026-10-04 | §6 cash target gets a **bounded mechanical re-deployment rule** (`cash_deployment.py`, `cash_deploy_target_pct` 5%) and the 2026-07-05 ratified cash exception is **closed**; §4 stop-loss also evaluated on the rebalance day | The book ran 13–63% cash for months (31.7% on 2026-10-02); cash has beta 0, so the experiment could not reach Gate 2's 0.8–1.2 exposure band and was measuring a partly-invested book against SPY. The exception itself named this rule as one of its two closing options. A producer, not a guard — it scales the AI's own book and every guard still applies (PLAN_OCT4_REVIEW.md items 1–2) | Owner |

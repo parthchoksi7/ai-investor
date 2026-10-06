@@ -239,6 +239,10 @@ jobs:
           # Actions is the only plane that scores the whole universe daily), or
           # factor-persistence / IC analysis silently loses its substrate (same
           # class as the forecasts.jsonl feed-freeze).
+          # quant_ic_report.json + quant_ic_history.jsonl: the full-universe Gate 1a read
+          # and its append-only per-date ledger (Oct 4 2026) — computed here because only
+          # this plane has full history for every scored name. fetch_snapshot.py
+          # guarantees both paths exist, so this `git add` can never fail on them.
           # forecasts_scored.jsonl + agent_scorecards.json: Stage D moved long-horizon
           # forecast maturation onto this plane (full history lives here) — without
           # committing them, every GH-plane score_matured result is silently lost.
@@ -249,7 +253,7 @@ jobs:
           # checkout. Harmless on its own, but it turned a routine push race into a
           # hard failure the one time `git pull --rebase` below hit a dirty tree
           # (2026-08-13 incident) — committing it here removes the trigger.
-          git add market_snapshot.json factor_history.jsonl data_quality_report.json data_quality_history.jsonl research_dossier.json events.jsonl forecasts_scored.jsonl agent_scorecards.json fundamentals_cache.json
+          git add market_snapshot.json factor_history.jsonl data_quality_report.json data_quality_history.jsonl research_dossier.json events.jsonl forecasts_scored.jsonl agent_scorecards.json fundamentals_cache.json quant_ic_report.json quant_ic_history.jsonl
           # Only commit if the file actually changed
           git diff --staged --quiet && echo "No changes to commit" || \
             git commit -m "chore: market snapshot [skip ci]"

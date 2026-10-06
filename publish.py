@@ -421,8 +421,15 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
         snapshot_row["net_exposure"] = round(1.0 - cash / total_value, 4)
     try:
         from performance import build_report
-        beta = build_report().get("realized_beta")
-        if beta is not None and math.isfinite(beta):
+        _rep = build_report()
+        beta = _rep.get("realized_beta")
+        # Only a beta measured on DAILY 4 PM closes is publishable. Without git history
+        # (a shallow checkout) the report falls back to weekly run marks, whose beta is
+        # not comparable — skip it rather than publish a different measurement.
+        if not str(_rep.get("curve_source", "")).startswith("eod_close"):
+            print(f"   ⚠ realized_beta skipped: curve is {_rep.get('curve_source')!r}, "
+                  "not daily closes (shallow git history?)")
+        elif beta is not None and math.isfinite(beta):
             snapshot_row["realized_beta"] = beta
     except Exception as e:
         print(f"   ⚠ realized_beta skipped: {str(e)[:120]}")

@@ -81,3 +81,21 @@ are disclosed in the paper (§3.3, §3.7, §6.4–6.5) and bound the interpretat
 
 *Once registered, the OSF/AsPredicted URL is recorded in PAPER_DRAFT §4.4 and in
 the calibration scorecard `_meta`.*
+
+---
+
+## Addendum — 2026-10-04 (dated; the registered metric is unchanged)
+
+The registered primary metric, horizon, entry definition, benchmark and threshold above
+are **not changed**, and `agent_scorecards.json` keeps reporting them exactly as registered.
+
+Added alongside them, to address the range-restriction bias §8 already discloses:
+`quant_ic_report.json` measures the same hypothesis (§2: cross-sectional rank association
+of `quant.composite_score` with the 21-day next-open forward return) on the **full scored
+universe** from `factor_history.jsonl`. It uses one IC per date and infers only on
+non-overlapping periods, with a Student-t interval on the per-period ICs. It is the read
+`SCALE_DECISION_RULE.md` Gate 1a now uses (see its §7 measurement amendment, which
+discloses what the reviewer saw before writing it). Two estimator fixes also apply to the
+registered metric's computation and are bug fixes, not re-specifications: tied values now
+receive average ranks, and 14 rows with a non-finite realized return (NaN closes,
+June 2026) are excluded at read time.

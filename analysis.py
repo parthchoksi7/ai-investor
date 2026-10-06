@@ -310,6 +310,58 @@ def _record_call(model: str, max_tokens: int, response) -> None:
         pass
 
 
+# Oct 4 2026 review, item 8 — LLM cost against AUM. API LIST prices, $ per 1M tokens
+# (cached 2026-09-25 from the Claude API model table). Cache write (5-minute TTL) is
+# billed at 1.25× input, a cache read at 0.1× input. The cloud routine authenticates
+# with the owner's Claude subscription OAuth token, so this is the API-EQUIVALENT cost
+# of the run — what the pipeline would cost on a metered key (as event_digest's GH
+# Actions key is), not necessarily dollars billed. Unknown model → priced at None.
+LLM_PRICES_PER_MTOK = {
+    "claude-sonnet-4-6":         {"input": 3.00, "output": 15.00},
+    "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
+    "claude-haiku-4-5":          {"input": 1.00, "output": 5.00},
+}
+CACHE_WRITE_MULT, CACHE_READ_MULT = 1.25, 0.10
+
+
+def usage_summary(total_value: float | None = None, runs_per_year: int = 52,
+                  scope: str = "weekly rebalance agents (cloud plane)") -> dict:
+    """This run's token usage and API-list-price cost, per model and in total, plus
+    cost as a share of AUM (per run and annualized). Pure read of _RUN_MANIFEST;
+    never raises. `scope` names which pipeline the figure covers: the rebalance
+    agents run weekly in the cloud; event_digest runs every weekday on the GH plane on
+    a METERED key and is recorded separately (data_quality_report.json →
+    event_digest.llm_usage, runs_per_year=252)."""
+    out: dict = {"by_model": {}, "est_cost_usd": 0.0, "unpriced_models": [],
+                 "scope": scope,
+                 "basis": "API list price (subscription OAuth runs are not metered per token)"}
+    try:
+        for model, c in (_RUN_MANIFEST.get("calls") or {}).items():
+            row = {k: c.get(k, 0) for k in ("n_calls", "input_tokens", "output_tokens",
+                                            "cache_read_tokens", "cache_creation_tokens")}
+            price = LLM_PRICES_PER_MTOK.get(model)
+            if price:
+                cost = (row["input_tokens"] * price["input"]
+                        + row["cache_creation_tokens"] * price["input"] * CACHE_WRITE_MULT
+                        + row["cache_read_tokens"] * price["input"] * CACHE_READ_MULT
+                        + row["output_tokens"] * price["output"]) / 1e6
+                row["est_cost_usd"] = round(cost, 4)
+                out["est_cost_usd"] += cost
+            else:
+                row["est_cost_usd"] = None
+                out["unpriced_models"].append(model)
+            out["by_model"][model] = row
+        out["est_cost_usd"] = round(out["est_cost_usd"], 4)
+        if total_value and total_value > 0:
+            per_run = out["est_cost_usd"] / total_value
+            out["cost_pct_aum_per_run"] = round(per_run * 100, 4)
+            out["cost_pct_aum_annualized"] = round(per_run * runs_per_year * 100, 2)
+            out["runs_per_year_assumed"] = runs_per_year
+    except Exception as e:  # instrumentation must never break the pipeline
+        out["error"] = str(e)[:200]
+    return out
+
+
 def _call(model: str, system: str | list, user_msg: str,
           max_tokens: int = 600) -> tuple[str, str | None]:
     """Return (text, stop_reason). stop_reason == "max_tokens" means the output
@@ -1125,6 +1177,23 @@ def run_portfolio_manager(
         floor_line = ("\n  The book also holds FEWER than the 8-holding floor — "
                       "both band violations point the same way: deploy."
                       if len(portfolio.get("positions", [])) < 8 else "")
+        # Oct 4 2026 (owner-directed, PLAN_OCT4_REVIEW item 2): the arithmetic the
+        # cash band implies. The mechanical deployment rule scales the PM's book up
+        # but never adds a name, so with N names at the per-name cap the book tops
+        # out at N × cap invested — only the PM's own BUYs can add names.
+        import math
+        from guardrails import MAX_TARGET_WEIGHT as _cap
+        from cash_deployment import CASH_DEPLOY_TARGET_PCT as _deploy_to
+        _n_held = len(portfolio.get("positions", []))
+        _need = math.ceil((1 - 0.10) / _cap - 1e-9)
+        floor_line += (
+            f"\n  ARITHMETIC: no name may exceed {_cap:.0%}, so N names hold at most "
+            f"N×{_cap:.0%}. You hold {_n_held} name(s) — at most {_n_held * _cap:.0%} "
+            f"invested even if every one sat at the cap (now {100 - cash_pct:.0f}%). "
+            f"Reaching ≤10% cash needs at least {_need} names at the full cap, "
+            f"realistically {_need + 1}–{_need + 3}. After you decide, a mechanical rule "
+            f"scales YOUR book (your BUYs and the holdings you keep) up toward ~{_deploy_to:.0%} cash "
+            f"within the caps and settled cash — it never adds a name. Only your BUYs can.")
         cash_block = f"""
   ⚠ CASH DISCIPLINE: cash is {cash_pct:.1f}% — ABOVE the 0–10% band.{floor_line}
   You MUST either propose BUYs of ✓ BUY-eligible candidates to move toward the
