@@ -1,4 +1,207 @@
 {
-  "status": "PENDING_FIRST_GH_RUN",
-  "note": "Written by calibration.universe_ic_report in market_data.yml (GH plane, full history). Placeholder committed 2026-10-04 so the workflow git add never fails on a missing path; deliberately NOT computed from the slimmed local snapshot."
+  "generated_at": "2026-10-06T18:52:22.088284+00:00",
+  "formula_version": "3.0-beta-neutral",
+  "horizon_days": 21,
+  "basis": "next_open \u2192 close on/after entry + horizon calendar days (A1)",
+  "history_ledger": "quant_ic_history.jsonl",
+  "population": "core universe (98 names, SPY/QQQ excluded)",
+  "population_key": "5a4e24dbd737",
+  "non_overlapping": {
+    "n": 1,
+    "mean": -0.1085,
+    "sd": null,
+    "t_stat": null,
+    "ci95": null,
+    "n_obs": 98,
+    "dates": [
+      "2026-08-27"
+    ],
+    "ci_excludes_zero": false,
+    "sector_neutral": {
+      "n": 1,
+      "mean": -0.1561,
+      "sd": null,
+      "t_stat": null,
+      "ci95": null
+    }
+  },
+  "provisional_dates": [
+    "2026-09-07",
+    "2026-09-08",
+    "2026-09-09",
+    "2026-09-10",
+    "2026-09-11"
+  ],
+  "all_dates_descriptive": {
+    "n_dates": 12,
+    "mean_ic": -0.2012,
+    "note": "Consecutive dates share most of their 21-day window \u2014 descriptive only, never a significance input."
+  },
+  "gate_1a": {
+    "routes": {
+      "fast": {
+        "min_ic": 0.08,
+        "min_obs": 400,
+        "met": false
+      },
+      "slow": {
+        "min_ic": 0.05,
+        "min_obs": 1600,
+        "met": false
+      }
+    },
+    "status": "NOT_YET",
+    "rule": "SCALE_DECISION_RULE \u00a73 Gate 1a + \u00a77 measurement amendment 2026-10-04: mean per-period IC \u2265 route IC, n_obs (names summed over non-overlapping periods) \u2265 route minimum, and the per-period Student-t 95% CI strictly above zero."
+  },
+  "periods": [
+    {
+      "date": "2026-08-27",
+      "n": 98,
+      "ic": -0.1085,
+      "ic_sector_neutral": -0.1561,
+      "exit_date": "2026-09-18",
+      "population_key": "5a4e24dbd737",
+      "formula_version": "3.0-beta-neutral",
+      "horizon_days": 21,
+      "provisional": false,
+      "computed_at": "2026-10-06T18:52:22.070985+00:00"
+    },
+    {
+      "date": "2026-08-28",
+      "n": 98,
+      "ic": -0.1607,
+      "ic_sector_neutral": -0.147,
+      "exit_date": "2026-09-21",
+      "population_key": "5a4e24dbd737",
+      "formula_version": "3.0-beta-neutral",
+      "horizon_days": 21,
+      "provisional": false,
+      "computed_at": "2026-10-06T18:52:22.072245+00:00"
+    },
+    {
+      "date": "2026-08-31",
+      "n": 98,
+      "ic": -0.1813,
+      "ic_sector_neutral": -0.1458,
+      "exit_date": "2026-09-22",
+      "population_key": "5a4e24dbd737",
+      "formula_version": "3.0-beta-neutral",
+      "horizon_days": 21,
+      "provisional": false,
+      "computed_at": "2026-10-06T18:52:22.073206+00:00"
+    },
+    {
+      "date": "2026-09-01",
+      "n": 98,
+      "ic": -0.2196,
+      "ic_sector_neutral": -0.2767,
+      "exit_date": "2026-09-23",
+      "population_key": "5a4e24dbd737",
+      "formula_version": "3.0-beta-neutral",
+      "horizon_days": 21,
+      "provisional": false,
+      "computed_at": "2026-10-06T18:52:22.074103+00:00"
+    },
+    {
+      "date": "2026-09-02",
+      "n": 98,
+      "ic": -0.2403,
+      "ic_sector_neutral": -0.2622,
+      "exit_date": "2026-09-24",
+      "population_key": "5a4e24dbd737",
+      "formula_version": "3.0-beta-neutral",
+      "horizon_days": 21,
+      "provisional": false,
+      "computed_at": "2026-10-06T18:52:22.074994+00:00"
+    },
+    {
+      "date": "2026-09-03",
+      "n": 98,
+      "ic": -0.1885,
+      "ic_sector_neutral": -0.1789,
+      "exit_date": "2026-09-25",
+      "population_key": "5a4e24dbd737",
+      "formula_version": "3.0-beta-neutral",
+      "horizon_days": 21,
+      "provisional": false,
+      "computed_at": "2026-10-06T18:52:22.075885+00:00"
+    },
+    {
+      "date": "2026-09-04",
+      "n": 98,
+      "ic": -0.2113,
+      "ic_sector_neutral": -0.2378,
+      "exit_date": "2026-09-29",
+      "population_key": "5a4e24dbd737",
+      "formula_version": "3.0-beta-neutral",
+      "horizon_days": 21,
+      "provisional": false,
+      "computed_at": "2026-10-06T18:52:22.076780+00:00"
+    },
+    {
+      "date": "2026-09-07",
+      "n": 98,
+      "ic": -0.2332,
+      "ic_sector_neutral": -0.2518,
+      "exit_date": "2026-09-29",
+      "population_key": "5a4e24dbd737",
+      "formula_version": "3.0-beta-neutral",
+      "horizon_days": 21,
+      "provisional": true,
+      "computed_at": "2026-10-06T18:52:22.077667+00:00"
+    },
+    {
+      "date": "2026-09-08",
+      "n": 98,
+      "ic": -0.207,
+      "ic_sector_neutral": -0.1577,
+      "exit_date": "2026-09-30",
+      "population_key": "5a4e24dbd737",
+      "formula_version": "3.0-beta-neutral",
+      "horizon_days": 21,
+      "provisional": true,
+      "computed_at": "2026-10-06T18:52:22.078564+00:00"
+    },
+    {
+      "date": "2026-09-09",
+      "n": 98,
+      "ic": -0.2277,
+      "ic_sector_neutral": -0.1522,
+      "exit_date": "2026-10-01",
+      "population_key": "5a4e24dbd737",
+      "formula_version": "3.0-beta-neutral",
+      "horizon_days": 21,
+      "provisional": true,
+      "computed_at": "2026-10-06T18:52:22.079445+00:00"
+    },
+    {
+      "date": "2026-09-10",
+      "n": 98,
+      "ic": -0.2347,
+      "ic_sector_neutral": -0.155,
+      "exit_date": "2026-10-02",
+      "population_key": "5a4e24dbd737",
+      "formula_version": "3.0-beta-neutral",
+      "horizon_days": 21,
+      "provisional": true,
+      "computed_at": "2026-10-06T18:52:22.080344+00:00"
+    },
+    {
+      "date": "2026-09-11",
+      "n": 98,
+      "ic": -0.2017,
+      "ic_sector_neutral": -0.123,
+      "exit_date": "2026-10-05",
+      "population_key": "5a4e24dbd737",
+      "formula_version": "3.0-beta-neutral",
+      "horizon_days": 21,
+      "provisional": true,
+      "computed_at": "2026-10-06T18:52:22.081242+00:00"
+    }
+  ],
+  "caveats": [
+    "Survivorship: the universe is current members only \u2014 historical ICs are biased upward.",
+    "Sector-neutral IC is a DIAGNOSTIC (how much of the signal is sector rotation), not the gate.",
+    "One IC per non-overlapping period: n_periods, not n_obs, sets the width of the CI."
+  ]
 }
