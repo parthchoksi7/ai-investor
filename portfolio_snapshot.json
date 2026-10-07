@@ -1,82 +1,99 @@
 {
-  "is_close": false,
+  "is_close": true,
   "portfolio": {
-    "as_of": "2026-10-07T10:46:52.485388-04:00",
-    "cash": 157.21,
-    "buying_power": 157.21,
-    "total_value": 496.6633821534,
+    "as_of": "2026-10-07T16:00:00-04:00",
+    "cash": 43.8,
+    "total_value": 498.20917642,
+    "buying_power": 19.34,
+    "available_qty": {},
     "positions": [
+      {
+        "symbol": "JPM",
+        "qty": 0.11679,
+        "avg_price": 327.77,
+        "current_price": 329.5,
+        "market_value": 38.49,
+        "unrealized_pnl": 0.21
+      },
       {
         "symbol": "VRTX",
         "qty": 0.101027,
-        "available_qty": 0.101027,
         "avg_price": 464.73,
-        "current_price": 508.59,
-        "market_value": 51.3813,
-        "unrealized_pnl": 4.431
+        "current_price": 505.56,
+        "market_value": 51.07,
+        "unrealized_pnl": 4.12
       },
       {
         "symbol": "ABNB",
         "qty": 0.303888,
-        "available_qty": 0.303888,
         "avg_price": 152.92,
-        "current_price": 159.45,
-        "market_value": 48.4549,
-        "unrealized_pnl": 1.9844
+        "current_price": 160.61,
+        "market_value": 48.82,
+        "unrealized_pnl": 2.34
       },
       {
         "symbol": "CVX",
         "qty": 0.237135,
-        "available_qty": 0.237135,
         "avg_price": 194.95,
-        "current_price": 205.82,
-        "market_value": 48.8071,
-        "unrealized_pnl": 2.5777
+        "current_price": 205.17,
+        "market_value": 48.66,
+        "unrealized_pnl": 2.43
       },
       {
         "symbol": "V",
         "qty": 0.116078,
-        "available_qty": 0.116078,
         "avg_price": 382.85,
-        "current_price": 371.17,
-        "market_value": 43.0847,
-        "unrealized_pnl": -1.3558
-      },
-      {
-        "symbol": "REGN",
-        "qty": 0.032845,
-        "available_qty": 0.032845,
-        "avg_price": 824.17,
-        "current_price": 742.695,
-        "market_value": 24.3938,
-        "unrealized_pnl": -2.676
+        "current_price": 372.02,
+        "market_value": 43.18,
+        "unrealized_pnl": -1.26
       },
       {
         "symbol": "BKNG",
         "qty": 0.147316,
-        "available_qty": 0.147316,
         "avg_price": 198.76,
-        "current_price": 156.6,
-        "market_value": 23.0697,
-        "unrealized_pnl": -6.2108
+        "current_price": 155.86,
+        "market_value": 22.96,
+        "unrealized_pnl": -6.32
       },
       {
         "symbol": "GOOGL",
         "qty": 0.139755,
-        "available_qty": 0.139755,
         "avg_price": 345.6,
-        "current_price": 345.12,
-        "market_value": 48.2322,
-        "unrealized_pnl": -0.0671
+        "current_price": 350.37,
+        "market_value": 48.96,
+        "unrealized_pnl": 0.66
       },
       {
         "symbol": "META",
         "qty": 0.071934,
-        "available_qty": 0.071934,
         "avg_price": 676.31,
-        "current_price": 723.42,
-        "market_value": 52.0385,
-        "unrealized_pnl": 3.3888
+        "current_price": 721.15,
+        "market_value": 51.87,
+        "unrealized_pnl": 3.21
+      },
+      {
+        "symbol": "ADI",
+        "qty": 0.059049,
+        "avg_price": 406.1,
+        "current_price": 409.99,
+        "market_value": 24.21,
+        "unrealized_pnl": 0.23
+      },
+      {
+        "symbol": "AMP",
+        "qty": 0.077908,
+        "avg_price": 486.09,
+        "current_price": 490.61,
+        "market_value": 38.22,
+        "unrealized_pnl": 0.34
+      },
+      {
+        "symbol": "AME",
+        "qty": 0.152491,
+        "avg_price": 247.49,
+        "current_price": 248.53,
+        "market_value": 37.9,
+        "unrealized_pnl": 0.16
       }
     ]
   },
@@ -6984,5 +7001,5 @@
     }
   },
   "regime": "RISK_ON",
-  "written_at": "2026-10-07T14:50:44.344873+00:00"
+  "written_at": "2026-10-07T20:04:50.267721+00:00"
 }
