@@ -1,7 +1,7 @@
 {
   "date": "2026-10-07",
   "data_date": "2026-10-07",
-  "generated_at": "2026-10-07T16:22:41.820833+00:00",
+  "generated_at": "2026-10-07T19:19:03.110116+00:00",
   "status": "OK",
   "data_quality_score": 100,
   "strategy_shift_ok": true,
@@ -41,7 +41,7 @@
       "note": ""
     },
     "valuation_coverage_pct": {
-      "value": 97.2,
+      "value": 95.5,
       "status": "OK",
       "degraded_below": null,
       "abort_below": null,
@@ -51,35 +51,35 @@
   "breaches": [],
   "cik_map_ok": true,
   "price_outlier_count": 3,
-  "hash": "546fd3e7f27727b3",
+  "hash": "f3face6937cfadbf",
   "event_digest": {
     "chunks": 4,
     "chunks_ok": 4,
     "parse_success_rate": 1.0,
-    "raw_events": 15,
+    "raw_events": 22,
     "capped": false,
     "chunks_available": 4,
     "max_chunks": 15,
     "as_of": "2026-10-07",
-    "events_written": 14,
+    "events_written": 21,
     "events_deduped": 0,
     "llm_usage": {
       "by_model": {
         "claude-haiku-4-5-20251001": {
           "n_calls": 4,
-          "input_tokens": 12311,
-          "output_tokens": 1117,
+          "input_tokens": 12555,
+          "output_tokens": 1647,
           "cache_read_tokens": 0,
           "cache_creation_tokens": 0,
-          "est_cost_usd": 0.0179
+          "est_cost_usd": 0.0208
         }
       },
-      "est_cost_usd": 0.0179,
+      "est_cost_usd": 0.0208,
       "unpriced_models": [],
       "scope": "event_digest (GH plane, metered key) \u2014 THIS run; ~2 runs/weekday",
       "basis": "API list price (subscription OAuth runs are not metered per token)",
-      "cost_pct_aum_per_run": 0.0036,
-      "cost_pct_aum_annualized": 1.82,
+      "cost_pct_aum_per_run": 0.0042,
+      "cost_pct_aum_annualized": 2.11,
       "runs_per_year_assumed": 504
     }
   }
