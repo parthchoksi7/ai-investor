@@ -1,11 +1,80 @@
 {
-  "run_id": "20261006-135054",
-  "date": "2026-10-06",
-  "mode": "risk_watch",
-  "generated_at": "2026-10-06T13:50:54.281104+00:00",
+  "run_id": "20261007-144809",
+  "date": "2026-10-07",
+  "mode": "rebalance",
+  "generated_at": "2026-10-07T14:48:09.180077+00:00",
   "policy_version": "2.2-cash-deployment",
-  "data_quality": null,
-  "execution_started_at": null,
-  "executed_at": "2026-10-06T13:51:24.723742+00:00",
-  "decisions": []
+  "data_quality": {
+    "data_quality_score": 100,
+    "data_quality_status": "OK",
+    "data_quality_hash": "2a41aa9abaeedf2d"
+  },
+  "execution_started_at": "2026-10-07T14:51:08.345862+00:00",
+  "executed_at": null,
+  "decisions": [
+    {
+      "ticker": "REGN",
+      "action": "SELL",
+      "target_weight": 0.0,
+      "source_of_capital": "REGN",
+      "expected_return": -0.15,
+      "rationale": "EXIT flagged, devil reject=True, pipeline failures break thesis",
+      "thesis_exit": true,
+      "qty": 0.032845,
+      "price_as_of": "2026-10-07",
+      "sizing_price": 738.72,
+      "ref_id": "ef4ba637-3d50-4623-bffb-2fbec3a3540f"
+    },
+    {
+      "ticker": "ADI",
+      "action": "BUY",
+      "target_weight": 0.05,
+      "source_of_capital": "cash",
+      "expected_return": 0.12,
+      "rationale": "cmp*=89.8, top quant score, adds zero-weight Technology sector exposure",
+      "qty": 0.059049,
+      "price_as_of": "2026-10-07",
+      "sizing_price": 420.55,
+      "ref_id": "322f9734-95e2-41b3-8db2-8333162900a9"
+    },
+    {
+      "ticker": "AMP",
+      "action": "BUY",
+      "target_weight": 0.0779,
+      "source_of_capital": "cash",
+      "expected_return": 0.1,
+      "rationale": "cmp*=77.9, persist=84.5, low devil risk, adds Financials, low beta",
+      "cash_deployment_added_weight": 0.0279,
+      "qty": 0.077908,
+      "price_as_of": "2026-10-07",
+      "sizing_price": 496.61,
+      "ref_id": "433a18bd-6f46-4c9c-8f9e-ea601c038b85"
+    },
+    {
+      "ticker": "JPM",
+      "action": "BUY",
+      "target_weight": 0.0779,
+      "source_of_capital": "cash",
+      "expected_return": 0.09,
+      "rationale": "cmp*=77.4, earnings 10/13 near-term catalyst, adds beta toward band",
+      "cash_deployment_added_weight": 0.0279,
+      "qty": 0.11679,
+      "price_as_of": "2026-10-07",
+      "sizing_price": 331.28,
+      "ref_id": "626ab3d7-0764-41eb-9b6e-e8c6eb634f46"
+    },
+    {
+      "ticker": "AME",
+      "action": "BUY",
+      "target_weight": 0.0779,
+      "source_of_capital": "cash",
+      "expected_return": 0.1,
+      "rationale": "cmp*=75.8, persist=77.1, fills zero-weight Industrials gap vs SPY",
+      "cash_deployment_added_weight": 0.0279,
+      "qty": 0.152491,
+      "price_as_of": "2026-10-07",
+      "sizing_price": 253.72,
+      "ref_id": "56705b0c-1bd0-4a49-ab80-fd3ba4f49fdf"
+    }
+  ]
 }

@@ -1,92 +1,92 @@
 {
   "da_reject@21d": {
     "n_flagged": 37,
-    "n_kept": 126,
+    "n_kept": 128,
     "mean_return_flagged": -0.00773,
-    "mean_return_kept": -0.0043,
-    "gap_kept_minus_flagged": 0.00343,
+    "mean_return_kept": -0.00457,
+    "gap_kept_minus_flagged": 0.00315,
     "expected_direction": "underperform",
-    "p_value": 0.794,
+    "p_value": 0.8096,
     "n_floor_met": true,
     "adds_value": true,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": 0.00223,
+    "gap_demeaned": 0.00251,
     "adds_value_demeaned": true,
-    "p_value_demeaned": 0.8578,
-    "p_value_bh": 0.9217,
+    "p_value_demeaned": 0.8399,
+    "p_value_bh": 0.9655,
     "significant_bh": false,
     "verdict_bh": "NOT_SIGNIFICANT"
   },
   "cro_veto@21d": {
     "n_flagged": 3,
-    "n_kept": 160,
+    "n_kept": 162,
     "mean_return_flagged": 0.02774,
-    "mean_return_kept": -0.00569,
-    "gap_kept_minus_flagged": -0.03343,
+    "mean_return_kept": -0.00589,
+    "gap_kept_minus_flagged": -0.03363,
     "expected_direction": "underperform",
-    "p_value": 0.248,
+    "p_value": 0.2459,
     "n_floor_met": false,
     "adds_value": false,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": -0.01527,
+    "gap_demeaned": -0.01515,
     "adds_value_demeaned": false,
-    "p_value_demeaned": 0.6584,
+    "p_value_demeaned": 0.6606,
     "p_value_bh": null,
     "significant_bh": null
   },
   "pm_selected@21d": {
     "n_flagged": 16,
-    "n_kept": 147,
+    "n_kept": 149,
     "mean_return_flagged": 0.03096,
-    "mean_return_kept": -0.009,
-    "gap_kept_minus_flagged": -0.03996,
+    "mean_return_kept": -0.00917,
+    "gap_kept_minus_flagged": -0.04014,
     "expected_direction": "outperform",
-    "p_value": 0.1111,
+    "p_value": 0.1096,
     "n_floor_met": true,
     "adds_value": true,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": -0.04275,
+    "gap_demeaned": -0.04258,
     "adds_value_demeaned": true,
-    "p_value_demeaned": 0.0711,
-    "p_value_bh": 0.543,
+    "p_value_demeaned": 0.0721,
+    "p_value_bh": 0.575,
     "significant_bh": false,
     "verdict_bh": "NOT_SIGNIFICANT"
   },
   "da_reject@63d": {
     "n_flagged": 12,
-    "n_kept": 59,
+    "n_kept": 65,
     "mean_return_flagged": 0.05157,
-    "mean_return_kept": 0.02265,
-    "gap_kept_minus_flagged": -0.02892,
+    "mean_return_kept": 0.02247,
+    "gap_kept_minus_flagged": -0.0291,
     "expected_direction": "underperform",
-    "p_value": 0.5422,
+    "p_value": 0.5358,
     "n_floor_met": true,
     "adds_value": false,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": -0.02413,
+    "gap_demeaned": -0.0228,
     "adds_value_demeaned": false,
-    "p_value_demeaned": 0.5934,
-    "p_value_bh": 0.9217,
+    "p_value_demeaned": 0.6104,
+    "p_value_bh": 0.9655,
     "significant_bh": false,
     "verdict_bh": "NOT_SIGNIFICANT"
   },
   "cro_veto@63d": {
     "n_flagged": 1,
-    "n_kept": 70,
+    "n_kept": 76,
     "mean_return_flagged": -0.04387,
-    "mean_return_kept": 0.02855,
-    "gap_kept_minus_flagged": 0.07242,
+    "mean_return_kept": 0.02793,
+    "gap_kept_minus_flagged": 0.0718,
     "expected_direction": "underperform",
     "p_value": null,
     "n_floor_met": false,
     "adds_value": true,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": 0.11828,
+    "gap_demeaned": 0.11897,
     "adds_value_demeaned": true,
     "p_value_demeaned": null,
     "p_value_bh": null,
@@ -94,20 +94,20 @@
   },
   "pm_selected@63d": {
     "n_flagged": 12,
-    "n_kept": 59,
+    "n_kept": 65,
     "mean_return_flagged": 0.07927,
-    "mean_return_kept": 0.01701,
-    "gap_kept_minus_flagged": -0.06226,
+    "mean_return_kept": 0.01735,
+    "gap_kept_minus_flagged": -0.06192,
     "expected_direction": "outperform",
-    "p_value": 0.1405,
+    "p_value": 0.1381,
     "n_floor_met": true,
     "adds_value": true,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": -0.06397,
+    "gap_demeaned": -0.06201,
     "adds_value_demeaned": true,
-    "p_value_demeaned": 0.1086,
-    "p_value_bh": 0.543,
+    "p_value_demeaned": 0.115,
+    "p_value_bh": 0.575,
     "significant_bh": false,
     "verdict_bh": "NOT_SIGNIFICANT"
   },
@@ -115,44 +115,44 @@
     "family_size": 10,
     "members": {
       "counterfactual:da_reject@21d": {
-        "p": 0.8578,
-        "q_bh": 0.9217
+        "p": 0.8399,
+        "q_bh": 0.9655
       },
       "counterfactual:pm_selected@21d": {
-        "p": 0.0711,
-        "q_bh": 0.543
+        "p": 0.0721,
+        "q_bh": 0.575
       },
       "counterfactual:da_reject@63d": {
-        "p": 0.5934,
-        "q_bh": 0.9217
+        "p": 0.6104,
+        "q_bh": 0.9655
       },
       "counterfactual:pm_selected@63d": {
-        "p": 0.1086,
-        "q_bh": 0.543
+        "p": 0.115,
+        "q_bh": 0.575
       },
       "scorecard:research.confidence@21d": {
-        "p": 0.3053,
-        "q_bh": 0.879
+        "p": 0.69,
+        "q_bh": 0.9655
       },
       "scorecard:devils_advocate.overall_risk_score@21d": {
-        "p": 0.3516,
-        "q_bh": 0.879
+        "p": 0.7825,
+        "q_bh": 0.9655
       },
       "scorecard:position_review.hold_score@21d": {
-        "p": 0.7405,
-        "q_bh": 0.9217
+        "p": 0.4787,
+        "q_bh": 0.9655
       },
       "scorecard:research.confidence@63d": {
-        "p": 0.4535,
-        "q_bh": 0.907
+        "p": 0.9655,
+        "q_bh": 0.9655
       },
       "scorecard:devils_advocate.overall_risk_score@63d": {
-        "p": 0.8256,
-        "q_bh": 0.9217
+        "p": 0.3639,
+        "q_bh": 0.9655
       },
       "scorecard:position_review.hold_score@63d": {
-        "p": 0.9217,
-        "q_bh": 0.9217
+        "p": 0.908,
+        "q_bh": 0.9655
       }
     },
     "note": "Benjamini-Hochberg across every Gate 1b route at once. A scorecard member's q is necessary but not sufficient \u2014 the rule also needs that signal's IC and observation bar (Gate 1a's) in its expected direction."

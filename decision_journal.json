@@ -1124,9 +1124,19 @@
       "Credit rating downgrade or inability to access capital markets (liquidity stress during litigation)",
       "Regeneron restates prior financial statements related to Fianlimab trial reporting (criminal exposure)"
     ],
-    "status": "open",
-    "actual_return": null,
-    "thesis_correct": null
+    "status": "closed",
+    "actual_return": -0.1037,
+    "thesis_correct": false,
+    "exits": [
+      {
+        "date": "2026-10-07",
+        "run_id": "20261007-144809",
+        "exit_price": 738.72,
+        "avg_price": 824.17,
+        "realized_return": -0.1037,
+        "full_exit": true
+      }
+    ]
   },
   {
     "trade_id": "331bad05-58cb-44e3-b425-578af281f72a",
@@ -1454,6 +1464,153 @@
       "Custom ASIC adoption accelerates: hyperscalers deploy internally designed inference chips that displace incremental Vera Rubin units"
     ],
     "status": "rejected",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "cb204622-1b15-40f4-8849-aac4ab71fe4a",
+    "run_id": "20261007-144809",
+    "date": "2026-10-07",
+    "ticker": "REGN",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "REGN's near-term clinical setbacks are creating a temporary valuation trough that obscures a structurally resilient business with embedded optionality in early-stage pipeline programs and international expansion opportunities, warranting accumulation ahead of 2027-2028 catalyst inflection.",
+    "anti_thesis": "Eylea's revenue durability is structurally threatened by biosimilar entry and next-generation anti-VEGF competitors (Vabysmo, port-delivery faricimab) that are already eroding market share, while REGN's pipeline optionality is being repriced lower after consecutive high-profile Phase 3 failures that signal systematic overestimation of clinical probability\u2014not random variance. At 18.4x PE, the market is not pricing in a worst-case Eylea revenue cliff coinciding with pipeline disappointments, meaning a second consecutive catalyst miss in 2027 could compress multiples toward 13-14x on declining earnings, implying 30-40% downside from current levels. The bull thesis essentially asks investors to pay a full franchise multiple while simultaneously betting on early-stage assets with sub-20% historical success rates.",
+    "catalysts": [
+      "2027 Phase 2/3 data readouts in obesity/metabolic disorders (if in pipeline)\u2014emerging category with massive TAM could rebase growth narrative",
+      "Eylea next-generation formulation or indication expansion data, particularly in diabetic retinopathy or non-neovascular AMD indications where pricing premium can sustain",
+      "Libtayo combination trial data in earlier lines of therapy (non-melanoma, head-and-neck) that sidestep the Fianlimab setback and restore confidence in oncology execution",
+      "Institutional investor repositioning post-litigation settlement clarity (Q1 2027 likely), removing overhang and allowing re-rating to peer multiples",
+      "Strategic partnership or M&A activity in high-growth areas (cell therapy, next-gen biologics) signaling management's commitment to innovation refresh",
+      "Royalty Pharma's continued monetization of REGN portfolio assets\u2014if Royalty Pharma increases royalty obligations valuation, it signals external confidence in franchise durability"
+    ],
+    "confidence": 6,
+    "expected_return": -0.15,
+    "invalidates_if": [
+      "A third major Phase 3 failure in 2027 suggests systematic pipeline or clinical design issues, not isolated bad variance",
+      "Eylea revenue decline exceeds 5-8% YoY in 2027 suggesting market share loss is structural, not cyclical",
+      "Management team turnover or activist pressure forcing strategic abandonment of core franchises",
+      "Regulatory action against REGN's manufacturing or trial conduct practices tightens approval pathway on remaining programs",
+      "Competitive product launches demonstrate superior efficacy/safety in indications where REGN holds claims, forcing price concessions"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "c1078612-7357-4dc2-9564-bb7b4b208e9e",
+    "run_id": "20261007-144809",
+    "date": "2026-10-07",
+    "ticker": "ADI",
+    "action": "BUY",
+    "target_weight": 0.05,
+    "thesis": "ADI is positioned for sustained multiple expansion and earnings growth as AI infrastructure demand drives secular semiconductor tailwinds, while the market underappreciates the high-margin data center and automotive electrification segments offsetting near-term cyclical headwinds.",
+    "anti_thesis": "ADI's bull thesis rests on data center becoming a dominant revenue driver, but ADI remains overwhelmingly an industrial and automotive analog company \u2014 data center is a small fraction of sales, and hyperscaler AI buildouts favor digital ASICs and GPUs, not analog-heavy mixed-signal chips. Simultaneously, the industrial segment (historically 50%+ of revenue) is deep in a destocking cycle with no clear inventory normalization timeline, suppressing near-term earnings and cash flow. With automotive electrification still early-stage and China exposure (~25-30% of sales) facing escalating geopolitical risk, the margin expansion story requires multiple things to go right simultaneously while the market already prices in a recovery.",
+    "catalysts": [
+      "2025 data center revenue acceleration guidance above Street expectations (15%+ growth vs. consensus 8-10%), driven by AI inference chip adoption at hyperscalers",
+      "Gross margin beat in 2-3 consecutive quarters as high-margin data center products scale from 35-40% to 50%+ of revenue mix",
+      "Automotive electrification revenue inflection point announced (EV analog content growth 25%+ YoY) from new design wins at Tesla, BYD, or legacy OEM ramps",
+      "Strategic acquisition or partnership in edge AI/autonomous vehicle platforms signaling management's confidence in secular positioning",
+      "Analyst consensus revisions upward (2026 EPS estimates +15-20%) following strong data center bookings and margin guidance raises"
+    ],
+    "confidence": 7,
+    "expected_return": 0.12,
+    "invalidates_if": [
+      "Data center revenue growth decelerates below 5% YoY in next 2 quarters, indicating hyperscaler capex cycle stall",
+      "Gross margins contract below 59% sustained (vs. current 61.5%), signaling competitive or mix headwinds not reversible",
+      "Automotive electrification revenue contribution remains <5% of total by end of 2026, indicating design win execution failures",
+      "Management issues negative data center guidance or loses major hyperscaler customer to competitor",
+      "Free cash flow turns negative or debt-to-equity rises above 0.3x despite strong earnings (indicating structural profitability concerns)"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "876af709-47a0-4b07-9981-9c9c6f8e1472",
+    "run_id": "20261007-144809",
+    "date": "2026-10-07",
+    "ticker": "AMP",
+    "action": "BUY",
+    "target_weight": 0.0779,
+    "thesis": "Amphenol's structural advantages in high-growth connectivity markets (AI infrastructure, automotive electrification, 5G) are underappreciated relative to a valuation (11.95x PE, 14.6% FCF yield) that prices in commodity-like growth despite market-share gains and pricing power in mission-critical segments.",
+    "anti_thesis": "Amphenol's valuation score of 90/100 (cheapness) appears compelling at face value, but the 11.95x PE and 14.6% FCF yield likely already embed the AI/data center/EV cycle as consensus\u2014meaning the 'underappreciated' framing is stale. Connector markets are far more competitive than the thesis acknowledges: hyperscalers are actively developing in-house interconnect solutions (Google, Meta custom silicon + packaging), and Amphenol's revenue mix still carries meaningful telecom and industrial exposure that faces multi-quarter destocking headwinds. The 10-12% organic growth assumption requires every secular theme (AI infra, EV, aerospace) to fire simultaneously without cyclical offset, which historical connector cycles suggest is unreliable.",
+    "catalysts": [
+      "2024-2025 data center capex acceleration announcement by hyperscalers (NVDA, META, GOOGL supply chain commentary) triggering positive revenue pre-announcements from AMP management",
+      "Quarterly gross margin recovery >55% as telecom inventory digestion completes and high-margin aerospace/defense/automotive revenue mix improves",
+      "Analyst earnings estimate revisions upward for 2025-2026 following customer wins in AI infrastructure connectors and EV architecture contracts (Tesla, legacy OEMs qualifying new platforms)",
+      "Strategic M&A or aggressive shareholder return announcement capitalizing on acquisition currency and FCF generation (>$1B annual FCF potential)",
+      "Automotive end-market recovery confirmation via OEM guidance improvements, signaling pent-up electrification demand"
+    ],
+    "confidence": 6,
+    "expected_return": 0.1,
+    "invalidates_if": [
+      "Data center capex growth stalls or reverts to pre-AI levels for 2+ consecutive quarters",
+      "Gross margins trend below 53% by Q2 2025 indicating structural\u2014not cyclical\u2014margin pressure",
+      "Amphenol loses market share in key aerospace/defense or automotive electrification platforms to competitors",
+      "Management guides full-year organic growth <4% for 2025, signaling no inflection underway",
+      "Company suspends or severely cuts FCF deployment (dividends/buybacks), signaling cash flow confidence loss"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "eb9f36f4-6c28-4d5c-bff9-62c8a9eed7d1",
+    "run_id": "20261007-144809",
+    "date": "2026-10-07",
+    "ticker": "JPM",
+    "action": "BUY",
+    "target_weight": 0.0779,
+    "thesis": "JPM's negative FCF in FY2025 reflects aggressive capital deployment (buybacks, dividends, M&A) masking robust underlying earnings power; earnings revisions will re-rate the stock higher as markets recognize capital allocation strength rather than operational deterioration.",
+    "anti_thesis": "JPM trades at 14.3x earnings near all-time highs with rate-cycle tailwinds already priced in, leaving little margin of safety if NIM compresses faster than consensus expects or credit losses normalize upward from cycle lows. The 'voluntary negative FCF' narrative is a framing trick\u2014for a bank, negative operating FCF signals loan growth consuming capital faster than earnings generate it, which in a softening macro is a precursor to provision spikes, not a buyback story. At $331, the market has already rewarded JPM's capital allocation excellence; the re-rating catalyst is largely exhausted.",
+    "catalysts": [
+      "Q3 2026 earnings (2026-10-13, 6 days): evidence of margin resilience or expansion despite rate environment; any upward EPS guidance revision would signal consensus underestimation",
+      "Capital Markets Day or guidance refresh: explicit management commentary on FCF sustainability and capital allocation roadmap; clarification that negative FCF reflects strategic choice, not deterioration",
+      "Earnings revisions acceleration: if sell-side raises 2026-2027 EPS estimates post-Q3, multiple expansion follows as growth narrative resets",
+      "Rate environment stabilization: if Fed signals pause/easing, NIM compression fears ease and JPM's deposit franchise value becomes visible again",
+      "CIB wallet-share gains: announce new client wins or expanded relationships (Greece expansion is a micro-signal); M&A advisory pipeline acceleration"
+    ],
+    "confidence": 5,
+    "expected_return": 0.09,
+    "invalidates_if": [
+      "Q3 2026 earnings show operating margin compression below 27% YoY with no clear path back to 28%+",
+      "Management fails to articulate a capital deployment plan explaining the $147.8B negative FCF or signals capital constraints",
+      "Net interest margin compresses >15bps in next two quarters despite stable rate environment, signaling structural deposit loss or repricing",
+      "CIB market share declines or investment banking pipeline indicators weaken in next two quarters",
+      "Loan loss provisions jump unexpectedly (>2x consensus) signaling underestimation of credit risk",
+      "Regulatory actions materially increase capital requirements without offsetting ability to return capital"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "1902b158-5821-4c5e-9bcd-22b4d21aad3b",
+    "run_id": "20261007-144809",
+    "date": "2026-10-07",
+    "ticker": "AME",
+    "action": "BUY",
+    "target_weight": 0.0779,
+    "thesis": "AMETEK's market-leading position in niche instrumentation and electromechanical devices, combined with operating leverage and M&A accretion potential, supports valuation expansion despite premium multiples as the market underappreciates structural earnings growth and margin expansion runway.",
+    "anti_thesis": "AME trades at a valuation score of 50/100 (implying premium multiples already baked in), yet the bull thesis demands simultaneous delivery of organic margin expansion AND M&A accretion \u2014 a dual-engine growth story that leaves zero margin of safety if either engine misfires. With ~40% international revenue, a strong USD and softening industrial capex globally could compress organic growth below 4% while acquisition multiples (18-20x EBITDA) have risen sharply, making the 8-10% annual EPS accretion target increasingly heroic. The market has already rewarded AME's execution track record, meaning any stumble in integration, margin progression, or end-market demand triggers a multiple de-rating from already stretched levels.",
+    "catalysts": [
+      "2025 Q1-Q2 earnings beats driven by operational leverage in aerospace/defense recovery and margin expansion initiatives",
+      "Announcement of 1-2 strategic acquisitions in high-margin niche segments (EMG or TEL divisions focus areas), validated at 18-20x EBITDA multiples",
+      "Pharma/diagnostics end-market acceleration if AI-driven R&D spending increases customer capex cycles",
+      "Analyst estimate revisions upward as full-year FCF margin potential becomes evident (target 20%+ vs. current 19%)",
+      "Capital allocation confidence demonstration via buyback acceleration or dividend increase when stock trades >$270"
+    ],
+    "confidence": 6,
+    "expected_return": 0.1,
+    "invalidates_if": [
+      "Q1 2025 organic growth turns negative or guidance reduced below 3% due to order book weakness",
+      "Operating margin declines below 24.5% for two consecutive quarters, signaling structural deterioration rather than cyclical timing",
+      "Major M&A announcement at >22x EBITDA valuation or with <$40M run-rate synergies, suggesting discipline has eroded",
+      "Free cash flow margin deteriorates below 17%, indicating working capital stress or capex requirements exceeding expectations",
+      "Key customer concentration risk emerges (single customer >15% of revenue) or loss of major contract with no backlog replacement"
+    ],
+    "status": "open",
     "actual_return": null,
     "thesis_correct": null
   }
