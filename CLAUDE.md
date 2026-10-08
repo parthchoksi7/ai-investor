@@ -89,6 +89,7 @@ Haiku runs for each of up to 20 candidates (Research, Earnings) and each holding
 | `preflight_gate.py` | STEP 0 gate the routine runs first each attempt — PROCEED-REBALANCE (0) / PROCEED-RISK-WATCH (30) / SKIP-RETRY (10) / SKIP-DONE (20) (see below) |
 | `risk_watch.py` | Phase 5 Stage B — daily SELL-only safety net (non-rebalance trading days): −25% stop from cost basis on live MCP prices, kill-switch check, cross-mode ISO-week SELL interlock; decisions flow through the SAME envelope/claim/stamp machinery as the rebalance; **zero LLM, structurally zero BUYs** |
 | `reconcile_fills.py` | Applies an evidence file of broker fills (`evidence/broker_fills_*.json`) to `transactions.json` / `trades.csv`: real fill prices, missing broker ids, backfilled pre-logging lots. Idempotent; dry run unless `--apply` |
+| `backfill_benchmark_closes.py` | One-time repair of stale `spy_close` / `qqq_close` (+ cumulative returns) in Supabase `portfolio_snapshots`, against dated bars; shares `publish.plan_benchmark_reconcile` with the per-publish self-heal. Dry run unless `--apply`; writes `evidence/benchmark_close_backfill_<date>.json`. Owner-run (production DB) |
 | `data_request.json` | Written + pushed by the routine on gate exit 11 to start `market_data.yml` on demand (push trigger) |
 | `cash_deployment.py` | IPS §6 v1.5 bounded mechanical cash deployment — a PRODUCER between the CRO and the guard chain; top-ups of holdings carry `cash_deployment: True` and are excluded from `pm_selected` |
 | `quant_ic_report.json` | **The Gate 1a read** (since 2026-10-04): one IC per date over the full `factor_history.jsonl` universe, non-overlapping 21-day periods, Student-t CI, sector-neutral diagnostic. Written by `calibration.universe_ic_report` in `fetch_snapshot.py` (GH plane — only it has full history); committed by `market_data.yml`; summarized in `pipeline_digest.md` |
@@ -384,6 +385,79 @@ The pipeline aborts before running any agents if either condition is true:
 This prevents the silent all-50 quant score failure mode where agents run but produce no trades because they have no quantitative signal. When aborted, `system_health.json` is written immediately and the alert fires.
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
+
+## Changelog — Oct 7 2026 (published benchmark closes one session stale — third occurrence; measurement-only, inside the freeze)
+
+Spec-driven fix from the Chief-of-Staff review session. **Measurement-only:** nothing that
+buys, sells or sizes is touched, no live-routine sync, no effect on any gate's evidence
+clock (dated in `SCALE_DECISION_RULE.md` §7, which also records that the frozen window
+opened with rebalance `20261007-144809`).
+
+**Evidence (verified read-only 2026-10-07).** All 80 `portfolio_snapshots` rows were
+compared with the dated SPY bars in `market_snapshot.json` `history` (205 bars,
+2025-12-11 → 2026-10-06); the last 15 sessions were cross-checked against Robinhood daily
+bars. **43 rows match their own session. 37 match the prior session:** 2026-08-07,
+2026-08-10, and every row from 2026-08-13 through 2026-10-07. Three of the 37 are market
+holidays (06-19, 07-03, 09-07) where carrying the prior close is correct, so **~34
+trading-day rows are wrong**; 2026-08-11 is NULL. Row 2026-10-07 held `spy_close` 779.09 /
+`qqq_close` 759.66 — the 10-06 closes; the official 10-07 closes were 777.22 / 757.73
+(the row implied SPY +0.55% on the day; it was −0.24%).
+
+**Root cause (confirmed by a regression test that fails on the old code).**
+`_fetch_benchmark_prev_close` correctly rejected Polygon's stale `/prev` bar at ~16:05 ET
+and returned `None`. `_benchmark_close` then fell back to `_fetch_benchmark_from_snapshot`,
+which checked only that the snapshot **file** was dated today and returned
+`prices[ticker].close` — the prior session's close under today's file date (all three
+snapshot commits on 10-07 carry 779.09 under `date: 2026-10-07`). The fallback defeated the
+2026-08-05 validation, and nothing ever re-checked a written row.
+
+**This is the third occurrence** (Jul 6–30: snapshot tried first; Jul 31–Aug 5: live call
+not date-checked; Aug 7 → Oct 7: fallback not date-checked). Each earlier fix validated
+one source and left another unvalidated, so this one changes the rule instead of adding a
+check.
+
+| Change | Why it mattered |
+|--------|-----------------|
+| `fix(publish)` **benchmark closes are DATED** — no source returns a bare price. `_snapshot_benchmark_bars` reads `history[ticker]` (each bar's own epoch-ms session stamp), never the undated `prices` block; `_fetch_benchmark_prev_bar` returns `(session, close)`; a row takes the bar for `_expected_session(row date)` — the most recent COMPLETED session on or before it. A snapshot fetched before a session's close is not trusted for that session's bar (`_snapshot_complete_through`) | A stale source now simply has no bar for the date asked, so it cannot pass for a fresh one. The old check ("is the file dated today?") was true every day while the price inside was always a session old |
+| `fix(publish)` **the `is_close` publish writes NULL, not the prior close** — with no bar dated for the session, all four benchmark columns on today's row are set to NULL (one log line names what each source offered). SPY and QQQ are all-or-nothing (`_resolve_benchmark_closes`) | The morning publish leaves the prior session's close on today's row (correct as-of 9:45 AM). Before, a stale 4 PM publish left it there and it read as a close. NULL is honest; a D-1 close presented as D's is not |
+| `feat(publish)` **self-healing** — every publish runs `reconcile_benchmark_closes`: the previous 14 weekday rows are compared with dated bars; a NULL or lagged close is corrected and its cumulative return recomputed through `_benchmark_cumulative_pct` (the one formula the live path uses). UPDATE of the four benchmark columns only — `close_value` is structurally out of reach. Never modifies the inception row; refuses a correction over 10% (`MAX_RECONCILE_MOVE` — a re-based series, not a lag); unresolved rows raise a `::warning::` on the workflow run. `python publish.py --reconcile-benchmarks` runs it alone (respects `DRY_RUN`) | "Nothing ever re-checks a written row" is why two hand backfills decayed. A row is now right by the next morning's publish at the latest; holiday rows keep the as-of close |
+| `feat` **`backfill_benchmark_closes.py`** — one-time repair of every older row with the same planner. Dry run by default; `--apply` writes exactly the listed rows; evidence file in `evidence/`; cross-checks snapshot bars against Polygon when a key is set and drops any session they disagree on; idempotent | The per-publish repair is bounded to the trailing window by design. **Owner runs it (MANUAL_TODO #33) — it was not run by the implementing session** |
+
+> **What the dashboard shows now:** today's SPY/QQQ point is absent from ~16:05 ET until a
+> repair can see today's dated bar. **`benchmark_reconcile.yml`** (added in pre-merge review,
+> 2026-10-08) runs `python publish.py --reconcile-benchmarks` at 7 PM ET on weekdays for
+> that; if Polygon has no bar yet, the next morning's publish fills it. Why it was added
+> rather than left as an owner decision: the website's headline "vs SPY / vs QQQ"
+> (`parth-choksi` `lib/performance.ts`) reads only the LATEST row, so a NULL there blanks the
+> comparison every evening and all weekend. The chart itself tolerates NULLs
+> (`connectNulls`). Whether the free tier has the bar by 7 PM ET is unverified until the
+> first run (MANUAL_TODO #34).
+>
+> **Morning (non-close) publish:** unchanged in a healthy run — row D gets session D−1's
+> close, the latest that exists. Two differences exist only in degraded runs: a snapshot
+> with no dated bar for that session no longer supplies a value, and SPY is no longer
+> written without QQQ.
+>
+> **Consumers (grep):** the four columns are read from Supabase only by `publish.py` itself
+> (the inception row), the one-off `backfill_qqq.py`, and the website. `health_check.yml`
+> reads only `date`. `calibration.py` / `performance.py` / `stage_c_readiness.py` never
+> read Supabase — Gate 1a, Gate 1b and Gate 2 are unaffected.
+>
+> **Noted, NOT changed (post-freeze backlog):** (1) `performance._align` pairs each
+> portfolio date with the latest SPY bar on or before it, so the newest date(s) past the
+> snapshot's last bar pair with a prior-session bar; (2) orders are sized on the snapshot's
+> prior-session close while `price_as_of` is stamped today, so the routine's stale-price
+> re-quote never fires — decision-changing, parked; (3) this file says `_data_date`
+> reflects the source date, but the live path sets it to today.
+>
+> **QA:** `pytest test_pipeline.py` green apart from one pre-existing, unrelated failure
+> that is identical on `main` (`TestRiskWatchEnvelope::test_envelope_written_with_mode_and_no_week_stamp`);
+> see `RELEASE_NOTES.md` for counts. `TestPublishSpyDataSource` / `TestPublishSpyPriority`
+> were rewritten because they asserted the buggy behaviour. Ruff F821/F823 clean; workflow
+> YAML parses. Four-seat self-review (data_steward → platform_devops_engineer →
+> senior_backend_engineer → ips_steward). **`/code-review high` was NOT run by the
+> implementing session — run it before merge (§7.0).** No `DRY_RUN main.py` (overwrites run
+> artifacts). **No live-routine sync required.** P3.
 
 ## Changelog — Oct 4 2026 (nine-seat end-to-end review — the stop on rebalance days + the scale-rule measurements)
 
@@ -1024,6 +1098,10 @@ pytest test_pipeline.py -v
 | `TestSECProvider` | `data_providers.py` | EDGAR ratio computation from 10-K; most-recent annual entry; unknown ticker → None; no earnings/estimates; CIK map loaded once; zero-equity guard; HTTP error → None; Protocol conformance |
 | `TestProviderEnrichmentCache` | `market_data.py` | Group determinism (0/1); StubProvider → no-op; fetch on group day + cache; cache served on off-day; 30-day backoff for empty entries |
 | `TestEarningsGateAndFabrication` | `analysis.py` | Phase 3.2: skip LLM when calendar shows no event in 90d; run when event within 90d; no-calendar falls back to prior behavior; fabrication guard overrides model's date guess |
+| `TestBenchmarkCloseStaleFallback` | `publish.py` | The 2026-10-07 regression: stale Polygon + a today-dated snapshot whose latest bar is the prior session → NULL at the close, never the D−1 close (fails on the pre-fix code) |
+| `TestBenchmarkCloseDatedSources` / `TestPublishSpyDataSource` / `TestPublishSpyPriority` | `publish.py` | Dated-bar sources: bar dated D accepted (Polygon or snapshot); undated `prices` never used; intraday-fetched bar not trusted; SPY/QQQ all-or-nothing; morning publish unchanged; a late re-publish never puts a newer close on an older row |
+| `TestBenchmarkReconcile` | `publish.py` | Self-heal: lagged + NULL rows corrected, correct/holiday/inception rows untouched, cumulative = the live function's value, `close_value` untouched, UPDATE of benchmark columns only, bounded window, re-based series refused, a failing repair never fails the publish, `--reconcile-benchmarks` respects `DRY_RUN` |
+| `TestBenchmarkBackfillScript` | `backfill_benchmark_closes.py` | Dry run writes nothing; `--apply` writes exactly the listed rows + evidence file; second run is a no-op; refused under `DRY_RUN`; sessions the two sources disagree on are not used |
 
 ## Manual Execution Runbook
 
