@@ -13,7 +13,76 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed — the S&P 500 and Nasdaq lines on the dashboard were one trading day behind (third time)
+
+Since mid-August the SPY and QQQ figures stored for a given day were the previous
+trading day's closes. Checked on 2026-10-07 against the dated price bars: of the 80 daily
+rows, 43 matched their own day and 37 matched the day before (2026-08-07, 2026-08-10, and
+every row from 2026-08-13 through 2026-10-07). Three of those 37 are market holidays, where
+carrying the last close is correct, so about 34 trading-day rows were wrong, and
+2026-08-11 was blank. Example: the 2026-10-07 row held SPY 779.09 / QQQ 759.66, which are
+the 2026-10-06 closes; the real 2026-10-07 closes were 777.22 / 757.73. The row implied SPY
++0.55% on the day; it was −0.24%. The benchmark curves were shifted one session against
+the portfolio curve.
+
+**Cause (confirmed by a test that fails on the old code).** At the 4 PM publish, the live
+Polygon call was still serving the prior session. The 2026-08-05 fix correctly rejected
+that as stale, and then the code fell back to the morning's market snapshot, which only
+checked that the *file* was dated today and handed back the price inside it: the prior
+session's close. The fallback undid the check. Nothing ever looked at a row again once it
+was written, so each wrong value was permanent.
+
+This is the third occurrence (see the two 2026-07-31 / 2026-08-05 entries below). Both
+earlier fixes checked one source and left another unchecked, so this one changes the rule
+rather than adding a check:
+
+- **`fix(publish)` a benchmark close needs a date.** No source returns a bare price any
+  more. The snapshot is read from its dated history bars (never from the undated
+  `prices` block), Polygon's bar keeps its own date, and a row takes the close for the
+  exact session it should show. A stale source has no bar for that date, so it cannot be
+  mistaken for a fresh one. A snapshot fetched while the market is open is not trusted
+  for that day's own bar.
+- **`fix(publish)` the 4 PM publish writes a blank, not yesterday's number.** If no source
+  has today's bar yet, the four benchmark fields for today are set to NULL and one log
+  line names what each source offered. Before, the morning's provisional value stayed in
+  place and looked like a close.
+- **`feat(publish)` every publish re-checks the previous 14 weekday rows** against dated
+  bars and corrects any that are blank or wrong, recalculating the cumulative return with
+  the same function the live path uses. A blank from the 4 PM publish is filled by the
+  next morning's publish. Holiday rows keep the last close. Anything the repair cannot
+  settle is raised as a warning on the workflow run. `python publish.py
+  --reconcile-benchmarks` runs the repair alone.
+- **SPY and QQQ are set together or not at all,** so the two lines never use different
+  days.
+- **`feat` `backfill_benchmark_closes.py`** — one-time repair of the older rows, using the
+  same planner. Dry run by default; `--apply` writes exactly the rows it lists and leaves
+  an evidence file in `evidence/`. It never changes the inception row (every cumulative
+  return is measured from it) and refuses a correction larger than 10% (that is a
+  re-based price series, not a one-day lag). **Not yet run — owner step, MANUAL_TODO #33.**
+
+**What you will see.** Between about 4:05 PM ET and the next morning's publish, today's
+point is missing from the benchmark lines. Whether to close that gap the same evening is
+an open owner decision (MANUAL_TODO #34).
+
+**What did not change.** `close_value` is still written once and never touched by the
+repair; only the four benchmark fields are. The morning publish writes what it wrote
+before (the prior session's close, which is the latest one that exists at 9:45 AM). No
+trading, sizing, prompt, universe or policy code is touched: this is measurement-only
+under `SCALE_DECISION_RULE.md` §6 and is dated in §7. The scale-rule gates do not read
+these columns.
+
+> **QA:** `pytest test_pipeline.py` — **1144 passed, 1 failed** with the cloud-session env
+> var unset (baseline on `main`: 1112 passed, 1 failed; the one failure,
+> `TestRiskWatchEnvelope::test_envelope_written_with_mode_and_no_week_stamp`, is identical
+> before and after and unrelated). +32 tests net: `TestBenchmarkCloseStaleFallback` (the
+> regression, shown failing on the old code), `TestBenchmarkCloseDatedSources`,
+> `TestBenchmarkReconcile`, `TestBenchmarkBackfillScript`. `TestPublishSpyDataSource` and
+> `TestPublishSpyPriority` were rewritten: they asserted the buggy behaviour (a file dated
+> today yields its undated price). Ruff F821/F823 clean; workflow YAML parses. Reviewed
+> from four seats (data_steward, platform_devops_engineer, senior_backend_engineer,
+> ips_steward) by the implementing session. **The formal `/code-review high` gate was not
+> run** — run it before merge. No `DRY_RUN main.py` (it overwrites run artifacts). No
+> live-routine sync needed.
 
 ## [2026-10-05] — Oct 4 review (PR #48) · ~20:44 PT · 7f70fb2
 

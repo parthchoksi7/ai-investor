@@ -205,6 +205,35 @@ The measurement is only valid if the thing being measured stops changing:
 
 ## 7. Decisions taken
 
+### Bug fix that does not alter decisions — 2026-10-07: published benchmark closes are dated
+
+**No threshold in this document changed, and nothing that decides a trade changed.**
+Logged per §6 ("Bug fixes that do not alter decisions are allowed and must be dated in
+this section").
+
+**Fact for the record: the frozen window opened with rebalance `20261007-144809`,
+executed 2026-10-07** (`last_rebalance.json`, ISO week 2026-W41). The freeze commitment
+in the 2026-10-03 entry below runs from that rebalance.
+
+**The fix.** `publish.py` wrote the prior session's SPY and QQQ closes onto the dashboard
+row for each day (about 34 trading-day rows, 2026-08-07 through 2026-10-07; third
+occurrence). A benchmark close now has to carry the date of the bar it came from; the
+4 PM publish writes NULL rather than a prior-session close; every publish re-checks the
+previous 14 weekday rows; and `backfill_benchmark_closes.py` repairs the older rows once.
+
+**Why it does not alter decisions.** The change is confined to `publish.py`'s Supabase
+write, a new backfill script, tests and documents. It touches only four columns of the
+dashboard table `portfolio_snapshots` (`spy_close`, `qqq_close` and their cumulative
+returns). The trading routine runs with `DRY_RUN=true`, under which `publish_to_supabase`
+returns before any of this code runs; the code executes only in the GitHub Actions
+publish job, after the day's decisions are final. No prompt, universe, sizing, policy
+limit or `FORMULA_VERSION` is touched.
+
+**Why it does not touch the evidence.** Gate 1a (`quant_ic_report.json`), Gate 1b
+(`counterfactual.json`, `agent_scorecards.json`) and Gate 2 (`performance.py`) are
+computed from the repo's ledgers and the market snapshot's dated price history. None of
+them reads these Supabase columns. Every gate's clock continues uninterrupted.
+
 ### Restart — 2026-10-03: the first window was contaminated; one restart, then a real freeze
 
 **No threshold in this document changed.** What changed is the system being measured,
