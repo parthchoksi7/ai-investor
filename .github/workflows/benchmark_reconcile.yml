@@ -1,0 +1,47 @@
+name: Benchmark close reconcile (evening)
+
+# Since the 2026-10-07 fix, the 4 PM publish writes NULL for today's SPY/QQQ close
+# when no source has today's dated bar yet (Polygon's free tier is usually still
+# serving the prior session at ~16:05 ET). The next morning's publish fills it —
+# but the website's headline "vs SPY / vs QQQ" reads the LATEST row only
+# (parth-choksi lib/performance.ts), so without this run that comparison is blank
+# from 4 PM until the next morning, and all weekend after a Friday close.
+#
+# This runs the repair on its own once each trading evening. It writes ONLY the four
+# benchmark columns of rows that already exist (publish.reconcile_benchmark_closes);
+# it never upserts a snapshot, never touches close_value, and places no orders.
+# If Polygon still has no bar for today, it changes nothing and the morning publish
+# covers it as before. Idempotent — safe to re-run or dispatch by hand.
+on:
+  schedule:
+    # 7:00 PM EDT (23:00 UTC) weekdays. A DST shift to 6 PM EST is harmless (still
+    # after the 4 PM close), so this cron is intentionally NOT in update_dst.yml.
+    # 23:00 UTC keeps the UTC weekday equal to the ET weekday.
+    - cron: '0 23 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Reconcile benchmark closes
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+        run: python publish.py --reconcile-benchmarks

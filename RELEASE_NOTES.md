@@ -13,6 +13,12 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
+_Nothing unreleased._
+
+---
+
+## [2026-10-08] — benchmark closes are dated; evening repair run (PR #49) · ~06:45 PT · 4375726, ec78ae2 + review commit
+
 ### Fixed — the S&P 500 and Nasdaq lines on the dashboard were one trading day behind (third time)
 
 Since mid-August the SPY and QQQ figures stored for a given day were the previous
@@ -60,9 +66,15 @@ rather than adding a check:
   return is measured from it) and refuses a correction larger than 10% (that is a
   re-based price series, not a one-day lag). **Not yet run — owner step, MANUAL_TODO #33.**
 
-**What you will see.** Between about 4:05 PM ET and the next morning's publish, today's
-point is missing from the benchmark lines. Whether to close that gap the same evening is
-an open owner decision (MANUAL_TODO #34).
+**What you will see.** From about 4:05 PM ET, today's point is missing from the benchmark
+lines until a repair run can see today's dated bar. A new evening job
+(`.github/workflows/benchmark_reconcile.yml`, 7 PM ET on weekdays) runs the repair on its
+own for that purpose; if Polygon still has no bar by then, the next morning's publish
+fills it. The evening job was added in pre-merge review (2026-10-08): the website's
+headline "vs SPY / vs QQQ" reads only the newest row, so without it that comparison would
+be blank every evening and all weekend. It writes only the four benchmark fields of rows
+that already exist. Whether Polygon's free tier has the bar by 7 PM ET is not yet
+verified — the first evening run will show it (MANUAL_TODO #34).
 
 **What did not change.** `close_value` is still written once and never touched by the
 repair; only the four benchmark fields are. The morning publish writes what it wrote

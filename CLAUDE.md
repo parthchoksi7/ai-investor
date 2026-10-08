@@ -423,9 +423,15 @@ check.
 | `feat(publish)` **self-healing** — every publish runs `reconcile_benchmark_closes`: the previous 14 weekday rows are compared with dated bars; a NULL or lagged close is corrected and its cumulative return recomputed through `_benchmark_cumulative_pct` (the one formula the live path uses). UPDATE of the four benchmark columns only — `close_value` is structurally out of reach. Never modifies the inception row; refuses a correction over 10% (`MAX_RECONCILE_MOVE` — a re-based series, not a lag); unresolved rows raise a `::warning::` on the workflow run. `python publish.py --reconcile-benchmarks` runs it alone (respects `DRY_RUN`) | "Nothing ever re-checks a written row" is why two hand backfills decayed. A row is now right by the next morning's publish at the latest; holiday rows keep the as-of close |
 | `feat` **`backfill_benchmark_closes.py`** — one-time repair of every older row with the same planner. Dry run by default; `--apply` writes exactly the listed rows; evidence file in `evidence/`; cross-checks snapshot bars against Polygon when a key is set and drops any session they disagree on; idempotent | The per-publish repair is bounded to the trailing window by design. **Owner runs it (MANUAL_TODO #33) — it was not run by the implementing session** |
 
-> **What the dashboard shows now:** today's SPY/QQQ point is absent from ~16:05 ET until the
-> next morning's publish fills it. Closing that gap the same evening is an **open owner
-> decision** (MANUAL_TODO #34) — the entry point exists; no workflow was changed.
+> **What the dashboard shows now:** today's SPY/QQQ point is absent from ~16:05 ET until a
+> repair can see today's dated bar. **`benchmark_reconcile.yml`** (added in pre-merge review,
+> 2026-10-08) runs `python publish.py --reconcile-benchmarks` at 7 PM ET on weekdays for
+> that; if Polygon has no bar yet, the next morning's publish fills it. Why it was added
+> rather than left as an owner decision: the website's headline "vs SPY / vs QQQ"
+> (`parth-choksi` `lib/performance.ts`) reads only the LATEST row, so a NULL there blanks the
+> comparison every evening and all weekend. The chart itself tolerates NULLs
+> (`connectNulls`). Whether the free tier has the bar by 7 PM ET is unverified until the
+> first run (MANUAL_TODO #34).
 >
 > **Morning (non-close) publish:** unchanged in a healthy run — row D gets session D−1's
 > close, the latest that exists. Two differences exist only in degraded runs: a snapshot

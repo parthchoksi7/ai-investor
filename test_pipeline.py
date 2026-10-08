@@ -14138,3 +14138,56 @@ class TestFocusedReviewOct4:
               {"ticker": "X", "action": "BUY", "date": "2026-10-02", "dry_run": False,
                "source_of_capital": "cash_deployment"}]
         assert _last_discretionary_buy_date("X", tx) == "2026-09-01"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2026-10-08 pre-merge review of PR #49 — the evening benchmark repair workflow
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestBenchmarkReconcileWorkflow:
+    """The website's headline "vs SPY / vs QQQ" reads only the newest row, so a
+    close-publish NULL must be repaired the same evening, not only next morning.
+    These pin the workflow to the repair-only entry point and to read-only repo
+    access, so it can never grow into a second publish (or a writer of anything
+    but the four benchmark columns)."""
+
+    PATH = "/".join(__file__.split("/")[:-1] + [".github/workflows/benchmark_reconcile.yml"])
+
+    def _wf(self):
+        import yaml
+        return yaml.safe_load(open(self.PATH))
+
+    def test_runs_only_the_repair_entry_point(self):
+        steps = self._wf()["jobs"]["reconcile"]["steps"]
+        runs = [s["run"] for s in steps if "run" in s]
+        assert "python publish.py --reconcile-benchmarks" in runs
+        assert not any("--close" in r or r.strip() == "python publish.py" for r in runs)
+        assert not any("git push" in r or "git commit" in r for r in runs)
+
+    def test_has_the_three_secrets_and_read_only_repo_access(self):
+        job = self._wf()["jobs"]["reconcile"]
+        step = next(s for s in job["steps"] if s.get("run", "").endswith("--reconcile-benchmarks"))
+        assert set(step["env"]) == {"SUPABASE_URL", "SUPABASE_SERVICE_KEY", "POLYGON_API_KEY"}
+        assert job["permissions"] == {"contents": "read"}
+        assert job["timeout-minutes"] <= 15
+
+    def test_scheduled_after_the_close_on_weekdays_only(self):
+        wf = self._wf()
+        on = wf.get("on", wf.get(True))          # PyYAML reads the bare key `on` as True
+        crons = [c["cron"] for c in on["schedule"]]
+        assert len(crons) == 1                   # one run a day — Actions minutes are budgeted
+        minute, hour, _dom, _mon, dow = crons[0].split()
+        assert dow == "1-5"
+        # 21:00–23:59 UTC is after the 4 PM ET close in both EDT (20:00) and EST (21:00),
+        # and keeps the UTC weekday equal to the ET weekday.
+        assert 21 <= int(hour) <= 23
+        assert "workflow_dispatch" in on
+
+    def test_entry_point_writes_nothing_but_benchmark_columns(self):
+        import inspect, publish
+        src = inspect.getsource(publish.reconcile_benchmarks_main)
+        assert "reconcile_benchmark_closes" in src
+        assert ".upsert(" not in src and "publish_to_supabase(" not in src
+        apply_src = inspect.getsource(publish.apply_benchmark_changes)
+        assert "BENCHMARK_COLUMNS" in apply_src and ".update(" in apply_src
+
