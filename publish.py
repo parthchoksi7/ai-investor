@@ -22,6 +22,8 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
+import market_calendar
+
 load_dotenv()
 
 _ET = ZoneInfo("America/New_York")
@@ -52,6 +54,12 @@ def _sanitize(obj):
     return obj
 
 
+def _now_et() -> datetime:
+    """The current time in US/Eastern. One seam for the benchmark-close logic, so a
+    test can pin the clock to a specific side of the 4 PM close."""
+    return datetime.now(_ET)
+
+
 def _load(path: str, default):
     if os.path.isfile(path):
         with open(path) as f:
@@ -59,58 +67,144 @@ def _load(path: str, default):
     return default
 
 
-def _fetch_benchmark_from_snapshot(ticker: str = "SPY") -> float | None:
-    """Read a benchmark's latest price from market_snapshot.json (committed daily by market_data.yml).
+# ── Benchmark closes are DATED ────────────────────────────────────────────────
+# Third staleness recurrence (found 2026-10-07; ~34 trading-day rows from
+# 2026-08-13 on held the PRIOR session's close). Every earlier fix validated one
+# source and left another unvalidated. The rule now is structural: no source
+# hands back a bare price. Each source yields (session date, close) pairs, and a
+# value reaches a row only by looking up the session that row is supposed to
+# show. A stale source therefore cannot be mistaken for a fresh one — it simply
+# has no bar for the date asked.
+BENCHMARK_TICKERS = ("SPY", "QQQ")
 
-    Fallback only, used when a live Polygon call is unavailable. The snapshot is
-    fetched pre-market (7-8:30 AM ET) and never refreshed later in the day, so by
-    itself it can never reflect an actual close — a live Polygon "prev" call made
-    AT publish time (morning or 4 PM) is always at least as fresh and, after the
-    close, strictly fresher. Found live: every EOD publish from ~2026-07-06 to
-    2026-07-30 stamped the PRIOR day's close as "today's" spy_close because this
-    was tried first and always "succeeded" (fresh file, stale price inside it).
+# Trailing portfolio_snapshots rows re-checked on every publish. One row exists
+# per weekday and the newest (today's) is written by the publish itself, so 15
+# rows re-checks the 14 weekdays before today — at least 10 trading days even
+# when the window spans holidays.
+RECONCILE_LOOKBACK_ROWS = 15
 
-    Returns None if the file is missing, stale (not dated today), or the ticker
-    is absent. `fetch_snapshot.py` requests benchmarks=("SPY", "QQQ"), so both
-    the S&P 500 and Nasdaq 100 proxies are present in a healthy snapshot.
+# A stored close is "the same" as a dated bar within half a cent (the column is
+# rounded to 4 dp; this is the tolerance backfill_qqq.py already uses).
+CLOSE_TOLERANCE = 0.005
+
+# A lagged close is wrong by one session's move. If a stored close and the dated
+# bar for its session differ by more than this fraction, the cause is not
+# staleness — it is a re-based series (a split re-adjusts every historical bar
+# while the stored inception close stays put) or bad data. The repair refuses
+# those rows and reports them rather than rewriting history onto a new basis.
+MAX_RECONCILE_MOVE = 0.10
+
+
+def _bar_session_date(epoch_ms) -> date:
+    """Session date (ET) of a Polygon daily bar's epoch-ms timestamp.
+
+    Polygon stamps a daily bar at midnight ET of its session (04:00 UTC in EDT,
+    05:00 UTC in EST); the same call also maps a 16:00 ET stamp to the right day.
+    """
+    return datetime.fromtimestamp(float(epoch_ms) / 1000, tz=timezone.utc).astimezone(_ET).date()
+
+
+def _iso_date(d) -> date:
+    return d if isinstance(d, date) and not isinstance(d, datetime) \
+        else date.fromisoformat(str(d)[:10])
+
+
+def _snapshot_complete_through(snap: dict) -> date | None:
+    """Newest session whose close was final when `snap` was fetched.
+
+    A bar is only a CLOSE if its session had ended when the file was fetched. A
+    fetch made while the market is open can carry a partial bar for that day
+    (Polygon's free tier does not serve one today; a delayed-data tier would),
+    so bars newer than this are refused. Prefers the precise `fetched_at`; falls
+    back to the file's `date` taken as midnight ET (so the fetch day's own bar is
+    never trusted). Neither stamp → None: nothing can be proven complete.
+    """
+    fetched_at = snap.get("fetched_at")
+    if fetched_at:
+        try:
+            ts = datetime.fromisoformat(str(fetched_at).replace("Z", "+00:00"))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            return market_calendar.most_recent_complete_trading_day(ts.astimezone(_ET))
+        except ValueError:
+            pass
+    file_date = snap.get("date")
+    if file_date:
+        try:
+            return market_calendar.previous_trading_day(str(file_date)[:10])
+        except ValueError:
+            pass
+    return None
+
+
+def _snapshot_benchmark_bars(ticker: str, snap: dict | None = None) -> dict[date, float]:
+    """{session date: close} for `ticker` from market_snapshot.json's dated history.
+
+    Reads `history[ticker]` — each bar carries its own epoch-ms session stamp —
+    and never `prices[ticker].close`, which has no date of its own: it sits under
+    the file's FETCH date while holding the prior session's close. That mismatch
+    is the 2026-08-13 → 2026-10-07 bug. Returns {} on any problem.
     """
     try:
-        snap = _load("market_snapshot.json", {})
-        snap_date = snap.get("date", "")
-        today = datetime.now(_ET).strftime("%Y-%m-%d")
-        if snap_date != today:
-            return None
-        bar = snap.get("prices", {}).get(ticker, {})
-        close = float(bar.get("close", 0))
-        return close if close > 0 else None
+        if snap is None:
+            snap = _load("market_snapshot.json", {})
+        if not isinstance(snap, dict):
+            return {}
+        through = _snapshot_complete_through(snap)
+        if through is None:
+            return {}
+        out: dict[date, float] = {}
+        for bar in (snap.get("history") or {}).get(ticker) or []:
+            try:
+                stamp = bar.get("date", bar.get("t"))
+                close = float(bar.get("close", bar.get("c")))
+                if stamp is None or not math.isfinite(close) or close <= 0:
+                    continue
+                session = _bar_session_date(stamp)
+            except (TypeError, ValueError, AttributeError):
+                continue
+            if session <= through:
+                out[session] = close
+        return out
     except Exception:
-        return None
+        return {}
 
 
-def _fetch_benchmark_prev_close(ticker: str, polygon_key: str, max_retries: int = 3,
-                                retry_delay: float = 20.0) -> float | None:
-    """Fetch a benchmark's most recently completed session close from Polygon.
+def _fetch_benchmark_from_snapshot(ticker: str = "SPY", expected: date | None = None) -> float | None:
+    """`ticker`'s close for session `expected`, from market_snapshot.json's dated bars.
 
-    Found live: 2026-07-31 through 2026-08-05 published one trading day stale
-    despite the 07-31 "call live Polygon first" fix (34775c4). Root cause: that
-    fix never validated WHAT the live call returned — Polygon's "prev" endpoint
-    can lag its own session's finalization by several minutes right at the
-    close, so a call made at the EOD routine's exact 4:00:00 PM ET firing time
-    can still return YESTERDAY's close even though "prev" is supposed to mean
-    TODAY's close from that instant on. A late, stale-but-200-OK response was
-    indistinguishable from a fresh one, so it was accepted and permanently
-    written — nothing ever re-checked or corrected that date's row afterward.
-    Now the returned bar's own date is validated against
-    market_calendar.most_recent_complete_trading_day(); a stale bar is retried
-    with a bounded backoff (Polygon typically finalizes within ~1 minute of
-    close) rather than accepted. If it's still stale after all retries, this
-    returns None so the caller falls through to the snapshot fallback (or, if
-    that's stale too, leaves the row's <ticker>_close untouched this run) instead
-    of writing a value already known to be wrong.
+    `expected` defaults to market_calendar.most_recent_complete_trading_day().
+    Returns None unless the snapshot holds a bar dated exactly that session.
+
+    History: this used to check only that the snapshot FILE was dated today and
+    return `prices[ticker].close`. The file is fetched pre-market, so that price
+    is always the prior session's — correct for a morning publish, wrong after
+    the close. It was tried first until 2026-07-31 (every EOD row from ~07-06 was
+    a day stale), then demoted to a fallback — where, from 2026-08-13 on, it
+    silently caught every EOD publish whose Polygon `/prev` bar had been
+    correctly rejected as stale, and wrote the prior close anyway.
     """
-    from market_calendar import most_recent_complete_trading_day
-    expected = most_recent_complete_trading_day()
+    if expected is None:
+        expected = market_calendar.most_recent_complete_trading_day()
+    return _snapshot_benchmark_bars(ticker).get(expected)
+
+
+def _fetch_benchmark_prev_bar(ticker: str, polygon_key: str, expected: date | None = None,
+                              max_retries: int = 3,
+                              retry_delay: float = 20.0) -> tuple[date, float] | None:
+    """Polygon's `/prev` bar for `ticker` as (session date, close), or None.
+
+    Retries (bounded) while the bar is older than `expected` — Polygon can lag a
+    session's finalization — and returns the newest bar it saw EITHER WAY, with
+    its real date attached. A bar older than `expected` is not an error here: it
+    is a correctly-dated bar for an earlier session, and the caller decides
+    which row, if any, it belongs to. `expected` defaults to
+    market_calendar.most_recent_complete_trading_day().
+    """
+    if expected is None:
+        expected = market_calendar.most_recent_complete_trading_day()
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/prev?adjusted=true&apiKey={polygon_key}"
+    newest: tuple[date, float] | None = None
     for attempt in range(max_retries):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "ai-investor/1.0"})
@@ -121,15 +215,111 @@ def _fetch_benchmark_prev_close(ticker: str, polygon_key: str, max_retries: int 
                 bar = results[0]
                 close = float(bar.get("c", 0))
                 bar_ms = bar.get("t")
-                if close > 0 and bar_ms is not None:
-                    bar_date = datetime.fromtimestamp(bar_ms / 1000, tz=timezone.utc).astimezone(_ET).date()
+                if math.isfinite(close) and close > 0 and bar_ms is not None:
+                    bar_date = _bar_session_date(bar_ms)
+                    if newest is None or bar_date >= newest[0]:
+                        newest = (bar_date, close)
                     if bar_date >= expected:
-                        return close
+                        return newest
         except Exception:
             pass
         if attempt < max_retries - 1:
             time.sleep(retry_delay)
-    return None
+    return newest
+
+
+def _fetch_benchmark_prev_close(ticker: str, polygon_key: str, max_retries: int = 3,
+                                retry_delay: float = 20.0) -> float | None:
+    """Fetch a benchmark's most recently completed session close from Polygon.
+
+    Found live: 2026-07-31 through 2026-08-05 published one trading day stale
+    despite the 07-31 "call live Polygon first" fix (34775c4). Root cause: that
+    fix never validated WHAT the live call returned — Polygon's "prev" endpoint
+    can lag its own session's finalization, so a call made right after the close
+    can still return YESTERDAY's close. A late, stale-but-200-OK response was
+    indistinguishable from a fresh one, so it was accepted and permanently
+    written. The returned bar's own date is validated against
+    market_calendar.most_recent_complete_trading_day(); a stale bar is retried
+    with a bounded backoff rather than accepted, and if it is still stale this
+    returns None.
+
+    Kept as the validated single-value form of `_fetch_benchmark_prev_bar`. The
+    publish path uses the dated form directly (see `_collect_benchmark_bars`).
+    """
+    expected = market_calendar.most_recent_complete_trading_day()
+    bar = _fetch_benchmark_prev_bar(ticker, polygon_key, expected=expected,
+                                    max_retries=max_retries, retry_delay=retry_delay)
+    if bar is None or bar[0] < expected:
+        return None
+    return bar[1]
+
+
+def _collect_benchmark_bars(polygon_key: str | None) -> tuple[dict, dict]:
+    """Every dated benchmark bar this run can see, plus where each source stands.
+
+    Returns (bars, provenance):
+      bars[ticker]       = {session date: close}  — snapshot history, overlaid with
+                           Polygon's `/prev` bar (the only source that can hold a
+                           session newer than the pre-market snapshot)
+      provenance[ticker] = {"polygon_prev": date | None, "snapshot_latest": date | None}
+                           — the newest session each source offered, for the log
+                           line when a row cannot be filled.
+    No new Polygon calls versus before: still one `/prev` per ticker.
+    """
+    bars: dict[str, dict[date, float]] = {}
+    provenance: dict[str, dict] = {}
+    newest_complete = market_calendar.most_recent_complete_trading_day(_now_et())
+    for ticker in BENCHMARK_TICKERS:
+        by_date = _snapshot_benchmark_bars(ticker)
+        prov = {"polygon_prev": None, "snapshot_latest": max(by_date) if by_date else None}
+        if polygon_key:
+            prev = _fetch_benchmark_prev_bar(ticker, polygon_key, expected=newest_complete)
+            if prev is not None:
+                by_date[prev[0]] = prev[1]
+                prov["polygon_prev"] = prev[0]
+        bars[ticker] = by_date
+        provenance[ticker] = prov
+    return bars, provenance
+
+
+def _expected_session(row_date, now_et: datetime | None = None) -> date:
+    """The session a row dated `row_date` must show: the most recent COMPLETED
+    session on or before that date.
+
+      trading day, before its 4 PM close  → the prior session (provisional as-of)
+      trading day, at/after its close     → that day
+      weekend / holiday                   → the last session before it
+      a past date                         → that day's own session (or the last one
+                                            before it), never a later one — a late
+                                            re-publish must not put a newer close on
+                                            an older row
+    """
+    d = _iso_date(row_date)
+    as_of = d if market_calendar.is_trading_day(d) else market_calendar.previous_trading_day(d)
+    complete = market_calendar.most_recent_complete_trading_day(now_et or _now_et())
+    return min(as_of, complete)
+
+
+def _resolve_benchmark_closes(bars: dict, session: date) -> dict[str, float] | None:
+    """{ticker: close} for `session`, or None unless EVERY benchmark has a bar dated
+    exactly `session`. All-or-nothing keeps SPY and QQQ on one as-of date: the
+    dashboard never measures the portfolio against two different sessions."""
+    out = {}
+    for ticker in BENCHMARK_TICKERS:
+        close = (bars.get(ticker) or {}).get(session)
+        if close is None:
+            return None
+        out[ticker] = close
+    return out
+
+
+def _describe_stale_sources(provenance: dict, session: date) -> str:
+    parts = []
+    for ticker in BENCHMARK_TICKERS:
+        prov = provenance.get(ticker) or {}
+        parts.append(f"{ticker}: polygon prev={prov.get('polygon_prev') or 'none'}, "
+                     f"snapshot latest={prov.get('snapshot_latest') or 'none'}")
+    return f"no bar dated {session} for both benchmarks ({'; '.join(parts)})"
 
 
 # A4 — benchmark total-return gross-up. The portfolio curve is dividend-inclusive
@@ -149,49 +339,265 @@ QQQ_DIVIDEND_YIELD = 0.0045
 BENCHMARK_DIVIDEND_YIELD = {"SPY": SPY_DIVIDEND_YIELD, "QQQ": QQQ_DIVIDEND_YIELD}
 
 
+def _benchmark_inception(supabase_client, ticker: str) -> tuple[str, float] | None:
+    """(row date, close) of `ticker`'s inception row — the first portfolio_snapshots
+    row with a non-null <ticker>_close — or None when no row has one yet.
+
+    Resolved per-benchmark. SPY and QQQ share the same inception date today (both
+    backfilled from 2026-06-08), but keying off each column's own first non-null
+    row means a benchmark added later still baselines correctly instead of
+    silently inheriting SPY's start date. Raises on a query error.
+    """
+    col = f"{ticker.lower()}_close"
+    resp = (
+        supabase_client.table("portfolio_snapshots")
+        .select(f"{col}, date")
+        .not_.is_(col, "null")
+        .order("date", desc=False)
+        .limit(1)
+        .execute()
+    )
+    rows = resp.data or []
+    if not rows:
+        return None
+    return str(rows[0].get("date"))[:10], float(rows[0][col])
+
+
+def _benchmark_cumulative_pct(ticker: str, close: float | None, inception_close: float,
+                              inception_date, as_of) -> float | None:
+    """Benchmark cumulative TOTAL return (%) at `as_of`: price return from
+    `inception_close` to `close`, plus the dividend gross-up for the calendar
+    days elapsed since `inception_date`. THE formula — the live publish, the
+    trailing reconcile and the one-time backfill all go through this function,
+    so a recomputed row can never disagree with a freshly published one.
+    """
+    if close is None or inception_close is None or inception_close <= 0:
+        return None
+    div_yield = BENCHMARK_DIVIDEND_YIELD.get(ticker.upper(), 0.0)
+    price_ret = (close - inception_close) / inception_close
+    # Dividend gross-up by days since inception (total-return basis).
+    try:
+        d0 = date.fromisoformat(str(inception_date)[:10])
+        d1 = date.fromisoformat(str(as_of)[:10]) if as_of else datetime.now(_ET).date()
+        div = div_yield * max(0, (d1 - d0).days) / 365.0
+    except (ValueError, TypeError):
+        div = 0.0
+    return round((price_ret + div) * 100, 4)
+
+
 def _get_benchmark_cumulative(supabase_client, ticker: str, close: float | None,
                               today: str | None = None) -> float | None:
     """Benchmark cumulative TOTAL return (%) vs inception (first row with a
     non-null <ticker>_close). Price return from closes + a dividend gross-up by
-    days elapsed.
-
-    NOTE the inception row is resolved per-benchmark. SPY and QQQ share the same
-    inception date today (both backfilled from 2026-06-08), but keying off each
-    column's own first non-null row means a benchmark added later still baselines
-    correctly instead of silently inheriting SPY's start date.
+    days elapsed. See `_benchmark_inception` / `_benchmark_cumulative_pct`.
     """
     if close is None:
         return None
-    col = f"{ticker.lower()}_close"
-    div_yield = BENCHMARK_DIVIDEND_YIELD.get(ticker.upper(), 0.0)
     try:
-        resp = (
-            supabase_client.table("portfolio_snapshots")
-            .select(f"{col}, date")
-            .not_.is_(col, "null")
-            .order("date", desc=False)
-            .limit(1)
-            .execute()
-        )
-        rows = resp.data or []
-        if not rows:
+        inception = _benchmark_inception(supabase_client, ticker)
+        if inception is None:
             return 0.0  # first snapshot with this benchmark's data — baseline = 0%
-        inception = float(rows[0][col])
-        if inception <= 0:
-            return None
-        price_ret = (close - inception) / inception
-        # Dividend gross-up by days since inception (total-return basis).
-        div = 0.0
-        try:
-            from datetime import date as _date
-            d0 = _date.fromisoformat(str(rows[0].get("date"))[:10])
-            d1 = _date.fromisoformat(str(today)[:10]) if today else datetime.now(_ET).date()
-            div = div_yield * max(0, (d1 - d0).days) / 365.0
-        except (ValueError, TypeError):
-            div = 0.0
-        return round((price_ret + div) * 100, 4)
+        return _benchmark_cumulative_pct(ticker, close, inception[1], inception[0], today)
     except Exception:
         return None
+
+
+# ── Self-healing: re-check rows already written ───────────────────────────────
+# The first two staleness incidents were each repaired by hand and each came
+# back, because a row was written once and never looked at again. Now every
+# publish re-derives what the trailing rows SHOULD hold from dated bars and
+# corrects any that differ, so a wrong or NULL close lasts until the next
+# publish that can see that session's bar — normally the next morning's.
+
+BENCHMARK_COLUMNS = tuple(
+    c for t in BENCHMARK_TICKERS
+    for c in (f"{t.lower()}_close", f"{t.lower()}_cumulative_return_pct")
+)
+
+
+def plan_benchmark_reconcile(rows: list[dict], bars: dict, inceptions: dict,
+                             now_et: datetime | None = None,
+                             exclude_dates: tuple = ()) -> dict:
+    """Pure planner: which rows' benchmark columns are wrong, and what they should be.
+
+    rows        portfolio_snapshots rows (need `date` + the four benchmark columns)
+    bars        {ticker: {session date: close}}       (see _collect_benchmark_bars)
+    inceptions  {ticker: (inception row date, inception close)}
+
+    Returns {"changes": [...], "unverifiable": [...], "inception_notes": [...],
+    "implausible": [...]}.
+    A change is {"date", "session", "old": {col: v}, "new": {col: v}} and carries
+    ONLY benchmark columns — never close_value or anything else.
+
+    Rules:
+      • A row is checked against the bar for `_expected_session(row date)`, so a
+        holiday/weekend row keeps the as-of (last completed session) close.
+      • SPY and QQQ must BOTH have a bar for that session or the row is left
+        alone and listed as unverifiable — never half-corrected.
+      • A close is changed when it is NULL or differs from the bar by more than
+        CLOSE_TOLERANCE; its cumulative return is recomputed with it. A row whose
+        close already matches is not touched, whatever its cumulative says.
+      • A non-NULL close that differs from its bar by more than MAX_RECONCILE_MOVE
+        is not a one-session lag; it is refused and listed as implausible.
+      • The inception row, and anything dated before it, is never modified: every
+        cumulative return is measured from that row, so changing it would silently
+        rebase the whole curve. A mismatch there is reported for the owner instead.
+    """
+    changes, unverifiable, inception_notes, implausible = [], [], [], []
+    excluded = {str(d)[:10] for d in exclude_dates}
+    for row in sorted(rows, key=lambda r: str(r.get("date"))):
+        row_date = str(row.get("date"))[:10]
+        if row_date in excluded:
+            continue
+        try:
+            session = _expected_session(row_date, now_et)
+        except ValueError:
+            continue
+        closes = _resolve_benchmark_closes(bars, session)
+        if closes is None:
+            unverifiable.append({"date": row_date, "session": session.isoformat()})
+            continue
+        old, new = {}, {}
+        for ticker in BENCHMARK_TICKERS:
+            close_col = f"{ticker.lower()}_close"
+            cum_col = f"{ticker.lower()}_cumulative_return_pct"
+            stored = row.get(close_col)
+            matches = stored is not None and abs(float(stored) - closes[ticker]) <= CLOSE_TOLERANCE
+            inception = inceptions.get(ticker)
+            if inception is None:
+                continue
+            if row_date <= inception[0]:
+                if row_date == inception[0] and not matches:
+                    inception_notes.append({
+                        "date": row_date, "ticker": ticker, "session": session.isoformat(),
+                        "stored_close": stored, "bar_close": round(closes[ticker], 4),
+                        "note": "inception row differs from its dated bar — NOT changed "
+                                "(it is the baseline of every cumulative return)",
+                    })
+                continue
+            if matches:
+                continue
+            if stored is not None and float(stored) > 0 and \
+                    abs(closes[ticker] / float(stored) - 1.0) > MAX_RECONCILE_MOVE:
+                implausible.append({
+                    "date": row_date, "ticker": ticker, "session": session.isoformat(),
+                    "stored_close": stored, "bar_close": round(closes[ticker], 4),
+                    "note": f"differs by more than {MAX_RECONCILE_MOVE:.0%} — not a "
+                            "one-session lag (re-based series or bad data); NOT changed",
+                })
+                continue
+            old[close_col], old[cum_col] = stored, row.get(cum_col)
+            new[close_col] = round(closes[ticker], 4)
+            new[cum_col] = _benchmark_cumulative_pct(
+                ticker, closes[ticker], inception[1], inception[0], row_date)
+        if new:
+            changes.append({"date": row_date, "session": session.isoformat(),
+                            "old": old, "new": new})
+    return {"changes": changes, "unverifiable": unverifiable,
+            "inception_notes": inception_notes, "implausible": implausible}
+
+
+def apply_benchmark_changes(supabase_client, changes: list[dict]) -> int:
+    """Write planned benchmark corrections. UPDATE by date, not upsert, and only
+    the benchmark columns in each change — so close_value and every other column
+    on the row are structurally out of reach."""
+    written = 0
+    for change in changes:
+        payload = {k: v for k, v in change["new"].items() if k in BENCHMARK_COLUMNS}
+        if not payload:
+            continue
+        (supabase_client.table("portfolio_snapshots")
+         .update(_sanitize(payload)).eq("date", change["date"]).execute())
+        written += 1
+    return written
+
+
+def reconcile_benchmark_closes(supabase_client, bars: dict,
+                               lookback_rows: int | None = RECONCILE_LOOKBACK_ROWS,
+                               now_et: datetime | None = None,
+                               exclude_dates: tuple = (), apply: bool = True) -> dict:
+    """Re-check the trailing `lookback_rows` snapshot rows against dated bars and
+    correct the ones that are wrong (`lookback_rows=None` → every row).
+
+    Returns the plan from `plan_benchmark_reconcile` plus {"written": n}. With
+    `apply=False` nothing is written. Raises on a Supabase error — callers on the
+    publish path wrap it, because a failed repair must never fail a publish.
+    """
+    query = (supabase_client.table("portfolio_snapshots")
+             .select("date, " + ", ".join(BENCHMARK_COLUMNS))
+             .order("date", desc=True))
+    if lookback_rows is not None:
+        query = query.limit(lookback_rows)
+    rows = query.execute().data or []
+    inceptions = {}
+    for ticker in BENCHMARK_TICKERS:
+        inception = _benchmark_inception(supabase_client, ticker)
+        if inception is not None:
+            inceptions[ticker] = inception
+    plan = plan_benchmark_reconcile(rows, bars, inceptions, now_et=now_et,
+                                    exclude_dates=exclude_dates)
+    plan["rows_checked"] = len(rows)
+    plan["written"] = apply_benchmark_changes(supabase_client, plan["changes"]) if apply else 0
+    return plan
+
+
+def _print_reconcile(plan: dict, applied: bool = True) -> None:
+    """Log what the repair did. Anything it could NOT settle is also raised as a
+    GitHub Actions warning annotation: a repair that silently stops working is
+    how the first two fixes for this bug decayed unnoticed."""
+    verb = "corrected" if applied else "would correct"
+    for change in plan["changes"]:
+        bits = []
+        for ticker in BENCHMARK_TICKERS:
+            col = f"{ticker.lower()}_close"
+            if col in change["new"]:
+                bits.append(f"{ticker} {change['old'].get(col)} → {change['new'][col]}")
+        print(f"   🔧 benchmark {verb} {change['date']} (session {change['session']}): "
+              + "; ".join(bits))
+    problems = []
+    for note in plan["inception_notes"]:
+        problems.append(f"inception row {note['date']} {note['ticker']}: stored "
+                        f"{note['stored_close']} vs bar {note['bar_close']} — not changed")
+    for note in plan.get("implausible", []):
+        problems.append(f"{note['date']} {note['ticker']}: stored {note['stored_close']} vs "
+                        f"bar {note['bar_close']} — {note['note']}")
+    # A row waiting on the newest session's bar is the normal after-close gap, not
+    # a problem; a row still unverifiable for an OLDER session is.
+    newest = market_calendar.most_recent_complete_trading_day(_now_et()).isoformat()
+    stuck = [u["date"] for u in plan["unverifiable"] if u["session"] < newest]
+    waiting = [u["date"] for u in plan["unverifiable"] if u["session"] >= newest]
+    if stuck:
+        problems.append(f"{len(stuck)} row(s) have no dated bar for both benchmarks and were "
+                        f"left as is: {', '.join(stuck)}")
+    if waiting:
+        print(f"   ⏳ benchmark reconcile: {', '.join(waiting)} waiting on the "
+              f"{newest} bar.")
+    for problem in problems:
+        print(f"   ⚠ benchmark reconcile: {problem}")
+        if os.environ.get("GITHUB_ACTIONS"):
+            print(f"::warning title=Benchmark close reconcile::{problem}")
+
+
+def reconcile_benchmarks_main() -> int:
+    """`python publish.py --reconcile-benchmarks` — the repair on its own, with no
+    snapshot upsert. A callable entry point so a workflow can run it as one step
+    (e.g. an evening run that closes the same-day gap once Polygon has the bar).
+    Touches only the four benchmark columns of rows that already exist."""
+    if os.getenv("DRY_RUN", "false").lower() == "true":
+        print("   DRY_RUN — skipping benchmark reconcile (no Supabase writes).")
+        return 0
+    supabase_url, supabase_key = os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY")
+    if not supabase_url or not supabase_key:
+        print("   Supabase not configured — skipping benchmark reconcile.")
+        return 0
+    from supabase import create_client
+    client = create_client(supabase_url, supabase_key)
+    bars, _ = _collect_benchmark_bars(os.getenv("POLYGON_API_KEY"))
+    plan = reconcile_benchmark_closes(client, bars)
+    _print_reconcile(plan)
+    print(f"   ✅ Benchmark reconcile: {plan['rows_checked']} row(s) checked, "
+          f"{plan['written']} corrected.")
+    return 0
 
 
 def _publish_quant_scores(client, quant_scores: dict, today: str) -> None:
@@ -335,27 +741,13 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     drawdown  = max(0.0, (peak - total_value) / peak * 100) if peak > 0 else 0.0
 
     # ── Benchmarks: SPY (S&P 500) + QQQ (Nasdaq 100) ───────────────────────────
-    # Prefer a LIVE Polygon "prev" call over market_snapshot.json. "prev" means
-    # "the most recently completed session relative to right now" — called
-    # pre-market that's correctly yesterday's close (matches what the snapshot
-    # would say anyway), but called after the 4 PM close it correctly flips to
-    # TODAY's close, which the pre-market-only snapshot structurally can never
-    # have (found live: the old snapshot-first order stamped every EOD publish
-    # from ~7/6-7/30 with the PRIOR day's close). Snapshot is the fallback only,
-    # for when Polygon itself is unreachable (e.g. no key, or a transient error).
-    #
-    # QQQ is fetched the same way and on the same schedule as SPY so the two
-    # benchmark curves stay aligned to each other: if one is a session stale the
-    # other is too, and the dashboard never shows the portfolio measured against
-    # two different as-of dates.
+    # Gather every DATED bar this run can see: the snapshot's history (through the
+    # prior session on a normal pre-market fetch) plus Polygon's live "prev" bar
+    # (the only source that can hold today's close after 4 PM). Nothing here is a
+    # bare price — the row's close is looked up by session date further down, once
+    # the row's date is known, so a stale source cannot pass for a fresh one.
     polygon_key = os.getenv("POLYGON_API_KEY")
-
-    def _benchmark_close(ticker: str) -> float | None:
-        close = _fetch_benchmark_prev_close(ticker, polygon_key) if polygon_key else None
-        return close if close is not None else _fetch_benchmark_from_snapshot(ticker)
-
-    spy_close = _benchmark_close("SPY")
-    qqq_close = _benchmark_close("QQQ")
+    benchmark_bars, benchmark_provenance = _collect_benchmark_bars(polygon_key)
 
     # ── Upsert portfolio snapshot ──────────────────────────────────────────────
     # When GitHub Actions publishes a snapshot committed after midnight UTC,
@@ -365,7 +757,17 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     if snapshot_written_at and os.environ.get("GITHUB_ACTIONS"):
         today = snapshot_written_at[:10]
     else:
-        today = datetime.now(_ET).strftime("%Y-%m-%d")  # ET matches the rest of the pipeline
+        today = _now_et().strftime("%Y-%m-%d")  # ET matches the rest of the pipeline
+    # The session this row must show — the most recent COMPLETED session on or
+    # before the row's date — and both benchmarks' closes for exactly that session.
+    # All-or-nothing: SPY and QQQ always share one as-of date, or neither is set.
+    try:
+        benchmark_session = _expected_session(today)
+    except ValueError:   # an unparseable row date must not break the publish
+        benchmark_session = market_calendar.most_recent_complete_trading_day(_now_et())
+    benchmark_closes = _resolve_benchmark_closes(benchmark_bars, benchmark_session)
+    spy_close = benchmark_closes["SPY"] if benchmark_closes else None
+    qqq_close = benchmark_closes["QQQ"] if benchmark_closes else None
     # Benchmark cumulatives on a TOTAL-return basis (A4) — need `today` for the
     # dividend gross-up, so they are computed after the date is resolved.
     spy_cumulative = _get_benchmark_cumulative(client, "SPY", spy_close, today=today)
@@ -403,14 +805,36 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
         else:
             snapshot_row["close_value"] = round(total_value, 2)
             snapshot_row["close_at"]    = datetime.now(timezone.utc).isoformat()
-    if spy_close is not None:
-        snapshot_row["spy_close"] = round(spy_close, 4)
-    if spy_cumulative is not None:
+    if is_close:
+        # The close publish is the last word on today's row until the next repair,
+        # so it writes all four benchmark columns EXPLICITLY — a value or NULL. With
+        # no bar dated for this session, NULL replaces whatever the morning publish
+        # left there (the prior session's close, correct as-of 9:45 AM and wrong as
+        # a close). NULL is honest; a prior-session close presented as today's is
+        # not. The reconcile below fills it on the next publish that has the bar.
+        snapshot_row["spy_close"] = round(spy_close, 4) if spy_close is not None else None
         snapshot_row["spy_cumulative_return_pct"] = spy_cumulative
-    if qqq_close is not None:
-        snapshot_row["qqq_close"] = round(qqq_close, 4)
-    if qqq_cumulative is not None:
+        snapshot_row["qqq_close"] = round(qqq_close, 4) if qqq_close is not None else None
         snapshot_row["qqq_cumulative_return_pct"] = qqq_cumulative
+        if benchmark_closes is None:
+            print(f"   ⚠ benchmark close for {today}: "
+                  f"{_describe_stale_sources(benchmark_provenance, benchmark_session)} — "
+                  "writing NULL for SPY and QQQ; the next publish reconciles it.")
+    else:
+        # Non-close (morning) publish: unchanged — set what is known, and leave the
+        # columns out of the upsert otherwise so an existing value is not blanked.
+        if spy_close is not None:
+            snapshot_row["spy_close"] = round(spy_close, 4)
+        if spy_cumulative is not None:
+            snapshot_row["spy_cumulative_return_pct"] = spy_cumulative
+        if qqq_close is not None:
+            snapshot_row["qqq_close"] = round(qqq_close, 4)
+        if qqq_cumulative is not None:
+            snapshot_row["qqq_cumulative_return_pct"] = qqq_cumulative
+        if benchmark_closes is None:
+            print(f"   ⚠ benchmark close for {today}: "
+                  f"{_describe_stale_sources(benchmark_provenance, benchmark_session)} — "
+                  "benchmark columns left as they are.")
 
     # A4: net exposure (point-in-time) + realized beta (trailing, best-effort).
     # net_exposure is exact from this snapshot; realized_beta needs a return
@@ -466,6 +890,15 @@ def publish_to_supabase(portfolio: dict | None = None, quant_scores: dict | None
     print(f"   📊 Snapshot published: value=${total_value:,.2f} return={cumulative_return:+.2f}%"
           + (f" spy={spy_cumulative:+.2f}%" if spy_cumulative is not None else "")
           + (f" qqq={qqq_cumulative:+.2f}%" if qqq_cumulative is not None else ""))
+
+    # ── Self-heal earlier rows' benchmark closes ──────────────────────────────
+    # Today's row was just written above from the same dated bars, so it is
+    # excluded here. A failed repair is logged and never fails the publish.
+    try:
+        _print_reconcile(reconcile_benchmark_closes(client, benchmark_bars,
+                                                    exclude_dates=(today,)))
+    except Exception as e:
+        print(f"   ⚠ benchmark reconcile skipped: {str(e)[:160]}")
 
     # ── Upsert positions (atomic: upsert current, then delete stale) ─────────
     # Avoids the delete-all + insert pattern which leaves the table empty if
@@ -565,5 +998,10 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--close", action="store_true", help="Write close_value (4 PM EOD snapshot)")
+    parser.add_argument("--reconcile-benchmarks", action="store_true",
+                        help="Only re-check the trailing rows' SPY/QQQ closes against dated "
+                             "bars and correct them. No snapshot upsert.")
     args = parser.parse_args()
+    if args.reconcile_benchmarks:
+        raise SystemExit(reconcile_benchmarks_main())
     publish_to_supabase(is_close=args.close)

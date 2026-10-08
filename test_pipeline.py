@@ -2019,10 +2019,15 @@ class TestCanaryAuth:
 
 class TestPublishSpyDataSource:
     """
-    publish.py must read SPY price from market_snapshot.json (today's live data)
-    and fall back to Polygon "prev" only when the snapshot is missing or stale.
-    This prevents consecutive snapshots from showing the same SPY value when both
-    run before today's close is available via Polygon's "prev" endpoint.
+    publish._fetch_benchmark_from_snapshot — the snapshot source for a benchmark close.
+
+    UPDATED 2026-10-07 (third benchmark-staleness recurrence). These tests used to
+    assert that a snapshot FILE dated today yields `prices["SPY"].close`. That was
+    the bug: the file's `date` is the FETCH date, while `prices[...]` holds the prior
+    session's close, so the "fresh file" check passed a stale price as today's on
+    every EOD publish from 2026-08-13. The function now answers from the DATED bars
+    in `history` and returns a close only for the exact session asked for, so the
+    fixtures carry `history` and the assertions name a session.
 
     Covers DEPLOYMENT.md §12.2 "New data source / fallback" requirements.
     """
@@ -2030,7 +2035,7 @@ class TestPublishSpyDataSource:
     def _write(self, tmp_path, name, data):
         (tmp_path / name).write_text(json.dumps(data))
 
-    def _read_spy(self, tmp_path):
+    def _read_spy(self, tmp_path, expected=None):
         import importlib, sys, os
         # Reload publish so _load uses tmp_path's cwd
         orig = os.getcwd()
@@ -2039,63 +2044,83 @@ class TestPublishSpyDataSource:
             if "publish" in sys.modules:
                 del sys.modules["publish"]
             from publish import _fetch_benchmark_from_snapshot
-            return _fetch_benchmark_from_snapshot("SPY")
+            return _fetch_benchmark_from_snapshot("SPY", expected)
         finally:
             os.chdir(orig)
             if "publish" in sys.modules:
                 del sys.modules["publish"]
 
-    def _et_today(self):
-        # publish._fetch_benchmark_from_snapshot uses ET; the test's "today" must match
-        # it or the snapshot reads as stale during the ET/PT date-straddle window
-        # (~9pm–midnight Pacific), making this test fail ~3 hours every day.
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-        return datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+    def test_happy_path_reads_the_dated_bar_for_the_expected_session(self, tmp_path):
+        """A bar dated the session asked for is returned (snapshot fetched the next
+        morning, so that session was complete)."""
+        self._write(tmp_path, "market_snapshot.json", _bench_snapshot(
+            "2026-06-11", [("2026-06-09", 731.0), ("2026-06-10", 735.15)],
+            [("2026-06-09", 700.0), ("2026-06-10", 705.0)]))
+        assert self._read_spy(tmp_path, date(2026, 6, 10)) == 735.15
 
-    def test_happy_path_reads_spy_from_snapshot(self, tmp_path):
-        """Returns SPY close from market_snapshot.json when dated today."""
-        today = self._et_today()
+    def test_file_date_alone_never_yields_a_price(self, tmp_path):
+        """The pre-fix shape — file dated the session, `prices` only, no dated bar —
+        must NOT produce a close. A price without a bar date is not evidence."""
         self._write(tmp_path, "market_snapshot.json", {
-            "date": today,
+            "date": "2026-06-11", "fetched_at": "2026-06-11T12:00:00+00:00",
             "prices": {"SPY": {"close": 735.15, "open": 728.0}},
         })
-        result = self._read_spy(tmp_path)
-        assert result == 735.15, f"Expected 735.15, got {result}"
+        assert self._read_spy(tmp_path, date(2026, 6, 11)) is None
+        assert self._read_spy(tmp_path, date(2026, 6, 10)) is None
 
     def test_returns_none_when_snapshot_missing(self, tmp_path):
-        """No market_snapshot.json → returns None so Polygon fallback is used."""
-        result = self._read_spy(tmp_path)
-        assert result is None
+        """No market_snapshot.json → None."""
+        assert self._read_spy(tmp_path, date(2026, 6, 10)) is None
 
-    def test_returns_none_when_snapshot_stale(self, tmp_path):
-        """market_snapshot.json dated yesterday → stale, returns None for fallback."""
-        self._write(tmp_path, "market_snapshot.json", {
-            "date": "2020-01-01",
-            "prices": {"SPY": {"close": 999.0}},
-        })
-        result = self._read_spy(tmp_path)
-        assert result is None, f"Stale snapshot should yield None, got {result}"
+    def test_returns_none_when_no_bar_for_the_expected_session(self, tmp_path):
+        """A stale snapshot is stale because its newest BAR is old — whatever the
+        file's own date says."""
+        self._write(tmp_path, "market_snapshot.json", _bench_snapshot(
+            "2026-06-11", [("2026-06-08", 728.0), ("2026-06-09", 731.0)],
+            [("2026-06-08", 699.0), ("2026-06-09", 700.0)]))
+        assert self._read_spy(tmp_path, date(2026, 6, 10)) is None
+        assert self._read_spy(tmp_path, date(2026, 6, 9)) == 731.0   # the bar it does hold
 
-    def test_returns_none_when_spy_absent_from_prices(self, tmp_path):
-        """Snapshot dated today but SPY not in prices → returns None."""
-        today = self._et_today()
-        self._write(tmp_path, "market_snapshot.json", {
-            "date": today,
-            "prices": {"AAPL": {"close": 200.0}},
-        })
-        result = self._read_spy(tmp_path)
-        assert result is None
+    def test_returns_none_when_spy_absent_from_history(self, tmp_path):
+        """Snapshot holds other tickers but no SPY history → None."""
+        snap = _bench_snapshot("2026-06-11", [("2026-06-10", 735.15)], [("2026-06-10", 705.0)])
+        del snap["history"]["SPY"]
+        self._write(tmp_path, "market_snapshot.json", snap)
+        assert self._read_spy(tmp_path, date(2026, 6, 10)) is None
 
     def test_returns_none_when_spy_close_is_zero(self, tmp_path):
-        """SPY close=0 (bad data) → returns None to trigger fallback."""
-        today = self._et_today()
-        self._write(tmp_path, "market_snapshot.json", {
-            "date": today,
-            "prices": {"SPY": {"close": 0}},
-        })
-        result = self._read_spy(tmp_path)
-        assert result is None
+        """A zero (bad-data) bar is skipped, not returned."""
+        self._write(tmp_path, "market_snapshot.json", _bench_snapshot(
+            "2026-06-11", [("2026-06-10", 0)], [("2026-06-10", 705.0)]))
+        assert self._read_spy(tmp_path, date(2026, 6, 10)) is None
+
+    def test_intraday_fetch_does_not_trust_its_own_days_bar(self, tmp_path):
+        """A snapshot fetched while the market is open could carry a PARTIAL bar for
+        that day. A bar is a close only if its session had ended at fetch time."""
+        bars = [("2026-06-10", 735.15), ("2026-06-11", 736.40)]
+        qqq = [("2026-06-10", 705.0), ("2026-06-11", 706.0)]
+        # fetched 2026-06-11 15:19 ET (19:19 UTC) — before the close
+        self._write(tmp_path, "market_snapshot.json",
+                    _bench_snapshot("2026-06-11", bars, qqq, fetched_at="2026-06-11T19:19:00+00:00"))
+        assert self._read_spy(tmp_path, date(2026, 6, 11)) is None
+        assert self._read_spy(tmp_path, date(2026, 6, 10)) == 735.15
+        # fetched 2026-06-11 17:00 ET (21:00 UTC) — after the close: the bar is final
+        self._write(tmp_path, "market_snapshot.json",
+                    _bench_snapshot("2026-06-11", bars, qqq, fetched_at="2026-06-11T21:00:00+00:00"))
+        assert self._read_spy(tmp_path, date(2026, 6, 11)) == 736.40
+
+    def test_no_fetch_stamp_falls_back_to_the_file_date_conservatively(self, tmp_path):
+        """Without `fetched_at`, the file `date` is read as midnight ET: bars before
+        it are complete, the fetch day's own bar is not provable."""
+        snap = _bench_snapshot("2026-06-11", [("2026-06-10", 735.15), ("2026-06-11", 736.40)],
+                               [("2026-06-10", 705.0), ("2026-06-11", 706.0)])
+        del snap["fetched_at"]
+        self._write(tmp_path, "market_snapshot.json", snap)
+        assert self._read_spy(tmp_path, date(2026, 6, 10)) == 735.15
+        assert self._read_spy(tmp_path, date(2026, 6, 11)) is None
+        del snap["date"]                      # no stamp at all → nothing provable
+        self._write(tmp_path, "market_snapshot.json", snap)
+        assert self._read_spy(tmp_path, date(2026, 6, 10)) is None
 
 
 class TestPublishSpyPriority:
@@ -2103,11 +2128,20 @@ class TestPublishSpyPriority:
     PRIOR trading day's close as spy_close for the current date — the snapshot
     (fetched pre-market, never refreshed) was tried first and always "succeeded"
     with a stale price inside it. A live Polygon "prev" call at actual publish
-    time is always at least as fresh (and after the close, strictly fresher), so
-    it must be tried first with the snapshot as the fallback only."""
+    time is always at least as fresh (and after the close, strictly fresher).
 
-    def _setup(self, tmp_path, monkeypatch, snapshot_spy=None, live_spy=None):
+    UPDATED 2026-10-07: sources are no longer ranked and a bare price is no longer
+    accepted from either. Each source contributes DATED bars and the row takes the
+    bar for its session, so "Polygon wins" now means "Polygon is the source that
+    has the session's bar", and the snapshot fallback only counts when it holds a
+    bar for that session. The fixtures therefore carry dates and both benchmarks
+    (SPY and QQQ are set together or not at all)."""
+
+    def _setup(self, tmp_path, monkeypatch, snapshot_bars=None, live=None):
+        """snapshot_bars / live: {ticker: (iso session, close)}. The clock is pinned
+        to the morning after `prior` so the row's expected session is `prior`."""
         import importlib, publish
+        from market_calendar import previous_trading_day
         importlib.reload(publish)
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
@@ -2115,32 +2149,45 @@ class TestPublishSpyPriority:
         monkeypatch.setenv("POLYGON_API_KEY", "fake-polygon-key")
         monkeypatch.delenv("DRY_RUN", raising=False)
         monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
-        if snapshot_spy is not None:
-            from datetime import datetime
-            from zoneinfo import ZoneInfo
-            today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
-            (tmp_path / "market_snapshot.json").write_text(json.dumps(
-                {"date": today, "prices": {"SPY": {"close": snapshot_spy}}}))
-        monkeypatch.setattr(publish, "_fetch_benchmark_prev_close",
-                             lambda ticker, key: live_spy if ticker == "SPY" else None)
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        today = datetime.now(ZoneInfo("America/New_York")).date()
+        prior = previous_trading_day(today)
+        older = previous_trading_day(prior)
+        dates = {"prior": prior.isoformat(), "older": older.isoformat()}
+        if snapshot_bars is not None:
+            (tmp_path / "market_snapshot.json").write_text(json.dumps(_bench_snapshot(
+                today.isoformat(),
+                [(dates[snapshot_bars["SPY"][0]], snapshot_bars["SPY"][1])],
+                [(dates[snapshot_bars["QQQ"][0]], snapshot_bars["QQQ"][1])])))
+        _mock_polygon_prev(monkeypatch, {
+            t: (dates[v[0]], v[1]) for t, v in (live or {}).items()})
+        monkeypatch.setattr("market_calendar.most_recent_complete_trading_day",
+                            lambda *a, **k: prior)
         fake_client = _FakeSupabaseClient()
         import supabase
         monkeypatch.setattr(supabase, "create_client", lambda *a, **k: fake_client)
         return publish, fake_client
 
-    def test_live_polygon_call_wins_over_stale_snapshot(self, tmp_path, monkeypatch):
+    def test_live_polygon_bar_supplies_the_session_a_stale_snapshot_lacks(
+            self, tmp_path, monkeypatch):
         publish, fake_client = self._setup(
-            tmp_path, monkeypatch, snapshot_spy=729.46, live_spy=741.69)
+            tmp_path, monkeypatch,
+            snapshot_bars={"SPY": ("older", 729.46), "QQQ": ("older", 700.10)},
+            live={"SPY": ("prior", 741.69), "QQQ": ("prior", 712.34)})
         publish.publish_to_supabase({"cash": 100, "total_value": 500, "positions": []})
         row = fake_client.sink["portfolio_snapshots"][-1]
         assert row["spy_close"] == 741.69
+        assert row["qqq_close"] == 712.34
 
     def test_falls_back_to_snapshot_when_polygon_unreachable(self, tmp_path, monkeypatch):
         publish, fake_client = self._setup(
-            tmp_path, monkeypatch, snapshot_spy=729.46, live_spy=None)
+            tmp_path, monkeypatch,
+            snapshot_bars={"SPY": ("prior", 729.46), "QQQ": ("prior", 700.10)}, live=None)
         publish.publish_to_supabase({"cash": 100, "total_value": 500, "positions": []})
         row = fake_client.sink["portfolio_snapshots"][-1]
         assert row["spy_close"] == 729.46
+        assert row["qqq_close"] == 700.10
 
 
 class TestSpyPrevCloseFreshness:
@@ -2235,6 +2282,751 @@ class TestSpyPrevCloseFreshness:
         result = publish._fetch_benchmark_prev_close("SPY", "fake-key")
         assert result == 771.33
         assert calls["n"] == 1
+
+
+# ── publish.py — benchmark closes must be DATED (third staleness recurrence) ──
+
+class _MemSupabaseResult:
+    def __init__(self, data):
+        self.data = data
+
+
+class _MemSupabaseQuery:
+    """In-memory stand-in for postgrest's query builder that actually FILTERS,
+    ORDERS and WRITES, so a test can assert on the resulting table state — the
+    `_FakeSupabaseQuery` above only records upsert payloads and returns no rows,
+    which cannot exercise a read-compare-correct loop."""
+
+    def __init__(self, client, name):
+        self.client, self.name = client, name
+        self._op, self._payload = "select", None
+        self._filters, self._order, self._limit, self._negate = [], None, None, False
+
+    @property
+    def not_(self):
+        self._negate = True
+        return self
+
+    def _add(self, fn):
+        neg, self._negate = self._negate, False
+        self._filters.append((lambda r: not fn(r)) if neg else fn)
+        return self
+
+    def select(self, *a, **k):
+        self._op = "select"
+        return self
+
+    def upsert(self, data, on_conflict=None):
+        self._op, self._payload = "upsert", data
+        return self
+
+    def update(self, data):
+        self._op, self._payload = "update", data
+        return self
+
+    def delete(self):
+        self._op = "delete"
+        return self
+
+    def eq(self, col, val):
+        return self._add(lambda r: r.get(col) == val)
+
+    def neq(self, col, val):
+        return self._add(lambda r: r.get(col) != val)
+
+    def is_(self, col, val):
+        return self._add(lambda r: r.get(col) is None)
+
+    def in_(self, col, vals):
+        return self._add(lambda r: r.get(col) in vals)
+
+    def order(self, col, desc=False):
+        self._order = (col, desc)
+        return self
+
+    def limit(self, n):
+        self._limit = n
+        return self
+
+    def execute(self):
+        table = self.client.tables.setdefault(self.name, [])
+        key = self.client.keys.get(self.name)
+        if self._op == "upsert":
+            rows = self._payload if isinstance(self._payload, list) else [self._payload]
+            for new in rows:
+                self.client.writes.append(("upsert", self.name, dict(new)))
+                hit = next((r for r in table if key and r.get(key) == new.get(key)), None)
+                if hit is not None:
+                    hit.update(new)          # omitted keys preserved, None overwrites
+                else:
+                    table.append(dict(new))
+            return _MemSupabaseResult(rows)
+        matched = [r for r in table if all(f(r) for f in self._filters)]
+        if self._op == "update":
+            for r in matched:
+                self.client.writes.append(("update", self.name, r.get(key), dict(self._payload)))
+                r.update(self._payload)
+            return _MemSupabaseResult(matched)
+        if self._op == "delete":
+            for r in matched:
+                table.remove(r)
+            return _MemSupabaseResult(matched)
+        if self._order:
+            col, desc = self._order
+            matched = sorted(matched, key=lambda r: r.get(col), reverse=desc)
+        if self._limit is not None:
+            matched = matched[: self._limit]
+        return _MemSupabaseResult([dict(r) for r in matched])
+
+
+class _MemSupabase:
+    def __init__(self, snapshots=None):
+        self.tables = {"portfolio_snapshots": [dict(r) for r in (snapshots or [])]}
+        self.keys = {"portfolio_snapshots": "date", "positions": "ticker", "trades": "id"}
+        self.writes = []
+
+    def table(self, name):
+        return _MemSupabaseQuery(self, name)
+
+    def row(self, d):
+        return next((r for r in self.tables["portfolio_snapshots"] if r["date"] == d), None)
+
+
+def _bench_ms(iso_date):
+    """Epoch-ms of midnight ET for a session — the real snapshot `history` bar shape."""
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo
+    return int(_dt.fromisoformat(iso_date + "T00:00:00").replace(
+        tzinfo=ZoneInfo("America/New_York")).timestamp() * 1000)
+
+
+def _bench_snapshot(file_date, spy_bars, qqq_bars, fetched_at=None):
+    """A market_snapshot.json shaped like the committed one: `date` is the FETCH date,
+    `prices[t].close` mirrors the LATEST history bar (which is the PRIOR session's on a
+    normal pre-close fetch), and `history[t]` carries the dated bars."""
+    def hist(bars):
+        return [{"date": _bench_ms(d), "close": c} for d, c in bars]
+    snap = {
+        "date": file_date,
+        "prices": {"SPY": {"close": spy_bars[-1][1]}, "QQQ": {"close": qqq_bars[-1][1]}},
+        "history": {"SPY": hist(spy_bars), "QQQ": hist(qqq_bars)},
+    }
+    snap["fetched_at"] = fetched_at or f"{file_date}T12:00:00+00:00"   # 8 AM ET pre-market
+    return snap
+
+
+def _mock_polygon_prev(monkeypatch, bars_by_ticker):
+    """Polygon /prev answers per ticker: {ticker: (iso_date, close)} or None for no bar."""
+    import urllib.request
+    calls = []
+
+    class _Resp:
+        def __init__(self, payload):
+            self._payload = json.dumps(payload).encode()
+        def read(self):
+            return self._payload
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+
+    def _fake_urlopen(req, timeout=10):
+        url = req.full_url
+        ticker = url.split("/ticker/")[1].split("/")[0]
+        calls.append(ticker)
+        bar = bars_by_ticker.get(ticker)
+        if bar is None:
+            return _Resp({"results": []})
+        return _Resp({"results": [{"c": bar[1], "t": _bench_ms(bar[0])}]})
+
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    return calls
+
+
+class TestBenchmarkCloseStaleFallback:
+    """Third recurrence (found 2026-10-07): ~34 trading-day rows from 2026-08-13 on
+    carried the PRIOR session's SPY/QQQ close. `_fetch_benchmark_prev_close` correctly
+    rejected Polygon's stale `/prev` bar at ~16:05 ET and returned None — and
+    `_benchmark_close` then fell back to `_fetch_benchmark_from_snapshot`, which
+    checked only the snapshot FILE's date and returned `prices[ticker].close`: the
+    prior session's close under today's file date. The fallback defeated the
+    2026-08-05 validation. Row 2026-10-07 held 779.09 / 759.66 (the 10-06 closes);
+    the official 10-07 closes were 777.22 / 757.73."""
+
+    def _et_today(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("America/New_York")).date()
+
+    def _setup(self, tmp_path, monkeypatch, after_close=True):
+        """Today's snapshot file whose latest bar is the PRIOR session, Polygon /prev
+        also serving the prior session, and the clock at (or before) the close."""
+        import importlib, publish
+        from market_calendar import previous_trading_day, is_trading_day
+        importlib.reload(publish)
+        # Real ET date on purpose: the pre-fix code keyed on the snapshot FILE being
+        # dated today, so this test reproduces the bug on the old code as well.
+        # `session` is the session today's row must show once the close is in (today
+        # on a trading day; on a weekend/holiday run, the last session before it),
+        # and `prior` is the session before THAT — the stale bar the sources hold.
+        today = self._et_today()
+        session = today if is_trading_day(today) else previous_trading_day(today)
+        prior = previous_trading_day(session)
+        older = previous_trading_day(prior)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
+        monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-key")
+        monkeypatch.setenv("POLYGON_API_KEY", "fake-polygon-key")
+        monkeypatch.delenv("DRY_RUN", raising=False)
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        (tmp_path / "market_snapshot.json").write_text(json.dumps(_bench_snapshot(
+            today.isoformat(),
+            [(older.isoformat(), 774.83), (prior.isoformat(), 779.09)],
+            [(older.isoformat(), 755.10), (prior.isoformat(), 759.66)])))
+        _mock_polygon_prev(monkeypatch, {"SPY": (prior.isoformat(), 779.09),
+                                         "QQQ": (prior.isoformat(), 759.66)})
+        # The freshness oracle: after the close the newest complete session is `session`.
+        monkeypatch.setattr("market_calendar.most_recent_complete_trading_day",
+                            lambda *a, **k: session if after_close else prior)
+        client = _MemSupabase()
+        import supabase
+        monkeypatch.setattr(supabase, "create_client", lambda *a, **k: client)
+        return publish, client, today.isoformat()
+
+    def test_snapshot_fallback_rejects_a_prior_session_bar_after_the_close(
+            self, tmp_path, monkeypatch):
+        """Unit-level regression: a snapshot FILE dated today whose latest BAR is the
+        prior session must not satisfy an after-close read."""
+        publish, _, _ = self._setup(tmp_path, monkeypatch)
+        assert publish._fetch_benchmark_from_snapshot("SPY") is None
+        assert publish._fetch_benchmark_from_snapshot("QQQ") is None
+
+    def test_eod_publish_never_writes_the_prior_session_close(self, tmp_path, monkeypatch):
+        """THE regression for the 2026-10-07 finding: stale Polygon + stale snapshot at
+        an is_close publish → NULL, never the D-1 close presented as D's."""
+        publish, client, today = self._setup(tmp_path, monkeypatch)
+        publish.publish_to_supabase({"cash": 100, "total_value": 500, "positions": []},
+                                    is_close=True)
+        row = client.row(today)
+        assert row is not None
+        assert row.get("spy_close") is None, f"wrote prior-session SPY close {row.get('spy_close')}"
+        assert row.get("qqq_close") is None, f"wrote prior-session QQQ close {row.get('qqq_close')}"
+        assert row.get("spy_cumulative_return_pct") is None
+        assert row.get("qqq_cumulative_return_pct") is None
+
+
+# Fixed sessions for the dated-bar tests (Mon 2026-09-07 is Labor Day, NYSE closed).
+_BENCH_SPY = [("2026-09-03", 761.10), ("2026-09-04", 763.40), ("2026-09-08", 765.20),
+              ("2026-09-09", 766.75), ("2026-10-02", 770.00), ("2026-10-05", 774.83),
+              ("2026-10-06", 779.09), ("2026-10-07", 777.22)]
+_BENCH_QQQ = [("2026-09-03", 741.00), ("2026-09-04", 743.30), ("2026-09-08", 745.60),
+              ("2026-09-09", 746.90), ("2026-10-02", 751.00), ("2026-10-05", 755.10),
+              ("2026-10-06", 759.66), ("2026-10-07", 757.73)]
+_BENCH_INCEPTION = {"date": "2026-06-08", "spy_close": 700.0, "qqq_close": 680.0,
+                    "spy_cumulative_return_pct": 0.0, "qqq_cumulative_return_pct": 0.0,
+                    "close_value": 500.0, "total_value": 500.0}
+
+
+def _bench_bars_through(bars, last_iso):
+    return [b for b in bars if b[0] <= last_iso]
+
+
+def _bench_et(iso_date, hh, mm=0):
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo
+    return _dt.fromisoformat(f"{iso_date}T{hh:02d}:{mm:02d}:00").replace(
+        tzinfo=ZoneInfo("America/New_York"))
+
+
+def _bench_row(d, spy=None, qqq=None, spy_cum=None, qqq_cum=None, close_value=None):
+    return {"date": d, "spy_close": spy, "qqq_close": qqq,
+            "spy_cumulative_return_pct": spy_cum, "qqq_cumulative_return_pct": qqq_cum,
+            "close_value": close_value, "total_value": close_value or 500.0}
+
+
+class _BenchPublishHarness:
+    """Shared setup: a pinned ET clock, a dated snapshot, mocked Polygon `/prev`,
+    and an in-memory Supabase that really filters and writes. No network."""
+
+    def _setup(self, tmp_path, monkeypatch, now, snapshot_through=None, snapshot_fetched_at=None,
+               polygon=None, rows=None, polygon_key=True):
+        import importlib, publish
+        importlib.reload(publish)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("SUPABASE_URL", "https://fake.supabase.co")
+        monkeypatch.setenv("SUPABASE_SERVICE_KEY", "fake-key")
+        if polygon_key:
+            monkeypatch.setenv("POLYGON_API_KEY", "fake-polygon-key")
+        else:
+            monkeypatch.delenv("POLYGON_API_KEY", raising=False)
+        monkeypatch.delenv("DRY_RUN", raising=False)
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        monkeypatch.setattr(publish, "_now_et", lambda: now)
+        if snapshot_through is not None:
+            (tmp_path / "market_snapshot.json").write_text(json.dumps(_bench_snapshot(
+                now.strftime("%Y-%m-%d"),
+                _bench_bars_through(_BENCH_SPY, snapshot_through),
+                _bench_bars_through(_BENCH_QQQ, snapshot_through),
+                fetched_at=snapshot_fetched_at)))
+        self.polygon_calls = _mock_polygon_prev(monkeypatch, polygon or {})
+        client = _MemSupabase([_BENCH_INCEPTION] + list(rows or []))
+        import supabase
+        monkeypatch.setattr(supabase, "create_client", lambda *a, **k: client)
+        return publish, client
+
+    _PORTFOLIO = {"cash": 100, "total_value": 512.34, "positions": []}
+
+
+class TestBenchmarkCloseDatedSources(_BenchPublishHarness):
+    """R1/R2/R4/R7 of the 2026-10-07 spec: a benchmark close reaches a row only by
+    its bar's session date; an is_close publish with no bar for the session writes
+    NULL; SPY and QQQ move together; the morning publish is unchanged."""
+
+    def test_polygon_bar_dated_today_is_accepted_at_the_close(self, tmp_path, monkeypatch):
+        publish, client = self._setup(
+            tmp_path, monkeypatch, _bench_et("2026-10-07", 16, 5), snapshot_through="2026-10-06",
+            polygon={"SPY": ("2026-10-07", 777.22), "QQQ": ("2026-10-07", 757.73)})
+        publish.publish_to_supabase(self._PORTFOLIO, is_close=True)
+        row = client.row("2026-10-07")
+        assert row["spy_close"] == 777.22 and row["qqq_close"] == 757.73
+        # cumulative = price return vs the inception row + the dividend gross-up
+        days = (date(2026, 10, 7) - date(2026, 6, 8)).days
+        assert row["spy_cumulative_return_pct"] == round(
+            ((777.22 - 700.0) / 700.0 + publish.SPY_DIVIDEND_YIELD * days / 365.0) * 100, 4)
+        assert row["qqq_cumulative_return_pct"] == round(
+            ((757.73 - 680.0) / 680.0 + publish.QQQ_DIVIDEND_YIELD * days / 365.0) * 100, 4)
+        assert row["close_value"] == 512.34
+
+    def test_snapshot_bar_dated_today_is_accepted_by_the_fallback(self, tmp_path, monkeypatch):
+        """Polygon unreachable (no key), but the snapshot was fetched after the close
+        and holds today's bar → the fallback supplies it."""
+        publish, client = self._setup(
+            tmp_path, monkeypatch, _bench_et("2026-10-07", 17, 30), snapshot_through="2026-10-07",
+            snapshot_fetched_at="2026-10-07T21:10:00+00:00", polygon_key=False)
+        publish.publish_to_supabase(self._PORTFOLIO, is_close=True)
+        row = client.row("2026-10-07")
+        assert row["spy_close"] == 777.22 and row["qqq_close"] == 757.73
+        assert self.polygon_calls == []
+
+    def test_stale_everything_at_the_close_writes_null_over_the_morning_value(
+            self, tmp_path, monkeypatch, capsys):
+        """R2: the morning publish left the prior session's close on today's row. The
+        close publish must not leave it there — NULL, with one line naming the sources."""
+        morning = _bench_row("2026-10-07", spy=779.09, qqq=759.66, spy_cum=11.7, qqq_cum=11.9)
+        publish, client = self._setup(
+            tmp_path, monkeypatch, _bench_et("2026-10-07", 16, 5), snapshot_through="2026-10-06",
+            polygon={"SPY": ("2026-10-06", 779.09), "QQQ": ("2026-10-06", 759.66)},
+            rows=[morning])
+        publish.publish_to_supabase(self._PORTFOLIO, is_close=True)
+        row = client.row("2026-10-07")
+        for col in ("spy_close", "qqq_close", "spy_cumulative_return_pct",
+                    "qqq_cumulative_return_pct"):
+            assert row[col] is None, col
+        assert row["close_value"] == 512.34          # the portfolio close still lands
+        out = capsys.readouterr().out
+        assert "no bar dated 2026-10-07" in out
+        assert "polygon prev=2026-10-06" in out and "snapshot latest=2026-10-06" in out
+        assert "writing NULL" in out
+        # Polygon was retried (bounded) for each ticker before giving up.
+        assert self.polygon_calls.count("SPY") == 3 and self.polygon_calls.count("QQQ") == 3
+
+    def test_one_benchmark_fresh_and_one_stale_yields_both_null(self, tmp_path, monkeypatch):
+        """R4: never SPY from one session and QQQ from another."""
+        publish, client = self._setup(
+            tmp_path, monkeypatch, _bench_et("2026-10-07", 16, 5), snapshot_through="2026-10-06",
+            polygon={"SPY": ("2026-10-07", 777.22), "QQQ": ("2026-10-06", 759.66)})
+        publish.publish_to_supabase(self._PORTFOLIO, is_close=True)
+        row = client.row("2026-10-07")
+        assert row["spy_close"] is None and row["qqq_close"] is None
+        assert row["spy_cumulative_return_pct"] is None
+        assert row["qqq_cumulative_return_pct"] is None
+
+    def test_morning_publish_is_unchanged_prior_session_close_as_of(self, tmp_path, monkeypatch):
+        """R7: before 16:00 ET the most recent completed session IS the prior one, and
+        the row carries its close — exactly what the pre-fix code wrote. One Polygon
+        call per ticker, no retry."""
+        publish, client = self._setup(
+            tmp_path, monkeypatch, _bench_et("2026-10-07", 9, 50), snapshot_through="2026-10-06",
+            polygon={"SPY": ("2026-10-06", 779.09), "QQQ": ("2026-10-06", 759.66)})
+        publish.publish_to_supabase(self._PORTFOLIO)
+        row = client.row("2026-10-07")
+        assert row["spy_close"] == 779.09 and row["qqq_close"] == 759.66
+        assert row["spy_cumulative_return_pct"] is not None
+        assert "close_value" not in row
+        assert self.polygon_calls == ["SPY", "QQQ"]
+
+    def test_morning_publish_with_polygon_down_uses_the_snapshot_as_before(
+            self, tmp_path, monkeypatch):
+        publish, client = self._setup(
+            tmp_path, monkeypatch, _bench_et("2026-10-07", 9, 50), snapshot_through="2026-10-06",
+            polygon={})
+        publish.publish_to_supabase(self._PORTFOLIO)
+        row = client.row("2026-10-07")
+        assert row["spy_close"] == 779.09 and row["qqq_close"] == 759.66
+
+    def test_morning_publish_with_no_bar_leaves_existing_columns_alone(
+            self, tmp_path, monkeypatch):
+        """Non-close publish with nothing usable: the columns are left OUT of the
+        upsert (as before), so whatever the row holds is not blanked."""
+        existing = _bench_row("2026-10-07", spy=779.09, qqq=759.66, spy_cum=11.7, qqq_cum=11.9)
+        publish, client = self._setup(
+            tmp_path, monkeypatch, _bench_et("2026-10-07", 9, 50), snapshot_through=None,
+            polygon={}, rows=[existing])
+        publish.publish_to_supabase(self._PORTFOLIO)
+        upsert = next(w for w in client.writes
+                      if w[0] == "upsert" and w[1] == "portfolio_snapshots")[2]
+        assert not any(c in upsert for c in publish.BENCHMARK_COLUMNS)
+        assert client.row("2026-10-07")["spy_close"] == 779.09
+
+    def test_prev_bar_keeps_its_real_date_when_stale(self, monkeypatch):
+        """A stale `/prev` bar is returned WITH its own date (so it can only ever be
+        filed under that session) after the bounded retries — and the validated
+        single-value form still answers None for it."""
+        import publish
+        calls = _mock_polygon_prev(monkeypatch, {"SPY": ("2026-10-06", 779.09)})
+        bar = publish._fetch_benchmark_prev_bar("SPY", "k", expected=date(2026, 10, 7),
+                                                max_retries=3, retry_delay=0)
+        assert bar == (date(2026, 10, 6), 779.09)
+        assert len(calls) == 3
+        monkeypatch.setattr("market_calendar.most_recent_complete_trading_day",
+                            lambda *a, **k: date(2026, 10, 7))
+        assert publish._fetch_benchmark_prev_close("SPY", "k", retry_delay=0) is None
+
+    def test_expected_session_for_a_row(self):
+        import publish
+        es = publish._expected_session
+        assert es("2026-10-07", _bench_et("2026-10-07", 9, 50)) == date(2026, 10, 6)   # pre-close
+        assert es("2026-10-07", _bench_et("2026-10-07", 16, 0)) == date(2026, 10, 7)   # at close
+        assert es("2026-09-07", _bench_et("2026-09-07", 17, 0)) == date(2026, 9, 4)    # holiday
+        assert es("2026-10-03", _bench_et("2026-10-03", 12, 0)) == date(2026, 10, 2)   # Saturday
+        # A past row keeps ITS session even when published/checked days later.
+        assert es("2026-10-05", _bench_et("2026-10-07", 16, 5)) == date(2026, 10, 5)
+        assert es("2026-09-07", _bench_et("2026-10-07", 16, 5)) == date(2026, 9, 4)
+
+    def test_late_republish_of_a_past_row_never_takes_a_newer_close(self, tmp_path, monkeypatch):
+        """GitHub Actions dates the row from the snapshot file's `written_at`. A
+        re-dispatch a day later must show THAT day's session, not the newest bar."""
+        publish, client = self._setup(
+            tmp_path, monkeypatch, _bench_et("2026-10-07", 16, 30), snapshot_through="2026-10-06",
+            polygon={"SPY": ("2026-10-07", 777.22), "QQQ": ("2026-10-07", 757.73)})
+        monkeypatch.setenv("GITHUB_ACTIONS", "true")
+        (tmp_path / "portfolio_snapshot.json").write_text(json.dumps({
+            "is_close": True, "written_at": "2026-10-06T20:01:00+00:00",
+            "portfolio": self._PORTFOLIO}))
+        publish.publish_to_supabase()
+        row = client.row("2026-10-06")
+        assert row["spy_close"] == 779.09 and row["qqq_close"] == 759.66
+
+
+class TestBenchmarkReconcile(_BenchPublishHarness):
+    """R3/R5: every publish re-checks the trailing rows against dated bars, corrects
+    a lagged or NULL close, recomputes its cumulative return with the live formula,
+    and touches nothing else. A row is right by the next morning's publish."""
+
+    def _rows(self):
+        return [
+            # holiday (Labor Day): the as-of close is 09-04's — correct, must not change
+            _bench_row("2026-09-07", spy=763.40, qqq=743.30, spy_cum=9.1, qqq_cum=9.3,
+                       close_value=505.0),
+            # correct row
+            _bench_row("2026-10-02", spy=770.00, qqq=751.00, spy_cum=10.4, qqq_cum=10.5,
+                       close_value=506.0),
+            # LAGGED: holds 10-02's closes on the 10-05 row
+            _bench_row("2026-10-05", spy=770.00, qqq=751.00, spy_cum=10.4, qqq_cum=10.5,
+                       close_value=507.0),
+            # NULL (what an is_close publish with stale sources now writes)
+            _bench_row("2026-10-06", close_value=508.0),
+        ]
+
+    def _bars(self, publish, through="2026-10-07"):
+        return {"SPY": {date.fromisoformat(d): c for d, c in _bench_bars_through(_BENCH_SPY, through)},
+                "QQQ": {date.fromisoformat(d): c for d, c in _bench_bars_through(_BENCH_QQQ, through)}}
+
+    def test_lagged_and_null_rows_are_corrected_and_nothing_else(self, tmp_path, monkeypatch):
+        now = _bench_et("2026-10-07", 9, 50)
+        publish, client = self._setup(tmp_path, monkeypatch, now, rows=self._rows())
+        before = {r["date"]: dict(r) for r in client.tables["portfolio_snapshots"]}
+        plan = publish.reconcile_benchmark_closes(client, self._bars(publish), now_et=now)
+
+        assert [c["date"] for c in plan["changes"]] == ["2026-10-05", "2026-10-06"]
+        assert plan["written"] == 2
+        r5, r6 = client.row("2026-10-05"), client.row("2026-10-06")
+        assert (r5["spy_close"], r5["qqq_close"]) == (774.83, 755.10)
+        assert (r6["spy_close"], r6["qqq_close"]) == (779.09, 759.66)
+        # Cumulative return is the LIVE function's answer for the same close and date.
+        for row in (r5, r6):
+            for t in ("SPY", "QQQ"):
+                assert row[f"{t.lower()}_cumulative_return_pct"] == \
+                    publish._get_benchmark_cumulative(
+                        client, t, row[f"{t.lower()}_close"], today=row["date"])
+        assert r5["spy_cumulative_return_pct"] != 10.4
+        # Correct row, holiday row and the inception row are byte-identical.
+        for d in ("2026-06-08", "2026-09-07", "2026-10-02"):
+            assert client.row(d) == before[d], d
+        # close_value untouched everywhere; every write is an UPDATE of benchmark columns only.
+        for d, old in before.items():
+            assert client.row(d)["close_value"] == old["close_value"]
+        assert all(w[0] == "update" and set(w[3]) <= set(publish.BENCHMARK_COLUMNS)
+                   for w in client.writes)
+        assert {w[2] for w in client.writes} == {"2026-10-05", "2026-10-06"}
+
+    def test_second_pass_is_a_no_op(self, tmp_path, monkeypatch):
+        now = _bench_et("2026-10-07", 9, 50)
+        publish, client = self._setup(tmp_path, monkeypatch, now, rows=self._rows())
+        publish.reconcile_benchmark_closes(client, self._bars(publish), now_et=now)
+        client.writes.clear()
+        plan = publish.reconcile_benchmark_closes(client, self._bars(publish), now_et=now)
+        assert plan["changes"] == [] and plan["written"] == 0 and client.writes == []
+
+    def test_apply_false_writes_nothing(self, tmp_path, monkeypatch):
+        now = _bench_et("2026-10-07", 9, 50)
+        publish, client = self._setup(tmp_path, monkeypatch, now, rows=self._rows())
+        plan = publish.reconcile_benchmark_closes(client, self._bars(publish), now_et=now,
+                                                  apply=False)
+        assert len(plan["changes"]) == 2 and plan["written"] == 0 and client.writes == []
+
+    def test_row_with_a_bar_for_only_one_benchmark_is_left_alone(self, tmp_path, monkeypatch):
+        """R4 in the repair: never half-correct a row."""
+        now = _bench_et("2026-10-07", 9, 50)
+        publish, client = self._setup(tmp_path, monkeypatch, now, rows=self._rows())
+        bars = self._bars(publish)
+        del bars["QQQ"][date(2026, 10, 5)]
+        plan = publish.reconcile_benchmark_closes(client, bars, now_et=now)
+        assert [c["date"] for c in plan["changes"]] == ["2026-10-06"]
+        assert {"date": "2026-10-05", "session": "2026-10-05"} in plan["unverifiable"]
+        assert client.row("2026-10-05")["spy_close"] == 770.00
+
+    def test_only_the_wrong_benchmark_of_a_row_is_rewritten(self, tmp_path, monkeypatch):
+        now = _bench_et("2026-10-07", 9, 50)
+        rows = [_bench_row("2026-10-05", spy=770.00, qqq=755.10, spy_cum=10.4, qqq_cum=11.2)]
+        publish, client = self._setup(tmp_path, monkeypatch, now, rows=rows)
+        plan = publish.reconcile_benchmark_closes(client, self._bars(publish), now_et=now)
+        assert set(plan["changes"][0]["new"]) == {"spy_close", "spy_cumulative_return_pct"}
+        assert client.row("2026-10-05")["qqq_cumulative_return_pct"] == 11.2
+
+    def test_inception_row_and_earlier_are_never_modified(self, tmp_path, monkeypatch):
+        """The inception close is the baseline of every cumulative return; a repair
+        must not move it. A mismatch is reported, not written."""
+        now = _bench_et("2026-10-07", 9, 50)
+        publish, client = self._setup(tmp_path, monkeypatch, now)
+        client.tables["portfolio_snapshots"] = [
+            _bench_row("2026-09-03"),                                  # before inception, NULL
+            _bench_row("2026-09-04", spy=999.0, qqq=888.0, spy_cum=0.0, qqq_cum=0.0),  # inception
+            _bench_row("2026-09-08", spy=763.40, qqq=743.30),          # lagged
+        ]
+        plan = publish.reconcile_benchmark_closes(client, self._bars(publish), now_et=now)
+        assert [c["date"] for c in plan["changes"]] == ["2026-09-08"]
+        assert client.row("2026-09-03")["spy_close"] is None
+        assert client.row("2026-09-04")["spy_close"] == 999.0
+        assert {n["ticker"] for n in plan["inception_notes"]} == {"SPY", "QQQ"}
+        # ...and the corrected row is measured from the UNCHANGED inception close.
+        assert client.row("2026-09-08")["spy_cumulative_return_pct"] == \
+            publish._benchmark_cumulative_pct("SPY", 765.20, 999.0, "2026-09-04", "2026-09-08")
+
+    def test_a_rebased_series_is_refused_not_written(self, tmp_path, monkeypatch, capsys):
+        """A stored close that is off by more than a session's move is not a lag — a
+        split re-adjusts every historical bar while the stored inception close stays
+        put. Rewriting history onto the new basis would break every cumulative
+        return, so the repair refuses and raises a warning annotation instead."""
+        now = _bench_et("2026-10-07", 9, 50)
+        rows = [_bench_row("2026-10-05", spy=1549.66, qqq=755.10, spy_cum=11.0, qqq_cum=11.2)]
+        publish, client = self._setup(tmp_path, monkeypatch, now, rows=rows)
+        monkeypatch.setenv("GITHUB_ACTIONS", "true")
+        plan = publish.reconcile_benchmark_closes(client, self._bars(publish), now_et=now)
+        assert plan["changes"] == [] and client.writes == []
+        assert [(i["date"], i["ticker"]) for i in plan["implausible"]] == [("2026-10-05", "SPY")]
+        publish._print_reconcile(plan)
+        out = capsys.readouterr().out
+        assert "::warning title=Benchmark close reconcile::2026-10-05 SPY" in out
+
+    def test_stuck_rows_warn_but_the_normal_after_close_gap_does_not(
+            self, tmp_path, monkeypatch, capsys):
+        now = _bench_et("2026-10-07", 18, 0)
+        publish, client = self._setup(tmp_path, monkeypatch, now,
+                                      rows=[_bench_row("2026-10-05"), _bench_row("2026-10-07")])
+        monkeypatch.setenv("GITHUB_ACTIONS", "true")
+        bars = self._bars(publish, through="2026-10-06")
+        del bars["SPY"][date(2026, 10, 5)]
+        plan = publish.reconcile_benchmark_closes(client, bars, now_et=now)
+        publish._print_reconcile(plan)
+        out = capsys.readouterr().out
+        assert "::warning" in out and "2026-10-05" in out.split("::warning")[1]
+        assert "2026-10-07 waiting on the 2026-10-07 bar" in out
+        assert "2026-10-07" not in out.split("::warning")[1]
+
+    def test_publish_heals_yesterdays_null_row_the_next_morning(self, tmp_path, monkeypatch):
+        """End to end: 10-06's close publish wrote NULL (stale sources). The 10-07
+        morning publish — whose pre-market snapshot now holds the 10-06 bar — fills
+        row 10-06 and gives row 10-07 its provisional as-of close."""
+        rows = [_bench_row("2026-10-05", spy=774.83, qqq=755.10, spy_cum=11.0, qqq_cum=11.2,
+                           close_value=507.0),
+                _bench_row("2026-10-06", close_value=508.0)]
+        publish, client = self._setup(
+            tmp_path, monkeypatch, _bench_et("2026-10-07", 9, 50), snapshot_through="2026-10-06",
+            polygon={"SPY": ("2026-10-06", 779.09), "QQQ": ("2026-10-06", 759.66)}, rows=rows)
+        publish.publish_to_supabase(self._PORTFOLIO)
+        healed = client.row("2026-10-06")
+        assert (healed["spy_close"], healed["qqq_close"]) == (779.09, 759.66)
+        assert healed["spy_cumulative_return_pct"] is not None
+        assert healed["close_value"] == 508.0                       # write-once close untouched
+        assert client.row("2026-10-05")["spy_cumulative_return_pct"] == 11.0   # correct row left alone
+        assert client.row("2026-10-07")["spy_close"] == 779.09      # today's provisional as-of
+
+    def test_publish_only_reconciles_the_trailing_window(self, tmp_path, monkeypatch):
+        """Older history is the one-time backfill's job; the per-publish repair is bounded."""
+        import publish as _p
+        old_wrong = _bench_row("2026-09-08", spy=763.40, qqq=743.30)
+        filler = [_bench_row(f"2026-09-{d:02d}") for d in range(10, 10 + _p.RECONCILE_LOOKBACK_ROWS)]
+        publish, client = self._setup(
+            tmp_path, monkeypatch, _bench_et("2026-10-07", 9, 50), snapshot_through="2026-10-06",
+            polygon={}, rows=[old_wrong] + filler)
+        publish.publish_to_supabase(self._PORTFOLIO)
+        assert client.row("2026-09-08")["spy_close"] == 763.40
+        assert publish.RECONCILE_LOOKBACK_ROWS >= 10
+
+    def test_a_failing_repair_never_fails_the_publish(self, tmp_path, monkeypatch, capsys):
+        publish, client = self._setup(
+            tmp_path, monkeypatch, _bench_et("2026-10-07", 9, 50), snapshot_through="2026-10-06",
+            polygon={}, rows=self._rows())
+
+        def boom(*a, **k):
+            raise RuntimeError("postgrest exploded")
+        monkeypatch.setattr(publish, "reconcile_benchmark_closes", boom)
+        publish.publish_to_supabase(self._PORTFOLIO)
+        out = capsys.readouterr().out
+        assert "benchmark reconcile skipped" in out and "Supabase publish complete" in out
+        assert client.row("2026-10-07")["spy_close"] == 779.09
+
+    def test_standalone_entry_point_repairs_and_respects_dry_run(self, tmp_path, monkeypatch):
+        """`python publish.py --reconcile-benchmarks` — the repair with no snapshot
+        upsert, callable from a workflow step. DRY_RUN must suppress it (the Jul 5
+        lesson: enumerate every external write a dry run has to gate)."""
+        publish, client = self._setup(
+            tmp_path, monkeypatch, _bench_et("2026-10-07", 18, 0), snapshot_through="2026-10-06",
+            polygon={"SPY": ("2026-10-07", 777.22), "QQQ": ("2026-10-07", 757.73)},
+            rows=self._rows() + [_bench_row("2026-10-07", close_value=512.34)])
+        monkeypatch.setenv("DRY_RUN", "true")
+        assert publish.reconcile_benchmarks_main() == 0
+        assert client.writes == []
+        monkeypatch.delenv("DRY_RUN")
+        assert publish.reconcile_benchmarks_main() == 0
+        # the evening run closes the same-day gap once Polygon has today's bar
+        assert client.row("2026-10-07")["spy_close"] == 777.22
+        assert client.row("2026-10-07")["close_value"] == 512.34
+        assert client.row("2026-10-06")["spy_close"] == 779.09
+        assert all(w[0] == "update" for w in client.writes)   # never an upsert/insert
+
+
+class TestBenchmarkBackfillScript(_BenchPublishHarness):
+    """R6: the one-time backfill is a dry run unless --apply, writes exactly the rows
+    it lists, leaves an evidence file, and is a no-op the second time."""
+
+    def _rows(self):
+        return [
+            _bench_row("2026-09-07", spy=763.40, qqq=743.30, spy_cum=9.1, qqq_cum=9.3,
+                       close_value=505.0),                              # holiday, correct as-of
+            _bench_row("2026-09-08", spy=763.40, qqq=743.30, spy_cum=9.1, qqq_cum=9.3,
+                       close_value=505.5),                              # lagged, OUTSIDE any trailing window
+            _bench_row("2026-10-02", spy=770.00, qqq=751.00, spy_cum=10.4, qqq_cum=10.5,
+                       close_value=506.0),                              # correct
+            _bench_row("2026-10-05", close_value=507.0),                # NULL
+            _bench_row("2026-10-06", spy=774.83, qqq=755.10, spy_cum=11.0, qqq_cum=11.2,
+                       close_value=508.0),                              # lagged
+        ]
+
+    def _run(self, tmp_path, monkeypatch, argv, rows=None, client=None):
+        publish, fresh = self._setup(
+            tmp_path, monkeypatch, _bench_et("2026-10-07", 9, 50), snapshot_through="2026-10-06",
+            rows=self._rows() if rows is None else rows, polygon_key=False)
+        if client is not None:
+            import supabase
+            monkeypatch.setattr(supabase, "create_client", lambda *a, **k: client)
+        else:
+            client = fresh
+        import importlib, backfill_benchmark_closes as bf
+        importlib.reload(bf)
+        rc = bf.main(argv + ["--evidence", str(tmp_path / "ev" / "backfill.json")])
+        return rc, client, tmp_path / "ev" / "backfill.json"
+
+    def test_dry_run_is_the_default_and_writes_nothing_to_supabase(
+            self, tmp_path, monkeypatch, capsys):
+        rc, client, evidence = self._run(tmp_path, monkeypatch, [])
+        assert rc == 0 and client.writes == []
+        assert client.row("2026-09-08")["spy_close"] == 763.40
+        doc = json.loads(evidence.read_text())
+        assert doc["applied"] is False
+        assert [c["date"] for c in doc["changes"]] == ["2026-09-08", "2026-10-05", "2026-10-06"]
+        first = doc["changes"][0]
+        assert first["old"]["spy_close"] == 763.40 and first["new"]["spy_close"] == 765.20
+        assert first["old"]["spy_cumulative_return_pct"] == 9.1
+        assert first["new"]["spy_cumulative_return_pct"] is not None
+        assert "DRY RUN" in capsys.readouterr().out
+
+    def test_apply_writes_exactly_the_listed_rows(self, tmp_path, monkeypatch):
+        rc, client, evidence = self._run(tmp_path, monkeypatch, ["--apply"])
+        assert rc == 0
+        doc = json.loads(evidence.read_text())
+        assert doc["applied"] is True
+        listed = [c["date"] for c in doc["changes"]]
+        assert [w[2] for w in client.writes] == listed == ["2026-09-08", "2026-10-05", "2026-10-06"]
+        import publish
+        assert all(w[0] == "update" and set(w[3]) == set(publish.BENCHMARK_COLUMNS)
+                   for w in client.writes)
+        assert client.row("2026-09-08")["spy_close"] == 765.20
+        assert client.row("2026-10-05")["qqq_close"] == 755.10
+        assert client.row("2026-10-06")["spy_close"] == 779.09
+        # untouched: holiday row, correct row, inception row, and every close_value
+        assert client.row("2026-09-07")["spy_close"] == 763.40
+        assert client.row("2026-10-02")["spy_cumulative_return_pct"] == 10.4
+        assert client.row("2026-06-08")["spy_close"] == 700.0
+        assert [client.row(r["date"])["close_value"] for r in self._rows()] == \
+            [r["close_value"] for r in self._rows()]
+
+    def test_running_it_twice_is_a_no_op(self, tmp_path, monkeypatch, capsys):
+        rc, client, evidence = self._run(tmp_path, monkeypatch, ["--apply"])
+        first_evidence = evidence.read_text()
+        client.writes.clear()
+        rc2, _, _ = self._run(tmp_path, monkeypatch, ["--apply"], client=client)
+        assert rc2 == 0 and client.writes == []
+        assert evidence.read_text() == first_evidence     # the record of the real apply survives
+        assert "Nothing to change" in capsys.readouterr().out
+
+    def test_apply_is_refused_under_dry_run_env(self, tmp_path, monkeypatch):
+        publish, client = self._setup(
+            tmp_path, monkeypatch, _bench_et("2026-10-07", 9, 50), snapshot_through="2026-10-06",
+            rows=self._rows(), polygon_key=False)
+        monkeypatch.setenv("DRY_RUN", "true")
+        import importlib, backfill_benchmark_closes as bf
+        importlib.reload(bf)
+        assert bf.main(["--apply"]) == 2
+        assert client.writes == []
+
+    def test_sessions_the_two_sources_disagree_on_are_not_used(self, tmp_path, monkeypatch):
+        """With a Polygon key the snapshot's bars are cross-checked; a disagreement
+        makes that session unverifiable rather than picking a side."""
+        publish, client = self._setup(
+            tmp_path, monkeypatch, _bench_et("2026-10-07", 9, 50), snapshot_through="2026-10-06",
+            rows=self._rows())
+        import importlib, backfill_benchmark_closes as bf
+        importlib.reload(bf)
+
+        def fake_polygon(ticker, key, start, end):
+            bars = {date.fromisoformat(d): c for d, c in
+                    (_BENCH_SPY if ticker == "SPY" else _BENCH_QQQ)}
+            if ticker == "SPY":
+                bars[date(2026, 9, 8)] = 700.00            # disagrees with the snapshot's 765.20
+            return bars                                    # includes 10-07: not yet complete at 9:50
+        monkeypatch.setattr(bf, "_polygon_bars", fake_polygon)
+        bars, mismatches, _ = bf.collect_bars(
+            "market_snapshot.json", "k", date(2026, 6, 8), _bench_et("2026-10-07", 9, 50))
+        assert [(m["ticker"], m["session"]) for m in mismatches] == [("SPY", "2026-09-08")]
+        assert date(2026, 9, 8) not in bars["SPY"]
+        assert date(2026, 10, 7) not in bars["SPY"]        # incomplete session never admitted
+        rc = bf.main(["--apply", "--evidence", str(tmp_path / "ev.json")])
+        assert rc == 0
+        assert client.row("2026-09-08")["spy_close"] == 763.40      # left as is
+        assert client.row("2026-10-06")["spy_close"] == 779.09      # agreed sessions still fixed
 
 
 class TestSanitizeNaN:
