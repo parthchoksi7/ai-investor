@@ -1,27 +1,27 @@
 {
-  "date": "2026-10-08",
-  "data_date": "2026-10-08",
-  "generated_at": "2026-10-08T19:10:34.037346+00:00",
+  "date": "2026-10-09",
+  "data_date": "2026-10-09",
+  "generated_at": "2026-10-09T16:36:27.171511+00:00",
   "status": "OK",
   "data_quality_score": 100,
   "strategy_shift_ok": true,
-  "expected_universe": 165,
-  "fetched_universe": 164,
+  "expected_universe": 180,
+  "fetched_universe": 176,
   "metrics": {
     "universe_fetched_pct": {
-      "value": 99.4,
+      "value": 97.8,
       "status": "OK",
       "degraded_below": 95.0,
       "abort_below": 80.0
     },
     "min_history_depth": {
-      "value": 203,
+      "value": 205,
       "status": "OK",
       "degraded_below": 60,
       "abort_below": 22
     },
     "fundamental_coverage_pct": {
-      "value": 98.2,
+      "value": 95.6,
       "status": "OK",
       "degraded_below": 80.0,
       "abort_below": null
@@ -41,7 +41,7 @@
       "note": ""
     },
     "valuation_coverage_pct": {
-      "value": 98.2,
+      "value": 96.6,
       "status": "OK",
       "degraded_below": null,
       "abort_below": null,
@@ -50,36 +50,36 @@
   },
   "breaches": [],
   "cik_map_ok": true,
-  "price_outlier_count": 2,
-  "hash": "40ff5b564eaf697e",
+  "price_outlier_count": 3,
+  "hash": "d684ce35e2f9feab",
   "event_digest": {
     "chunks": 4,
     "chunks_ok": 4,
     "parse_success_rate": 1.0,
-    "raw_events": 18,
+    "raw_events": 22,
     "capped": false,
     "chunks_available": 4,
     "max_chunks": 15,
-    "as_of": "2026-10-08",
-    "events_written": 18,
+    "as_of": "2026-10-09",
+    "events_written": 22,
     "events_deduped": 0,
     "llm_usage": {
       "by_model": {
         "claude-haiku-4-5-20251001": {
           "n_calls": 4,
-          "input_tokens": 12029,
-          "output_tokens": 1371,
+          "input_tokens": 12390,
+          "output_tokens": 1575,
           "cache_read_tokens": 0,
           "cache_creation_tokens": 0,
-          "est_cost_usd": 0.0189
+          "est_cost_usd": 0.0203
         }
       },
-      "est_cost_usd": 0.0189,
+      "est_cost_usd": 0.0203,
       "unpriced_models": [],
       "scope": "event_digest (GH plane, metered key) \u2014 THIS run; ~2 runs/weekday",
       "basis": "API list price (subscription OAuth runs are not metered per token)",
-      "cost_pct_aum_per_run": 0.0038,
-      "cost_pct_aum_annualized": 1.91,
+      "cost_pct_aum_per_run": 0.004,
+      "cost_pct_aum_annualized": 2.03,
       "runs_per_year_assumed": 504
     }
   }
