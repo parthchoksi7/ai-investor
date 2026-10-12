@@ -1,15 +1,15 @@
 {
   "date": "2026-10-12",
   "data_date": "2026-10-12",
-  "generated_at": "2026-10-12T19:21:24.093197+00:00",
+  "generated_at": "2026-10-12T21:53:32.342192+00:00",
   "status": "OK",
   "data_quality_score": 100,
   "strategy_shift_ok": true,
-  "expected_universe": 180,
-  "fetched_universe": 178,
+  "expected_universe": 165,
+  "fetched_universe": 164,
   "metrics": {
     "universe_fetched_pct": {
-      "value": 98.9,
+      "value": 99.4,
       "status": "OK",
       "degraded_below": 95.0,
       "abort_below": 80.0
@@ -21,7 +21,7 @@
       "abort_below": 22
     },
     "fundamental_coverage_pct": {
-      "value": 96.7,
+      "value": 96.4,
       "status": "OK",
       "degraded_below": 80.0,
       "abort_below": null
@@ -41,7 +41,7 @@
       "note": ""
     },
     "valuation_coverage_pct": {
-      "value": 97.8,
+      "value": 97.0,
       "status": "OK",
       "degraded_below": null,
       "abort_below": null,
@@ -50,8 +50,8 @@
   },
   "breaches": [],
   "cik_map_ok": true,
-  "price_outlier_count": 3,
-  "hash": "c469d8061e3834a5",
+  "price_outlier_count": 2,
+  "hash": "4fbcc7271d44ff91",
   "event_digest": {
     "chunks": 4,
     "chunks_ok": 4,
@@ -61,20 +61,20 @@
     "chunks_available": 4,
     "max_chunks": 15,
     "as_of": "2026-10-12",
-    "events_written": 12,
+    "events_written": 13,
     "events_deduped": 0,
     "llm_usage": {
       "by_model": {
         "claude-haiku-4-5-20251001": {
           "n_calls": 4,
-          "input_tokens": 12204,
-          "output_tokens": 1016,
+          "input_tokens": 12546,
+          "output_tokens": 921,
           "cache_read_tokens": 0,
           "cache_creation_tokens": 0,
-          "est_cost_usd": 0.0173
+          "est_cost_usd": 0.0172
         }
       },
-      "est_cost_usd": 0.0173,
+      "est_cost_usd": 0.0172,
       "unpriced_models": [],
       "scope": "event_digest (GH plane, metered key) \u2014 THIS run; ~2 runs/weekday",
       "basis": "API list price (subscription OAuth runs are not metered per token)",
