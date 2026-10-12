@@ -1983,6 +1983,7 @@ class TestCanaryAuth:
         captured = {}
         monkeypatch.setitem(sys.modules, "anthropic", self._fake_anthropic(captured))
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("CURSOR_API_KEY", raising=False)
         tok = tmp_path / "token"
         tok.write_text("oauth-xyz")
         monkeypatch.setenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", str(tok))
@@ -1997,6 +1998,7 @@ class TestCanaryAuth:
         captured = {}
         monkeypatch.setitem(sys.modules, "anthropic", self._fake_anthropic(captured))
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        monkeypatch.delenv("CURSOR_API_KEY", raising=False)
         import preflight_gate
         healthy, _ = preflight_gate._check_api_health()
         assert healthy is True
@@ -2007,12 +2009,238 @@ class TestCanaryAuth:
         captured = {}
         monkeypatch.setitem(sys.modules, "anthropic", self._fake_anthropic(captured))
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("CURSOR_API_KEY", raising=False)
         monkeypatch.delenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", raising=False)
         import preflight_gate
         healthy, msg = preflight_gate._check_api_health()
         assert healthy is True
         assert "skipping" in msg.lower()
         assert captured == {}  # no client was ever built
+
+    def test_cursor_key_canaries_cursor_not_anthropic(self, monkeypatch):
+        import sys
+        captured = {}
+        monkeypatch.setitem(sys.modules, "anthropic", self._fake_anthropic(captured))
+        monkeypatch.setenv("CURSOR_API_KEY", "crsr_test")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-should-not-be-used")
+
+        def fake_complete(model, system, user, max_tokens=600):
+            captured["cursor"] = (model, system, user, max_tokens)
+            return '{"status":"ok"}', "end_turn", None
+
+        monkeypatch.setattr("cursor_llm.complete", fake_complete)
+        import preflight_gate
+        healthy, msg = preflight_gate._check_api_health()
+        assert healthy is True
+        assert "Cursor" in msg
+        assert "api_key" not in captured
+        assert captured["cursor"][0] == "canary"
+
+    def test_cursor_canary_failure_skips_the_rebalance(self, monkeypatch):
+        """A dead Cursor host must not look healthy. Proceeding would burn the
+        attempt, and the final attempt would miss the risk_watch stop fallback."""
+        monkeypatch.setenv("CURSOR_API_KEY", "crsr_test")
+
+        def boom(*_a, **_k):
+            raise RuntimeError("Cursor agent failed: AuthenticationError: bad key")
+
+        monkeypatch.setattr("cursor_llm.complete", boom)
+        import preflight_gate
+        healthy, msg = preflight_gate._check_api_health()
+        assert healthy is False
+        assert "failed" in msg.lower()
+
+    def test_cursor_canary_empty_body_skips(self, monkeypatch):
+        monkeypatch.setenv("CURSOR_API_KEY", "crsr_test")
+        monkeypatch.setattr(
+            "cursor_llm.complete", lambda *_a, **_k: ("  ", "end_turn", None))
+        import preflight_gate
+        healthy, msg = preflight_gate._check_api_health()
+        assert healthy is False
+        assert "empty" in msg.lower()
+
+
+class TestCursorLlm:
+    """Completions with CURSOR_API_KEY set must not call Anthropic, and the
+    Cursor agent must be offered no tools and an empty directory."""
+
+    def _install_sdk(self, monkeypatch, prompt):
+        import sys
+        import types
+        captured = {"cwds": []}
+
+        class _Result:
+            status = "finished"
+            result = '{"ok": true}'
+            usage = types.SimpleNamespace(
+                input_tokens=3, output_tokens=4,
+                cache_read_tokens=0, cache_write_tokens=0)
+
+        class _Agent:
+            @staticmethod
+            def prompt(message, options):
+                captured["message"] = message
+                captured["options"] = options
+                outcome = prompt(message, options)
+                return outcome if outcome is not None else _Result()
+
+        class _AgentOptions:
+            def __init__(self, **kwargs):
+                captured["kwargs"] = kwargs
+
+        class _Local:
+            def __init__(self, cwd):
+                captured["cwds"].append(cwd)
+                captured["cwd"] = cwd
+
+        class _Err(Exception):
+            def __init__(self, msg="", is_retryable=False):
+                super().__init__(msg)
+                self.is_retryable = is_retryable
+
+        mod = types.ModuleType("cursor_sdk")
+        mod.Agent = _Agent
+        mod.AgentOptions = _AgentOptions
+        mod.CursorAgentError = _Err
+        mod.LocalAgentOptions = _Local
+        monkeypatch.setitem(sys.modules, "cursor_sdk", mod)
+        monkeypatch.setenv("CURSOR_API_KEY", "crsr_test")
+        return captured
+
+    def test_complete_offers_no_tools_and_a_private_directory(self, monkeypatch):
+        import os
+        captured = self._install_sdk(monkeypatch, lambda *_a: None)
+        import cursor_llm
+        text, stop, resp = cursor_llm.complete(
+            "claude-haiku-4-5-20251001", "SYS", "USER", 40)
+        assert text == '{"ok": true}'
+        assert stop == "end_turn"
+        assert captured["kwargs"]["tools"] == []
+        assert captured["kwargs"]["model"] == "claude-haiku-4-5"
+        assert "mcp_servers" not in captured["kwargs"]
+        assert "cloud" not in captured["kwargs"]
+        cwd = captured["cwd"]
+        assert os.path.basename(cwd).startswith("cursor-llm-")
+        assert not os.path.exists(cwd)  # removed after the call, so nothing persists
+        assert cwd != os.getcwd()
+        assert "SYS" in captured["message"] and "USER" in captured["message"]
+        assert resp.model == "claude-haiku-4-5"
+        assert resp.usage.input_tokens == 3
+
+    def test_each_call_gets_its_own_directory(self, monkeypatch):
+        captured = self._install_sdk(monkeypatch, lambda *_a: None)
+        import cursor_llm
+        cursor_llm.complete("claude-haiku-4-5-20251001", "S", "U")
+        cursor_llm.complete("claude-sonnet-4-6", "S", "U")
+        assert captured["cwds"][0] != captured["cwds"][1]
+        assert captured["kwargs"]["model"] == "claude-sonnet-4-6"
+
+    def test_retryable_error_is_an_overload_and_cancel_is_not(self, monkeypatch):
+        import cursor_llm
+
+        def raise_retryable(_message, _options):
+            from cursor_sdk import CursorAgentError
+            raise CursorAgentError("rate limit", is_retryable=True)
+
+        self._install_sdk(monkeypatch, raise_retryable)
+        with pytest.raises(RuntimeError, match="overloaded"):
+            cursor_llm.complete("claude-haiku-4-5-20251001", "S", "U")
+
+        def raise_auth(_message, _options):
+            from cursor_sdk import CursorAgentError
+            raise CursorAgentError("bad key", is_retryable=False)
+
+        self._install_sdk(monkeypatch, raise_auth)
+        with pytest.raises(RuntimeError, match="failed") as ei:
+            cursor_llm.complete("claude-haiku-4-5-20251001", "S", "U")
+        assert "overloaded" not in str(ei.value)
+
+    @pytest.mark.parametrize("status,kind", [
+        ("error", "overloaded"),
+        ("expired", "overloaded"),
+        ("cancelled", "failed"),
+    ])
+    def test_unfinished_status_maps_to_retry_or_not(self, monkeypatch, status, kind):
+        import types
+
+        def unfinished(_message, _options):
+            return types.SimpleNamespace(status=status, result="", usage=None)
+
+        self._install_sdk(monkeypatch, unfinished)
+        import cursor_llm
+        with pytest.raises(RuntimeError, match=kind) as ei:
+            cursor_llm.complete("canary", "S", "U")
+        if kind == "failed":
+            assert "overloaded" not in str(ei.value)
+
+    def test_empty_result_is_returned_not_raised(self, monkeypatch):
+        import types
+
+        def blank(_message, _options):
+            return types.SimpleNamespace(status="finished", result=None, usage=None)
+
+        self._install_sdk(monkeypatch, blank)
+        import cursor_llm
+        text, stop, resp = cursor_llm.complete("canary", "S", "U")
+        assert text == "" and stop == "end_turn" and resp.usage is None
+
+    def test_pinned_models_are_the_claude_routine_versions(self):
+        import analysis
+        import cursor_llm
+        assert cursor_llm.model_for(analysis.MODEL_FAST) == "claude-haiku-4-5"
+        assert cursor_llm.model_for(analysis.MODEL_SMART) == "claude-sonnet-4-6"
+
+    def test_tiers_follow_the_anthropic_seat(self, monkeypatch):
+        import analysis
+        import cursor_llm
+        monkeypatch.setattr(cursor_llm, "CURSOR_MODELS", {"fast": "F", "smart": "S"})
+        assert cursor_llm.model_for(analysis.MODEL_FAST) == "F"
+        assert cursor_llm.model_for(analysis.MODEL_SMART) == "S"
+        assert cursor_llm.model_for("canary") == "F"
+
+    def test_call_uses_cursor_and_records_the_resolved_model(self, monkeypatch):
+        import types
+        import analysis
+        monkeypatch.setenv("CURSOR_API_KEY", "crsr_test")
+        seen = {}
+
+        def fake_complete(model, system, user, max_tokens=600):
+            seen["args"] = (model, system, user, max_tokens)
+            return ('{"x": 1}', "end_turn",
+                    types.SimpleNamespace(model="claude-haiku-4-5", usage=None))
+
+        monkeypatch.setattr("cursor_llm.complete", fake_complete)
+        saved = analysis._RUN_MANIFEST.get("calls")
+        analysis._RUN_MANIFEST["calls"] = {}
+        text, stop = analysis._call(
+            analysis.MODEL_FAST,
+            [{"type": "text", "text": "Be brief", "cache_control": {"type": "ephemeral"}}],
+            "ticker AAPL",
+            max_tokens=80,
+        )
+        assert text == '{"x": 1}' and stop == "end_turn"
+        assert seen["args"][1] == "Be brief"
+        assert "claude-haiku-4-5" in analysis._RUN_MANIFEST["calls"]
+        assert analysis.MODEL_FAST not in analysis._RUN_MANIFEST["calls"]
+        analysis._RUN_MANIFEST["calls"] = saved
+
+    def test_blank_cursor_key_stays_on_anthropic(self, monkeypatch):
+        import types
+        import analysis
+        monkeypatch.setenv("CURSOR_API_KEY", "   ")
+
+        def fail(*_a, **_k):
+            raise AssertionError("cursor complete was called")
+
+        monkeypatch.setattr("cursor_llm.complete", fail)
+        resp = types.SimpleNamespace(
+            content=[types.SimpleNamespace(text=" hi ")],
+            stop_reason="end_turn", model="m", usage=None)
+        client = types.SimpleNamespace(
+            messages=types.SimpleNamespace(create=lambda **_kw: resp))
+        monkeypatch.setattr(analysis, "_get_client", lambda: client)
+        text, stop = analysis._call(analysis.MODEL_FAST, "sys", "user", max_tokens=20)
+        assert text == "hi" and stop == "end_turn"
 
 
 # ── publish.py — SPY data source + is_close inheritance ──────────────────────
@@ -4631,8 +4859,9 @@ class TestReproducibilityManifest:
         analysis._record_call("m", 600, object())   # no .model / .usage attrs
         assert analysis._RUN_MANIFEST["calls"]["m"]["n_calls"] == 1
 
-    def test_export_writes_manifest_and_prompts(self, tmp_path):
+    def test_export_writes_manifest_and_prompts(self, tmp_path, monkeypatch):
         import analysis, json
+        monkeypatch.delenv("CURSOR_API_KEY", raising=False)
         analysis._RUN_MANIFEST["calls"].clear()
         analysis._record_call("claude-sonnet-4-6", 1200, self._FakeResp())
         path = str(tmp_path / "repro.json")
@@ -4643,6 +4872,18 @@ class TestReproducibilityManifest:
         assert m["calls"]["claude-sonnet-4-6"]["n_calls"] == 1
         on_disk = json.load(open(path))
         assert on_disk["sampling"]["temperature"].startswith("api_default")
+        assert m["llm_provider"] == "anthropic"
+
+    def test_export_with_cursor_key_records_the_pinned_models(self, tmp_path, monkeypatch):
+        import analysis
+        monkeypatch.setenv("CURSOR_API_KEY", "crsr_test")
+        analysis._RUN_MANIFEST["calls"].clear()
+        m = analysis.export_reproducibility(
+            path=str(tmp_path / "repro.json"), prompts_dir=str(tmp_path / "prompts"),
+            run_id="r2", date="2026-10-11")
+        assert m["llm_provider"] == "cursor"
+        assert m["models"] == {"fast": "claude-haiku-4-5", "smart": "claude-sonnet-4-6"}
+        assert "cursor_sdk" in m
 
 
 class TestReconcileHealthRecord:
@@ -13667,6 +13908,22 @@ class TestLlmUsageCost:
         assert u["unpriced_models"] == ["mystery-model"]
         assert u["cost_pct_aum_per_run"] == pytest.approx(1.17)
         assert u["cost_pct_aum_annualized"] == pytest.approx(60.84)
+
+    def test_cursor_short_ids_are_priced_as_a_proxy(self, monkeypatch):
+        import analysis
+        monkeypatch.setenv("CURSOR_API_KEY", "crsr_test")
+        monkeypatch.setattr(analysis, "_RUN_MANIFEST", {"calls": {
+            "claude-haiku-4-5": {"n_calls": 1, "input_tokens": 1_000_000, "output_tokens": 0,
+                                 "cache_read_tokens": 0, "cache_creation_tokens": 0},
+            "claude-sonnet-4-6": {"n_calls": 1, "input_tokens": 0, "output_tokens": 1_000_000,
+                                  "cache_read_tokens": 0, "cache_creation_tokens": 0},
+            "grok-4.5": {"n_calls": 1, "input_tokens": 10, "output_tokens": 10},
+        }})
+        u = analysis.usage_summary(total_value=500.0)
+        # Haiku input $1.00 + Sonnet output $15.00. Grok has no list price.
+        assert u["est_cost_usd"] == pytest.approx(16.0)
+        assert u["unpriced_models"] == ["grok-4.5"]
+        assert "Cursor" in u["basis"]
 
     def test_deliberation_stats_aggregates_logged_runs(self):
         from deliberation_stats import _llm_cost

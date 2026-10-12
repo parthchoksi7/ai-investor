@@ -197,9 +197,10 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
-          # Anthropic key for the Step 4 Haiku event digest (GH Actions is the research
-          # plane that can reach the Anthropic API). If unset, the digest self-skips.
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Cursor key for the Step 4 event digest. Completions are text-only
+          # (cursor_llm.py). If unset, the digest self-skips. The Anthropic key is
+          # no longer passed, so this job cannot bill Anthropic.
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           FULL_REFRESH: ${{ inputs.full_refresh || 'false' }}
           # Stage D switch — set the repo Actions VARIABLE `UNIVERSE_EXPANDED=true`
           # (Settings → Secrets and variables → Actions → Variables) to admit the

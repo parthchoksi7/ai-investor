@@ -151,9 +151,11 @@ except Exception as e:
 # Step 4 (§11.3) — Haiku event digest: compress the raw news feed into a small, deduped,
 # per-ticker events.jsonl the dossier folds in. Runs BEFORE build_dossier so today's
 # events reach the dossier. Enrichment, NEVER gating — a failure here must not stop the
-# pipeline (events enrich; they don't gate). Needs ANTHROPIC_API_KEY in the GH env.
+# pipeline (events enrich; they don't gate). Needs CURSOR_API_KEY in the GH env.
+# ANTHROPIC_* is the legacy path, used only when the Cursor key is absent.
 try:
-    if os.getenv("ANTHROPIC_API_KEY") or os.getenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE"):
+    if (os.getenv("CURSOR_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+            or os.getenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE")):
         from event_digest import digest as _digest
         from universe import CORE_UNIVERSE as _UNIV
         _stats = _digest(snapshot, set(_UNIV))
@@ -183,7 +185,7 @@ try:
         except Exception as _me:
             print(f"   ⚠ could not record event_digest stats to data_quality_report — {_me}")
     else:
-        print("event_digest: skipped — no ANTHROPIC_API_KEY in env (events stay empty)")
+        print("event_digest: skipped — no CURSOR_API_KEY in env (events stay empty)")
 except Exception as e:
     print(f"WARNING: event_digest failed (non-fatal, events are enrichment) — {e}")
 

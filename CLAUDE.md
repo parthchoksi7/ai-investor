@@ -386,6 +386,22 @@ This prevents the silent all-50 quant score failure mode where agents run but pr
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
 
+## Changelog — Oct 11 2026 (model calls move off Anthropic onto Cursor)
+
+The owner is dropping the Anthropic bill. When `CURSOR_API_KEY` is set, `analysis._call`
+and the preflight canary go through `cursor_llm.complete` (Cursor SDK, `tools=[]`,
+empty working directory). Fast seats use Claude Haiku 4.5 and smart seats use
+Claude Sonnet 4.6 — the same versions as the Claude routines, billed by Cursor.
+A leftover Anthropic key is not used on that path. `market_data.yml` passes
+`CURSOR_API_KEY` and stops passing `ANTHROPIC_API_KEY`, so the event digest cannot
+bill Anthropic. `FORMULA_VERSION` is unchanged, and the agent scorecards stay in
+the current sleeve. A Cursor canary failure skips and retries, so the day's last
+attempt still falls through to the stop check. Logged in `SCALE_DECISION_RULE.md` §7.
+
+Robinhood is unchanged. The morning and 4 PM routines still need a broker connection
+that Cursor does not have yet. Cancelling the Claude routines before that connection
+exists stops the −25% stop and the weekly rebalance.
+
 ## Changelog — Oct 7 2026 (published benchmark closes one session stale — third occurrence; measurement-only, inside the freeze)
 
 Spec-driven fix from the Chief-of-Staff review session. **Measurement-only:** nothing that

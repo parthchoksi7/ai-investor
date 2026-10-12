@@ -205,6 +205,20 @@ The measurement is only valid if the thing being measured stops changing:
 
 ## 7. Decisions taken
 
+### Model host change — 2026-10-11: completions move from Anthropic to Cursor
+
+**`FORMULA_VERSION` is not changed.** The deterministic scores stay on the same
+clock. The owner directed the host change because Anthropic will no longer be
+paid, and chose to keep the same model versions: Haiku 4.5 (`claude-haiku-4-5`)
+for research, earnings, position review, and the news digest; Sonnet 4.6
+(`claude-sonnet-4-6`) for regime, devil's advocate, the portfolio manager, and
+the risk officer. Cursor bills those calls. Agent scorecards stay in the current
+sleeve. The transport is not identical: each call is a Cursor agent with no
+tools and an empty directory, and a one-line instruction to reply in JSON is
+prepended. Prompts, universe, and sizing are unchanged. If the shadow week shows
+the agents failing to parse or deciding differently, the first live Cursor
+rebalance becomes the sleeve boundary and this entry is amended.
+
 ### Bug fix that does not alter decisions — 2026-10-07: published benchmark closes are dated
 
 **No threshold in this document changed, and nothing that decides a trade changed.**

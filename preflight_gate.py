@@ -219,10 +219,36 @@ def data_plane_ready() -> tuple[bool, str]:
 
 
 def _check_api_health() -> tuple[bool, str]:
-    """Make a minimal Anthropic API call to verify the API is not overloaded.
+    """Make a minimal model call to verify the model host is not overloaded.
     Returns (healthy: bool, message: str). Rebalance mode only — risk_watch is
     deterministic (zero LLM) and must never be blocked by an API outage.
+
+    CURSOR_API_KEY takes this path. Anthropic is used only when that key is absent,
+    so a leftover Claude credential cannot keep the canary on the old bill.
     """
+    if os.getenv("CURSOR_API_KEY", "").strip():
+        try:
+            from cursor_llm import complete
+            text, _, _ = complete(
+                "canary",
+                'Reply with exactly: {"status":"ok"}',
+                "ping",
+                max_tokens=50,
+            )
+        except Exception as e:
+            # Unlike the Anthropic branch below, every Cursor failure skips.
+            # The canary calls the same complete() the agents call, so an auth,
+            # bridge, or model-id error here means the pipeline cannot run.
+            # Proceeding would burn the attempt on a run that never reaches a
+            # healthy decision, and on the final attempt it would skip the
+            # risk_watch fallback the −25% stop depends on. Skip-retry lets the
+            # next hour try again; the final attempt runs the stop.
+            err = str(e)
+            return False, f"Cursor canary failed — {err[:120]}"
+        if not (text or "").strip():
+            return False, "Cursor agent returned an empty response — skipping run"
+        return True, "Cursor agent healthy"
+
     try:
         import anthropic
     except ImportError:

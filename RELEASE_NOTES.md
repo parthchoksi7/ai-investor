@@ -13,7 +13,19 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
-_Nothing unreleased._
+### Changed — model calls bill Cursor, not Anthropic
+
+The seven-agent pipeline and the news digest now call Cursor when `CURSOR_API_KEY`
+is set. Research, earnings, position review, and the news digest use Claude Haiku
+4.5. Regime, devil's advocate, the portfolio manager, and the risk officer use
+Claude Sonnet 4.6. Those are the same model versions the Claude routines use;
+Cursor bills them. Calls get no tools and an empty directory, so a headline in a
+prompt cannot run a command or place an order. GitHub's data fetch passes
+`CURSOR_API_KEY` and no longer passes the Anthropic key. The quant formula is
+unchanged, and the agent scorecards stay in the current sleeve. `FORMULA_VERSION`
+is not changed. A Cursor canary failure skips the rebalance and retries next
+hour, so the last attempt of the day still runs the stop check. Each model call
+gets its own empty directory and no tools.
 
 ---
 

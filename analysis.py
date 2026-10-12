@@ -332,9 +332,13 @@ def usage_summary(total_value: float | None = None, runs_per_year: int = 52,
     agents run weekly in the cloud; event_digest runs every weekday on the GH plane on
     a METERED key and is recorded separately (data_quality_report.json →
     event_digest.llm_usage, runs_per_year=252)."""
+    cursor_billed = bool(os.getenv("CURSOR_API_KEY", "").strip())
     out: dict = {"by_model": {}, "est_cost_usd": 0.0, "unpriced_models": [],
                  "scope": scope,
-                 "basis": "API list price (subscription OAuth runs are not metered per token)"}
+                 "basis": ("Claude API list price for these model versions, as a proxy. "
+                           "Cursor's invoice is the actual bill and can differ."
+                           if cursor_billed else
+                           "API list price (subscription OAuth runs are not metered per token)")}
     try:
         for model, c in (_RUN_MANIFEST.get("calls") or {}).items():
             row = {k: c.get(k, 0) for k in ("n_calls", "input_tokens", "output_tokens",
@@ -362,10 +366,37 @@ def usage_summary(total_value: float | None = None, runs_per_year: int = 52,
     return out
 
 
+def _system_text(system: str | list) -> str:
+    """Anthropic accepts a string or a cached content-block list. Cursor takes text."""
+    if isinstance(system, str):
+        return system
+    parts = []
+    for block in system or []:
+        if isinstance(block, dict):
+            parts.append(str(block.get("text") or ""))
+        else:
+            parts.append(str(block))
+    return "\n".join(parts)
+
+
 def _call(model: str, system: str | list, user_msg: str,
           max_tokens: int = 600) -> tuple[str, str | None]:
     """Return (text, stop_reason). stop_reason == "max_tokens" means the output
-    was truncated at the cap — the caller uses this to skip pointless retries."""
+    was truncated at the cap — the caller uses this to skip pointless retries.
+
+    CURSOR_API_KEY wins over any Anthropic credential. A key left in the
+    environment must not keep billing Anthropic after the cutover.
+    """
+    if os.getenv("CURSOR_API_KEY", "").strip():
+        from cursor_llm import complete
+        text, stop_reason, response = complete(
+            model, _system_text(system), user_msg, max_tokens=max_tokens)
+        # Ledger the Cursor catalog id that actually ran. The short Claude ids
+        # are in LLM_PRICES_PER_MTOK, so the AUM cost still computes; the basis
+        # string says Cursor's invoice can differ from that list price.
+        _record_call(getattr(response, "model", None) or model, max_tokens, response)
+        return text, stop_reason
+
     response = _get_client().messages.create(
         model=model,
         max_tokens=max_tokens,
@@ -1879,24 +1910,40 @@ def export_reproducibility(path: str = "reproducibility.json",
                 pass
         prompt_meta[name] = meta
 
-    try:
-        import anthropic
-        lib_version = getattr(anthropic, "__version__", "unknown")
-    except Exception:
-        lib_version = "unknown"
+    uses_cursor = bool(os.getenv("CURSOR_API_KEY", "").strip())
+    if uses_cursor:
+        try:
+            import cursor_sdk
+            lib_version = getattr(cursor_sdk, "__version__", "unknown")
+        except Exception:
+            lib_version = "unknown"
+        lib_name = "cursor_sdk"
+    else:
+        try:
+            import anthropic
+            lib_version = getattr(anthropic, "__version__", "unknown")
+        except Exception:
+            lib_version = "unknown"
+        lib_name = "anthropic_sdk"
 
+    from cursor_llm import CURSOR_MODELS
     manifest = {
         "run_id":       run_id,
         "date":         date,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "models":       {"fast": MODEL_FAST, "smart": MODEL_SMART},
+        "models":       (dict(CURSOR_MODELS)
+                         if uses_cursor else
+                         {"fast": MODEL_FAST, "smart": MODEL_SMART}),
+        "llm_provider": "cursor" if uses_cursor else "anthropic",
         "sampling":     SAMPLING_PARAMS,
-        "anthropic_sdk": lib_version,
+        lib_name:       lib_version,
         "calls":        _RUN_MANIFEST.get("calls", {}),  # resolved snapshots + usage
         "prompts":      prompt_meta,
         "note": ("Resolved model snapshots and token usage are this run's actual "
-                 "API values. Sampling uses Anthropic API defaults (not pinned). "
-                 "Prompt text is exported verbatim with SHA-256 hashes."),
+                 "API values. Prompt text is exported verbatim with SHA-256 hashes. "
+                 + ("Completions run on Cursor with no tools."
+                    if uses_cursor else
+                    "Sampling uses Anthropic API defaults (not pinned).")),
     }
     with open(path, "w") as f:
         json.dump(manifest, f, indent=2)

@@ -185,18 +185,23 @@ and from prematurely stamping executed_at. Real orders are placed via Robinhood 
 
 Install dependencies. The base image ships some Debian-managed packages (PyJWT,
 cryptography) that a bare `pip install` cannot uninstall — the install then ABORTS
-before reaching anthropic / robin_stocks, and the pipeline fails deep in STEP 3
-with `No module named 'anthropic'` (this happened live on Jul 8 2026). Install,
-then VERIFY the imports actually resolve; fall back to --ignore-installed; if the
-imports STILL fail, STOP cleanly (a skipped attempt is the designed failure
-direction — the next cron retries; a half-installed pipeline is not):
+before reaching cursor_sdk / robin_stocks, and the pipeline fails deep in STEP 3
+with `No module named 'cursor_sdk'` (the Jul 8 2026 failure was the same class,
+then against `anthropic`). Install, then VERIFY the imports actually resolve;
+fall back to --ignore-installed; if the imports STILL fail, STOP cleanly (a
+skipped attempt is the designed failure direction — the next cron retries; a
+half-installed pipeline is not):
+
+Model calls use CURSOR_API_KEY from the environment (Cursor Dashboard → API Keys,
+stored as a cloud-agent secret, never pasted into this prompt). When that key is
+set, the pipeline does not call Anthropic.
 
 pip install -r requirements.txt -q 2>&1 | tail -2 || true
-if ! python -c "import anthropic, robin_stocks, pyotp, dotenv, yaml" 2>/dev/null; then
+if ! python -c "import cursor_sdk, robin_stocks, pyotp, dotenv, yaml" 2>/dev/null; then
   echo "deps incomplete after first install — retrying with --ignore-installed"
   pip install -r requirements.txt -q --ignore-installed 2>&1 | tail -2 || true
 fi
-python -c "import anthropic, robin_stocks, pyotp, dotenv, yaml" || {
+python -c "import cursor_sdk, robin_stocks, pyotp, dotenv, yaml" || {
   echo "dependencies unavailable — STOP. Push nothing, place no orders. The next scheduled attempt (+60 min) retries."
   exit 0
 }
