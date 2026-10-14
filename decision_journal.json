@@ -1196,9 +1196,19 @@
       "Free cash flow yield falls below 5% due to capex increases without corresponding margin expansion",
       "Major customer (airline, hotel group) announces direct booking incentives or channel conflict reducing BKNG volumes"
     ],
-    "status": "open",
-    "actual_return": null,
-    "thesis_correct": null
+    "status": "closed",
+    "actual_return": -0.2075,
+    "thesis_correct": false,
+    "exits": [
+      {
+        "date": "2026-10-14",
+        "run_id": "20261014-155220",
+        "exit_price": 157.51,
+        "avg_price": 198.76,
+        "realized_return": -0.2075,
+        "full_exit": true
+      }
+    ]
   },
   {
     "trade_id": "91339278-3116-4239-b10d-db3f428f71a2",
@@ -1609,6 +1619,69 @@
       "Major M&A announcement at >22x EBITDA valuation or with <$40M run-rate synergies, suggesting discipline has eroded",
       "Free cash flow margin deteriorates below 17%, indicating working capital stress or capex requirements exceeding expectations",
       "Key customer concentration risk emerges (single customer >15% of revenue) or loss of major contract with no backlog replacement"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "63f2d58f-f0d2-40d5-85d9-ed09d06698e9",
+    "run_id": "20261014-155220",
+    "date": "2026-10-14",
+    "ticker": "BKNG",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "BKNG is a compounding travel-commerce oligopoly trading at a 17.7x PE despite 13% revenue growth, 32.8% operating margins, and 7.9% FCF yield, with downside protection from its market-leading position and upside from AI-driven personalization and pricing power that consensus underweights.",
+    "anti_thesis": "BKNG trades at a premium multiple that already embeds AI-driven margin expansion and sustained double-digit growth, yet the stock is already down ~14% from recent highs suggesting the market is questioning exactly these assumptions. Google's dominance in travel search (Hotels/Flights native integrations) represents a structural disintermediation threat that compounds with any macro travel demand softening, while the low-beta, high-quality positioning means the stock offers limited upside in a risk-on environment yet still suffers meaningful drawdown in a downturn\u2014the worst of both worlds.",
+    "catalysts": [
+      "Q3/Q4 2026 earnings beat driven by higher-than-expected take rates from AI-powered pricing recommendations and personalized traveler matching",
+      "Guidance raise on 2027 growth as management signals AI monetization traction and international booking acceleration (emerging markets still underpenetrated)",
+      "Market share gains disclosed in competitor earnings or third-party travel data showing BKNG consolidating supply; Expedia/Kayak weakness",
+      "Subscription/loyalty program acceleration (Genius, corporate travel) driving higher-margin recurring revenue and customer lifetime value expansion",
+      "Capital allocation announcement (accelerated buyback, dividend initiation, or acquisition of AI/personalization IP) signaling management confidence",
+      "Travel analyst upgrades as consensus 2027 estimates prove too conservative; negative revision cycle bottoming"
+    ],
+    "confidence": 6.5,
+    "expected_return": 0.03,
+    "invalidates_if": [
+      "BKNG reports sequential revenue deceleration below 10% YoY for two consecutive quarters, signaling demand destruction rather than cycling",
+      "Operating margin contracts below 30% sustained, indicating cost structure misalignment or competitive take-rate pressure",
+      "Market share data (third-party or competitor disclosures) shows BKNG losing share to Expedia, Airbnb, or Chinese players in core segments",
+      "Macro booking volume indices (STR hotel data, airline capacity, Airbnb comps) signal travel demand weakness outpacing historical elasticity",
+      "Management cuts 2027 guidance by >15% or reduces capex/R&D allocation away from AI, signaling low confidence in opportunity",
+      "Regulatory action constrains take rates or algorithmic pricing across the industry by >200bps"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "c5128263-8aa2-459d-b95d-e43acff567b9",
+    "run_id": "20261014-155220",
+    "date": "2026-10-14",
+    "ticker": "NVDA",
+    "action": "BUY",
+    "target_weight": 0.0821,
+    "thesis": "NVDA is transitioning from a cyclical AI-boom beneficiary to a structural infrastructure monopoly with 7-10 year secular tailwinds, but is currently priced for perfection with limited margin for execution stumbles or competitive encroachment.",
+    "anti_thesis": "NVDA trades at a valuation (43.3/100 pipeline score = expensive) that already prices in a decade of flawless execution, yet the entire bull thesis rests on hyperscalers sustaining $3-4T in capex despite unproven AI ROI \u2014 a historically unprecedented level of capital discipline that has never held in prior tech cycles. Custom silicon from Google, Amazon, and Meta is not a future risk but a present reality already cannibalizing addressable GPU workloads, while AMD's MI300X series is demonstrably closing the inference performance gap. If capex expectations simply revert to $2T by 2027, revenue growth decelerates sharply, gross margins compress below 65% as pricing power erodes, and the stock re-rates from ~35x forward earnings toward 20-22x \u2014 implying 35-45% permanent drawdown from current levels with no fundamental recovery catalyst.",
+    "catalysts": [
+      "Q3 FY2027 earnings (2026-11-18): Forward guidance revision downward on capex spending/ROI concerns from hyperscalers would trigger 12-18% correction",
+      "AMD EPYC MI chip adoption acceleration: Each 500bps market share loss = 100bps gross margin compression and signals competitive fracturing",
+      "Custom silicon announcements from major cloud providers (Google, Meta, Amazon): Signals ROI deterioration and shifts perception from monopoly to duopoly/oligopoly",
+      "Vera Rubin architectural delays or yield issues: Pushes revenue growth inflection right by 6-12 months, compressing multiple in near term",
+      "Goldman Sachs AI investment thesis revision: If $7.6T projection retreats to $5T or below, resets entire capex cycle expectations",
+      "Gross margin misses in Q3 or Q4: Even 2-3% miss signals faster-than-expected competitive pricing pressure"
+    ],
+    "confidence": 5,
+    "expected_return": 0.18,
+    "invalidates_if": [
+      "Next two quarters show sequential gross margin compression >150bps with no recovery roadmap",
+      "Major hyperscaler (Google, Meta, or Amazon) announces >20% of AI capex redirected to custom silicon or alternative architectures",
+      "AMD MI chip revenue exceeds 25% of Nvidia datacenter revenue run rate within 18 months",
+      "Vera Rubin launch slips beyond Q2 2027 or initial customer feedback indicates <20x performance gains",
+      "Nvidia provides guidance implying revenue growth deceleration below 20% CAGR for FY2028-FY2030",
+      "Regulatory/geopolitical action restricts >10% of addressable market (e.g., China export restrictions expand beyond current scope)",
+      "Hyperscaler capex spending as % of revenue peaks below consensus expectations, indicating ROI deterioration"
     ],
     "status": "open",
     "actual_return": null,

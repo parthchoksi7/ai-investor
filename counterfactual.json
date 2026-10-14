@@ -1,92 +1,92 @@
 {
   "da_reject@21d": {
-    "n_flagged": 37,
-    "n_kept": 128,
-    "mean_return_flagged": -0.00773,
-    "mean_return_kept": -0.00457,
-    "gap_kept_minus_flagged": 0.00315,
+    "n_flagged": 43,
+    "n_kept": 135,
+    "mean_return_flagged": -0.01074,
+    "mean_return_kept": -0.00413,
+    "gap_kept_minus_flagged": 0.0066,
     "expected_direction": "underperform",
-    "p_value": 0.8096,
+    "p_value": 0.5836,
     "n_floor_met": true,
     "adds_value": true,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": 0.00251,
+    "gap_demeaned": 0.00526,
     "adds_value_demeaned": true,
-    "p_value_demeaned": 0.8399,
-    "p_value_bh": 0.9655,
+    "p_value_demeaned": 0.6459,
+    "p_value_bh": 0.908,
     "significant_bh": false,
     "verdict_bh": "NOT_SIGNIFICANT"
   },
   "cro_veto@21d": {
     "n_flagged": 3,
-    "n_kept": 162,
+    "n_kept": 175,
     "mean_return_flagged": 0.02774,
-    "mean_return_kept": -0.00589,
-    "gap_kept_minus_flagged": -0.03363,
+    "mean_return_kept": -0.0063,
+    "gap_kept_minus_flagged": -0.03404,
     "expected_direction": "underperform",
-    "p_value": 0.2459,
+    "p_value": 0.2422,
     "n_floor_met": false,
     "adds_value": false,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": -0.01515,
+    "gap_demeaned": -0.01445,
     "adds_value_demeaned": false,
-    "p_value_demeaned": 0.6606,
+    "p_value_demeaned": 0.6743,
     "p_value_bh": null,
     "significant_bh": null
   },
   "pm_selected@21d": {
-    "n_flagged": 16,
-    "n_kept": 149,
-    "mean_return_flagged": 0.03096,
-    "mean_return_kept": -0.00917,
-    "gap_kept_minus_flagged": -0.04014,
+    "n_flagged": 18,
+    "n_kept": 160,
+    "mean_return_flagged": 0.03059,
+    "mean_return_kept": -0.00981,
+    "gap_kept_minus_flagged": -0.04041,
     "expected_direction": "outperform",
-    "p_value": 0.1096,
+    "p_value": 0.0724,
     "n_floor_met": true,
     "adds_value": true,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": -0.04258,
+    "gap_demeaned": -0.04407,
     "adds_value_demeaned": true,
-    "p_value_demeaned": 0.0721,
-    "p_value_bh": 0.575,
+    "p_value_demeaned": 0.0391,
+    "p_value_bh": 0.4692,
     "significant_bh": false,
     "verdict_bh": "NOT_SIGNIFICANT"
   },
   "da_reject@63d": {
-    "n_flagged": 12,
-    "n_kept": 65,
-    "mean_return_flagged": 0.05157,
-    "mean_return_kept": 0.02247,
-    "gap_kept_minus_flagged": -0.0291,
+    "n_flagged": 17,
+    "n_kept": 68,
+    "mean_return_flagged": 0.02175,
+    "mean_return_kept": 0.01803,
+    "gap_kept_minus_flagged": -0.00372,
     "expected_direction": "underperform",
-    "p_value": 0.5358,
+    "p_value": 0.9193,
     "n_floor_met": true,
     "adds_value": false,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": -0.0228,
+    "gap_demeaned": -0.01348,
     "adds_value_demeaned": false,
-    "p_value_demeaned": 0.6104,
-    "p_value_bh": 0.9655,
+    "p_value_demeaned": 0.6881,
+    "p_value_bh": 0.908,
     "significant_bh": false,
     "verdict_bh": "NOT_SIGNIFICANT"
   },
   "cro_veto@63d": {
     "n_flagged": 1,
-    "n_kept": 76,
+    "n_kept": 84,
     "mean_return_flagged": -0.04387,
-    "mean_return_kept": 0.02793,
-    "gap_kept_minus_flagged": 0.0718,
+    "mean_return_kept": 0.01952,
+    "gap_kept_minus_flagged": 0.06339,
     "expected_direction": "underperform",
     "p_value": null,
     "n_floor_met": false,
     "adds_value": true,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": 0.11897,
+    "gap_demeaned": 0.116,
     "adds_value_demeaned": true,
     "p_value_demeaned": null,
     "p_value_bh": null,
@@ -94,72 +94,99 @@
   },
   "pm_selected@63d": {
     "n_flagged": 12,
-    "n_kept": 65,
+    "n_kept": 73,
     "mean_return_flagged": 0.07927,
-    "mean_return_kept": 0.01735,
-    "gap_kept_minus_flagged": -0.06192,
+    "mean_return_kept": 0.00882,
+    "gap_kept_minus_flagged": -0.07045,
     "expected_direction": "outperform",
-    "p_value": 0.1381,
+    "p_value": 0.092,
     "n_floor_met": true,
     "adds_value": true,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": -0.06201,
+    "gap_demeaned": -0.06421,
     "adds_value_demeaned": true,
-    "p_value_demeaned": 0.115,
-    "p_value_bh": 0.575,
+    "p_value_demeaned": 0.0998,
+    "p_value_bh": 0.5988,
+    "significant_bh": false,
+    "verdict_bh": "NOT_SIGNIFICANT"
+  },
+  "pm_selected@126d": {
+    "n_flagged": 11,
+    "n_kept": 28,
+    "mean_return_flagged": 0.02026,
+    "mean_return_kept": 0.02615,
+    "gap_kept_minus_flagged": 0.00589,
+    "expected_direction": "outperform",
+    "p_value": 0.9075,
+    "n_floor_met": true,
+    "adds_value": false,
+    "significant": false,
+    "verdict": "NOT_SIGNIFICANT",
+    "gap_demeaned": 0.00589,
+    "adds_value_demeaned": false,
+    "p_value_demeaned": 0.9075,
+    "p_value_bh": 0.908,
     "significant_bh": false,
     "verdict_bh": "NOT_SIGNIFICANT"
   },
   "_gate_1b": {
-    "family_size": 10,
+    "family_size": 12,
     "members": {
       "counterfactual:da_reject@21d": {
-        "p": 0.8399,
-        "q_bh": 0.9655
+        "p": 0.6459,
+        "q_bh": 0.908
       },
       "counterfactual:pm_selected@21d": {
-        "p": 0.0721,
-        "q_bh": 0.575
+        "p": 0.0391,
+        "q_bh": 0.4692
       },
       "counterfactual:da_reject@63d": {
-        "p": 0.6104,
-        "q_bh": 0.9655
+        "p": 0.6881,
+        "q_bh": 0.908
       },
       "counterfactual:pm_selected@63d": {
-        "p": 0.115,
-        "q_bh": 0.575
+        "p": 0.0998,
+        "q_bh": 0.5988
+      },
+      "counterfactual:pm_selected@126d": {
+        "p": 0.9075,
+        "q_bh": 0.908
       },
       "scorecard:research.confidence@21d": {
-        "p": 0.69,
-        "q_bh": 0.9655
+        "p": 0.7059,
+        "q_bh": 0.908
       },
       "scorecard:devils_advocate.overall_risk_score@21d": {
-        "p": 0.7825,
-        "q_bh": 0.9655
+        "p": 0.5273,
+        "q_bh": 0.908
       },
       "scorecard:position_review.hold_score@21d": {
-        "p": 0.4787,
-        "q_bh": 0.9655
+        "p": 0.5471,
+        "q_bh": 0.908
       },
       "scorecard:research.confidence@63d": {
-        "p": 0.9655,
-        "q_bh": 0.9655
+        "p": 0.8329,
+        "q_bh": 0.908
       },
       "scorecard:devils_advocate.overall_risk_score@63d": {
-        "p": 0.3639,
-        "q_bh": 0.9655
+        "p": 0.3447,
+        "q_bh": 0.908
       },
       "scorecard:position_review.hold_score@63d": {
         "p": 0.908,
-        "q_bh": 0.9655
+        "q_bh": 0.908
+      },
+      "scorecard:position_review.hold_score@126d": {
+        "p": 0.853,
+        "q_bh": 0.908
       }
     },
     "note": "Benjamini-Hochberg across every Gate 1b route at once. A scorecard member's q is necessary but not sufficient \u2014 the rule also needs that signal's IC and observation bar (Gate 1a's) in its expected direction."
   },
   "_meta": {
     "note": "Counterfactual: does each model's reject/veto/select decision predict the right forward-return direction? gap = mean_kept \u2212 mean_flagged. Block-sampled effective N. `significant` requires BOTH sides >= 10 AND a Welch's-z two-sample p-value < 0.05 (matches agent_scorecard's rigor \u2014 a sample-size floor alone is not a significance test). At ~weekly cadence this stays NOT_SIGNIFICANT for months (\u00a77.4), by design.",
-    "gate_1b_fields": "p_value_bh / significant_bh / verdict_bh: date-demeaned (cross-sectional) gap, Welch t, Benjamini-Hochberg across the whole 10-test Gate 1b family (see _gate_1b). Use THESE for SCALE_DECISION_RULE Gate 1b, not the raw `significant`. cro_veto is excluded from the gate by the rule: no p_value_bh.",
+    "gate_1b_fields": "p_value_bh / significant_bh / verdict_bh: date-demeaned (cross-sectional) gap, Welch t, Benjamini-Hochberg across the whole 12-test Gate 1b family (see _gate_1b). Use THESE for SCALE_DECISION_RULE Gate 1b, not the raw `significant`. cro_veto is excluded from the gate by the rule: no p_value_bh.",
     "min_n": 10,
     "alpha": 0.05,
     "signals": {
