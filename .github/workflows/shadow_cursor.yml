@@ -9,13 +9,6 @@ name: Cursor shadow rebalance
 on:
   schedule:
     - cron: '30 17 * * 3'   # 1:30 PM ET Wednesday (EDT)
-  # Temporary: workflow_dispatch only runs from the default branch. This
-  # push trigger starts the Oct 14 proof on this branch. Remove it once
-  # shadow/2026-10-14/ is committed.
-  push:
-    branches: [cursor/shadow-cursor-run-88ca]
-    paths-ignore:
-      - 'shadow/**'
   workflow_dispatch:
     inputs:
       date:
