@@ -1,0 +1,333 @@
+{
+  "date": "2026-10-14",
+  "rebalance_commit": "464bc9cb13cb064fc38c9456263b3cf0eaec5da6",
+  "inputs_commit": "7dee512b53782cd7d72d91becf7d90ae5ae242bb",
+  "regime": {
+    "cursor": "RISK_ON",
+    "live": "RISK_ON"
+  },
+  "verdict_diffs": [
+    {
+      "ticker": "ABNB",
+      "fields": {
+        "research_confidence": {
+          "cursor": 7,
+          "live": 6.5
+        }
+      }
+    },
+    {
+      "ticker": "ADI",
+      "fields": {
+        "research_confidence": {
+          "cursor": 5,
+          "live": 7
+        }
+      }
+    },
+    {
+      "ticker": "AME",
+      "fields": {
+        "da_reject": {
+          "cursor": false,
+          "live": true
+        },
+        "da_risk": {
+          "cursor": 6,
+          "live": 8
+        },
+        "research_confidence": {
+          "cursor": 6,
+          "live": 7
+        }
+      }
+    },
+    {
+      "ticker": "AMP",
+      "fields": {
+        "research_confidence": {
+          "cursor": 7,
+          "live": 6
+        }
+      }
+    },
+    {
+      "ticker": "BKNG",
+      "fields": {
+        "da_risk": {
+          "cursor": 5,
+          "live": 6
+        },
+        "research_confidence": {
+          "cursor": 7,
+          "live": 6.5
+        }
+      }
+    },
+    {
+      "ticker": "CVX",
+      "fields": {
+        "earnings_alpha": {
+          "cursor": 6,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "GOOGL",
+      "fields": {
+        "earnings_alpha": {
+          "cursor": 6,
+          "live": 7
+        },
+        "position_action": {
+          "cursor": "REDUCE",
+          "live": "HOLD"
+        }
+      }
+    },
+    {
+      "ticker": "META",
+      "fields": {
+        "earnings_alpha": {
+          "cursor": 6,
+          "live": 5
+        },
+        "position_action": {
+          "cursor": "REDUCE",
+          "live": "HOLD"
+        },
+        "research_confidence": {
+          "cursor": 6,
+          "live": 7
+        }
+      }
+    },
+    {
+      "ticker": "MU",
+      "fields": {
+        "research_confidence": {
+          "cursor": 6,
+          "live": 7
+        }
+      }
+    },
+    {
+      "ticker": "NVDA",
+      "fields": {
+        "earnings_alpha": {
+          "cursor": 6,
+          "live": 7
+        },
+        "research_confidence": {
+          "cursor": 7,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "PFE",
+      "fields": {
+        "da_reject": {
+          "cursor": false,
+          "live": true
+        },
+        "da_risk": {
+          "cursor": 6,
+          "live": 7
+        }
+      }
+    },
+    {
+      "ticker": "QCOM",
+      "fields": {
+        "da_risk": {
+          "cursor": 8,
+          "live": 7
+        }
+      }
+    },
+    {
+      "ticker": "TROW",
+      "fields": {
+        "da_reject": {
+          "cursor": true,
+          "live": false
+        },
+        "da_risk": {
+          "cursor": 7,
+          "live": 6
+        },
+        "research_confidence": {
+          "cursor": 7,
+          "live": 6
+        }
+      }
+    },
+    {
+      "ticker": "V",
+      "fields": {
+        "da_risk": {
+          "cursor": 5,
+          "live": 6
+        },
+        "position_action": {
+          "cursor": "REDUCE",
+          "live": "HOLD"
+        },
+        "research_confidence": {
+          "cursor": 7,
+          "live": 6
+        }
+      }
+    },
+    {
+      "ticker": "VRTX",
+      "fields": {
+        "position_action": {
+          "cursor": "REDUCE",
+          "live": "HOLD"
+        }
+      }
+    },
+    {
+      "ticker": "ZM",
+      "fields": {
+        "da_reject": {
+          "cursor": false,
+          "live": true
+        },
+        "da_risk": {
+          "cursor": 6,
+          "live": 7
+        }
+      }
+    }
+  ],
+  "pm": {
+    "cursor": [
+      [
+        "BKNG",
+        "SELL",
+        0.0
+      ],
+      [
+        "ZM",
+        "BUY",
+        0.08
+      ]
+    ],
+    "live": [
+      [
+        "BKNG",
+        "SELL",
+        0.0
+      ],
+      [
+        "NVDA",
+        "BUY",
+        0.09
+      ]
+    ]
+  },
+  "cro_vetoed": {
+    "cursor": [],
+    "live": [],
+    "cursor_approved": true,
+    "live_approved": true
+  },
+  "final": {
+    "cursor": [
+      [
+        "BKNG",
+        "SELL",
+        0.0
+      ],
+      [
+        "ZM",
+        "BUY",
+        0.08
+      ]
+    ],
+    "live": [
+      [
+        "BKNG",
+        "SELL",
+        0.0
+      ],
+      [
+        "NVDA",
+        "BUY",
+        0.0821
+      ]
+    ],
+    "overlap": [
+      [
+        "BKNG",
+        "SELL"
+      ]
+    ],
+    "cursor_only": [
+      [
+        "ZM",
+        "BUY"
+      ]
+    ],
+    "live_only": [
+      [
+        "NVDA",
+        "BUY"
+      ]
+    ]
+  },
+  "parse_failures": {
+    "cursor": 0,
+    "cursor_detail": {
+      "portfolio_manager_parsed_ok": true,
+      "portfolio_manager_raw_excerpt": null,
+      "research_parse_failed": [],
+      "devils_advocate_parse_failed": [],
+      "cro_api_failed": false
+    },
+    "live_pm_parsed_ok": true,
+    "live_cro_api_failed": false
+  },
+  "paper": {
+    "start_value": 506.9521132855,
+    "price_commit": "7dee512b53782cd7d72d91becf7d90ae5ae242bb",
+    "books": {
+      "cursor": {
+        "value_at_snapshot": 508.06414451,
+        "missing_prices": [],
+        "n_orders": 2,
+        "value_later": null,
+        "later_missing": [
+          "ZM"
+        ]
+      },
+      "live": {
+        "value_at_snapshot": 508.06414450999995,
+        "missing_prices": [],
+        "n_orders": 2,
+        "value_later": 508.06414450999995,
+        "later_missing": [],
+        "forward_return": 0.0021935626568216904
+      }
+    },
+    "later_snapshot": "7eb0a660e5db12e3dac0cbd9ab2a7903e6a95afd",
+    "note": "value_at_snapshot marks both books at the same pre-trade closes, so a rotation does not change value. forward_return uses the next snapshot's prices.close, which is that file's prior session, not an official print.",
+    "spy_close_snapshot": 778.01,
+    "spy_close_later": 778.01,
+    "spy_return": 0.0
+  },
+  "cumulative": [
+    {
+      "date": "2026-10-14",
+      "cursor": null,
+      "live": 0.0021935626568216904,
+      "live_cumulative": 0.0021935626568216904,
+      "spy": 0.0,
+      "spy_cumulative": 0.0
+    }
+  ]
+}
