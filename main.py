@@ -278,6 +278,263 @@ def select_quant_scores(market_data: dict, held=None) -> tuple[dict, str, str]:
             f"held ones scored locally {local_needed}, others left unscored")
 
 
+def apply_guard_chain(decisions, portfolio, market_data, pipeline_state, *,
+                       today, kill_active, kill_reason, health) -> dict:
+    """Run the post-agent guard chain and return the surviving decisions.
+
+    Shared by the live cycle and the Cursor shadow so the two cannot drift.
+    The body is the chain that used to sit inline in run_daily_cycle: same
+    order, same health records, same in-place edits. It does not write the
+    envelope, the agent log, or any ledger.
+
+    Returns ``decisions`` (post-guard), ``transactions`` (the one log read),
+    and ``netedge_rejected`` (the live agent log counts it).
+    """
+    # Every decision dict below is edited in place (thesis_exit, qty, sizing stamps,
+    # guard clamps). analysis.py hands back the SAME objects it recorded as the agents'
+    # intent (portfolio_manager_proposed / post_cro_decisions), so take a deep copy at
+    # the boundary — the audit record must stay exactly what the agents produced.
+    import copy as _copy
+    decisions = _copy.deepcopy(decisions)
+
+    # ── PM backstop: auto-exit when 3 signals agree ──────────────────────────
+    apply_pm_backstop(decisions, portfolio, pipeline_state)
+    mark_thesis_exits(decisions, pipeline_state)
+    decisions, _risk_exit_attempts = strip_llm_risk_exit(decisions)
+    if _risk_exit_attempts:
+        pipeline_state["llm_risk_exit_attempts"] = _risk_exit_attempts
+        print(f"   ⚠ PM set risk_exit on {_risk_exit_attempts} — stripped (code-only flag)")
+
+    # Executed-trade log, read ONCE and shared by the deployment producer and every
+    # guard below (one consistent view instead of independent reads of the same file).
+    _txs = _load_list(TRANSACTIONS_FILE)
+
+    # ── Bounded mechanical cash deployment (IPS §6 v1.5, Oct 4 2026) ─────────────
+    # A PRODUCER, upstream of every guard: when projected post-trade cash exceeds the
+    # policy target, scale the AI's own intended book up pro-rata within today's
+    # settled cash. The guards below still clamp/drop whatever it proposes.
+    from cash_deployment import plan_cash_deployment
+    decisions, deploy_report = plan_cash_deployment(
+        decisions, portfolio, market_data["prices"], pipeline_state, _txs, today,
+        kill_active=kill_active)
+    pipeline_state["cash_deployment"] = deploy_report
+    health.record("cash_deployment", OK,
+                  message=(f"${deploy_report['deployed_usd']:.2f} proposed across "
+                           f"{sorted(deploy_report['names'])}" if deploy_report["names"]
+                           else f"no deployment: {deploy_report.get('skipped')}"),
+                  **{k: v for k, v in deploy_report.items() if k != "excluded"},
+                  excluded=deploy_report.get("excluded"))
+
+
+    # Pre-compute fractional qty
+    for _d in decisions:
+        _action = _d.get("action", "").upper()
+        if _action in ("BUY", "SELL") and "target_weight" in _d:
+            _d["qty"] = _compute_qty(
+                _d["target_weight"], _action, _d["ticker"], portfolio, market_data["prices"]
+            )
+
+    # ── Validation gate: deterministic guardrails on LLM output ──────────────
+    # Runs AFTER qty pre-computation (notional checks need qty) and BEFORE the
+    # decisions reach pending_decisions.json / execution. See guardrails.py.
+    # (_txs was loaded once above, before the deployment producer.)
+
+    decisions, validation_report = validate_decisions(
+        decisions, portfolio, market_data["prices"],
+        pipeline_state.get("candidates", []), kill_active, transactions=_txs,
+    )
+
+    # Research-backed BUY gate (Jul 22 2026) — a BUY of a name whose Research
+    # thesis came back empty (529 / parse fail / blank) is dropped: enrichment
+    # failure must never become a full-conviction BUY on the quant score alone.
+    # Runs right after validate_decisions (candidate universe already resolved)
+    # and BEFORE the economic guards. SELLs/HOLDs pass; rejects fold into the
+    # decision_validation health check below.
+    decisions, research_rejected = enforce_research_backed_buys(
+        decisions, pipeline_state.get("research"))
+
+    # Market-wide crisis safe-mode (§18.5) — per-name stops don't cover a market
+    # crash. On a SPY 1-day drop ≥ the policy threshold, ALL new BUYs are halted
+    # (SELLs / risk exits stay allowed) and the owner is alerted via the DEGRADED
+    # health record. Runs FIRST among the post-validation guards: nothing below
+    # may re-admit a BUY during a crisis.
+    _spy_chg = market_data["prices"].get("SPY", {}).get("change_pct")
+    decisions, safemode_rejected, _safe_reason = enforce_safe_mode(decisions, _spy_chg)
+    # Drawdown kill switch — as a GUARD, so it acts on the envelope the cloud routine
+    # executes (it used to filter only main.py's local execution path, after the
+    # envelope was written: in production it never blocked a BUY).
+    decisions, killswitch_rejected = enforce_kill_switch(decisions, kill_active, kill_reason)
+    if _safe_reason:
+        health.record("crisis_safe_mode", DEGRADED,
+                      message=_safe_reason, spy_change_pct=_spy_chg,
+                      buys_halted=len(safemode_rejected))
+    else:
+        health.record("crisis_safe_mode", OK, spy_change_pct=_spy_chg)
+
+    # Turnover / tax discipline (CA top-bracket taxable account). Every sale is a
+    # short-term gain (~54%), so cut round-trip churn: block SELLs of names bought
+    # < 30 trading days ago (policy v2.0, IPS §7.2), and BUYs of names sold < 30
+    # calendar days ago (wash-sale + anti-churn). Risk exits are exempt via
+    # kill_active. These run BEFORE the sector cap so the cap projects against the
+    # SELL set that will actually execute — otherwise a SELL dropped here after
+    # the cap freed its sector budget could let a same-sector BUY breach the 25%
+    # limit. The tax-aware hold (IPS §7.5) blocks a discretionary SELL of a gained
+    # lot within ~30 trading days of its 1-year long-term-tax date — nearly half
+    # the tax on the same gain for waiting weeks; risk exits exempt.
+    decisions, holding_rejected = enforce_min_holding_period(decisions, portfolio, transactions=_txs, kill_active=kill_active)
+    decisions, reentry_rejected = enforce_wash_sale_reentry(decisions, transactions=_txs)
+    decisions, taxhold_rejected = enforce_tax_aware_hold(decisions, market_data["prices"], transactions=_txs, kill_active=kill_active)
+
+    # Capital dependency — a BUY funded by a rejected SELL must not execute
+    # alone (Jul 8 2026: orphaned CB/CFG BUYs filled from cash after their
+    # AXP/MS funding SELLs were min-hold-rejected, producing a book the CRO
+    # never reviewed). Runs after every SELL-rejecting guard above and BEFORE
+    # the sector cap, so the cap projects the BUY set that will actually
+    # execute. validation_report["rejected"] here holds only validate_decisions'
+    # own rejects (guard rejects are folded in later, below).
+    decisions, dependency_rejected = enforce_capital_dependency(
+        decisions,
+        validation_report["rejected"] + holding_rejected + taxhold_rejected)
+
+    # Sector cap (25%) — a code-level control (the limit otherwise lives only in
+    # the PM prompt). Runs after turnover filtering so it sees the post-turnover set.
+    # `prices` lets the guard CLAMP an oversized BUY to the remaining headroom and
+    # recompute qty, instead of dropping the position outright (Aug 19 2026).
+    decisions, sector_rejected, sector_clamped = enforce_sector_limits(
+        decisions, portfolio, market_data["prices"])
+
+    # Net-edge gate (#6) — reject a BUY whose expected return, after round-trip
+    # cost + CA short-term tax, falls below the floor. No-op until the PM emits an
+    # expected_return; SELLs exempt. Runs last (final economic filter).
+    decisions, netedge_rejected = enforce_net_edge(decisions, market_data["prices"])
+
+    # Settled-cash budget (Oct 3 2026 remediation 1.2) — LAST, so it sizes the final
+    # BUY set. Cash account: today's SELL proceeds settle T+1 and cannot fund today's
+    # BUYs (Oct 2 2026: three funded BUYs never reached the broker). Clamps the BUY
+    # leg to settled buying power; a rotation's proceeds deploy at the next rebalance.
+    decisions, cash_rejected, cash_clamped = enforce_settled_cash(
+        decisions, portfolio, market_data["prices"])
+
+    # Turnover circuit breaker — LAST, on the final order set, and BEFORE the envelope
+    # is written (it used to trip after the write and return exit 0, so the routine
+    # still placed the SELLs). Tripped → the envelope carries no orders.
+    decisions, breaker_rejected, breaker = enforce_turnover_circuit_breaker(
+        decisions, market_data["prices"], portfolio["total_value"])
+    if breaker:
+        health.record("circuit_breaker", FAILED,
+                      message=f"SELL notional {breaker['turnover_pct']:.0%} of the book exceeds "
+                              f"the {TURNOVER_CIRCUIT_BREAKER_PCT:.0%} one-run limit — run halted, "
+                              "no discretionary orders (code-built stop-loss exits still "
+                              "place). The envelope is still stamped, so the week's "
+                              "rebalance is consumed: an anomalous proposal is a human-review "
+                              "event, not something to retry automatically",
+                      **breaker)
+
+    # ── −25% stop on the rebalance day (risk_watch covers every other day) ──────
+    # AFTER the whole guard chain: no guard may remove or count a catastrophe exit.
+    # qty is the broker's available_qty from the live MCP portfolio, not a snapshot
+    # recompute (a halted/crashed name may have no snapshot price at all).
+    decisions, stop_report = inject_risk_stops(
+        decisions, portfolio, today,
+        cro_api_failed=bool((pipeline_state.get("cro") or {}).get("api_failed")))
+    if stop_report["skipped_cro_api_failed"]:
+        health.record("risk_stop", DEGRADED,
+                      message=f"Stop breached for {[f['ticker'] for f in stop_report['fired']]} "
+                              "but NOT injected — the CRO call failed, so this envelope must stay "
+                              "retryable. Covered by the final-attempt risk_watch fallback / the "
+                              "next risk_watch day.", **stop_report)
+    elif stop_report["fired"] or stop_report.get("skipped_no_basis"):
+        health.record("risk_stop", DEGRADED if stop_report.get("skipped_no_basis") else OK,
+                      message=f"{len(stop_report['fired'])} stop(s) fired"
+                              + (f"; no cost basis/price for {stop_report['skipped_no_basis']}"
+                                 if stop_report.get("skipped_no_basis") else ""),
+                      **stop_report)
+    else:
+        health.record("risk_stop", OK, fired=[])
+
+    # Wash-sale PRE-sale FLAG (A6) — the post-sale re-buy block above covers one
+    # side of IRS §1091; this flags (never blocks) a loss exit within 30d of a
+    # purchase, the other side. Flag-and-allow: a wash sale only defers the loss,
+    # so a risk/conviction exit must not be blocked to preserve tax timing. The
+    # annotation rides on the SELL decision into pending_decisions.json for audit.
+    # OBSERVATIONAL/annotation only — must never break the trade path. A failure
+    # here leaves decisions exactly as the blocking guardrails produced them.
+    try:
+        decisions, washsale_flagged = flag_wash_sale_presale(
+            decisions, market_data["prices"], transactions=_txs)
+        if washsale_flagged:
+            health.record("wash_sale_presale", DEGRADED,
+                          message=f"{len(washsale_flagged)} loss SELL(s) within 30d of "
+                                  "purchase flagged (allowed; loss deferred per §1091)",
+                          flagged=washsale_flagged)
+    except Exception as _e:
+        print(f"   ⚠ wash-sale pre-sale flag skipped: {_e}")
+
+    for r in (research_rejected + safemode_rejected + killswitch_rejected + holding_rejected
+              + reentry_rejected + taxhold_rejected + dependency_rejected
+              + sector_rejected + netedge_rejected + cash_rejected + breaker_rejected):
+        validation_report["rejected"].append(
+            {"ticker": r.get("ticker", "?"), "action": r.get("action", "?"),
+             "reason": r.get("rejected_reason", "turnover/sector/net-edge guard")})
+
+    # A sector clamp is a resize, not a drop — it belongs in "modified" alongside
+    # validate_decisions' weight clamp. Recording it keeps health DEGRADED: the PM
+    # proposing a size the cap cannot hold is a signal, even though the trade
+    # survives at the compliant size.
+    # A settled-cash DROP strands capital for a week — exactly the Oct 2 outcome —
+    # so it gets its own, non-informational check (decision_validation never pages).
+    # A clamp alone (BUYs scaled, still placed) is expected behavior: OK with a note.
+    if cash_rejected:
+        _sells = {str(d.get("ticker", "")).strip().upper() for d in decisions
+                  if str(d.get("action", "")).upper() == "SELL"}
+        _orphan_sells = sorted({str(r.get("source_of_capital", "")).strip().upper()
+                                for r in cash_rejected} & _sells)
+        health.record("settled_cash", DEGRADED,
+                      message=f"{len(cash_rejected)} BUY(s) dropped — settled buying power "
+                              "could not fund them above the order floor (today's SELL "
+                              "proceeds settle T+1; capital idle until next rebalance)"
+                              + (f". Funding SELL(s) {_orphan_sells} still execute on their "
+                                 "own merits" if _orphan_sells else ""),
+                      dropped=[r.get("ticker") for r in cash_rejected],
+                      clamped=[c.get("ticker") for c in cash_clamped],
+                      funding_sells_executing=_orphan_sells)
+    elif cash_clamped:
+        health.record("settled_cash", OK,
+                      message=f"{len(cash_clamped)} BUY(s) scaled to settled buying power",
+                      clamped=[c.get("ticker") for c in cash_clamped])
+
+    for m in sector_clamped + cash_clamped:
+        validation_report["modified"].append(
+            {"ticker": m.get("ticker", "?"), "action": m.get("action", "?"),
+             "reason": m.get("clamped_reason", "sector-cap / settled-cash clamp")})
+
+    # `passed` is recomputed against the decisions that survived the FULL chain.
+    # validate_decisions increments it for its own rule set only, so before this
+    # line a run whose every decision was later rejected still reported
+    # "passed: 2, rejected: 2" (Aug 19 2026 — 0 trades actually placed).
+    # HOLDs are excluded to match validate_decisions' own convention (it returns
+    # early on HOLD without incrementing) — otherwise the "accuracy" fix would
+    # trade an undercount for an overcount of non-orders.
+    validation_report["passed"] = sum(
+        1 for _d in decisions if str(_d.get("action", "")).upper() != "HOLD")
+
+    _interventions = (validation_report["rejected"] + validation_report["modified"]
+                      + validation_report["skipped"])
+    if _interventions:
+        health.record("decision_validation", DEGRADED,
+                      message=f"{len(validation_report['rejected'])} rejected, "
+                              f"{len(validation_report['modified'])} clamped, "
+                              f"{len(validation_report['skipped'])} skipped by guardrails",
+                      **validation_report)
+    else:
+        health.record("decision_validation", OK, passed=validation_report["passed"])
+    return {
+        "decisions": decisions,
+        "transactions": _txs,
+        "netedge_rejected": netedge_rejected,
+    }
+
+
 def run_daily_cycle():
     print("\n" + "=" * 60)
     print("🤖  AI INVESTOR V3 — DAILY CYCLE STARTING")
@@ -520,244 +777,13 @@ def run_daily_cycle():
         dossier=dossier,
     )
 
-    # Every decision dict below is edited in place (thesis_exit, qty, sizing stamps,
-    # guard clamps). analysis.py hands back the SAME objects it recorded as the agents'
-    # intent (portfolio_manager_proposed / post_cro_decisions), so take a deep copy at
-    # the boundary — the audit record must stay exactly what the agents produced.
-    import copy as _copy
-    decisions = _copy.deepcopy(decisions)
-
-    # ── PM backstop: auto-exit when 3 signals agree ──────────────────────────
-    apply_pm_backstop(decisions, portfolio, pipeline_state)
-    mark_thesis_exits(decisions, pipeline_state)
-    decisions, _risk_exit_attempts = strip_llm_risk_exit(decisions)
-    if _risk_exit_attempts:
-        pipeline_state["llm_risk_exit_attempts"] = _risk_exit_attempts
-        print(f"   ⚠ PM set risk_exit on {_risk_exit_attempts} — stripped (code-only flag)")
-
-    # Executed-trade log, read ONCE and shared by the deployment producer and every
-    # guard below (one consistent view instead of independent reads of the same file).
-    _txs = _load_list(TRANSACTIONS_FILE)
-
-    # ── Bounded mechanical cash deployment (IPS §6 v1.5, Oct 4 2026) ─────────────
-    # A PRODUCER, upstream of every guard: when projected post-trade cash exceeds the
-    # policy target, scale the AI's own intended book up pro-rata within today's
-    # settled cash. The guards below still clamp/drop whatever it proposes.
-    from cash_deployment import plan_cash_deployment
-    decisions, deploy_report = plan_cash_deployment(
-        decisions, portfolio, market_data["prices"], pipeline_state, _txs, today,
-        kill_active=kill_active)
-    pipeline_state["cash_deployment"] = deploy_report
-    health.record("cash_deployment", OK,
-                  message=(f"${deploy_report['deployed_usd']:.2f} proposed across "
-                           f"{sorted(deploy_report['names'])}" if deploy_report["names"]
-                           else f"no deployment: {deploy_report.get('skipped')}"),
-                  **{k: v for k, v in deploy_report.items() if k != "excluded"},
-                  excluded=deploy_report.get("excluded"))
-
-
-    # Pre-compute fractional qty
-    for _d in decisions:
-        _action = _d.get("action", "").upper()
-        if _action in ("BUY", "SELL") and "target_weight" in _d:
-            _d["qty"] = _compute_qty(
-                _d["target_weight"], _action, _d["ticker"], portfolio, market_data["prices"]
-            )
-
-    # ── Validation gate: deterministic guardrails on LLM output ──────────────
-    # Runs AFTER qty pre-computation (notional checks need qty) and BEFORE the
-    # decisions reach pending_decisions.json / execution. See guardrails.py.
-    # (_txs was loaded once above, before the deployment producer.)
-
-    decisions, validation_report = validate_decisions(
-        decisions, portfolio, market_data["prices"],
-        pipeline_state.get("candidates", []), kill_active, transactions=_txs,
+    guarded = apply_guard_chain(
+        decisions, portfolio, market_data, pipeline_state,
+        today=today, kill_active=kill_active, kill_reason=kill_reason, health=health,
     )
-
-    # Research-backed BUY gate (Jul 22 2026) — a BUY of a name whose Research
-    # thesis came back empty (529 / parse fail / blank) is dropped: enrichment
-    # failure must never become a full-conviction BUY on the quant score alone.
-    # Runs right after validate_decisions (candidate universe already resolved)
-    # and BEFORE the economic guards. SELLs/HOLDs pass; rejects fold into the
-    # decision_validation health check below.
-    decisions, research_rejected = enforce_research_backed_buys(
-        decisions, pipeline_state.get("research"))
-
-    # Market-wide crisis safe-mode (§18.5) — per-name stops don't cover a market
-    # crash. On a SPY 1-day drop ≥ the policy threshold, ALL new BUYs are halted
-    # (SELLs / risk exits stay allowed) and the owner is alerted via the DEGRADED
-    # health record. Runs FIRST among the post-validation guards: nothing below
-    # may re-admit a BUY during a crisis.
-    _spy_chg = market_data["prices"].get("SPY", {}).get("change_pct")
-    decisions, safemode_rejected, _safe_reason = enforce_safe_mode(decisions, _spy_chg)
-    # Drawdown kill switch — as a GUARD, so it acts on the envelope the cloud routine
-    # executes (it used to filter only main.py's local execution path, after the
-    # envelope was written: in production it never blocked a BUY).
-    decisions, killswitch_rejected = enforce_kill_switch(decisions, kill_active, kill_reason)
-    if _safe_reason:
-        health.record("crisis_safe_mode", DEGRADED,
-                      message=_safe_reason, spy_change_pct=_spy_chg,
-                      buys_halted=len(safemode_rejected))
-    else:
-        health.record("crisis_safe_mode", OK, spy_change_pct=_spy_chg)
-
-    # Turnover / tax discipline (CA top-bracket taxable account). Every sale is a
-    # short-term gain (~54%), so cut round-trip churn: block SELLs of names bought
-    # < 30 trading days ago (policy v2.0, IPS §7.2), and BUYs of names sold < 30
-    # calendar days ago (wash-sale + anti-churn). Risk exits are exempt via
-    # kill_active. These run BEFORE the sector cap so the cap projects against the
-    # SELL set that will actually execute — otherwise a SELL dropped here after
-    # the cap freed its sector budget could let a same-sector BUY breach the 25%
-    # limit. The tax-aware hold (IPS §7.5) blocks a discretionary SELL of a gained
-    # lot within ~30 trading days of its 1-year long-term-tax date — nearly half
-    # the tax on the same gain for waiting weeks; risk exits exempt.
-    decisions, holding_rejected = enforce_min_holding_period(decisions, portfolio, transactions=_txs, kill_active=kill_active)
-    decisions, reentry_rejected = enforce_wash_sale_reentry(decisions, transactions=_txs)
-    decisions, taxhold_rejected = enforce_tax_aware_hold(decisions, market_data["prices"], transactions=_txs, kill_active=kill_active)
-
-    # Capital dependency — a BUY funded by a rejected SELL must not execute
-    # alone (Jul 8 2026: orphaned CB/CFG BUYs filled from cash after their
-    # AXP/MS funding SELLs were min-hold-rejected, producing a book the CRO
-    # never reviewed). Runs after every SELL-rejecting guard above and BEFORE
-    # the sector cap, so the cap projects the BUY set that will actually
-    # execute. validation_report["rejected"] here holds only validate_decisions'
-    # own rejects (guard rejects are folded in later, below).
-    decisions, dependency_rejected = enforce_capital_dependency(
-        decisions,
-        validation_report["rejected"] + holding_rejected + taxhold_rejected)
-
-    # Sector cap (25%) — a code-level control (the limit otherwise lives only in
-    # the PM prompt). Runs after turnover filtering so it sees the post-turnover set.
-    # `prices` lets the guard CLAMP an oversized BUY to the remaining headroom and
-    # recompute qty, instead of dropping the position outright (Aug 19 2026).
-    decisions, sector_rejected, sector_clamped = enforce_sector_limits(
-        decisions, portfolio, market_data["prices"])
-
-    # Net-edge gate (#6) — reject a BUY whose expected return, after round-trip
-    # cost + CA short-term tax, falls below the floor. No-op until the PM emits an
-    # expected_return; SELLs exempt. Runs last (final economic filter).
-    decisions, netedge_rejected = enforce_net_edge(decisions, market_data["prices"])
-
-    # Settled-cash budget (Oct 3 2026 remediation 1.2) — LAST, so it sizes the final
-    # BUY set. Cash account: today's SELL proceeds settle T+1 and cannot fund today's
-    # BUYs (Oct 2 2026: three funded BUYs never reached the broker). Clamps the BUY
-    # leg to settled buying power; a rotation's proceeds deploy at the next rebalance.
-    decisions, cash_rejected, cash_clamped = enforce_settled_cash(
-        decisions, portfolio, market_data["prices"])
-
-    # Turnover circuit breaker — LAST, on the final order set, and BEFORE the envelope
-    # is written (it used to trip after the write and return exit 0, so the routine
-    # still placed the SELLs). Tripped → the envelope carries no orders.
-    decisions, breaker_rejected, breaker = enforce_turnover_circuit_breaker(
-        decisions, market_data["prices"], portfolio["total_value"])
-    if breaker:
-        health.record("circuit_breaker", FAILED,
-                      message=f"SELL notional {breaker['turnover_pct']:.0%} of the book exceeds "
-                              f"the {TURNOVER_CIRCUIT_BREAKER_PCT:.0%} one-run limit — run halted, "
-                              "no discretionary orders (code-built stop-loss exits still "
-                              "place). The envelope is still stamped, so the week's "
-                              "rebalance is consumed: an anomalous proposal is a human-review "
-                              "event, not something to retry automatically",
-                      **breaker)
-
-    # ── −25% stop on the rebalance day (risk_watch covers every other day) ──────
-    # AFTER the whole guard chain: no guard may remove or count a catastrophe exit.
-    # qty is the broker's available_qty from the live MCP portfolio, not a snapshot
-    # recompute (a halted/crashed name may have no snapshot price at all).
-    decisions, stop_report = inject_risk_stops(
-        decisions, portfolio, today,
-        cro_api_failed=bool((pipeline_state.get("cro") or {}).get("api_failed")))
-    if stop_report["skipped_cro_api_failed"]:
-        health.record("risk_stop", DEGRADED,
-                      message=f"Stop breached for {[f['ticker'] for f in stop_report['fired']]} "
-                              "but NOT injected — the CRO call failed, so this envelope must stay "
-                              "retryable. Covered by the final-attempt risk_watch fallback / the "
-                              "next risk_watch day.", **stop_report)
-    elif stop_report["fired"] or stop_report.get("skipped_no_basis"):
-        health.record("risk_stop", DEGRADED if stop_report.get("skipped_no_basis") else OK,
-                      message=f"{len(stop_report['fired'])} stop(s) fired"
-                              + (f"; no cost basis/price for {stop_report['skipped_no_basis']}"
-                                 if stop_report.get("skipped_no_basis") else ""),
-                      **stop_report)
-    else:
-        health.record("risk_stop", OK, fired=[])
-
-    # Wash-sale PRE-sale FLAG (A6) — the post-sale re-buy block above covers one
-    # side of IRS §1091; this flags (never blocks) a loss exit within 30d of a
-    # purchase, the other side. Flag-and-allow: a wash sale only defers the loss,
-    # so a risk/conviction exit must not be blocked to preserve tax timing. The
-    # annotation rides on the SELL decision into pending_decisions.json for audit.
-    # OBSERVATIONAL/annotation only — must never break the trade path. A failure
-    # here leaves decisions exactly as the blocking guardrails produced them.
-    try:
-        decisions, washsale_flagged = flag_wash_sale_presale(
-            decisions, market_data["prices"], transactions=_txs)
-        if washsale_flagged:
-            health.record("wash_sale_presale", DEGRADED,
-                          message=f"{len(washsale_flagged)} loss SELL(s) within 30d of "
-                                  "purchase flagged (allowed; loss deferred per §1091)",
-                          flagged=washsale_flagged)
-    except Exception as _e:
-        print(f"   ⚠ wash-sale pre-sale flag skipped: {_e}")
-
-    for r in (research_rejected + safemode_rejected + killswitch_rejected + holding_rejected
-              + reentry_rejected + taxhold_rejected + dependency_rejected
-              + sector_rejected + netedge_rejected + cash_rejected + breaker_rejected):
-        validation_report["rejected"].append(
-            {"ticker": r.get("ticker", "?"), "action": r.get("action", "?"),
-             "reason": r.get("rejected_reason", "turnover/sector/net-edge guard")})
-
-    # A sector clamp is a resize, not a drop — it belongs in "modified" alongside
-    # validate_decisions' weight clamp. Recording it keeps health DEGRADED: the PM
-    # proposing a size the cap cannot hold is a signal, even though the trade
-    # survives at the compliant size.
-    # A settled-cash DROP strands capital for a week — exactly the Oct 2 outcome —
-    # so it gets its own, non-informational check (decision_validation never pages).
-    # A clamp alone (BUYs scaled, still placed) is expected behavior: OK with a note.
-    if cash_rejected:
-        _sells = {str(d.get("ticker", "")).strip().upper() for d in decisions
-                  if str(d.get("action", "")).upper() == "SELL"}
-        _orphan_sells = sorted({str(r.get("source_of_capital", "")).strip().upper()
-                                for r in cash_rejected} & _sells)
-        health.record("settled_cash", DEGRADED,
-                      message=f"{len(cash_rejected)} BUY(s) dropped — settled buying power "
-                              "could not fund them above the order floor (today's SELL "
-                              "proceeds settle T+1; capital idle until next rebalance)"
-                              + (f". Funding SELL(s) {_orphan_sells} still execute on their "
-                                 "own merits" if _orphan_sells else ""),
-                      dropped=[r.get("ticker") for r in cash_rejected],
-                      clamped=[c.get("ticker") for c in cash_clamped],
-                      funding_sells_executing=_orphan_sells)
-    elif cash_clamped:
-        health.record("settled_cash", OK,
-                      message=f"{len(cash_clamped)} BUY(s) scaled to settled buying power",
-                      clamped=[c.get("ticker") for c in cash_clamped])
-
-    for m in sector_clamped + cash_clamped:
-        validation_report["modified"].append(
-            {"ticker": m.get("ticker", "?"), "action": m.get("action", "?"),
-             "reason": m.get("clamped_reason", "sector-cap / settled-cash clamp")})
-
-    # `passed` is recomputed against the decisions that survived the FULL chain.
-    # validate_decisions increments it for its own rule set only, so before this
-    # line a run whose every decision was later rejected still reported
-    # "passed: 2, rejected: 2" (Aug 19 2026 — 0 trades actually placed).
-    # HOLDs are excluded to match validate_decisions' own convention (it returns
-    # early on HOLD without incrementing) — otherwise the "accuracy" fix would
-    # trade an undercount for an overcount of non-orders.
-    validation_report["passed"] = sum(
-        1 for _d in decisions if str(_d.get("action", "")).upper() != "HOLD")
-
-    _interventions = (validation_report["rejected"] + validation_report["modified"]
-                      + validation_report["skipped"])
-    if _interventions:
-        health.record("decision_validation", DEGRADED,
-                      message=f"{len(validation_report['rejected'])} rejected, "
-                              f"{len(validation_report['modified'])} clamped, "
-                              f"{len(validation_report['skipped'])} skipped by guardrails",
-                      **validation_report)
-    else:
-        health.record("decision_validation", OK, passed=validation_report["passed"])
+    decisions = guarded["decisions"]
+    _txs = guarded["transactions"]
+    netedge_rejected = guarded["netedge_rejected"]
 
     # ── Agent health checks ───────────────────────────────────────────────────
 

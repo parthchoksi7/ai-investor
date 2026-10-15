@@ -1,0 +1,76 @@
+name: Cursor shadow rebalance
+
+# Measurement only. Replays the week's live rebalance through the Cursor LLM
+# backend (LLM_BACKEND=cursor) and commits shadow/. No broker, no Supabase,
+# no Anthropic, no Polygon. Wednesday 1:30 PM ET is after the live routine's
+# last retry (12:45) and after the Oct 14 rebalance commit (11:56 ET). An
+# 11:00 cron would have raced that commit. update_dst.yml rewrites the hour
+# for EST (30 18) the same way it rewrites health_check.yml.
+on:
+  schedule:
+    - cron: '30 17 * * 3'   # 1:30 PM ET Wednesday (EDT)
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Rebalance date YYYY-MM-DD (default: this ISO week)'
+        required: false
+        type: string
+
+concurrency:
+  group: shadow-cursor
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+      LLM_BACKEND: cursor
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Replay the week's rebalance
+        run: |
+          git fetch origin main
+          args=()
+          if [ -n "${{ inputs.date }}" ]; then
+            args+=(--date "${{ inputs.date }}")
+          fi
+          python shadow_run.py "${args[@]}"
+
+      - name: Commit shadow outputs
+        run: |
+          git config user.name "Cursor Shadow"
+          git config user.email "shadow-bot@users.noreply.github.com"
+          # checkout@v5 detaches HEAD. Put it on the branch before committing
+          # so the rebase-retry push lands on this branch, not on a detached SHA.
+          git checkout -B "${GITHUB_REF_NAME}"
+          git add shadow
+          if git diff --cached --quiet; then
+            echo "no shadow output to commit"
+            exit 0
+          fi
+          day=$(git diff --cached --name-only | sed -n 's#^shadow/\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\)/.*#\1#p' | head -1)
+          git commit -m "chore: cursor shadow ${day:-run} [skip ci]"
+          branch=$(git rev-parse --abbrev-ref HEAD)
+          for attempt in 1 2 3 4; do
+            git pull --rebase origin "$branch" && git push origin "HEAD:${branch}" && exit 0
+            sleep $((2 ** attempt))
+          done
+          echo "push failed after retries"
+          exit 1

@@ -362,10 +362,39 @@ def usage_summary(total_value: float | None = None, runs_per_year: int = 52,
     return out
 
 
+def _system_text(system: str | list) -> str:
+    """Flatten a cached system block list into the string cursor_llm expects."""
+    if isinstance(system, str):
+        return system
+    parts = []
+    for block in system or []:
+        if isinstance(block, dict):
+            parts.append(str(block.get("text") or ""))
+        else:
+            parts.append(str(block))
+    return "\n".join(parts)
+
+
+def _cursor_backend() -> bool:
+    """True only when the caller set LLM_BACKEND=cursor.
+
+    A CURSOR_API_KEY in the environment must never switch the live pipeline.
+    The scheduled routine and every local run stay on Anthropic unless this
+    variable is set explicitly (the shadow run sets it).
+    """
+    return os.getenv("LLM_BACKEND", "").strip().lower() == "cursor"
+
+
 def _call(model: str, system: str | list, user_msg: str,
           max_tokens: int = 600) -> tuple[str, str | None]:
     """Return (text, stop_reason). stop_reason == "max_tokens" means the output
     was truncated at the cap — the caller uses this to skip pointless retries."""
+    if _cursor_backend():
+        from cursor_llm import complete
+        text, stop_reason, response = complete(
+            model, _system_text(system), user_msg, max_tokens=max_tokens)
+        _record_call(getattr(response, "model", None) or model, max_tokens, response)
+        return text, stop_reason
     response = _get_client().messages.create(
         model=model,
         max_tokens=max_tokens,

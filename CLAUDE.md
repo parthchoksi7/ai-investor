@@ -66,6 +66,14 @@ Scheduled Routine (Anthropic Cloud, 9:45 AM ET weekdays)
 
 Haiku runs for each of up to 20 candidates (Research, Earnings) and each holding (Position Review); the Devil's Advocate runs **Sonnet** per candidate; Sonnet also runs the 3 portfolio-level agents. Per-run token cost is logged to `agent_log.json` → `llm_usage` (since 2026-10-04). Prompt caching is applied to every per-ticker system prompt (the three Haiku agents and the Devil's Advocate).
 
+## Cursor shadow (measurement only)
+
+`shadow_run.py` replays one live rebalance through the Cursor LLM backend and stops after agents and the shared guard chain (`main.apply_guard_chain`). It places no orders and does not write `pending_decisions.json`, `trades.csv`, `transactions.json`, `decision_journal.json`, the calibration ledgers, Supabase, or `system_health.json`.
+
+Routing is explicit: `analysis._call` uses Cursor only when `LLM_BACKEND=cursor`. A `CURSOR_API_KEY` on its own leaves the live pipeline on Anthropic. Fast seats are Haiku 4.5 and smart seats are Sonnet 4.6, the same models the live routine calls (`cursor_llm.CURSOR_MODELS`).
+
+Each run freezes the inputs that rebalance actually saw. `mcp_portfolio.json` comes from the week's `chore: daily cycle` commit. The snapshot, dossier, trade log, journal, and week lock come from the last ancestor that does not yet contain that run (the execution-claim commit is already post-trade). Outputs are `shadow/YYYY-MM-DD/` (one file per seat, the PM proposal, the post-CRO plan, the post-guard list, parse errors, and an input manifest with commit SHAs and file hashes) plus one appended row in `shadow/ledger.jsonl`. `python shadow_compare.py` reads the ledger against the live `agent_log` at the recorded commit and paper-prices both final lists from the same pre-trade portfolio. The Wednesday job is `.github/workflows/shadow_cursor.yml` (1:30 PM ET, after the live rebalance has committed, plus `workflow_dispatch`).
+
 ## Key Files
 
 | File | Purpose |
@@ -74,7 +82,10 @@ Haiku runs for each of up to 20 candidates (Research, Earnings) and each holding
 | `market_data.py` | Polygon.io: prices, 210-day history, fundamentals, news; calls `_enrich_with_provider()` |
 | `data_providers.py` | Provider abstraction: `SECProvider` (EDGAR, free, no key; stamps `_as_of_filing` = 10-K filed date for no-look-ahead) / `FMPProvider` (key req.) / `StubProvider` (tests); `get_provider()` factory |
 | `quant_engine.py` | Pure Python scoring (no LLM) |
-| `analysis.py` | 7-agent pipeline |
+| `analysis.py` | 7-agent pipeline. Cursor only when `LLM_BACKEND=cursor` |
+| `shadow_run.py` | Cursor shadow replay of one live rebalance. Writes only `shadow/`. No orders |
+| `shadow_compare.py` | Per-week Cursor vs live Claude: regime, seat verdicts, lists, paper P&L vs SPY |
+| `cursor_llm.py` | Cursor SDK text completions (project-rule system prompt, fence unwrap) |
 | `execute.py` | Robinhood order execution via `robin_stocks` |
 | `journal.py` | `decision_journal.json` + kill switch |
 | `health.py` | `HealthTracker` — records every pipeline step to `system_health.json` |

@@ -13721,11 +13721,19 @@ class TestOct4ReviewFindings:
 
     def test_stop_is_not_subject_to_the_cro_or_guards_but_strip_runs_first(self):
         """The early strip runs before the guards: an LLM risk_exit can never reach the
-        tax-aware hold, even though the stop itself is appended later."""
+        tax-aware hold, even though the stop itself is appended later.
+
+        The chain lives in apply_guard_chain (shared with the Cursor shadow). The
+        live cycle has no second copy, so the order checked here is the order
+        that runs.
+        """
         import inspect, main
-        src = inspect.getsource(main.run_daily_cycle)
+        src = inspect.getsource(main.apply_guard_chain)
         assert src.index("strip_llm_risk_exit(decisions)") < src.index("validate_decisions(")
         assert src.index("inject_risk_stops(") > src.index("enforce_turnover_circuit_breaker(")
+        cycle = inspect.getsource(main.run_daily_cycle)
+        assert "apply_guard_chain(" in cycle
+        assert "inject_risk_stops(" not in cycle
 
     def test_stop_qty_survives_a_snapshot_with_no_price(self, monkeypatch, tmp_path):
         smoke = TestRunDailyCycleSmoke()

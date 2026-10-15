@@ -21,6 +21,7 @@ jobs:
       - name: Detect UTC offset and update cron expressions
         run: |
           python3 - <<'EOF'
+          import os
           import re
           from datetime import datetime
           from zoneinfo import ZoneInfo
@@ -82,6 +83,28 @@ jobs:
               changed = True
               print(f"Updated {path} for UTC{offset_hours}")
 
+          # shadow_cursor.yml: 1:30 PM ET Wednesday (after the live rebalance commit).
+          # Same offset math as health_check: hour = 13 - offset_hours → 17 EDT / 18 EST.
+          path = ".github/workflows/shadow_cursor.yml"
+          if os.path.exists(path):
+              text = open(path).read()
+              sh = 13 - offset_hours
+              new_text = re.sub(
+                  r"cron: '30 \d+ \* \* 3'", f"cron: '30 {sh} * * 3'", text, count=1)
+              if new_text != text:
+                  open(path, "w").write(new_text)
+                  changed = True
+                  print(f"Updated {path} for UTC{offset_hours}")
+              elif f"cron: '30 {sh} * * 3'" in text:
+                  print(f"{path} already on UTC{offset_hours} — nothing to do")
+              else:
+                  fatal = (
+                      f"::error::{path} Wednesday cron matches neither the expected "
+                      "EDT nor EST form — the cron was edited without updating "
+                      "update_dst.yml."
+                  )
+                  print(fatal)
+
           if not changed:
               print("No changes needed — crons already correct for current offset.")
 
@@ -99,6 +122,6 @@ jobs:
         run: |
           git config user.name "DST Bot"
           git config user.email "dst-bot@users.noreply.github.com"
-          git add .github/workflows/market_data.yml .github/workflows/health_check.yml
+          git add .github/workflows/market_data.yml .github/workflows/health_check.yml .github/workflows/shadow_cursor.yml
           git diff --staged --quiet || git commit -m "chore: DST cron update [skip ci]"
           git push
