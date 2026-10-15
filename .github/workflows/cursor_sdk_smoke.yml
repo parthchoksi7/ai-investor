@@ -1,0 +1,131 @@
+# THROWAWAY smoke test. Do not merge.
+# Feasibility only: can cursor_llm.py (cursor-shadow @ 74eea80) run the
+# Cursor Python SDK on a GitHub Actions ubuntu runner?
+# Trigger is push-to-this-branch because schedule and workflow_dispatch
+# run from the default branch only. Uses CURSOR_API_KEY and no other secret.
+
+name: Cursor SDK smoke
+
+on:
+  push:
+    branches:
+      - cursor/cursor-sdk-smoke-88ca
+
+concurrency:
+  group: cursor-sdk-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install cursor-sdk
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check cursor-sdk
+          python -m pip show cursor-sdk | sed -n '1,8p'
+          python -c "import cursor_sdk; print('imported', cursor_sdk.__file__)"
+          command -v cursor-sdk-bridge
+          cursor-sdk-bridge --help | head -n 15
+
+      - name: Copy cursor_llm.py from cursor-shadow @ 74eea80
+        run: |
+          set -euo pipefail
+          SHA=74eea80482b80937b5bc74653768f306fa815958
+          git fetch --depth 1 origin "$SHA"
+          test "$(git rev-parse FETCH_HEAD)" = "$SHA"
+          git show "${SHA}:cursor_llm.py" > cursor_llm.py
+          python -m py_compile cursor_llm.py
+          echo "copied cursor_llm.py from $SHA ($(wc -l < cursor_llm.py) lines)"
+
+      - name: Require CURSOR_API_KEY
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CURSOR_API_KEY}" ]; then
+            echo "CURSOR_API_KEY repo secret is missing or empty. Stopping."
+            exit 1
+          fi
+          echo "CURSOR_API_KEY is set."
+
+      - name: List models
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: python cursor_llm.py --models
+
+      - name: Tiny JSON calls (Haiku 4.5 and Sonnet 4.6)
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import time
+          from cursor_llm import complete
+
+          CASES = (
+              ("haiku-4.5", "claude-haiku-4-5"),
+              ("sonnet-4.6", "claude-sonnet-4-6"),
+          )
+          system = 'Reply with only this JSON object and nothing else: {"ok": true}'
+          user = "Return the JSON now."
+          lines = []
+          failed = False
+          for label, requested in CASES:
+              t0 = time.perf_counter()
+              try:
+                  text, stop, resp = complete(requested, system, user)
+              except Exception as exc:
+                  elapsed = time.perf_counter() - t0
+                  msg = f"{type(exc).__name__}: {exc}"
+                  print(
+                      f"RESULT label={label} requested={requested} "
+                      f"latency_s={elapsed:.2f} sdk_ok=false json_parsed=false error={msg}",
+                      flush=True,
+                  )
+                  lines.append(f"| {label} | {requested} | {elapsed:.2f}s | sdk error | false |")
+                  failed = True
+                  continue
+              elapsed = time.perf_counter() - t0
+              parsed = False
+              try:
+                  parsed = isinstance(json.loads(text), dict)
+              except json.JSONDecodeError:
+                  parsed = False
+              model = getattr(resp, "model", "")
+              preview = text.replace("\n", "\\n")[:240]
+              print(
+                  f"RESULT label={label} requested={requested} model={model} "
+                  f"latency_s={elapsed:.2f} stop={stop} sdk_ok=true "
+                  f"json_parsed={parsed} chars={len(text)} text={preview}",
+                  flush=True,
+              )
+              lines.append(
+                  f"| {label} | {model or requested} | {elapsed:.2f}s | {stop} | {parsed} |"
+              )
+              if not text:
+                  failed = True
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as fh:
+                  fh.write("## Cursor SDK smoke\n\n")
+                  fh.write("| label | model | latency | stop | json_parsed |\n")
+                  fh.write("| --- | --- | --- | --- | --- |\n")
+                  fh.write("\n".join(lines) + "\n")
+          if failed:
+              raise SystemExit(1)
+          PY
