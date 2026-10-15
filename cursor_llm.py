@@ -56,6 +56,26 @@ def model_for(requested_model: str) -> str:
 _SEM = threading.Semaphore(4)
 
 
+def _unwrap_json_fence(text: str) -> str:
+    """Drop one outer markdown fence when the body is JSON.
+
+    Haiku 4.5 follows the project rule and then still wraps the object in
+    ```json, matching the Cursor harness's habit of fencing code. The live
+    parser in analysis._parse_json strips that fence; do the same here so
+    the returned text is the JSON object.
+    """
+    raw = text.strip()
+    if not raw.startswith("```"):
+        return raw
+    lines = raw.splitlines()
+    if len(lines) < 2 or lines[-1].strip() != "```":
+        return raw
+    inner = "\n".join(lines[1:-1]).strip()
+    if inner.startswith("{") or inner.startswith("["):
+        return inner
+    return raw
+
+
 def _write_project_rule(work: str, system: str) -> None:
     """Write the system text as an always-applied project rule."""
     rules = os.path.join(work, ".cursor", "rules")
@@ -120,7 +140,7 @@ def complete(requested_model: str, system: str, user: str,
             kind = "overloaded" if status in ("error", "expired") else "failed"
             raise RuntimeError(f"Cursor agent {kind}: status={status}")
 
-        text = (getattr(result, "result", None) or "").strip()
+        text = _unwrap_json_fence(getattr(result, "result", None) or "")
         usage = getattr(result, "usage", None)
         response = SimpleNamespace(
             model=model,
