@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-16T17:02:08.668681+00:00",
+  "generated_at": "2026-10-19T16:59:59.806369+00:00",
   "formula_version": "3.0-beta-neutral",
   "horizon_days": 21,
   "basis": "next_open \u2192 close on/after entry + horizon calendar days (A1)",
@@ -26,15 +26,12 @@
     }
   },
   "provisional_dates": [
-    "2026-09-15",
-    "2026-09-16",
-    "2026-09-17",
     "2026-09-18",
     "2026-09-21"
   ],
   "all_dates_descriptive": {
     "n_dates": 18,
-    "mean_ic": -0.1717,
+    "mean_ic": -0.1721,
     "note": "Consecutive dates share most of their 21-day window \u2014 descriptive only, never a significance input."
   },
   "gate_1a": {
@@ -213,62 +210,62 @@
     {
       "date": "2026-09-15",
       "n": 98,
-      "ic": -0.2256,
-      "ic_sector_neutral": -0.1107,
+      "ic": -0.2275,
+      "ic_sector_neutral": -0.1104,
       "exit_date": "2026-10-07",
       "population_key": "5a4e24dbd737",
       "formula_version": "3.0-beta-neutral",
       "horizon_days": 21,
-      "provisional": true,
-      "computed_at": "2026-10-16T17:02:08.652163+00:00"
+      "provisional": false,
+      "computed_at": "2026-10-19T16:59:59.782220+00:00"
     },
     {
       "date": "2026-09-16",
       "n": 98,
-      "ic": -0.1686,
-      "ic_sector_neutral": -0.1298,
+      "ic": -0.1699,
+      "ic_sector_neutral": -0.1286,
       "exit_date": "2026-10-08",
       "population_key": "5a4e24dbd737",
       "formula_version": "3.0-beta-neutral",
       "horizon_days": 21,
-      "provisional": true,
-      "computed_at": "2026-10-16T17:02:08.653369+00:00"
+      "provisional": false,
+      "computed_at": "2026-10-19T16:59:59.784267+00:00"
     },
     {
       "date": "2026-09-17",
       "n": 98,
-      "ic": -0.1119,
-      "ic_sector_neutral": -0.1419,
+      "ic": -0.1126,
+      "ic_sector_neutral": -0.139,
       "exit_date": "2026-10-09",
       "population_key": "5a4e24dbd737",
       "formula_version": "3.0-beta-neutral",
       "horizon_days": 21,
-      "provisional": true,
-      "computed_at": "2026-10-16T17:02:08.654785+00:00"
+      "provisional": false,
+      "computed_at": "2026-10-19T16:59:59.785935+00:00"
     },
     {
       "date": "2026-09-18",
       "n": 98,
-      "ic": -0.0207,
-      "ic_sector_neutral": -0.0908,
+      "ic": -0.0237,
+      "ic_sector_neutral": -0.0886,
       "exit_date": "2026-10-12",
       "population_key": "5a4e24dbd737",
       "formula_version": "3.0-beta-neutral",
       "horizon_days": 21,
       "provisional": true,
-      "computed_at": "2026-10-16T17:02:08.656046+00:00"
+      "computed_at": "2026-10-19T16:59:59.787608+00:00"
     },
     {
       "date": "2026-09-21",
       "n": 98,
-      "ic": 0.0755,
-      "ic_sector_neutral": 0.017,
+      "ic": 0.0756,
+      "ic_sector_neutral": 0.0157,
       "exit_date": "2026-10-13",
       "population_key": "5a4e24dbd737",
       "formula_version": "3.0-beta-neutral",
       "horizon_days": 21,
       "provisional": true,
-      "computed_at": "2026-10-16T17:02:08.657204+00:00"
+      "computed_at": "2026-10-19T16:59:59.789252+00:00"
     }
   ],
   "caveats": [
