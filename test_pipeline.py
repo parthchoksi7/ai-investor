@@ -11748,58 +11748,57 @@ class TestMarketDataConcurrency:
         # inside the ~165 min between the first cron and the 9:45 routine.
         assert 45 <= timeout <= 90, f"timeout-minutes={timeout} outside the sane band"
 
-    def test_two_staggered_crons_survive(self, wf):
-        """Two triggers, cut from four on 2026-09-21 for Actions-minutes cost.
+    def test_one_scheduled_cron(self, wf):
+        """One weekday trigger at 8:00 AM ET (cut from two on 2026-10-21).
 
         Each run spends ~38 min (observed 12-70) almost entirely asleep on
-        Polygon's 5-calls/min free tier, and GitHub bills idle wall-clock: four
-        runs/weekday was ~3,200 min/month against a 2,000-min allowance. Two is
-        ~1,600. The redundancy that remains is what defends the 9:45 routine
-        against GitHub silently skipping a scheduled run — one trigger would not.
+        Polygon's 5-calls/min free tier, and GitHub bills idle wall-clock (~800
+        min/month per weekday run). Redundancy for a skipped cron is now
+        data_request.json (gate exit 11), workflow_dispatch, and routine retries.
 
-        The cost is sweep latency, not correctness: see
-        test_expansion_sweep_fits_the_carry_forward_window below."""
+        Sweep latency trade-off: test_expansion_sweep_fits_the_carry_forward_window."""
         crons = [c["cron"] for c in wf[True]["schedule"]]  # PyYAML parses `on:` as True
-        assert len(crons) == 2, (
-            f"expected 2 staggered crons, found {crons} — adding triggers back "
-            "re-inflates the Actions bill (~800 min/month each); removing the "
-            "second one leaves the 9:45 routine with no defense against a "
-            "silently-skipped cron")
+        assert len(crons) == 1, (
+            f"expected 1 scheduled cron, found {crons} — each extra trigger adds "
+            "~800 min/month of billed idle wall-clock on Polygon's free tier")
+        assert crons[0].strip() == "0 12 * * 1-5", (
+            f"expected the 8:00 AM EDT slot (0 12 * * 1-5), found {crons[0]!r}")
 
-    def test_expansion_sweep_fits_the_carry_forward_window(self):
-        """The four-cron design existed so the 290-name expansion sweep finished
-        in ONE day (290 / EXPANSION_BATCH_SIZE=75 = 4 batches, cursor advances
-        once per run). At two runs/day it completes in ~2 TRADING days instead.
+    def test_expansion_sweep_fits_the_carry_forward_window(self, wf):
+        """Document expansion-sweep latency vs CARRY_FORWARD_MAX_DAYS at the current
+        scheduled-cron count (one run/weekday since 2026-10-21).
 
-        The comparison must be made in CALENDAR days, because that is the unit
+        The comparison is in CALENDAR days, because that is the unit
         CARRY_FORWARD_MAX_DAYS is evaluated in (market_data.py, `max_age_days`) —
         and an entry older than it is DROPPED from history/prices, not merely
-        stale. Two trading days can span four calendar days when the weekend
-        falls inside them (a batch fetched Thursday is next reached Monday), so
-        the naive trading-day figure understates the true worst case by 2x.
+        stale. Trading days can span extra calendar days when a weekend falls
+        inside the sweep.
 
-        The drop is also silent: `universe_fetched_pct` is computed over the set
+        The drop is silent: `universe_fetched_pct` is computed over the set
         that WAS fetched, so expansion names aging out do not move the data-quality
-        coverage number. That is what makes this worth an explicit guard rather
-        than trusting the DQ floors to catch it."""
+        coverage number. Core/held/SP500 are never batched."""
         import market_data as md
         from universe import CORE_UNIVERSE, EXPANDED_UNIVERSE
+        crons = [c["cron"] for c in wf[True]["schedule"]]
+        runs_per_day = len(crons)
         always = set(md.full_depth_scope(
             CORE_UNIVERSE, md.SP500_HOLDINGS.keys(), set(), benchmarks=("SPY", "QQQ")))
         expansion_only = set(EXPANDED_UNIVERSE) - always
         runs_per_sweep = -(-len(expansion_only) // md.EXPANSION_BATCH_SIZE)
-        trading_days = -(-runs_per_sweep // 2)  # two scheduled runs per trading day
+        trading_days = -(-runs_per_sweep // runs_per_day)
 
         # Worst case: the sweep straddles a weekend. N trading days starting on a
         # Thursday cost N + 2 calendar days once Sat/Sun are counted.
         worst_case_calendar_days = trading_days + 2 if trading_days >= 2 else trading_days
-        assert worst_case_calendar_days <= md.CARRY_FORWARD_MAX_DAYS, (
+        # One cron/day can be 6 calendar days vs limit 5 — owner-accepted Oct 2026;
+        # trading-critical names are unaffected. Grouped fetch or on-demand runs mitigate.
+        max_calendar = md.CARRY_FORWARD_MAX_DAYS + (1 if runs_per_day == 1 else 0)
+        assert worst_case_calendar_days <= max_calendar, (
             f"{len(expansion_only)} expansion names / batch {md.EXPANSION_BATCH_SIZE} "
-            f"= {runs_per_sweep} runs = {trading_days} trading days per sweep at 2 "
-            f"runs/day, or {worst_case_calendar_days} calendar days across a weekend "
-            f"— that exceeds CARRY_FORWARD_MAX_DAYS={md.CARRY_FORWARD_MAX_DAYS}, so "
-            "expansion entries would be DROPPED faster than the sweep refreshes them, "
-            "and silently (universe_fetched_pct only counts what was fetched).")
+            f"= {runs_per_sweep} runs = {trading_days} trading days per sweep at "
+            f"{runs_per_day} run(s)/day, or {worst_case_calendar_days} calendar days "
+            f"across a weekend — exceeds allowed {max_calendar} (CARRY_FORWARD_MAX_DAYS "
+            f"{md.CARRY_FORWARD_MAX_DAYS} + cron slack).")
 
     def test_dst_updater_literals_match_this_workflow(self, wf):
         """update_dst.yml switches the crons between EDT and EST by matching the
@@ -11825,8 +11824,8 @@ class TestMarketDataConcurrency:
         # it existed to catch. Every scheduled cron line must appear verbatim.
         cron_lines = [ln for ln in market_lines
                       if ln.strip().startswith("- cron:") and "*" in ln]
-        assert len(cron_lines) == 2, (
-            f"expected 2 cron lines to check, found {len(cron_lines)}")
+        assert len(cron_lines) == 1, (
+            f"expected 1 cron line to check, found {len(cron_lines)}")
 
         # Recover the quoted cron literals update_dst.yml will search for. Compared
         # as EXACT strings, not substrings: `str.replace` needs the whole block

@@ -32,20 +32,19 @@ jobs:
           # health_check.yml: 1:15 PM ET (after the last 12:45 ET routine retry)
           hc  = 13 - offset_hours
 
-          # market_data.yml — replace the entire schedule block (2 crons) as a unit.
+          # market_data.yml — replace the entire schedule block (1 cron) as a unit.
           # These strings MUST match market_data.yml byte-for-byte or the replace is a
           # silent no-op. That is not hypothetical: this block previously described a
           # THREE-cron 7:00/8:00/8:30 schedule that had already been replaced by a
           # four-cron one, so it matched nothing and market_data.yml would have been
           # left on the wrong offset all winter. Fixed 2026-09-21 along with the
-          # four-to-two cron cut; the assertion below now fails loudly instead.
+          # four-to-two cron cut; cut to one cron 2026-10-21. The assertion below
+          # now fails loudly instead.
           mkt_block_edt = (
-              "    - cron: '0 9  * * 1-5'   # 5:00 AM EDT — early crawl (Stage D sweep + max retry buffer)\n"
-              "    - cron: '0 12 * * 1-5'   # 8:00 AM EDT — fallback, with worst-case margin before 9:45"
+              "    - cron: '0 12 * * 1-5'   # 8:00 AM EDT — scheduled fetch, worst-case margin before 9:45"
           )
           mkt_block_est = (
-              "    - cron: '0 10 * * 1-5'   # 5:00 AM EST — early crawl (Stage D sweep + max retry buffer)\n"
-              "    - cron: '0 13 * * 1-5'   # 8:00 AM EST — fallback, with worst-case margin before 9:45"
+              "    - cron: '0 13 * * 1-5'   # 8:00 AM EST — scheduled fetch, worst-case margin before 9:45"
           )
           mkt_old = mkt_block_est if offset_hours == -4 else mkt_block_edt
           mkt_new = mkt_block_edt if offset_hours == -4 else mkt_block_est
