@@ -1,0 +1,66 @@
+{
+  "checks": {
+    "cash_deployment": {
+      "status": "OK",
+      "message": "no deployment: projected cash 4.8% within target",
+      "ts": "2026-10-21T20:54:39.626115+00:00",
+      "deployed_usd": 0.0,
+      "names": {},
+      "skipped": "projected cash 4.8% within target",
+      "target_cash_pct": 0.05,
+      "projected_cash_pct": 0.0483,
+      "excluded": {}
+    },
+    "crisis_safe_mode": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-10-21T20:54:39.626265+00:00",
+      "spy_change_pct": 0.34
+    },
+    "risk_stop": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-10-21T20:54:39.629798+00:00",
+      "fired": []
+    },
+    "settled_cash": {
+      "status": "OK",
+      "message": "1 BUY(s) scaled to settled buying power",
+      "ts": "2026-10-21T20:54:39.629832+00:00",
+      "clamped": [
+        "RMD"
+      ]
+    },
+    "decision_validation": {
+      "status": "DEGRADED",
+      "message": "1 rejected, 1 clamped, 0 skipped by guardrails",
+      "ts": "2026-10-21T20:54:39.629841+00:00",
+      "passed": 1,
+      "rejected": [
+        {
+          "ticker": "ADI",
+          "action": "SELL",
+          "reason": "min-holding: bought 2026-10-07, < 30 trading days ago (anti-churn/tax)"
+        }
+      ],
+      "modified": [
+        {
+          "ticker": "RMD",
+          "action": "BUY",
+          "reason": "settled-cash clamp: BUYs total $25.53 > budget $25.43 (settled buying_power $26.77 less 5%); scaled \u00d70.996 \u2014 today's SELL proceeds settle T+1"
+        }
+      ],
+      "skipped": []
+    }
+  },
+  "cash_deployment": {
+    "deployed_usd": 0.0,
+    "names": {},
+    "excluded": {},
+    "skipped": "projected cash 4.8% within target",
+    "target_cash_pct": 0.05,
+    "projected_cash_pct": 0.0483
+  },
+  "net_edge_rejected": 0,
+  "kill_switch_active": false
+}
