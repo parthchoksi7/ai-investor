@@ -1,15 +1,15 @@
 {
-  "date": "2026-10-27",
-  "data_date": "2026-10-27",
-  "generated_at": "2026-10-27T18:37:04.323335+00:00",
+  "date": "2026-10-28",
+  "data_date": "2026-10-28",
+  "generated_at": "2026-10-28T14:42:34.272624+00:00",
   "status": "OK",
   "data_quality_score": 100,
   "strategy_shift_ok": true,
-  "expected_universe": 165,
-  "fetched_universe": 163,
+  "expected_universe": 180,
+  "fetched_universe": 176,
   "metrics": {
     "universe_fetched_pct": {
-      "value": 98.8,
+      "value": 97.8,
       "status": "OK",
       "degraded_below": 95.0,
       "abort_below": 80.0
@@ -21,7 +21,7 @@
       "abort_below": 22
     },
     "fundamental_coverage_pct": {
-      "value": 98.2,
+      "value": 97.2,
       "status": "OK",
       "degraded_below": 80.0,
       "abort_below": null
@@ -51,35 +51,35 @@
   "breaches": [],
   "cik_map_ok": true,
   "price_outlier_count": 2,
-  "hash": "2b91babccfb98228",
+  "hash": "5cc54365fd5ee3cd",
   "event_digest": {
     "chunks": 4,
     "chunks_ok": 4,
     "parse_success_rate": 1.0,
-    "raw_events": 15,
+    "raw_events": 24,
     "capped": false,
     "chunks_available": 4,
     "max_chunks": 15,
-    "as_of": "2026-10-27",
-    "events_written": 14,
+    "as_of": "2026-10-28",
+    "events_written": 24,
     "events_deduped": 0,
     "llm_usage": {
       "by_model": {
         "claude-haiku-4-5-20251001": {
           "n_calls": 4,
-          "input_tokens": 12140,
-          "output_tokens": 1155,
+          "input_tokens": 12198,
+          "output_tokens": 1739,
           "cache_read_tokens": 0,
           "cache_creation_tokens": 0,
-          "est_cost_usd": 0.0179
+          "est_cost_usd": 0.0209
         }
       },
-      "est_cost_usd": 0.0179,
+      "est_cost_usd": 0.0209,
       "unpriced_models": [],
       "scope": "event_digest (GH plane, metered key) \u2014 THIS run; ~2 runs/weekday",
       "basis": "API list price (subscription OAuth runs are not metered per token)",
-      "cost_pct_aum_per_run": 0.0036,
-      "cost_pct_aum_annualized": 1.81,
+      "cost_pct_aum_per_run": 0.0042,
+      "cost_pct_aum_annualized": 2.11,
       "runs_per_year_assumed": 504
     }
   }
