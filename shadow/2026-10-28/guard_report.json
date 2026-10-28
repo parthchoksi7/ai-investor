@@ -1,0 +1,64 @@
+{
+  "checks": {
+    "cash_deployment": {
+      "status": "OK",
+      "message": "no deployment: settled cash exhausted by today's BUYs (settled buying_power); the excess deploys next rebalance",
+      "ts": "2026-10-28T21:54:32.198778+00:00",
+      "deployed_usd": 0.0,
+      "names": {},
+      "skipped": "settled cash exhausted by today's BUYs (settled buying_power); the excess deploys next rebalance",
+      "target_cash_pct": 0.05,
+      "projected_cash_pct": 0.2963,
+      "settled_budget_usd": 25.43,
+      "excluded": {}
+    },
+    "crisis_safe_mode": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-10-28T21:54:32.199034+00:00",
+      "spy_change_pct": 0.56
+    },
+    "risk_stop": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-10-28T21:54:32.203662+00:00",
+      "fired": []
+    },
+    "decision_validation": {
+      "status": "DEGRADED",
+      "message": "3 rejected, 0 clamped, 0 skipped by guardrails",
+      "ts": "2026-10-28T21:54:32.203791+00:00",
+      "passed": 2,
+      "rejected": [
+        {
+          "ticker": "ADI",
+          "action": "SELL",
+          "reason": "min-holding: bought 2026-10-07, < 30 trading days ago (anti-churn/tax)"
+        },
+        {
+          "ticker": "AME",
+          "action": "SELL",
+          "reason": "min-holding: bought 2026-10-07, < 30 trading days ago (anti-churn/tax)"
+        },
+        {
+          "ticker": "NVDA",
+          "action": "SELL",
+          "reason": "min-holding: bought 2026-10-14, < 30 trading days ago (anti-churn/tax)"
+        }
+      ],
+      "modified": [],
+      "skipped": []
+    }
+  },
+  "cash_deployment": {
+    "deployed_usd": 0.0,
+    "names": {},
+    "excluded": {},
+    "skipped": "settled cash exhausted by today's BUYs (settled buying_power); the excess deploys next rebalance",
+    "target_cash_pct": 0.05,
+    "projected_cash_pct": 0.2963,
+    "settled_budget_usd": 25.43
+  },
+  "net_edge_rejected": 0,
+  "kill_switch_active": false
+}

@@ -1,0 +1,141 @@
+{
+  "rebalance_commit": "9be3733311be67a7cf4c7c1abd85b679b8e4265a",
+  "inputs_commit": "353cbb5d3e4e532f70af6775078181707d6b592b",
+  "today": "2026-10-28",
+  "live_run_id": "20261028-145802",
+  "files": {
+    "market_snapshot.json": {
+      "commit": "353cbb5d3e4e532f70af6775078181707d6b592b",
+      "sha256": "ed06e0551329a2835098ed440114636db7389a3b1b22bc68e600cbcd88871291",
+      "bytes": 3295994
+    },
+    "research_dossier.json": {
+      "commit": "353cbb5d3e4e532f70af6775078181707d6b592b",
+      "sha256": "5b96ed6952b2257926447219428a2cb180b71e6e71f323d1d223a472af06007e",
+      "bytes": 522205
+    },
+    "trades.csv": {
+      "commit": "353cbb5d3e4e532f70af6775078181707d6b592b",
+      "sha256": "9ad387f55f106e97fa0b3228eacdf6fe8896158a591edf58d5f533245d16c27a",
+      "bytes": 18283
+    },
+    "decision_journal.json": {
+      "commit": "353cbb5d3e4e532f70af6775078181707d6b592b",
+      "sha256": "e612e07cd604fa1b9e8b159ea342e201a4df90548ade2b84c3ea4814a4c19b77",
+      "bytes": 147705
+    },
+    "last_rebalance.json": {
+      "commit": "353cbb5d3e4e532f70af6775078181707d6b592b",
+      "sha256": "e26680294cffc1f1ca305489c67c431812aef2d3165ced3d7d8e5ba06a45600a",
+      "bytes": 207
+    },
+    "transactions.json": {
+      "commit": "353cbb5d3e4e532f70af6775078181707d6b592b",
+      "sha256": "9116e5b00cfcc8d524f3ed6a87e159005aa0f796475fc7a854939132c3fde23e",
+      "bytes": 51516
+    },
+    "portfolio_peak.json": {
+      "commit": "353cbb5d3e4e532f70af6775078181707d6b592b",
+      "sha256": "a3a5cd7ef6f2ed4ee2b0d3887464fcd4b51604f248d656b5d20ac5b1da8b6e68",
+      "bytes": 53
+    },
+    "data_quality_report.json": {
+      "commit": "353cbb5d3e4e532f70af6775078181707d6b592b",
+      "sha256": "d88928bf14c1ed3a19107a104c02731f340e02fa47daf9c9afdfcc0a8fc13c07",
+      "bytes": 2141
+    },
+    "mcp_portfolio.json": {
+      "commit": "9be3733311be67a7cf4c7c1abd85b679b8e4265a",
+      "sha256": "0e1707f09a41d6072744677a84e1c0bae25f15833b324989fd07b4615050afe2",
+      "bytes": 2518
+    }
+  },
+  "portfolio": {
+    "as_of": "2026-10-28T10:48:18-04:00",
+    "cash": 26.77,
+    "buying_power": 26.77,
+    "total_value": 501.6043966146,
+    "positions": [
+      {
+        "symbol": "JPM",
+        "qty": 0.11679,
+        "avg_price": 327.77,
+        "current_price": 337.7372,
+        "market_value": 39.444328
+      },
+      {
+        "symbol": "VRTX",
+        "qty": 0.101027,
+        "avg_price": 464.73,
+        "current_price": 532.47,
+        "market_value": 53.793847
+      },
+      {
+        "symbol": "ABNB",
+        "qty": 0.303888,
+        "avg_price": 152.92,
+        "current_price": 166.855,
+        "market_value": 50.705232
+      },
+      {
+        "symbol": "CVX",
+        "qty": 0.237135,
+        "avg_price": 194.95,
+        "current_price": 229.895,
+        "market_value": 54.516151
+      },
+      {
+        "symbol": "V",
+        "qty": 0.116078,
+        "avg_price": 382.85,
+        "current_price": 401.42,
+        "market_value": 46.596031
+      },
+      {
+        "symbol": "GOOGL",
+        "qty": 0.139755,
+        "avg_price": 345.6,
+        "current_price": 323.8,
+        "market_value": 45.252669
+      },
+      {
+        "symbol": "META",
+        "qty": 0.071934,
+        "avg_price": 676.31,
+        "current_price": 613.3,
+        "market_value": 44.117122
+      },
+      {
+        "symbol": "ADI",
+        "qty": 0.059049,
+        "avg_price": 406.1,
+        "current_price": 427.27,
+        "market_value": 25.229866
+      },
+      {
+        "symbol": "AMP",
+        "qty": 0.077908,
+        "avg_price": 486.09,
+        "current_price": 484.37,
+        "market_value": 37.736298
+      },
+      {
+        "symbol": "AME",
+        "qty": 0.152491,
+        "avg_price": 247.49,
+        "current_price": 247.17,
+        "market_value": 37.6912
+      },
+      {
+        "symbol": "NVDA",
+        "qty": 0.182084,
+        "avg_price": 222.59,
+        "current_price": 218.0,
+        "market_value": 39.694312
+      }
+    ]
+  },
+  "quant_score_source": "precomputed",
+  "quant_score_note": "",
+  "note": "mcp_portfolio.json is from the rebalance commit. Every other file is from inputs_commit: the nearest ancestor whose decision_journal does not contain live_run_id. The execution-claim parent of the rebalance commit already contains this run, so it is not the input. The OHLCV snapshot is not copied here; its hash and commit are."
+}
