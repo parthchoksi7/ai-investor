@@ -1,196 +1,241 @@
 {
   "da_reject@21d": {
-    "n_flagged": 43,
-    "n_kept": 136,
-    "mean_return_flagged": -0.01074,
-    "mean_return_kept": -0.00346,
-    "gap_kept_minus_flagged": 0.00727,
+    "n_flagged": 47,
+    "n_kept": 146,
+    "mean_return_flagged": -0.00679,
+    "mean_return_kept": -0.00035,
+    "gap_kept_minus_flagged": 0.00644,
     "expected_direction": "underperform",
-    "p_value": 0.5456,
+    "p_value": 0.5842,
     "n_floor_met": true,
     "adds_value": true,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": 0.00639,
+    "gap_demeaned": 0.00597,
     "adds_value_demeaned": true,
-    "p_value_demeaned": 0.5767,
-    "p_value_bh": 0.9201,
+    "p_value_demeaned": 0.591,
+    "p_value_bh": 0.9755,
     "significant_bh": false,
     "verdict_bh": "NOT_SIGNIFICANT"
   },
   "cro_veto@21d": {
     "n_flagged": 3,
-    "n_kept": 176,
+    "n_kept": 190,
     "mean_return_flagged": 0.02774,
-    "mean_return_kept": -0.00577,
-    "gap_kept_minus_flagged": -0.03351,
+    "mean_return_kept": -0.00239,
+    "gap_kept_minus_flagged": -0.03013,
     "expected_direction": "underperform",
-    "p_value": 0.2476,
+    "p_value": 0.2858,
     "n_floor_met": false,
     "adds_value": false,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": -0.01415,
+    "gap_demeaned": -0.01233,
     "adds_value_demeaned": false,
-    "p_value_demeaned": 0.6805,
+    "p_value_demeaned": 0.718,
     "p_value_bh": null,
     "significant_bh": null
   },
   "pm_selected@21d": {
-    "n_flagged": 18,
-    "n_kept": 161,
-    "mean_return_flagged": 0.03059,
-    "mean_return_kept": -0.00921,
-    "gap_kept_minus_flagged": -0.03981,
+    "n_flagged": 21,
+    "n_kept": 172,
+    "mean_return_flagged": 0.02001,
+    "mean_return_kept": -0.0046,
+    "gap_kept_minus_flagged": -0.02461,
     "expected_direction": "outperform",
-    "p_value": 0.0764,
+    "p_value": 0.2201,
     "n_floor_met": true,
     "adds_value": true,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": -0.04371,
+    "gap_demeaned": -0.02634,
     "adds_value_demeaned": true,
-    "p_value_demeaned": 0.0406,
-    "p_value_bh": 0.377,
+    "p_value_demeaned": 0.1817,
+    "p_value_bh": 0.9085,
     "significant_bh": false,
     "verdict_bh": "NOT_SIGNIFICANT"
   },
   "da_reject@63d": {
-    "n_flagged": 21,
-    "n_kept": 74,
-    "mean_return_flagged": 0.01457,
-    "mean_return_kept": 0.01822,
-    "gap_kept_minus_flagged": 0.00366,
+    "n_flagged": 25,
+    "n_kept": 79,
+    "mean_return_flagged": 0.01455,
+    "mean_return_kept": 0.01316,
+    "gap_kept_minus_flagged": -0.0014,
     "expected_direction": "underperform",
-    "p_value": 0.9085,
+    "p_value": 0.9599,
     "n_floor_met": true,
-    "adds_value": true,
+    "adds_value": false,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": -0.00541,
+    "gap_demeaned": -0.01161,
     "adds_value_demeaned": false,
-    "p_value_demeaned": 0.8537,
-    "p_value_bh": 0.9208,
+    "p_value_demeaned": 0.6524,
+    "p_value_bh": 0.9755,
     "significant_bh": false,
     "verdict_bh": "NOT_SIGNIFICANT"
   },
   "cro_veto@63d": {
     "n_flagged": 1,
-    "n_kept": 94,
+    "n_kept": 103,
     "mean_return_flagged": -0.04387,
-    "mean_return_kept": 0.01807,
-    "gap_kept_minus_flagged": 0.06194,
+    "mean_return_kept": 0.01405,
+    "gap_kept_minus_flagged": 0.05792,
     "expected_direction": "underperform",
     "p_value": null,
     "n_floor_met": false,
     "adds_value": true,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": 0.11641,
+    "gap_demeaned": 0.11504,
     "adds_value_demeaned": true,
     "p_value_demeaned": null,
     "p_value_bh": null,
     "significant_bh": null
   },
   "pm_selected@63d": {
-    "n_flagged": 13,
-    "n_kept": 82,
-    "mean_return_flagged": 0.08328,
-    "mean_return_kept": 0.00697,
-    "gap_kept_minus_flagged": -0.07631,
+    "n_flagged": 14,
+    "n_kept": 90,
+    "mean_return_flagged": 0.07625,
+    "mean_return_kept": 0.00373,
+    "gap_kept_minus_flagged": -0.07252,
     "expected_direction": "outperform",
-    "p_value": 0.0513,
+    "p_value": 0.0496,
     "n_floor_met": true,
     "adds_value": true,
-    "significant": false,
-    "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": -0.06978,
+    "significant": true,
+    "verdict": "ADDS_VALUE",
+    "gap_demeaned": -0.0657,
     "adds_value_demeaned": true,
-    "p_value_demeaned": 0.058,
-    "p_value_bh": 0.377,
+    "p_value_demeaned": 0.0558,
+    "p_value_bh": 0.4185,
     "significant_bh": false,
     "verdict_bh": "NOT_SIGNIFICANT"
   },
+  "da_reject@126d": {
+    "n_flagged": 5,
+    "n_kept": 49,
+    "mean_return_flagged": 0.03649,
+    "mean_return_kept": 0.04459,
+    "gap_kept_minus_flagged": 0.0081,
+    "expected_direction": "underperform",
+    "p_value": 0.9393,
+    "n_floor_met": false,
+    "adds_value": true,
+    "significant": false,
+    "verdict": "NOT_SIGNIFICANT",
+    "gap_demeaned": 0.02234,
+    "adds_value_demeaned": true,
+    "p_value_demeaned": 0.827,
+    "p_value_bh": 0.9755,
+    "significant_bh": false,
+    "verdict_bh": "NOT_SIGNIFICANT"
+  },
+  "cro_veto@126d": {
+    "n_flagged": 1,
+    "n_kept": 53,
+    "mean_return_flagged": -0.06114,
+    "mean_return_kept": 0.04582,
+    "gap_kept_minus_flagged": 0.10696,
+    "expected_direction": "underperform",
+    "p_value": null,
+    "n_floor_met": false,
+    "adds_value": true,
+    "significant": false,
+    "verdict": "NOT_SIGNIFICANT",
+    "gap_demeaned": 0.13703,
+    "adds_value_demeaned": true,
+    "p_value_demeaned": null,
+    "p_value_bh": null,
+    "significant_bh": null
+  },
   "pm_selected@126d": {
     "n_flagged": 12,
-    "n_kept": 33,
+    "n_kept": 42,
     "mean_return_flagged": 0.03815,
-    "mean_return_kept": 0.04699,
-    "gap_kept_minus_flagged": 0.00884,
+    "mean_return_kept": 0.04546,
+    "gap_kept_minus_flagged": 0.00731,
     "expected_direction": "outperform",
-    "p_value": 0.858,
+    "p_value": 0.8751,
     "n_floor_met": true,
     "adds_value": false,
     "significant": false,
     "verdict": "NOT_SIGNIFICANT",
-    "gap_demeaned": 0.00751,
+    "gap_demeaned": 0.00141,
     "adds_value_demeaned": false,
-    "p_value_demeaned": 0.8776,
-    "p_value_bh": 0.9208,
+    "p_value_demeaned": 0.9755,
+    "p_value_bh": 0.9755,
     "significant_bh": false,
     "verdict_bh": "NOT_SIGNIFICANT"
   },
   "_gate_1b": {
-    "family_size": 13,
+    "family_size": 15,
     "members": {
       "counterfactual:da_reject@21d": {
-        "p": 0.5767,
-        "q_bh": 0.9201
+        "p": 0.591,
+        "q_bh": 0.9755
       },
       "counterfactual:pm_selected@21d": {
-        "p": 0.0406,
-        "q_bh": 0.377
+        "p": 0.1817,
+        "q_bh": 0.9085
       },
       "counterfactual:da_reject@63d": {
-        "p": 0.8537,
-        "q_bh": 0.9208
+        "p": 0.6524,
+        "q_bh": 0.9755
       },
       "counterfactual:pm_selected@63d": {
-        "p": 0.058,
-        "q_bh": 0.377
+        "p": 0.0558,
+        "q_bh": 0.4185
+      },
+      "counterfactual:da_reject@126d": {
+        "p": 0.827,
+        "q_bh": 0.9755
       },
       "counterfactual:pm_selected@126d": {
-        "p": 0.8776,
-        "q_bh": 0.9208
+        "p": 0.9755,
+        "q_bh": 0.9755
       },
       "scorecard:research.confidence@21d": {
-        "p": 0.7059,
-        "q_bh": 0.9201
+        "p": 0.9041,
+        "q_bh": 0.9755
       },
       "scorecard:devils_advocate.overall_risk_score@21d": {
-        "p": 0.5273,
-        "q_bh": 0.9201
+        "p": 0.473,
+        "q_bh": 0.9755
       },
       "scorecard:position_review.hold_score@21d": {
-        "p": 0.5471,
-        "q_bh": 0.9201
+        "p": 0.5088,
+        "q_bh": 0.9755
       },
       "scorecard:research.confidence@63d": {
-        "p": 0.9208,
-        "q_bh": 0.9208
+        "p": 0.9468,
+        "q_bh": 0.9755
       },
       "scorecard:devils_advocate.overall_risk_score@63d": {
-        "p": 0.3805,
-        "q_bh": 0.9201
+        "p": 0.3834,
+        "q_bh": 0.9755
       },
       "scorecard:position_review.hold_score@63d": {
-        "p": 0.6144,
-        "q_bh": 0.9201
+        "p": 0.5817,
+        "q_bh": 0.9755
       },
       "scorecard:research.confidence@126d": {
-        "p": 0.2468,
-        "q_bh": 0.9201
+        "p": 0.05,
+        "q_bh": 0.4185
+      },
+      "scorecard:devils_advocate.overall_risk_score@126d": {
+        "p": 0.7561,
+        "q_bh": 0.9755
       },
       "scorecard:position_review.hold_score@126d": {
         "p": 0.7078,
-        "q_bh": 0.9201
+        "q_bh": 0.9755
       }
     },
     "note": "Benjamini-Hochberg across every Gate 1b route at once. A scorecard member's q is necessary but not sufficient \u2014 the rule also needs that signal's IC and observation bar (Gate 1a's) in its expected direction."
   },
   "_meta": {
     "note": "Counterfactual: does each model's reject/veto/select decision predict the right forward-return direction? gap = mean_kept \u2212 mean_flagged. Block-sampled effective N. `significant` requires BOTH sides >= 10 AND a Welch's-z two-sample p-value < 0.05 (matches agent_scorecard's rigor \u2014 a sample-size floor alone is not a significance test). At ~weekly cadence this stays NOT_SIGNIFICANT for months (\u00a77.4), by design.",
-    "gate_1b_fields": "p_value_bh / significant_bh / verdict_bh: date-demeaned (cross-sectional) gap, Welch t, Benjamini-Hochberg across the whole 13-test Gate 1b family (see _gate_1b). Use THESE for SCALE_DECISION_RULE Gate 1b, not the raw `significant`. cro_veto is excluded from the gate by the rule: no p_value_bh.",
+    "gate_1b_fields": "p_value_bh / significant_bh / verdict_bh: date-demeaned (cross-sectional) gap, Welch t, Benjamini-Hochberg across the whole 15-test Gate 1b family (see _gate_1b). Use THESE for SCALE_DECISION_RULE Gate 1b, not the raw `significant`. cro_veto is excluded from the gate by the rule: no p_value_bh.",
     "min_n": 10,
     "alpha": 0.05,
     "signals": {

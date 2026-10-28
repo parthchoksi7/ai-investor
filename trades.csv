@@ -72,3 +72,7 @@ date,strategy,ticker,action,qty,price,total_value,target_weight,portfolio_value,
 2026-10-07,institutional,AME,BUY,0.152491,247.4793,37.74,0.0779,496.66,"cmp*=75.8, persist=77.1, fills zero-weight Industrials gap vs SPY",6ac65c95-aa1d-4d3a-a751-52466a0fa5e3,False,20261007-144809,247.4793,,15.249100,3773.84,49666.34
 2026-10-14,institutional,BKNG,SELL,0.147316,159.5301,23.50,0.0000,506.95,"LOW alpha, low momentum, weak hold score, sellable",6acfa605-2995-4695-8abe-2439812639ea,False,20261014-155220,159.5301,,14.731600,2350.13,50695.21
 2026-10-14,institutional,NVDA,BUY,0.182084,222.5780,40.53,0.0821,506.95,"Top-tier momentum, AI infrastructure, closes -35pp Tech gap",6acfa60f-17f3-4157-8780-1e3218c655ce,False,20261014-155220,222.5780,,18.208400,4052.79,50695.21
+2026-10-28,institutional,META,SELL,0.071934,620.1900,44.61,0.0000,501.60,"EXIT flagged, devil reject=False but hold=3, cmp*=62.8 lowest",,True,20261028-145802,,,7.193400,4461.00,50160.44
+2026-10-28,institutional,GOOGL,SELL,0.139755,320.5800,44.80,0.0000,501.60,"REDUCE flagged, hold=4, momentum=18.1, rank_chg_7d=-38 deteriorating",,True,20261028-145802,,,13.975500,4480.00,50160.44
+2026-10-28,institutional,NEM,BUY,0.222658,112.6400,25.08,0.0500,501.60,"cmp*=79.1, fills zero-weight Materials gap, gold macro tailwind",,True,20261028-145802,,,22.265800,2508.00,50160.44
+2026-10-28,institutional,CVX,SELL,0.237135,228.2300,54.12,0.0000,501.60,"Auto-exit: position_review=REDUCE hold=4/10 alpha=LOW, DA risk=7/10 reject=True — 3-signal override of PM HOLD",,True,20261028-145802,,,23.713500,5412.00,50160.44

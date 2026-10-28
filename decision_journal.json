@@ -1033,9 +1033,19 @@
       "Q3 2026 FCF misses by >15% vs. management guidance or prior quarter run rate",
       "Dividend is cut or held flat for 2+ years despite improving balance sheet"
     ],
-    "status": "open",
-    "actual_return": null,
-    "thesis_correct": null
+    "status": "closed",
+    "actual_return": 0.1707,
+    "thesis_correct": true,
+    "exits": [
+      {
+        "date": "2026-10-28",
+        "run_id": "20261028-145802",
+        "exit_price": 228.23,
+        "avg_price": 194.95,
+        "realized_return": 0.1707,
+        "full_exit": true
+      }
+    ]
   },
   {
     "trade_id": "a2aadde5-8edc-4f0b-8d9f-808096f7c28e",
@@ -1265,9 +1275,19 @@
       "DOJ wins structural breakup ruling in antitrust case; Anthropic partnership forced to unwind",
       "Next earnings show Search revenue growth <5% YoY with declining margins; no evidence of AI monetization offset"
     ],
-    "status": "open",
-    "actual_return": null,
-    "thesis_correct": null
+    "status": "closed",
+    "actual_return": -0.0724,
+    "thesis_correct": false,
+    "exits": [
+      {
+        "date": "2026-10-28",
+        "run_id": "20261028-145802",
+        "exit_price": 320.58,
+        "avg_price": 345.6,
+        "realized_return": -0.0724,
+        "full_exit": true
+      }
+    ]
   },
   {
     "trade_id": "8104eab1-6d67-46df-97fd-a48d65cc804f",
@@ -1294,9 +1314,19 @@
       "New regulatory filing/litigation emerges (FTC challenge, state AG action) with material probability of blocking Muse's data practices or re-opening settlement terms",
       "Competitor (TikTok, Google, Amazon) launches agent with demonstrably superior e-commerce conversion rates (>15% ROAS lift) backed by retailer partnership announcements"
     ],
-    "status": "open",
-    "actual_return": null,
-    "thesis_correct": null
+    "status": "closed",
+    "actual_return": -0.083,
+    "thesis_correct": false,
+    "exits": [
+      {
+        "date": "2026-10-28",
+        "run_id": "20261028-145802",
+        "exit_price": 620.19,
+        "avg_price": 676.31,
+        "realized_return": -0.083,
+        "full_exit": true
+      }
+    ]
   },
   {
     "trade_id": "9ba0e8f0-2632-43d4-97a5-281ab352f4f2",
@@ -1682,6 +1712,123 @@
       "Nvidia provides guidance implying revenue growth deceleration below 20% CAGR for FY2028-FY2030",
       "Regulatory/geopolitical action restricts >10% of addressable market (e.g., China export restrictions expand beyond current scope)",
       "Hyperscaler capex spending as % of revenue peaks below consensus expectations, indicating ROI deterioration"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "9cd5ae35-d962-4f00-b9e2-e9faeca7d0b2",
+    "run_id": "20261028-145802",
+    "date": "2026-10-28",
+    "ticker": "META",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "Meta's massive capex investment in AI infrastructure and early-stage consumer electronics positions it to capture outsized returns from emerging AI monetization opportunities that the market is discounting due to near-term FCF deterioration and capex visibility concerns.",
+    "anti_thesis": "Meta is spending $60-70B+ annually on capex into an AI infrastructure cycle where the incremental monetization returns remain unproven and largely indistinguishable from Google's and Amazon's parallel investments, meaning the 'misunderstood capex' thesis could simply be wrong \u2014 the market may be correctly pricing in commodity AI infrastructure with no durable moat. At $620 with a pipeline valuation score of only 56.7/100, the stock is not cheap enough to absorb a multi-year FCF drag if AI ad uplift proves marginal or if the hardware vertical generates Apple-like capital intensity without Apple-like margins. The core ad business, while strong, is one macro downturn or privacy regulatory shock away from exposing the full leverage embedded in this capex-heavy bet.",
+    "catalysts": [
+      "Q4 2026 earnings (Jan 27, 2027): Evidence of AI-driven CPM expansion in core ad product or early Muse monetization metrics would directly challenge bearish consensus on FCF timing",
+      "2027 capex guidance revision: Management signaling moderation in capex trajectory (or confirming full-year plan) will reset market expectations; any pullback signals confidence in ROI realization",
+      "Hardware product announcement with revenue inflection: Consumer electronics launch with pre-order or initial revenue traction could unlock a new growth vector and validate the $98B equity raise thesis",
+      "Margin recovery inflection: Operating leverage evidence as capex normalizes relative to revenue; even guidance for 2028-2029 margin targets could reprice multiple expansion",
+      "Institutional investor positioning: Large allocators rotating back into META after capex bottom, creating momentum catalyst independent of fundamentals"
+    ],
+    "confidence": 6,
+    "expected_return": 0.03,
+    "invalidates_if": [
+      "Q4 2026 or Q1 2027 revenue growth decelerates below 15% YoY, signaling ad business momentum is slowing beneath the capex investment thesis",
+      "Management guidance on capex for 2027 exceeds $150B+ without corresponding revenue acceleration or near-term monetization clarity",
+      "Hardware business is shelved or deprioritized; leadership commentary suggests AI capex is primarily defensive (vs. offensive growth driver)",
+      "Operating margins contract below 28-30% through 2027 with no credible path to recovery; suggests capex is being used to offset competitive pressure rather than unlock new monetization",
+      "Institutional fund flows turn decidedly negative; Meta experiences sustained outflows as capex concerns dominate and hardware thesis gains no credibility among large allocators"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "8af91f22-4b89-4815-8897-029fcb0a45f0",
+    "run_id": "20261028-145802",
+    "date": "2026-10-28",
+    "ticker": "GOOGL",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "GOOGL is oversold on Gemini disappointment fears despite Cloud momentum and Anthropic upside optionality, with Q3 earnings and AI narrative reset providing near-term repricing catalyst.",
+    "anti_thesis": "Google's core search advertising business faces structural erosion as AI-native interfaces (ChatGPT, Perplexity) intercept queries before they reach Google, compressing the revenue base that funds AI investment\u2014a flywheel that works in reverse. Meanwhile, massive AI infrastructure capex (~$50B+ annually) is inflating the cost structure without proportional near-term revenue, squeezing FCF yield precisely when the valuation score of 56.7/100 suggests the market has already partially priced in recovery. The 'Cloud 82% growth' figure is likely off a small base and decelerating, so any sequential slowdown in Q3 will be read as structural, not cyclical.",
+    "catalysts": [
+      "Q3 2026 earnings beat (Oct 28, today) with Cloud acceleration reacceleration and detailed Gemini remediation roadmap resetting AI narrative",
+      "Anthropic option exercise announcement/IPO filing removes binary risk and crystallizes $10B+ embedded value optionality",
+      "Gemini 4.0 or successor model launch with competitive benchmark improvements, shifting narrative from 3.5 Pro delay to innovation pipeline strength",
+      "Google Cloud monetization proof points (per-seat pricing, enterprise AI workload adoption) in enterprise earnings calls countering hyperscaler AI concentration fear",
+      "Class action dismissal or settlement announcement, removing regulatory overhang and legal uncertainty premium"
+    ],
+    "confidence": 7,
+    "expected_return": 0.04,
+    "invalidates_if": [
+      "Q3 Cloud revenue growth decelerates below 70% YoY or management guides flat AI monetization contribution",
+      "Gemini 4.0 benchmarks show no meaningful improvement vs. OpenAI/Claude in enterprise evaluations",
+      "Google announces Anthropic option will not be exercised or reduces stake materially",
+      "Class action gains discovery access showing deliberate misstatement of model capabilities to investors",
+      "Google's AI capex guidance exceeds $50B+ annually without corresponding enterprise Cloud bookings acceleration"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "7655c693-a782-4c15-b093-ef6dc8a76664",
+    "run_id": "20261028-145802",
+    "date": "2026-10-28",
+    "ticker": "NEM",
+    "action": "BUY",
+    "target_weight": 0.05,
+    "thesis": "NEM is a structural gold play misvalued by the market, which is fixating on near-term production headwinds and cost inflation while ignoring that (1) gold's real yields remain deeply negative despite Fed tightening, (2) NEM's 7.05x EV/EBITDA and 14.31x PE are undemanding given FCF yield of 8.51%, and (3) major mine ramp-ups (Tanami, Cortez) will drive material production growth starting 2027, creating a 12-18 month earnings surprise window.",
+    "anti_thesis": "NEM's bull thesis rests entirely on a 2027-2028 production inflection that is 2-3 years away, during which time the company must execute multi-billion-dollar capex programs across geopolitically risky jurisdictions while carrying $8-10B in debt \u2014 any one of cost overruns, gold price weakness, or sovereign disruption collapses the FCF story before it materializes. The claimed 8.51% FCF yield is backward-looking and illusory given current capex suppression of free cash flow; true normalized FCF at current capex spend is materially lower, making the valuation far less 'cheap' than advertised. With vol at 43.6% and beta at 1.65, the stock will amplify any macro or operational disappointment, creating asymmetric downside risk for a thesis that requires 2+ years of flawless execution.",
+    "catalysts": [
+      "Q3/Q4 2026 production guidance reaffirmed or raised as operational headwinds (Boddington, Carlin) stabilize; market reprices away from 'decline story'",
+      "Tanami feasibility study completion (late 2026/early 2027) with cost/production confirmation triggers positive EPS revisions for 2027-2028",
+      "Gold prices hold above $2,400-2,500/oz through end of 2026 despite Fed terminal rates; demonstrates macro resilience and validates real-yield thesis",
+      "Quarterly FCF surprise as capex moderates in 2027 and production revamp begins; analyst model updates shift from EBITDA to FCF multiples (currently 13x FCF vs 10-11x comps)",
+      "Geopolitical de-escalation or hedging announcement in African operations (Ahafo, Tansis) removes tail-risk premium"
+    ],
+    "confidence": 6,
+    "expected_return": 0.1,
+    "invalidates_if": [
+      "NEM issues production guidance for 2027 below 5.0M oz or Tanami is delayed beyond Q4 2028\u2014signals structural decline rather than capex-driven trough",
+      "Gold prices fall and hold below $1,950/oz for 2+ quarters; undermines real-yield bull case and compresses FCF yields below 6%",
+      "Management turnover or strategic review announced; suggests board loss of confidence in recovery plan or exploration thesis",
+      "Quarterly FCF turns negative for two consecutive quarters outside of seasonal patterns; indicates operational cash flow deterioration beyond capex cycle",
+      "Peer (Barrick, Agnico, Newcrest) outperform materially on production and cost while NEM lags\u2014loses narrative control and analyst momentum"
+    ],
+    "status": "open",
+    "actual_return": null,
+    "thesis_correct": null
+  },
+  {
+    "trade_id": "cd19c013-627a-4de1-9356-643decd90c4d",
+    "run_id": "20261028-145802",
+    "date": "2026-10-28",
+    "ticker": "CVX",
+    "action": "SELL",
+    "target_weight": 0.0,
+    "thesis": "CVX is re-rating higher on normalized cash flow generation and capital allocation discipline, but consensus has already priced in much of the upside; the variant opportunity lies in downside protection and dividend safety rather than further multiple expansion.",
+    "anti_thesis": "CVX's bull thesis is largely self-defeating: it concedes consensus has already priced in the upside and frames the opportunity as 'downside protection' \u2014 yet at a 76.7/100 cheapness score with momentum at 100 and composite factor crowding at 70, the stock is neither cheap enough nor uncrowded enough to offer that protection. If Brent breaks below $65 \u2014 a credible scenario in a global demand slowdown \u2014 FCF yields compress sharply, dividend coverage gets scrutinized, and the multiple unwinds from a crowded long position with no margin of safety. The investment case essentially requires oil prices to stay elevated AND the market to not reprice a commodity producer lower, both of which are fragile assumptions with asymmetric downside.",
+    "catalysts": [
+      "Q3 earnings miss or guidance reduction on Guyana ramp (imminent 2026-10-30)",
+      "Oil price collapse below $65 triggering FCF forecast cuts and dividend payout ratio pressure",
+      "Geopolitical de-escalation in Middle East reducing risk premium and energy demand shock",
+      "Energy transition narrative acceleration forcing multiple compression on integrated majors",
+      "Debt reduction finishing earlier than expected, shifting capital allocation toward buybacks (positive surprise)",
+      "Competitive bid loss or cost overruns on major projects (Kazakhstan, Brazil) exposing execution risk"
+    ],
+    "confidence": 5,
+    "expected_return": 0.0,
+    "invalidates_if": [
+      "Brent crude sustains above $85 and CVX increases production guidance by >10% YoY (bullish, not bearish)",
+      "Earnings beat materially on Guyana ramp with cost productivity gains and dividend increase materialization",
+      "Oil price remains $70-80 for 24+ months and CVX proves capable of maintaining dividend growth through energy transition",
+      "Major M&A or transformational capital allocation shift (e.g., large renewable acquisition) reframes valuation narrative",
+      "Debt-to-equity falls below 0.15x with visible path to $20B+ annual buyback capability"
     ],
     "status": "open",
     "actual_return": null,
