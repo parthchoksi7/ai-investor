@@ -1,67 +1,11 @@
 {
-  "run_id": "20261028-145802",
-  "date": "2026-10-28",
-  "mode": "rebalance",
-  "generated_at": "2026-10-28T14:58:02.868925+00:00",
+  "run_id": "20261029-140040",
+  "date": "2026-10-29",
+  "mode": "risk_watch",
+  "generated_at": "2026-10-29T14:00:40.402612+00:00",
   "policy_version": "2.2-cash-deployment",
-  "data_quality": {
-    "data_quality_score": 100,
-    "data_quality_status": "OK",
-    "data_quality_hash": "5cc54365fd5ee3cd"
-  },
-  "execution_started_at": "2026-10-28T15:01:25.542647+00:00",
-  "executed_at": "2026-10-28T15:02:47.702827+00:00",
-  "decisions": [
-    {
-      "ticker": "META",
-      "action": "SELL",
-      "target_weight": 0.0,
-      "source_of_capital": "cash",
-      "expected_return": 0.03,
-      "rationale": "EXIT flagged, devil reject=False but hold=3, cmp*=62.8 lowest",
-      "thesis_exit": false,
-      "qty": 0.071934,
-      "price_as_of": "2026-10-28",
-      "sizing_price": 620.19,
-      "ref_id": "705a3df1-2010-470b-bb44-07d8576cddde"
-    },
-    {
-      "ticker": "GOOGL",
-      "action": "SELL",
-      "target_weight": 0.0,
-      "source_of_capital": "cash",
-      "expected_return": 0.04,
-      "rationale": "REDUCE flagged, hold=4, momentum=18.1, rank_chg_7d=-38 deteriorating",
-      "thesis_exit": false,
-      "qty": 0.139755,
-      "price_as_of": "2026-10-28",
-      "sizing_price": 320.58,
-      "ref_id": "54194ba7-571e-4644-8673-fa9f784baec0"
-    },
-    {
-      "ticker": "NEM",
-      "action": "BUY",
-      "target_weight": 0.05,
-      "source_of_capital": "GOOGL",
-      "expected_return": 0.1,
-      "rationale": "cmp*=79.1, fills zero-weight Materials gap, gold macro tailwind",
-      "qty": 0.222658,
-      "price_as_of": "2026-10-28",
-      "sizing_price": 112.64,
-      "ref_id": "b69a3433-0ac3-4ccb-8db9-8f3e41ce9abd"
-    },
-    {
-      "ticker": "CVX",
-      "action": "SELL",
-      "target_weight": 0.0,
-      "source_of_capital": "exit_deteriorating_position",
-      "thesis_exit": true,
-      "expected_return": 0.0,
-      "rationale": "Auto-exit: position_review=REDUCE hold=4/10 alpha=LOW, DA risk=7/10 reject=True \u2014 3-signal override of PM HOLD",
-      "qty": 0.237135,
-      "price_as_of": "2026-10-28",
-      "sizing_price": 228.23,
-      "ref_id": "d6349ae6-8f3d-47a7-a8b3-63bba5cce951"
-    }
-  ]
+  "data_quality": null,
+  "execution_started_at": null,
+  "executed_at": "2026-10-29T14:01:06.581621+00:00",
+  "decisions": []
 }
