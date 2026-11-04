@@ -789,8 +789,15 @@ def run_daily_cycle():
 
     # Agent 1: Market Regime
     regime = pipeline_state.get("regime", {})
+    llm_outage = bool(pipeline_state.get("llm_outage"))
     if not regime:
         health.record("agent_1_regime", FAILED, message="No regime output returned")
+    elif llm_outage:
+        # The fallback default (NEUTRAL / 50) clears the confidence floor below, so
+        # without this an outage reads as a real regime call (Nov 4 2026).
+        health.record("agent_1_regime", FAILED,
+                      message="Regime is the fallback default — no LLM call succeeded this run",
+                      regime=regime.get("regime"), confidence=regime.get("confidence"))
     elif regime.get("confidence", 0) < 25:
         health.record("agent_1_regime", DEGRADED,
                       message=f"Low confidence: {regime.get('confidence')}/100 — insufficient market data",
@@ -891,7 +898,13 @@ def run_daily_cycle():
         and (kill_active or not min_hold_days_remaining(
             t, transactions=_txs, today=today, gained=position_gained(t, portfolio)))
     )
-    if not pm_proposed and not pm_parsed_ok:
+    if not pm_proposed and pipeline_state.get("portfolio_manager_api_failed"):
+        # The call itself raised (auth / network / 529) — distinct from a reply that
+        # failed to parse, and the reason the CRO was not run (Nov 4 2026).
+        health.record("agent_6_portfolio_manager", FAILED,
+                      message="PM call failed at the API — no decision was made",
+                      proposed=0, api_failed=True)
+    elif not pm_proposed and not pm_parsed_ok:
         # A parse failure that silently collapsed to [] — NOT a deliberate no-trade.
         # Without this branch a mangled PM response is indistinguishable from "hold".
         health.record("agent_6_portfolio_manager", DEGRADED,
@@ -915,7 +928,10 @@ def run_daily_cycle():
         # api_failed=True MUST be on the health record: the routine's stamp step and
         # its final-attempt fallback both read checks.agent_7_cro.api_failed — without
         # it, a CRO outage was stamped as a completed rebalance (consuming the week).
-        health.record("agent_7_cro", DEGRADED, message="CRO API error — trades BLOCKED (safety default)",
+        _cro_msg = ("CRO API error — trades BLOCKED (safety default)"
+                    if not (llm_outage or pipeline_state.get("portfolio_manager_api_failed"))
+                    else f"CRO not run — {cro.get('reasoning', 'LLM unavailable')[:240]}")
+        health.record("agent_7_cro", DEGRADED, message=_cro_msg,
                       api_failed=True,
                       approved=cro.get("approved"),
                       vetoed=cro.get("rejected_tickers", []))
@@ -964,13 +980,40 @@ def run_daily_cycle():
     health.record("llm_cost", OK, est_cost_usd=_u.get("est_cost_usd"),
                   cost_pct_aum_annualized=_u.get("cost_pct_aum_annualized"),
                   unpriced_models=_u.get("unpriced_models"))
+    # LLM backend reachability (Nov 4 2026). The gate's canary deliberately lets
+    # non-529 errors through so this run can surface them; this is where it does.
+    _lc = pipeline_state.get("llm_calls") or {}
+    if llm_outage:
+        health.record("llm_backend", FAILED,
+                      message=(f"No LLM call succeeded ({_lc.get('failed', 0)} failed). "
+                               f"Last error: {str(_lc.get('last_error', ''))[:300]}"),
+                      **{k: _lc.get(k) for k in ("succeeded", "failed", "last_error")})
+    elif _lc.get("failed"):
+        # OK, not DEGRADED: a few calls failing after retries is already reported by
+        # the affected agent's own check; paging on it would bring back the "every
+        # rebalance opens an issue" noise actionable_status was built to remove.
+        health.record("llm_backend", OK,
+                      message=(f"{_lc.get('failed')} LLM call(s) failed, "
+                               f"{_lc.get('succeeded')} succeeded. "
+                               f"Last error: {str(_lc.get('last_error', ''))[:300]}"),
+                      **{k: _lc.get(k) for k in ("succeeded", "failed", "last_error")})
+    else:
+        health.record("llm_backend", OK, succeeded=_lc.get("succeeded"), failed=0)
     record_run(run_id, pipeline_state)
     print(f"   📋 Agent log written (run_id={run_id})")
 
     # Forecast ledger (#2) — log every agent's structured forecasts for later
     # calibration. OBSERVATIONAL: logging only, never affects a decision, and
     # never raises into the pipeline.
+    # Skipped when the run made no decision (LLM outage, or the PM call itself
+    # failed): the run is retried, and up to four attempts a day would each append
+    # the day, with pm_selected=0 / cro_veto=0 rows from a PM and CRO that never ran.
+    # Cost: if every attempt fails, the day's quant and dossier-signal rows are not
+    # logged on this plane (Gate 1a reads the GH-plane full-universe IC, unaffected).
     try:
+        if llm_outage or pipeline_state.get("portfolio_manager_api_failed"):
+            raise RuntimeError("LLM outage / PM call failed — not a decision, so this "
+                               "run is not logged as an observation")
         from calibration import log_forecasts, log_decisions, log_dossier_signals, log_pm_forecasts
         _n_fc = log_forecasts(run_id, today, pipeline_state,
                               pipeline_state.get("candidates", []), market_data["prices"],

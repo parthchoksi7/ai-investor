@@ -283,31 +283,62 @@ Focus on: Avoiding catastrophic losses."""
 # pinning would change behavior and must be a deliberate, separate change.
 SAMPLING_PARAMS = {"temperature": "api_default(1.0)", "top_p": "api_default"}
 
-_RUN_MANIFEST: dict = {"calls": {}}
+_RUN_MANIFEST: dict = {"calls": {}, "api_failures": {"n": 0, "last_error": ""}}
+_MANIFEST_LOCK = threading.Lock()  # agents record from up to 10 worker threads
 
 
 def _record_call(model: str, max_tokens: int, response) -> None:
     """Accumulate resolved model + token usage per requested model. Best-effort —
     instrumentation must never affect the call result or raise into the pipeline."""
     try:
-        c = _RUN_MANIFEST["calls"].setdefault(
-            model, {"n_calls": 0, "resolved_models": [], "max_tokens_seen": [],
-                    "input_tokens": 0, "output_tokens": 0,
-                    "cache_read_tokens": 0, "cache_creation_tokens": 0})
-        c["n_calls"] += 1
-        resolved = getattr(response, "model", None)
-        if resolved and resolved not in c["resolved_models"]:
-            c["resolved_models"].append(resolved)
-        if max_tokens not in c["max_tokens_seen"]:
-            c["max_tokens_seen"].append(max_tokens)
-        u = getattr(response, "usage", None)
-        if u is not None:
-            c["input_tokens"]          += getattr(u, "input_tokens", 0) or 0
-            c["output_tokens"]         += getattr(u, "output_tokens", 0) or 0
-            c["cache_read_tokens"]     += getattr(u, "cache_read_input_tokens", 0) or 0
-            c["cache_creation_tokens"] += getattr(u, "cache_creation_input_tokens", 0) or 0
+        with _MANIFEST_LOCK:
+            c = _RUN_MANIFEST["calls"].setdefault(
+                model, {"n_calls": 0, "resolved_models": [], "max_tokens_seen": [],
+                        "input_tokens": 0, "output_tokens": 0,
+                        "cache_read_tokens": 0, "cache_creation_tokens": 0})
+            c["n_calls"] += 1
+            resolved = getattr(response, "model", None)
+            if resolved and resolved not in c["resolved_models"]:
+                c["resolved_models"].append(resolved)
+            if max_tokens not in c["max_tokens_seen"]:
+                c["max_tokens_seen"].append(max_tokens)
+            u = getattr(response, "usage", None)
+            if u is not None:
+                c["input_tokens"]          += getattr(u, "input_tokens", 0) or 0
+                c["output_tokens"]         += getattr(u, "output_tokens", 0) or 0
+                c["cache_read_tokens"]     += getattr(u, "cache_read_input_tokens", 0) or 0
+                c["cache_creation_tokens"] += getattr(u, "cache_creation_input_tokens", 0) or 0
     except Exception:
         pass
+
+
+def _record_api_failure(model: str, err: Exception) -> None:
+    """Count an agent call that RAISED on its final attempt (the _safe_call
+    api_failed path). Best-effort, never raises. Paired with _record_call (the
+    successes) so get_trade_decisions can tell a total LLM outage from a run whose
+    agents answered (Nov 4 2026: every call got 403 and the run still consumed the
+    week as a deliberate no-trade)."""
+    try:
+        with _MANIFEST_LOCK:
+            f = _RUN_MANIFEST.setdefault("api_failures", {"n": 0, "last_error": ""})
+            f["n"] = int(f.get("n", 0)) + 1
+            f["last_error"] = f"{model}: {type(err).__name__}: {str(err)[:300]}"
+    except Exception:
+        pass
+
+
+def llm_call_counts() -> dict:
+    """{"succeeded": n, "failed": n, "last_error": str} accumulated in this process.
+    Callers diff two readings to scope the counts to one pipeline run."""
+    try:
+        with _MANIFEST_LOCK:
+            ok = sum(int(c.get("n_calls", 0) or 0)
+                     for c in (_RUN_MANIFEST.get("calls") or {}).values())
+            f = dict(_RUN_MANIFEST.get("api_failures") or {})
+        return {"succeeded": ok, "failed": int(f.get("n", 0) or 0),
+                "last_error": str(f.get("last_error", "") or "")}
+    except Exception:
+        return {"succeeded": 0, "failed": 0, "last_error": ""}
 
 
 # Oct 4 2026 review, item 8 — LLM cost against AUM. API LIST prices, $ per 1M tokens
@@ -504,7 +535,9 @@ def _safe_call(model, system, user_msg, default, max_tokens=600, retries=2, retu
                                 "parsed_ok": parsed_ok, "api_failed": False}
             return result
         except Exception as e:
-            if attempt < retries:
+            # 401/403 (bad key, or a session token that may not call the model —
+            # Nov 4 2026) cannot succeed on a retry: fail on the first attempt.
+            if attempt < retries and getattr(e, "status_code", None) not in (401, 403):
                 err = str(e)
                 # 529 = Anthropic server overloaded; use longer backoff than generic errors
                 delay = 30 * (attempt + 1) if ("529" in err or "overloaded" in err.lower()) else 2 ** attempt
@@ -512,6 +545,7 @@ def _safe_call(model, system, user_msg, default, max_tokens=600, retries=2, retu
                 time.sleep(delay)
             else:
                 print(f"   ⚠ Agent call failed: {e}")
+                _record_api_failure(model, e)
                 if return_meta:
                     # api_failed=True: the call itself raised on the final attempt
                     # (529 / network / API error), as opposed to a call that
@@ -1702,6 +1736,7 @@ def get_trade_decisions(
     """
     market_data_date = market_data.get("date", "")
     dossier_recs = (dossier or {}).get("tickers", {}) or {}
+    _calls_at_start = llm_call_counts()  # scopes the outage check to THIS run
 
     # ── 1. Market Regime ──────────────────────────────────────────────────────
     print("   [1/7] Market Regime Strategist...")
@@ -1791,11 +1826,41 @@ def get_trade_decisions(
     else:
         print("         No trades proposed.")
 
+    # ── LLM outage check (Nov 4 2026) ─────────────────────────────────────────
+    # When the PM call itself RAISED, or no agent call succeeded at all, the empty
+    # list above is not a decision. Without this, the CRO short-circuits on "no
+    # trades" with approved=True, the routine stamps the envelope as executed, and
+    # the week's rebalance is consumed (Nov 4 2026: every call got a 403, the run
+    # was stamped, and Thu/Fri catch-up was disabled). Marking the CRO api_failed
+    # reuses the existing CRO-outage path end to end: main.py records
+    # agent_7_cro.api_failed, the routine skips the stamp (week stays retryable),
+    # and the routine's final-attempt fallback runs risk_watch.
+    _now = llm_call_counts()
+    llm_calls = {"succeeded": _now["succeeded"] - _calls_at_start["succeeded"],
+                 "failed": _now["failed"] - _calls_at_start["failed"],
+                 "last_error": _now["last_error"]
+                 if _now["failed"] > _calls_at_start["failed"] else ""}
+    llm_outage = llm_calls["succeeded"] == 0 and llm_calls["failed"] > 0
+    pm_api_failed = bool(pm_meta.get("api_failed"))
+
     # ── 7. Chief Risk Officer ─────────────────────────────────────────────────
     print("   [7/7] Chief Risk Officer...")
-    risk = run_chief_risk_officer(decisions, portfolio, quant_scores,
-                                  history=market_data.get("history"),
-                                  candidates=candidates)
+    if llm_outage or pm_api_failed:
+        why = ("no LLM call succeeded this run" if llm_outage
+               else "the Portfolio Manager call failed at the API")
+        print(f"   🚨 LLM unavailable — {why} "
+              f"({llm_calls['failed']} failed call(s); last: {llm_calls['last_error'][:200]}). "
+              "Blocking all trades; this run is NOT a decision and must not consume the week.")
+        risk = {"approved": False, "risk_budget_used": 0,
+                "largest_risk": "LLM unavailable",
+                "rejected_tickers": [],
+                "reasoning": f"Not evaluated: {why}. Last error: "
+                             f"{llm_calls['last_error'][:300] or 'n/a'}",
+                "api_failed": True, "llm_outage": llm_outage}
+    else:
+        risk = run_chief_risk_officer(decisions, portfolio, quant_scores,
+                                      history=market_data.get("history"),
+                                      candidates=candidates)
     print(
         f"         {'✅ APPROVED' if risk.get('approved') else '🚨 REJECTED'} | "
         f"risk_budget={risk.get('risk_budget_used')}% | {risk.get('largest_risk')}"
@@ -1848,7 +1913,12 @@ def get_trade_decisions(
         "portfolio_manager_proposed": decisions_proposed,
         "portfolio_manager_raw": pm_meta.get("raw", ""),
         "portfolio_manager_parsed_ok": pm_meta.get("parsed_ok", True),
+        "portfolio_manager_api_failed": pm_api_failed,
         "cro": risk,
+        # Per-run LLM call outcome (Nov 4 2026). llm_outage=True means every
+        # agent output in this state is a fallback default, not a model answer.
+        "llm_calls": llm_calls,
+        "llm_outage": llm_outage,
         # POST-CRO, PRE-GUARD-CHAIN. These are the CRO-approved decisions as they
         # leave the agent pipeline; main.py's deterministic guards (turnover,
         # capital-dependency, sector cap, net-edge) run afterwards and can reject
