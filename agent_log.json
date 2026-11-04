@@ -76060,5 +76060,1508 @@
       "cost_pct_aum_annualized": 6.19,
       "runs_per_year_assumed": 52
     }
+  },
+  {
+    "run_id": "20261104-145030",
+    "date": "2026-11-04",
+    "regime": {
+      "regime": "NEUTRAL",
+      "confidence": 50,
+      "growth_value": "NEUTRAL",
+      "favored_factors": [],
+      "avoid_factors": [],
+      "key_observations": []
+    },
+    "candidates": [
+      "ABNB",
+      "ROKU",
+      "MSFT",
+      "V",
+      "BLK",
+      "TXN",
+      "VRTX",
+      "PPG",
+      "AMP",
+      "NVDA",
+      "NXPI",
+      "NEM",
+      "PYPL",
+      "MS",
+      "NDAQ",
+      "AME",
+      "MU",
+      "ADI",
+      "PFE",
+      "JPM"
+    ],
+    "quant_scores": {
+      "ABNB": {
+        "ticker": "ABNB",
+        "data_available": true,
+        "composite_score": 70.5,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 73.0,
+        "momentum_available": true,
+        "return_1m": 1.76,
+        "return_3m": 9.49,
+        "return_6m": 19.49,
+        "above_50dma": false,
+        "above_200dma": true,
+        "quality_score": 80.0,
+        "quality_available": true,
+        "valuation_score": 50,
+        "valuation_available": false,
+        "volatility": 48.4,
+        "beta": 1.1,
+        "volatility_score": 48.6,
+        "volatility_available": true,
+        "beta_stable": 1.055,
+        "beta_stable_raw": 1.082,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 68.1,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "ADI": {
+        "ticker": "ADI",
+        "data_available": true,
+        "composite_score": 78.1,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 75.6,
+        "momentum_available": true,
+        "return_1m": 0.16,
+        "return_3m": 11.15,
+        "return_6m": 3.71,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 90.0,
+        "quality_available": true,
+        "valuation_score": 36.7,
+        "valuation_available": true,
+        "volatility": 32.3,
+        "beta": 1.98,
+        "volatility_score": 73.4,
+        "volatility_available": true,
+        "beta_stable": 1.465,
+        "beta_stable_raw": 1.694,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 70.4,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "AME": {
+        "ticker": "AME",
+        "data_available": true,
+        "composite_score": 72.4,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 63.5,
+        "momentum_available": true,
+        "return_1m": -1.33,
+        "return_3m": -2.43,
+        "return_6m": 5.99,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 75.0,
+        "quality_available": true,
+        "valuation_score": 50.0,
+        "valuation_available": true,
+        "volatility": 23.7,
+        "beta": 1.33,
+        "volatility_score": 86.6,
+        "volatility_available": true,
+        "beta_stable": 1.057,
+        "beta_stable_raw": 1.085,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 69.9,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "AMP": {
+        "ticker": "AMP",
+        "data_available": true,
+        "composite_score": 79.1,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 52.6,
+        "momentum_available": true,
+        "return_1m": 2.01,
+        "return_3m": -10.01,
+        "return_6m": 6.37,
+        "above_50dma": false,
+        "above_200dma": true,
+        "quality_score": 80.0,
+        "quality_available": true,
+        "valuation_score": 90.0,
+        "valuation_available": true,
+        "volatility": 22.9,
+        "beta": 0.37,
+        "volatility_score": 87.8,
+        "volatility_available": true,
+        "beta_stable": 0.769,
+        "beta_stable_raw": 0.654,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 80.3,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "BLK": {
+        "ticker": "BLK",
+        "data_available": true,
+        "composite_score": 80.1,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 84.6,
+        "momentum_available": true,
+        "return_1m": 8.9,
+        "return_3m": 2.45,
+        "return_6m": 10.72,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 83.3,
+        "quality_available": true,
+        "valuation_score": 50.0,
+        "valuation_available": true,
+        "volatility": 22.8,
+        "beta": 1.19,
+        "volatility_score": 88.0,
+        "volatility_available": true,
+        "beta_stable": 1.16,
+        "beta_stable_raw": 1.238,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 76.3,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "JPM": {
+        "ticker": "JPM",
+        "data_available": true,
+        "composite_score": 78.6,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 56.5,
+        "momentum_available": true,
+        "return_1m": 1.68,
+        "return_3m": -5.92,
+        "return_6m": 9.24,
+        "above_50dma": false,
+        "above_200dma": true,
+        "quality_score": 68.3,
+        "quality_available": true,
+        "valuation_score": 90.0,
+        "valuation_available": true,
+        "volatility": 15.9,
+        "beta": 0.38,
+        "volatility_score": 98.6,
+        "volatility_available": true,
+        "beta_stable": 0.792,
+        "beta_stable_raw": 0.689,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 79.5,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "MS": {
+        "ticker": "MS",
+        "data_available": true,
+        "composite_score": 76.5,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 19.3,
+        "momentum_available": true,
+        "return_1m": -2.16,
+        "return_3m": -14.74,
+        "return_6m": -1.67,
+        "above_50dma": false,
+        "above_200dma": false,
+        "quality_score": 68.3,
+        "quality_available": true,
+        "valuation_score": 90.0,
+        "valuation_available": true,
+        "volatility": 24.1,
+        "beta": 1.65,
+        "volatility_score": 86.0,
+        "volatility_available": true,
+        "beta_stable": 1.308,
+        "beta_stable_raw": 1.46,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 70.8,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "MSFT": {
+        "ticker": "MSFT",
+        "data_available": true,
+        "composite_score": 76.1,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 77.5,
+        "momentum_available": true,
+        "return_1m": -0.8,
+        "return_3m": 7.08,
+        "return_6m": 27.16,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 78.8,
+        "quality_available": true,
+        "valuation_score": 50.0,
+        "valuation_available": true,
+        "volatility": 22.7,
+        "beta": 1.38,
+        "volatility_score": 88.2,
+        "volatility_available": true,
+        "beta_stable": 1.045,
+        "beta_stable_raw": 1.066,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 73.8,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "MU": {
+        "ticker": "MU",
+        "data_available": true,
+        "composite_score": 91.7,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 44.6,
+        "momentum_available": true,
+        "return_1m": -19.63,
+        "return_3m": -4.26,
+        "return_6m": 33.57,
+        "above_50dma": false,
+        "above_200dma": true,
+        "quality_score": 90.0,
+        "quality_available": true,
+        "valuation_score": 90.0,
+        "valuation_available": true,
+        "volatility": 54.4,
+        "beta": 2.55,
+        "volatility_score": 39.3,
+        "volatility_available": true,
+        "beta_stable": 2.516,
+        "beta_stable_raw": 3.263,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 70.5,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "NDAQ": {
+        "ticker": "NDAQ",
+        "data_available": true,
+        "composite_score": 77.7,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 98.5,
+        "momentum_available": true,
+        "return_1m": 16.03,
+        "return_3m": 13.12,
+        "return_6m": 20.19,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 85.0,
+        "quality_available": true,
+        "valuation_score": 56.7,
+        "valuation_available": true,
+        "volatility": 25.1,
+        "beta": 0.31,
+        "volatility_score": 84.5,
+        "volatility_available": true,
+        "beta_stable": 0.698,
+        "beta_stable_raw": 0.549,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 79.8,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "NEM": {
+        "ticker": "NEM",
+        "data_available": true,
+        "composite_score": 75.3,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 26.1,
+        "momentum_available": true,
+        "return_1m": -7.21,
+        "return_3m": 3.05,
+        "return_6m": -1.41,
+        "above_50dma": false,
+        "above_200dma": false,
+        "quality_score": 73.8,
+        "quality_available": true,
+        "valuation_score": 90.0,
+        "valuation_available": true,
+        "volatility": 41.7,
+        "beta": 1.87,
+        "volatility_score": 58.9,
+        "volatility_available": true,
+        "beta_stable": 1.514,
+        "beta_stable_raw": 1.767,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 67.0,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "NVDA": {
+        "ticker": "NVDA",
+        "data_available": true,
+        "composite_score": 73.3,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 37.5,
+        "momentum_available": true,
+        "return_1m": -13.48,
+        "return_3m": -5.72,
+        "return_6m": 5.19,
+        "above_50dma": false,
+        "above_200dma": true,
+        "quality_score": 85.0,
+        "quality_available": true,
+        "valuation_score": 43.3,
+        "valuation_available": true,
+        "volatility": 35.0,
+        "beta": 2.19,
+        "volatility_score": 69.3,
+        "volatility_available": true,
+        "beta_stable": 1.63,
+        "beta_stable_raw": 1.94,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 63.5,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "NXPI": {
+        "ticker": "NXPI",
+        "data_available": true,
+        "composite_score": 80.3,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 84.8,
+        "momentum_available": true,
+        "return_1m": 8.6,
+        "return_3m": 13.69,
+        "return_6m": -10.11,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 70.0,
+        "quality_available": true,
+        "valuation_score": 70.0,
+        "valuation_available": true,
+        "volatility": 35.2,
+        "beta": 1.84,
+        "volatility_score": 68.9,
+        "volatility_available": true,
+        "beta_stable": 1.523,
+        "beta_stable_raw": 1.78,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 71.9,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "PFE": {
+        "ticker": "PFE",
+        "data_available": true,
+        "composite_score": 77.1,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 96.5,
+        "momentum_available": true,
+        "return_1m": 9.45,
+        "return_3m": 16.23,
+        "return_6m": 13.42,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 80.0,
+        "quality_available": true,
+        "valuation_score": 70.0,
+        "valuation_available": true,
+        "volatility": 20.3,
+        "beta": -0.18,
+        "volatility_score": 91.8,
+        "volatility_available": true,
+        "beta_stable": 0.413,
+        "beta_stable_raw": 0.124,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 82.9,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "PPG": {
+        "ticker": "PPG",
+        "data_available": true,
+        "composite_score": 76.6,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 87.0,
+        "momentum_available": true,
+        "return_1m": 15.17,
+        "return_3m": 1.77,
+        "return_6m": 13.94,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 63.8,
+        "quality_available": true,
+        "valuation_score": 70.0,
+        "valuation_available": true,
+        "volatility": 25.7,
+        "beta": 0.54,
+        "volatility_score": 83.6,
+        "volatility_available": true,
+        "beta_stable": 1.083,
+        "beta_stable_raw": 1.124,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 73.8,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "PYPL": {
+        "ticker": "PYPL",
+        "data_available": true,
+        "composite_score": 76.6,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 84.1,
+        "momentum_available": true,
+        "return_1m": 6.98,
+        "return_3m": 0.73,
+        "return_6m": 25.93,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 70.0,
+        "quality_available": true,
+        "valuation_score": 90.0,
+        "valuation_available": true,
+        "volatility": 37.5,
+        "beta": 0.83,
+        "volatility_score": 65.4,
+        "volatility_available": true,
+        "beta_stable": 0.911,
+        "beta_stable_raw": 0.867,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 76.0,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "ROKU": {
+        "ticker": "ROKU",
+        "data_available": true,
+        "composite_score": 75.9,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 87.1,
+        "momentum_available": true,
+        "return_1m": 4.53,
+        "return_3m": 9.12,
+        "return_6m": 28.9,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 70.0,
+        "quality_available": true,
+        "valuation_score": 36.7,
+        "valuation_available": true,
+        "volatility": 15.5,
+        "beta": 0.2,
+        "volatility_score": 99.2,
+        "volatility_available": true,
+        "beta_stable": 1.211,
+        "beta_stable_raw": 1.315,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 71.5,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "TXN": {
+        "ticker": "TXN",
+        "data_available": true,
+        "composite_score": 75.5,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 88.4,
+        "momentum_available": true,
+        "return_1m": 5.96,
+        "return_3m": 12.52,
+        "return_6m": 11.21,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 80.0,
+        "quality_available": true,
+        "valuation_score": 36.7,
+        "valuation_available": true,
+        "volatility": 30.8,
+        "beta": 1.49,
+        "volatility_score": 75.7,
+        "volatility_available": true,
+        "beta_stable": 1.344,
+        "beta_stable_raw": 1.514,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 69.4,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "V": {
+        "ticker": "V",
+        "data_available": true,
+        "composite_score": 75.1,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 99.3,
+        "momentum_available": true,
+        "return_1m": 13.72,
+        "return_3m": 14.08,
+        "return_6m": 30.55,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 85.0,
+        "quality_available": true,
+        "valuation_score": 50.0,
+        "valuation_available": true,
+        "volatility": 20.0,
+        "beta": 0.09,
+        "volatility_score": 92.3,
+        "volatility_available": true,
+        "beta_stable": 0.467,
+        "beta_stable_raw": 0.204,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 80.2,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      },
+      "VRTX": {
+        "ticker": "VRTX",
+        "data_available": true,
+        "composite_score": 70.0,
+        "factors_used": [
+          "momentum",
+          "quality",
+          "valuation",
+          "volatility"
+        ],
+        "formula_version": "3.0-beta-neutral",
+        "momentum_score": 88.7,
+        "momentum_available": true,
+        "return_1m": 5.41,
+        "return_3m": 9.47,
+        "return_6m": 25.07,
+        "above_50dma": true,
+        "above_200dma": true,
+        "quality_score": 85.0,
+        "quality_available": true,
+        "valuation_score": 43.3,
+        "valuation_available": true,
+        "volatility": 29.7,
+        "beta": 0.03,
+        "volatility_score": 77.3,
+        "volatility_available": true,
+        "beta_stable": 0.612,
+        "beta_stable_raw": 0.421,
+        "beta_stable_window": 206,
+        "beta_stable_basis": "long",
+        "beta_stable_available": true,
+        "composite_raw": 73.2,
+        "beta_neutralized": true,
+        "neutralize_fit": {
+          "intercept": 75.176125,
+          "slope": -12.827214,
+          "n_fit": 175,
+          "centre": 64.0829
+        }
+      }
+    },
+    "research": {
+      "ABNB": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "TXN": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "V": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "BLK": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "ROKU": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "VRTX": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "MSFT": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "NVDA": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "AMP": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "PPG": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "NEM": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "PYPL": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "ADI": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "MS": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "NXPI": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "MU": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "NDAQ": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "PFE": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "AME": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      },
+      "JPM": {
+        "thesis": "",
+        "catalysts": [],
+        "confidence": 5,
+        "key_risks": [],
+        "invalidates_if": [],
+        "variant_view": "",
+        "_empty_reason": "api_error"
+      }
+    },
+    "earnings": {
+      "ABNB": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "MSFT": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "V": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "BLK": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "TXN": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "VRTX": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "PPG": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "AMP": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "NVDA": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "NXPI": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "NEM": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "MS": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "NDAQ": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "AME": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "MU": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "ADI": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "PFE": {
+        "earnings_alpha_score": null,
+        "skipped_no_catalyst": true,
+        "next_earnings_est": "none",
+        "beat_probability": "N/A",
+        "guidance_cut_probability": "N/A",
+        "key_catalysts_90d": []
+      },
+      "PYPL": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [],
+        "next_earnings_est_model": null,
+        "next_earnings_est": "2027-02-02",
+        "earnings_date_corrected": true
+      },
+      "ROKU": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [],
+        "next_earnings_est_model": null,
+        "next_earnings_est": "2026-11-05",
+        "earnings_date_corrected": true
+      },
+      "JPM": {
+        "earnings_alpha_score": 5,
+        "beat_probability": "MEDIUM",
+        "guidance_cut_probability": "LOW",
+        "key_catalysts_90d": [],
+        "next_earnings_est_model": null,
+        "next_earnings_est": "2027-01-14",
+        "earnings_date_corrected": true
+      }
+    },
+    "devils_advocate": {
+      "BLK": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "MSFT": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "ROKU": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "ABNB": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "V": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "TXN": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "VRTX": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "AMP": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "NVDA": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "PPG": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "NXPI": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "NEM": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "PYPL": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "MS": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "NDAQ": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "AME": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "MU": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "PFE": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "ADI": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      },
+      "JPM": {
+        "bear_case": "",
+        "overall_risk_score": 5,
+        "recommend_reject": false,
+        "hidden_risks": []
+      }
+    },
+    "position_reviews": {
+      "JPM": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "recommended_action": "HOLD",
+        "reasoning": ""
+      },
+      "ABNB": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "recommended_action": "HOLD",
+        "reasoning": ""
+      },
+      "ADI": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "recommended_action": "HOLD",
+        "reasoning": ""
+      },
+      "V": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "recommended_action": "HOLD",
+        "reasoning": ""
+      },
+      "VRTX": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "recommended_action": "HOLD",
+        "reasoning": ""
+      },
+      "AMP": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "recommended_action": "HOLD",
+        "reasoning": ""
+      },
+      "AME": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "recommended_action": "HOLD",
+        "reasoning": ""
+      },
+      "NVDA": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "recommended_action": "HOLD",
+        "reasoning": ""
+      },
+      "NEM": {
+        "hold_score": 6,
+        "remaining_alpha": "MEDIUM",
+        "thesis_intact": true,
+        "recommended_action": "HOLD",
+        "reasoning": ""
+      }
+    },
+    "portfolio_manager_proposed": [],
+    "portfolio_manager_raw": "",
+    "portfolio_manager_parsed_ok": false,
+    "cro": {
+      "approved": true,
+      "risk_budget_used": 0,
+      "largest_risk": "none",
+      "rejected_tickers": [],
+      "reasoning": "No trades to evaluate."
+    },
+    "post_cro_decisions": [],
+    "final_decisions": [],
+    "cash_deployment": {
+      "deployed_usd": 0.0,
+      "names": {},
+      "excluded": {
+        "JPM": "no research thesis",
+        "VRTX": "no research thesis",
+        "ABNB": "no research thesis",
+        "V": "no research thesis",
+        "ADI": "no research thesis",
+        "AMP": "no research thesis",
+        "AME": "no research thesis",
+        "NVDA": "no research thesis",
+        "NEM": "no research thesis"
+      },
+      "skipped": "no eligible name to deploy into",
+      "target_cash_pct": 0.05,
+      "projected_cash_pct": 0.2867,
+      "settled_budget_usd": 138.49
+    },
+    "timestamp": "2026-11-04T14:50:30.623313+00:00",
+    "kill_switch_active": false,
+    "market_data_source": "market_snapshot_file",
+    "market_data_date": "2026-11-04",
+    "portfolio_snapshot": {
+      "cash": 145.78,
+      "total_value": 508.468562632,
+      "positions": [
+        {
+          "symbol": "JPM",
+          "qty": 0.11679,
+          "available_qty": 0.11679,
+          "avg_price": 327.77,
+          "current_price": 346.82,
+          "market_value": 40.505108,
+          "unrealized_pnl": 2.22485
+        },
+        {
+          "symbol": "VRTX",
+          "qty": 0.101027,
+          "available_qty": 0.101027,
+          "avg_price": 464.73,
+          "current_price": 539.935,
+          "market_value": 54.548013,
+          "unrealized_pnl": 7.597736
+        },
+        {
+          "symbol": "ABNB",
+          "qty": 0.303888,
+          "available_qty": 0.303888,
+          "avg_price": 152.92,
+          "current_price": 175.33,
+          "market_value": 53.280683,
+          "unrealized_pnl": 6.81013
+        },
+        {
+          "symbol": "V",
+          "qty": 0.116078,
+          "available_qty": 0.116078,
+          "avg_price": 382.85,
+          "current_price": 426.205,
+          "market_value": 49.473024,
+          "unrealized_pnl": 5.032562
+        },
+        {
+          "symbol": "ADI",
+          "qty": 0.059049,
+          "available_qty": 0.059049,
+          "avg_price": 406.1,
+          "current_price": 421.28,
+          "market_value": 24.876163,
+          "unrealized_pnl": 0.896364
+        },
+        {
+          "symbol": "AMP",
+          "qty": 0.077908,
+          "available_qty": 0.077908,
+          "avg_price": 486.09,
+          "current_price": 518.835,
+          "market_value": 40.421397,
+          "unrealized_pnl": 2.551097
+        },
+        {
+          "symbol": "AME",
+          "qty": 0.152491,
+          "available_qty": 0.152491,
+          "avg_price": 247.49,
+          "current_price": 238.53,
+          "market_value": 36.373678,
+          "unrealized_pnl": -1.366319
+        },
+        {
+          "symbol": "NVDA",
+          "qty": 0.182084,
+          "available_qty": 0.182084,
+          "avg_price": 222.59,
+          "current_price": 206.7671,
+          "market_value": 37.648981,
+          "unrealized_pnl": -2.881097
+        },
+        {
+          "symbol": "NEM",
+          "qty": 0.222658,
+          "available_qty": 0.222658,
+          "avg_price": 111.79,
+          "current_price": 114.87,
+          "market_value": 25.576724,
+          "unrealized_pnl": 0.685787
+        }
+      ]
+    },
+    "net_edge_rejected": 0,
+    "final_decisions_vintage": "post_guard_chain",
+    "llm_usage": {
+      "by_model": {},
+      "est_cost_usd": 0.0,
+      "unpriced_models": [],
+      "scope": "weekly rebalance agents (cloud plane)",
+      "basis": "API list price (subscription OAuth runs are not metered per token)",
+      "cost_pct_aum_per_run": 0.0,
+      "cost_pct_aum_annualized": 0.0,
+      "runs_per_year_assumed": 52
+    }
   }
 ]
