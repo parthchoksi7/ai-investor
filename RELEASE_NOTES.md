@@ -13,7 +13,41 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
-_Nothing unreleased._
+### Fixed — an AI outage no longer uses up the week's rebalance
+
+On Wed 2026-11-04 every AI agent call failed with `403 permission_error`. The routine's
+session login can no longer call the models directly, and Anthropic now requires an API
+key. No agent produced an answer: the Portfolio Manager fell back to an empty list, the
+CRO skipped review because there was "nothing to evaluate", and the routine stamped the
+empty plan as executed. That counted as the week's rebalance, so the Thursday/Friday
+catch-up was switched off. Health also showed the fallback regime (NEUTRAL, 50) as OK.
+
+Now, when the Portfolio Manager's call fails at the API, or no agent call succeeds in a
+run, the CRO is marked failed (`api_failed`) instead of approving an empty list. That uses
+the path that already exists for a CRO outage: the routine does not stamp the run, the
+next hourly attempt retries, the last attempt falls back to the SELL-only stop check, and
+the Thursday/Friday catch-up stays available. A Portfolio Manager that answers with no
+trades is unchanged and still counts as the week's decision. One exception, unchanged from
+the existing CRO-outage path: if a code-built exit still runs (the 3-signal backstop SELL
+or the −25% stop), the plan is not empty, so the routine places it and stamps the run.
+
+- New health check `llm_backend`: FAILED when no call succeeded (with the error text).
+  When only some calls failed it stays OK with the count, so it doesn't open an issue;
+  the affected agent's own check reports it. The regime check is FAILED during an
+  outage, and the PM check says the call failed rather than "unparseable response".
+- A run that made no decision (outage, or the PM call failed) writes no rows to the
+  forecast and decision ledgers. It is retried, and up to four attempts a day would
+  otherwise each log the day. Trade-off: if every attempt fails, that day's quant and
+  dossier-signal rows are not logged on the cloud plane (Gate 1a's full-universe IC is
+  computed on the GitHub side and is unaffected).
+- Auth errors (401/403) are no longer retried. They can't succeed on a retry, and each
+  wasted about 3 seconds.
+- A test (`TestCROVetoCascade`) was making a real API call because it didn't stub the
+  Position Review agent. It is now stubbed.
+
+**Not fixed by this change:** the cause. The daily routine's cloud environment needs an
+`ANTHROPIC_API_KEY` (owner action). Until then every rebalance attempt fails, now safely.
+No live-routine prompt sync needed: the routine already reads `agent_7_cro.api_failed`.
 
 ---
 

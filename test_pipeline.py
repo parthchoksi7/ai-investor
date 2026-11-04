@@ -10997,6 +10997,11 @@ class TestCROVetoCascade:
                             lambda *a, **k: {"earnings_alpha_score": 5})
         monkeypatch.setattr(analysis, "run_devils_advocate",
                             lambda *a, **k: {"bear_case": "b", "recommend_reject": False})
+        # The portfolio holds AXP, so Position Review runs; unstubbed it made a REAL
+        # API call from the test suite (found Nov 4 2026, when that call's failure
+        # became visible to the LLM-outage check).
+        monkeypatch.setattr(analysis, "run_position_review_analyst",
+                            lambda *a, **k: {"hold_score": 6, "recommended_action": "HOLD"})
         monkeypatch.setattr(analysis, "run_portfolio_manager",
                             lambda *a, **k: (list(proposed), {"parsed_ok": True}))
         monkeypatch.setattr(analysis, "run_chief_risk_officer",
@@ -14198,3 +14203,202 @@ class TestBenchmarkReconcileWorkflow:
         apply_src = inspect.getsource(publish.apply_benchmark_changes)
         assert "BENCHMARK_COLUMNS" in apply_src and ".update(" in apply_src
 
+
+
+class TestLlmOutageFailsafe:
+    """Nov 4 2026: every agent call got `403 permission_error` (the routine's session
+    token can no longer call the model directly). The PM fell back to [], the CRO
+    short-circuited on "no trades" with approved=True, the routine stamped the
+    envelope, and the week's rebalance was consumed — Thu/Fri catch-up disabled.
+    A run whose PM call raised, or in which no agent call succeeded, must reach the
+    existing CRO-outage path (api_failed=True → no stamp, week retryable)."""
+
+    class _Denied(Exception):
+        pass
+
+    def _raise(self, *a, **k):
+        raise self._Denied("Error code: 403 - permission_error: This token belongs to "
+                           "a Claude Code session and cannot call the model directly.")
+
+    def _stub_agents(self, monkeypatch, pm_result, cro_calls=None):
+        import analysis
+        monkeypatch.setattr(analysis, "run_market_regime_strategist",
+                            lambda *a, **k: {"regime": "NEUTRAL", "confidence": 60})
+        monkeypatch.setattr(analysis, "_select_candidates", lambda *a, **k: ["MSFT"])
+        monkeypatch.setattr(analysis, "run_research_analyst",
+                            lambda *a, **k: {"thesis": "t", "confidence": 6})
+        monkeypatch.setattr(analysis, "run_earnings_catalyst_analyst",
+                            lambda *a, **k: {"earnings_alpha_score": 5})
+        monkeypatch.setattr(analysis, "run_devils_advocate",
+                            lambda *a, **k: {"bear_case": "b", "recommend_reject": False})
+        monkeypatch.setattr(analysis, "run_portfolio_manager", lambda *a, **k: pm_result)
+        if cro_calls is not None:
+            real = analysis.run_chief_risk_officer
+
+            def _cro(*a, **k):
+                cro_calls.append(a)
+                return real(*a, **k)
+            monkeypatch.setattr(analysis, "run_chief_risk_officer", _cro)
+        return analysis
+
+    _PORTFOLIO = {"total_value": 500.0, "cash": 500.0, "positions": []}
+    _MD = {"date": "2026-11-04", "prices": {}, "history": {}}
+
+    def test_failed_call_is_counted(self, monkeypatch):
+        import analysis
+        monkeypatch.setattr(analysis, "_call", self._raise)
+        monkeypatch.setattr(analysis.time, "sleep", lambda s: None)
+        before = analysis.llm_call_counts()
+        out, meta = analysis._safe_call("m", "sys", "u", default=[], return_meta=True)
+        after = analysis.llm_call_counts()
+        assert out == [] and meta["api_failed"] is True
+        assert after["failed"] == before["failed"] + 1
+        assert "_Denied" in after["last_error"] and "403" in after["last_error"]
+
+    def test_auth_errors_are_not_retried(self, monkeypatch):
+        import analysis
+        n = []
+
+        class _E(Exception):
+            status_code = 403
+
+        def _call(*a, **k):
+            n.append(1)
+            raise _E("permission_error")
+        monkeypatch.setattr(analysis, "_call", _call)
+        monkeypatch.setattr(analysis.time, "sleep", lambda s: None)
+        _, meta = analysis._safe_call("m", "s", "u", default={}, retries=2, return_meta=True)
+        assert len(n) == 1 and meta["api_failed"] is True
+
+    def test_overload_is_still_retried(self, monkeypatch):
+        import analysis
+        n = []
+
+        class _E(Exception):
+            status_code = 529
+
+        def _call(*a, **k):
+            n.append(1)
+            raise _E("overloaded")
+        monkeypatch.setattr(analysis, "_call", _call)
+        monkeypatch.setattr(analysis.time, "sleep", lambda s: None)
+        analysis._safe_call("m", "s", "u", default={}, retries=2)
+        assert len(n) == 3
+
+    def test_total_outage_through_real_agents(self, monkeypatch):
+        """No stubs on the agents: _call raises for every model call, as on Nov 4."""
+        import analysis
+        monkeypatch.setattr(analysis, "_call", self._raise)
+        monkeypatch.setattr(analysis.time, "sleep", lambda s: None)
+        monkeypatch.setattr(analysis, "_select_candidates", lambda *a, **k: ["MSFT"])
+        md = {"date": "2026-11-04", "prices": {"MSFT": {"close": 400.0, "change_pct": 0.1}},
+              "history": {}, "news": [], "ticker_news": {}, "fundamentals": {}}
+        decisions, state = analysis.get_trade_decisions(self._PORTFOLIO, md, {"MSFT": {}})
+        assert decisions == []
+        assert state["llm_outage"] is True
+        assert state["llm_calls"]["succeeded"] == 0 and state["llm_calls"]["failed"] >= 2
+        assert state["cro"]["api_failed"] is True and state["cro"]["approved"] is False
+        assert "403" in state["cro"]["reasoning"]
+
+    def test_pm_api_failure_alone_blocks_and_skips_cro(self, monkeypatch):
+        cro_calls = []
+        analysis = self._stub_agents(
+            monkeypatch, ([], {"parsed_ok": False, "api_failed": True}), cro_calls)
+        decisions, state = analysis.get_trade_decisions(self._PORTFOLIO, self._MD, {})
+        assert decisions == [] and cro_calls == []
+        assert state["portfolio_manager_api_failed"] is True
+        assert state["llm_outage"] is False          # no call failed in this run
+        assert state["cro"]["api_failed"] is True
+
+    def test_deliberate_no_trade_still_reaches_the_cro(self, monkeypatch):
+        """Regression: a PM that ANSWERED [] is a real no-trade decision — unchanged."""
+        cro_calls = []
+        analysis = self._stub_agents(monkeypatch, ([], {"parsed_ok": True}), cro_calls)
+        decisions, state = analysis.get_trade_decisions(self._PORTFOLIO, self._MD, {})
+        assert decisions == [] and len(cro_calls) == 1
+        assert state["cro"]["approved"] is True
+        assert not state["cro"].get("api_failed")
+        assert state["llm_outage"] is False
+
+    def test_failures_from_an_earlier_run_do_not_leak(self, monkeypatch):
+        import analysis
+        analysis._record_api_failure("m", self._Denied("earlier run"))
+        analysis = self._stub_agents(monkeypatch, ([], {"parsed_ok": True}))
+        _, state = analysis.get_trade_decisions(self._PORTFOLIO, self._MD, {})
+        assert state["llm_outage"] is False and state["llm_calls"]["failed"] == 0
+        assert not state["cro"].get("api_failed")
+
+
+class TestLlmOutageHealthAndLedgers:
+    """main.py side of the Nov 4 2026 fix: health names the outage, the CRO record
+    carries api_failed (what the routine's stamp step reads), and no forecast or
+    decision rows are logged from fallback defaults."""
+
+    _smoke = TestRunDailyCycleSmoke()  # composition: reuse the harness, not its tests
+
+    def _run(self, *a, **k):
+        return self._smoke._run(*a, **k)
+
+    def _outage_state(self, pm_api_failed=True, outage=True):
+        st = self._smoke._pipeline_state([])
+        st["regime"] = {"regime": "NEUTRAL", "confidence": 50}
+        st["portfolio_manager_parsed_ok"] = False
+        st["portfolio_manager_api_failed"] = pm_api_failed
+        st["llm_outage"] = outage
+        st["llm_calls"] = {"succeeded": 0 if outage else 40, "failed": 41 if outage else 1,
+                           "last_error": "claude-sonnet-4-6: PermissionDeniedError: 403"}
+        st["cro"] = {"approved": False, "rejected_tickers": [], "api_failed": True,
+                     "llm_outage": outage, "reasoning": "Not evaluated: no LLM call succeeded"}
+        return st
+
+    def _spy_ledgers(self, monkeypatch):
+        import calibration
+        calls = []
+        monkeypatch.setattr(calibration, "log_forecasts",
+                            lambda *a, **k: calls.append("forecasts") or 0)
+        monkeypatch.setattr(calibration, "log_decisions",
+                            lambda *a, **k: calls.append("decisions") or 0)
+        return calls
+
+    def test_outage_health_and_no_ledger_rows(self, monkeypatch, tmp_path):
+        import json as _j
+        calls = self._spy_ledgers(monkeypatch)
+        self._run(monkeypatch, tmp_path, [], pipeline_state=self._outage_state())
+        h = _j.loads((tmp_path / "system_health.json").read_text())["checks"]
+        assert h["llm_backend"]["status"] == "FAILED" and "403" in h["llm_backend"]["message"]
+        assert h["agent_1_regime"]["status"] == "FAILED"
+        assert h["agent_6_portfolio_manager"]["status"] == "FAILED"
+        assert h["agent_7_cro"]["api_failed"] is True    # routine skips the stamp on this
+        assert calls == []
+
+    def test_partial_failure_is_informational_and_still_logged(self, monkeypatch, tmp_path):
+        import json as _j
+        calls = self._spy_ledgers(monkeypatch)
+        st = self._outage_state(pm_api_failed=False, outage=False)
+        st["cro"] = {"approved": True, "rejected_tickers": []}
+        st["portfolio_manager_parsed_ok"] = True
+        self._run(monkeypatch, tmp_path, [], pipeline_state=st)
+        h = _j.loads((tmp_path / "system_health.json").read_text())["checks"]
+        # OK, not DEGRADED: it must not page (the affected agent's check reports it)
+        assert h["llm_backend"]["status"] == "OK" and h["llm_backend"]["failed"] == 1
+        assert h["agent_1_regime"]["status"] == "OK"
+        assert not h["agent_7_cro"].get("api_failed")
+        assert "forecasts" in calls
+
+    def test_pm_only_api_failure_logs_no_ledger_rows(self, monkeypatch, tmp_path):
+        """The PM and CRO never decided, and the run is retried — logging it would
+        write pm_selected=0 / cro_veto=0 for every candidate, once per attempt."""
+        import json as _j
+        calls = self._spy_ledgers(monkeypatch)
+        st = self._outage_state(pm_api_failed=True, outage=False)
+        self._run(monkeypatch, tmp_path, [], pipeline_state=st)
+        h = _j.loads((tmp_path / "system_health.json").read_text())["checks"]
+        assert h["agent_7_cro"]["api_failed"] is True
+        assert h["agent_6_portfolio_manager"]["status"] == "FAILED"
+        assert calls == []
+
+    def test_healthy_run_records_llm_backend_ok(self, monkeypatch, tmp_path):
+        import json as _j
+        self._run(monkeypatch, tmp_path, [])
+        h = _j.loads((tmp_path / "system_health.json").read_text())["checks"]
+        assert h["llm_backend"]["status"] == "OK"

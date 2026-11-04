@@ -384,6 +384,7 @@ Every run — including aborted runs — writes `system_health.json` to the repo
 | `risk_stop` | Rebalance-day −25% stop: OK with the fired list; DEGRADED when a breached stop was NOT injected because the CRO call failed (left to the final-attempt / next-day risk_watch), or a holding has no provable cost basis |
 | `cash_deployment` | Informational (OK): what the mechanical deployment proposed (names, $, projected cash) or why it did not run (within target / settled cash exhausted / no eligible name / CRO veto / kill switch) |
 | `llm_cost` | Informational: this run's API-list-price LLM cost and its annualized share of AUM (`agent_log.json` → `llm_usage`) |
+| `llm_backend` | No agent LLM call succeeded this run → FAILED, with the last error. Some failed → OK with the count (the affected agent's check reports it; must not page). On FAILED, or when the PM call itself failed, the CRO is marked `api_failed`, so the routine does not stamp an otherwise-empty run and the week stays retryable (since 2026-11-04) |
 
 **Paging (Oct 2026):** `alert.yml` opens/closes issues on `actionable_status`, which is the worst status *excluding* informational checks' DEGRADED (`decision_validation`, `cash_discipline`, `wash_sale_presale` — guards working as designed). `overall_status` is unchanged for every other reader.
 
@@ -396,6 +397,46 @@ The pipeline aborts before running any agents if either condition is true:
 This prevents the silent all-50 quant score failure mode where agents run but produce no trades because they have no quantitative signal. When aborted, `system_health.json` is written immediately and the alert fires.
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
+
+## Changelog — Nov 4 2026 (an LLM outage no longer consumes the week's rebalance)
+
+**Incident.** The Wed 2026-11-04 rebalance (`20261104-145030`) made zero successful LLM
+calls: every call returned `403 permission_error — This token belongs to a Claude Code
+session and cannot call the model directly … use an API key` (reproduced from a cloud
+session on the same day). `analysis._get_client()` falls back to the session OAuth token
+when `ANTHROPIC_API_KEY` is unset, which is how the cloud routine has always run. The last
+successful cloud LLM run was 2026-10-28; nothing calls the model from the cloud plane
+between rebalances, so the change landed somewhere in that window. The GH-plane event
+digest (metered key) was unaffected.
+
+**Why it did damage.** The PM's default `[]` sent the CRO down its "No trades to evaluate"
+short-circuit (`approved: True`, no `api_failed`), the routine's stamp step saw no CRO
+failure and stamped the envelope, and `last_rebalance.json` recorded W45 as rebalanced —
+disabling Thu/Fri catch-up. The gate's canary lets non-529 errors through by design
+("let main.py surface the real error"); main.py did not surface it beyond agent_2/4.
+
+| Change | Why it mattered |
+|--------|-----------------|
+| `fix(analysis)` **outage → CRO `api_failed`** — `_safe_call` counts calls that raise on the final attempt (`_record_api_failure`, `llm_call_counts`); `get_trade_decisions` diffs the counts for this run. If the PM call raised, or zero calls succeeded, the CRO is NOT run and returns its failure default with `api_failed: True` and the last error | Reuses the existing CRO-outage path end to end (no routine sync): no stamp → next attempt retries → final-attempt fallback runs risk_watch → Thu/Fri catch-up stays open. A PM that answered `[]` still reaches the CRO and still consumes the week |
+| `fix(health)` `llm_backend` check (FAILED on outage; partial failures OK-with-count so they never page); `agent_1_regime` FAILED on an outage; `agent_6` FAILED "PM call failed at the API" (was "unparseable response") | The fallback regime (NEUTRAL/50) passed the confidence-25 floor as OK |
+| `fix(calibration)` a non-decision run (outage, or the PM call raised) logs no forecast / decision / PM / dossier rows | It is retried; up to four attempts a day would each append the day, with `pm_selected=0`/`cro_veto=0` rows from a PM and CRO that never ran. Cost: if every attempt fails, that day's cloud-plane quant + dossier-signal rows are lost (Gate 1a reads the GH-plane IC) |
+| `fix(analysis)` 401/403 are not retried; the call counters take a lock | An auth error cannot succeed on retry (~3 s wasted per call); up to 10 worker threads record concurrently |
+| `test` `TestCROVetoCascade` stubs Position Review | It was making a real API call from the test suite |
+
+> **Owner action (not code):** add `ANTHROPIC_API_KEY` to the daily routine's cloud
+> environment (environment settings, never the prompt). The code already prefers it.
+> Cost becomes real (~$0.60/rebalance, ~$31/yr; `llm_cost` already prices it at list).
+> **Inside the measurement freeze:** this changes nothing when the LLM answers; it only
+> stops a non-decision from being stamped as one. **Exception (pre-existing, unchanged):**
+> if the 3-signal backstop or the −25% stop still adds a SELL, the envelope is non-empty
+> and the routine stamps it — the week is consumed exactly as on a CRO outage today.
+> **Noted, not changed** (from `/code-review high`): a partial outage (e.g. Haiku denied,
+> Sonnet up) still lets the PM decide on default research — BUYs are blocked by
+> `enforce_research_backed_buys`, SELLs are not; the empty-list short-circuit still lives
+> in `run_chief_risk_officer` (the guard is in its one orchestrator); the gate's canary
+> still treats 401/403 as "proceed" (blocking there would skip main.py and with it the
+> health push that pages).
+> **QA:** see RELEASE_NOTES.md. No `DRY_RUN main.py` (overwrites run artifacts).
 
 ## Changelog — Oct 7 2026 (published benchmark closes one session stale — third occurrence; measurement-only, inside the freeze)
 
