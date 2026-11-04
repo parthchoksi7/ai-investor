@@ -1,0 +1,466 @@
+{
+  "date": "2026-11-04",
+  "rebalance_commit": "4cd30ce62f0dcde3306d9cecafcc7f5eac49eb72",
+  "inputs_commit": "4cd30ce62f0dcde3306d9cecafcc7f5eac49eb72",
+  "regime": {
+    "cursor": "NEUTRAL",
+    "live": "NEUTRAL"
+  },
+  "verdict_diffs": [
+    {
+      "ticker": "ABNB",
+      "fields": {
+        "da_risk": {
+          "cursor": 6,
+          "live": 5
+        },
+        "research_confidence": {
+          "cursor": 6,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "ADI",
+      "fields": {
+        "da_reject": {
+          "cursor": true,
+          "live": false
+        },
+        "da_risk": {
+          "cursor": 8,
+          "live": 5
+        },
+        "position_action": {
+          "cursor": "REDUCE",
+          "live": "HOLD"
+        },
+        "research_confidence": {
+          "cursor": 6,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "AME",
+      "fields": {
+        "da_reject": {
+          "cursor": true,
+          "live": false
+        },
+        "da_risk": {
+          "cursor": 7,
+          "live": 5
+        },
+        "position_action": {
+          "cursor": "REDUCE",
+          "live": "HOLD"
+        },
+        "research_confidence": {
+          "cursor": 6,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "AMP",
+      "fields": {
+        "research_confidence": {
+          "cursor": 7,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "BLK",
+      "fields": {
+        "da_risk": {
+          "cursor": 6,
+          "live": 5
+        },
+        "research_confidence": {
+          "cursor": 6,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "JPM",
+      "fields": {
+        "research_confidence": {
+          "cursor": 6,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "MS",
+      "fields": {
+        "da_risk": {
+          "cursor": 6,
+          "live": 5
+        },
+        "research_confidence": {
+          "cursor": 6,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "MSFT",
+      "fields": {
+        "da_reject": {
+          "cursor": true,
+          "live": false
+        },
+        "da_risk": {
+          "cursor": 7,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "MU",
+      "fields": {
+        "da_risk": {
+          "cursor": 6,
+          "live": 5
+        },
+        "research_confidence": {
+          "cursor": 7,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "NDAQ",
+      "fields": {
+        "da_risk": {
+          "cursor": 6,
+          "live": 5
+        },
+        "research_confidence": {
+          "cursor": 6,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "NEM",
+      "fields": {
+        "da_risk": {
+          "cursor": 6,
+          "live": 5
+        },
+        "position_action": {
+          "cursor": "REDUCE",
+          "live": "HOLD"
+        },
+        "research_confidence": {
+          "cursor": 6,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "NVDA",
+      "fields": {
+        "da_reject": {
+          "cursor": true,
+          "live": false
+        },
+        "da_risk": {
+          "cursor": 8,
+          "live": 5
+        },
+        "research_confidence": {
+          "cursor": 7,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "NXPI",
+      "fields": {
+        "da_reject": {
+          "cursor": true,
+          "live": false
+        },
+        "da_risk": {
+          "cursor": 7,
+          "live": 5
+        },
+        "research_confidence": {
+          "cursor": 7,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "PFE",
+      "fields": {
+        "da_reject": {
+          "cursor": true,
+          "live": false
+        },
+        "da_risk": {
+          "cursor": 7,
+          "live": 5
+        },
+        "research_confidence": {
+          "cursor": 6.5,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "PPG",
+      "fields": {
+        "da_risk": {
+          "cursor": 6,
+          "live": 5
+        },
+        "research_confidence": {
+          "cursor": 6,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "PYPL",
+      "fields": {
+        "da_risk": {
+          "cursor": 6,
+          "live": 5
+        },
+        "research_confidence": {
+          "cursor": 7,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "ROKU",
+      "fields": {
+        "da_reject": {
+          "cursor": true,
+          "live": false
+        },
+        "da_risk": {
+          "cursor": 8,
+          "live": 5
+        },
+        "earnings_alpha": {
+          "cursor": 6,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "TXN",
+      "fields": {
+        "da_reject": {
+          "cursor": true,
+          "live": false
+        },
+        "da_risk": {
+          "cursor": 8,
+          "live": 5
+        },
+        "research_confidence": {
+          "cursor": 6,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "V",
+      "fields": {
+        "da_risk": {
+          "cursor": 6,
+          "live": 5
+        },
+        "position_action": {
+          "cursor": "REDUCE",
+          "live": "HOLD"
+        },
+        "research_confidence": {
+          "cursor": 6,
+          "live": 5
+        }
+      }
+    },
+    {
+      "ticker": "VRTX",
+      "fields": {
+        "da_reject": {
+          "cursor": true,
+          "live": false
+        },
+        "da_risk": {
+          "cursor": 7,
+          "live": 5
+        },
+        "position_action": {
+          "cursor": "REDUCE",
+          "live": "HOLD"
+        },
+        "research_confidence": {
+          "cursor": 6,
+          "live": 5
+        }
+      }
+    }
+  ],
+  "pm": {
+    "cursor": [
+      [
+        "VRTX",
+        "SELL",
+        0.0
+      ],
+      [
+        "MU",
+        "BUY",
+        0.1
+      ],
+      [
+        "NEM",
+        "BUY",
+        0.08
+      ],
+      [
+        "PPG",
+        "BUY",
+        0.07
+      ]
+    ],
+    "live": []
+  },
+  "cro_vetoed": {
+    "cursor": [],
+    "live": [],
+    "cursor_approved": true,
+    "live_approved": true
+  },
+  "final": {
+    "cursor": [
+      [
+        "VRTX",
+        "SELL",
+        0.0
+      ],
+      [
+        "MU",
+        "BUY",
+        0.1
+      ],
+      [
+        "NEM",
+        "BUY",
+        0.08
+      ],
+      [
+        "PPG",
+        "BUY",
+        0.0939
+      ]
+    ],
+    "live": [],
+    "overlap": [],
+    "cursor_only": [
+      [
+        "MU",
+        "BUY"
+      ],
+      [
+        "NEM",
+        "BUY"
+      ],
+      [
+        "PPG",
+        "BUY"
+      ],
+      [
+        "VRTX",
+        "SELL"
+      ]
+    ],
+    "live_only": []
+  },
+  "parse_failures": {
+    "cursor": 0,
+    "cursor_detail": {
+      "portfolio_manager_parsed_ok": true,
+      "portfolio_manager_raw_excerpt": null,
+      "research_parse_failed": [],
+      "devils_advocate_parse_failed": [],
+      "cro_api_failed": false
+    },
+    "live_pm_parsed_ok": false,
+    "live_cro_api_failed": false
+  },
+  "paper": {
+    "start_value": 508.468562632,
+    "price_commit": "4cd30ce62f0dcde3306d9cecafcc7f5eac49eb72",
+    "books": {
+      "cursor": {
+        "value_at_snapshot": 502.00500870999997,
+        "missing_prices": [],
+        "n_orders": 4,
+        "value_later": null,
+        "later_missing": [
+          "PPG"
+        ]
+      },
+      "live": {
+        "value_at_snapshot": 502.00500870999997,
+        "missing_prices": [],
+        "n_orders": 0,
+        "value_later": 502.00500870999997,
+        "later_missing": [],
+        "forward_return": -0.01271180638689351
+      }
+    },
+    "later_snapshot": "fcae3d811f4ae1522c2cdd73b36887c38a585219",
+    "note": "value_at_snapshot marks both books at the same pre-trade closes, so a rotation does not change value. forward_return uses the next snapshot's prices.close, which is that file's prior session, not an official print.",
+    "spy_close_snapshot": 754.35,
+    "spy_close_later": 754.35,
+    "spy_return": 0.0
+  },
+  "cumulative": [
+    {
+      "date": "2026-10-14",
+      "cursor": null,
+      "live": 0.0021935626568216904,
+      "live_cumulative": 0.0021935626568216904,
+      "spy": 0.0,
+      "spy_cumulative": 0.0
+    },
+    {
+      "date": "2026-10-21",
+      "cursor": null,
+      "live": -0.004248378831888222,
+      "live_cumulative": -0.002064135260224198,
+      "spy": 0.0,
+      "spy_cumulative": 0.0
+    },
+    {
+      "date": "2026-10-28",
+      "cursor": -0.0014952223897196637,
+      "cursor_cumulative": -0.0014952223897196637,
+      "live": -0.0014952223897196637,
+      "live_cumulative": -0.0035562713086874087,
+      "spy": 0.0,
+      "spy_cumulative": 0.0
+    },
+    {
+      "date": "2026-11-04",
+      "cursor": null,
+      "live": -0.01271180638689351,
+      "live_cumulative": -0.016222871063245603,
+      "spy": 0.0,
+      "spy_cumulative": 0.0
+    }
+  ]
+}

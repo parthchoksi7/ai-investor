@@ -1,0 +1,127 @@
+{
+  "rebalance_commit": "4cd30ce62f0dcde3306d9cecafcc7f5eac49eb72",
+  "inputs_commit": "4cd30ce62f0dcde3306d9cecafcc7f5eac49eb72",
+  "today": "2026-11-04",
+  "live_run_id": "20261104-145030",
+  "files": {
+    "market_snapshot.json": {
+      "commit": "4cd30ce62f0dcde3306d9cecafcc7f5eac49eb72",
+      "sha256": "c47cc1e0d00ed3fd1500ad75048dba17d7341f478525d3b6d29b014ac9be8416",
+      "bytes": 3348065
+    },
+    "research_dossier.json": {
+      "commit": "4cd30ce62f0dcde3306d9cecafcc7f5eac49eb72",
+      "sha256": "a12d8a2025275a87a048ff94cf5e5c3ad4413b48bfe8b72327dbb52a114695cc",
+      "bytes": 525423
+    },
+    "trades.csv": {
+      "commit": "4cd30ce62f0dcde3306d9cecafcc7f5eac49eb72",
+      "sha256": "24c10351e9d3e8522c214e2ac77ac862a6f2671dd9daa79a690c0675e5190a21",
+      "bytes": 19276
+    },
+    "decision_journal.json": {
+      "commit": "4cd30ce62f0dcde3306d9cecafcc7f5eac49eb72",
+      "sha256": "19b880f98c6d6a2e3858c5758ed21b0ea2e0433db81ea0b76aafb19f72105a9b",
+      "bytes": 159952
+    },
+    "last_rebalance.json": {
+      "commit": "4cd30ce62f0dcde3306d9cecafcc7f5eac49eb72",
+      "sha256": "fb57dabe7274fc92f4eb3b51733838fafb449602d0e11d538e97825876e6a720",
+      "bytes": 207
+    },
+    "transactions.json": {
+      "commit": "4cd30ce62f0dcde3306d9cecafcc7f5eac49eb72",
+      "sha256": "16c04d25ce09ffe97e57641d860340b66dc7e1d45606432dce058bc37059098a",
+      "bytes": 54447
+    },
+    "portfolio_peak.json": {
+      "commit": "4cd30ce62f0dcde3306d9cecafcc7f5eac49eb72",
+      "sha256": "a3a5cd7ef6f2ed4ee2b0d3887464fcd4b51604f248d656b5d20ac5b1da8b6e68",
+      "bytes": 53
+    },
+    "data_quality_report.json": {
+      "commit": "4cd30ce62f0dcde3306d9cecafcc7f5eac49eb72",
+      "sha256": "0b4779db2465eac0a0644fb6bf6a421cf0898b94d543853e6670545a0d66e49a",
+      "bytes": 2141
+    },
+    "mcp_portfolio.json": {
+      "commit": "4cd30ce62f0dcde3306d9cecafcc7f5eac49eb72",
+      "sha256": "9848ac5ec31f4033eb17ff55c61240f7ee47dd517478f2ea699be7af6a3ee44b",
+      "bytes": 2093
+    }
+  },
+  "portfolio": {
+    "as_of": "2026-11-04T09:47:27.372546-05:00",
+    "cash": 145.78,
+    "buying_power": 145.78,
+    "total_value": 508.468562632,
+    "positions": [
+      {
+        "symbol": "JPM",
+        "qty": 0.11679,
+        "avg_price": 327.77,
+        "current_price": 346.82,
+        "market_value": 40.505108
+      },
+      {
+        "symbol": "VRTX",
+        "qty": 0.101027,
+        "avg_price": 464.73,
+        "current_price": 539.935,
+        "market_value": 54.548013
+      },
+      {
+        "symbol": "ABNB",
+        "qty": 0.303888,
+        "avg_price": 152.92,
+        "current_price": 175.33,
+        "market_value": 53.280683
+      },
+      {
+        "symbol": "V",
+        "qty": 0.116078,
+        "avg_price": 382.85,
+        "current_price": 426.205,
+        "market_value": 49.473024
+      },
+      {
+        "symbol": "ADI",
+        "qty": 0.059049,
+        "avg_price": 406.1,
+        "current_price": 421.28,
+        "market_value": 24.876163
+      },
+      {
+        "symbol": "AMP",
+        "qty": 0.077908,
+        "avg_price": 486.09,
+        "current_price": 518.835,
+        "market_value": 40.421397
+      },
+      {
+        "symbol": "AME",
+        "qty": 0.152491,
+        "avg_price": 247.49,
+        "current_price": 238.53,
+        "market_value": 36.373678
+      },
+      {
+        "symbol": "NVDA",
+        "qty": 0.182084,
+        "avg_price": 222.59,
+        "current_price": 206.7671,
+        "market_value": 37.648981
+      },
+      {
+        "symbol": "NEM",
+        "qty": 0.222658,
+        "avg_price": 111.79,
+        "current_price": 114.87,
+        "market_value": 25.576724
+      }
+    ]
+  },
+  "quant_score_source": "precomputed",
+  "quant_score_note": "",
+  "note": "mcp_portfolio.json is from the rebalance commit. Every other file is from inputs_commit: the nearest ancestor whose decision_journal does not contain live_run_id. The execution-claim parent of the rebalance commit already contains this run, so it is not the input. The OHLCV snapshot is not copied here; its hash and commit are."
+}

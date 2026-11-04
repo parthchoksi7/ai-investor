@@ -1,0 +1,106 @@
+{
+  "checks": {
+    "cash_deployment": {
+      "status": "OK",
+      "message": "$35.02 proposed across ['AMP', 'JPM', 'PPG']",
+      "ts": "2026-11-04T22:50:56.262334+00:00",
+      "deployed_usd": 35.02,
+      "names": {
+        "AMP": {
+          "from": 0.0774,
+          "to": 0.1,
+          "add_usd": 11.51
+        },
+        "JPM": {
+          "from": 0.0776,
+          "to": 0.1,
+          "add_usd": 11.37
+        },
+        "PPG": {
+          "from": 0.07,
+          "to": 0.0939,
+          "add_usd": 12.13
+        }
+      },
+      "skipped": null,
+      "target_cash_pct": 0.05,
+      "projected_cash_pct": 0.2638,
+      "settled_budget_usd": 138.49,
+      "excluded": {
+        "V": "position review REDUCE",
+        "ADI": "Devil's Advocate reject",
+        "NVDA": "Devil's Advocate reject",
+        "NEM": "position review REDUCE"
+      }
+    },
+    "crisis_safe_mode": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-11-04T22:50:56.262580+00:00",
+      "spy_change_pct": 0.3
+    },
+    "risk_stop": {
+      "status": "OK",
+      "message": "",
+      "ts": "2026-11-04T22:50:56.267055+00:00",
+      "fired": []
+    },
+    "decision_validation": {
+      "status": "DEGRADED",
+      "message": "3 rejected, 0 clamped, 0 skipped by guardrails",
+      "ts": "2026-11-04T22:50:56.267202+00:00",
+      "passed": 4,
+      "rejected": [
+        {
+          "ticker": "AME",
+          "action": "SELL",
+          "reason": "min-holding: bought 2026-10-07, < 30 trading days ago (anti-churn/tax)"
+        },
+        {
+          "ticker": "AMP",
+          "action": "BUY",
+          "reason": "Financials sector would be 28% > 25% cap; already at or above the clamped target 7.3% \u2014 no room to add"
+        },
+        {
+          "ticker": "JPM",
+          "action": "BUY",
+          "reason": "Financials sector would be 28% > 25% cap; already at or above the clamped target 7.3% \u2014 no room to add"
+        }
+      ],
+      "modified": [],
+      "skipped": []
+    }
+  },
+  "cash_deployment": {
+    "deployed_usd": 35.02,
+    "names": {
+      "AMP": {
+        "from": 0.0774,
+        "to": 0.1,
+        "add_usd": 11.51
+      },
+      "JPM": {
+        "from": 0.0776,
+        "to": 0.1,
+        "add_usd": 11.37
+      },
+      "PPG": {
+        "from": 0.07,
+        "to": 0.0939,
+        "add_usd": 12.13
+      }
+    },
+    "excluded": {
+      "V": "position review REDUCE",
+      "ADI": "Devil's Advocate reject",
+      "NVDA": "Devil's Advocate reject",
+      "NEM": "position review REDUCE"
+    },
+    "skipped": null,
+    "target_cash_pct": 0.05,
+    "projected_cash_pct": 0.2638,
+    "settled_budget_usd": 138.49
+  },
+  "net_edge_rejected": 0,
+  "kill_switch_active": false
+}
