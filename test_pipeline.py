@@ -1971,6 +1971,7 @@ class TestCanaryAuth:
     def _no_override(self, monkeypatch):
         monkeypatch.delenv("PREFLIGHT_CANARY_OVERRIDE", raising=False)
         monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+        monkeypatch.delenv("AI_INVESTOR_ANTHROPIC_API_KEY", raising=False)
 
     @staticmethod
     def _patch_urlopen(monkeypatch, captured, *, body=None, http_error=None, exc=None):
@@ -2098,6 +2099,42 @@ class TestCanaryAuth:
         import preflight_gate
         assert preflight_gate._check_api_health()[0] is True
         assert captured["url"] == "https://proxy.example/v1/messages"
+
+    def test_routine_key_name_is_used_when_anthropic_api_key_is_reserved(self, tmp_path, monkeypatch):
+        """2026-11-05: the cloud environment reserves ANTHROPIC_API_KEY and does
+        not pass it to sessions, so the routine's key is AI_INVESTOR_ANTHROPIC_API_KEY.
+        It must beat the (refused) session token."""
+        captured = {}
+        self._patch_urlopen(monkeypatch, captured)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("AI_INVESTOR_ANTHROPIC_API_KEY", "sk-routine")
+        tok = tmp_path / "token"
+        tok.write_text("oauth-xyz")
+        monkeypatch.setenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", str(tok))
+        import preflight_gate
+        healthy, msg = preflight_gate._check_api_health()
+        assert healthy is True
+        assert captured["headers"].get("x-api-key") == "sk-routine"
+        assert "authorization" not in captured["headers"]
+        assert "AI_INVESTOR_ANTHROPIC_API_KEY" in msg
+
+    def test_agents_and_canary_share_one_credential_rule(self, tmp_path, monkeypatch):
+        """analysis._get_client() builds its client from the same
+        llm_credentials.model_credential() the canary uses."""
+        import sys
+        import types
+        import analysis
+        captured = {}
+        mod = types.ModuleType("anthropic")
+        mod.Anthropic = lambda **kw: captured.update(kw) or object()
+        monkeypatch.setitem(sys.modules, "anthropic", mod)
+        monkeypatch.setattr(analysis, "_client", None)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("AI_INVESTOR_ANTHROPIC_API_KEY", "sk-routine")
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://proxy.example")
+        analysis._get_client()
+        assert captured == {"api_key": "sk-routine", "base_url": "https://proxy.example"}
+        monkeypatch.setattr(analysis, "_client", None)
 
     def test_canary_model_is_the_agents_fast_model(self):
         import analysis

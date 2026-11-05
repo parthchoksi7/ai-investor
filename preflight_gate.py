@@ -242,8 +242,8 @@ def _check_api_health() -> tuple[bool, str]:
     stamped as the week's rebalance. A credential the canary cannot use is one the
     agents cannot use either, so proceeding never helps.
 
-    Credential order matches analysis._get_client(): ANTHROPIC_API_KEY, else the
-    OAuth token file. No credential at all → block (the agents would fail too).
+    Credential and endpoint come from llm_credentials.py, the module
+    analysis._get_client() uses too. No credential at all → block.
     """
     import urllib.error
     import urllib.request
@@ -257,24 +257,20 @@ def _check_api_health() -> tuple[bool, str]:
             return True, "model API healthy (PREFLIGHT_CANARY_OVERRIDE)"
         return False, f"model API blocked (PREFLIGHT_CANARY_OVERRIDE={_canary_override})"
 
-    # Exactly analysis._get_client()'s rule: any non-empty ANTHROPIC_API_KEY wins,
-    # passed through unmodified, so the canary and the agents can never disagree
-    # on which credential is used.
-    api_key    = os.getenv("ANTHROPIC_API_KEY")
-    token_file = os.getenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", "")
+    # The SAME rule the agents use (llm_credentials.py — one definition).
+    from llm_credentials import model_credential, base_url
     headers = {"content-type": "application/json", "anthropic-version": "2023-06-01"}
-    if api_key:
-        headers["x-api-key"] = api_key
-        cred = "ANTHROPIC_API_KEY"
-    elif token_file and os.path.isfile(token_file):
-        try:
-            with open(token_file) as _tf:
-                headers["authorization"] = f"Bearer {_tf.read().strip()}"
-        except OSError as e:
-            return False, f"model credential unreadable ({e}) — rebalance cannot run"
-        cred = "session token"
+    try:
+        kind, secret, cred = model_credential()
+    except OSError as e:
+        return False, f"model credential unreadable ({e}) — rebalance cannot run"
+    if kind == "api_key":
+        headers["x-api-key"] = secret
+    elif kind == "session_token":
+        headers["authorization"] = f"Bearer {secret}"
     else:
-        return False, ("no model credential (ANTHROPIC_API_KEY unset, no session token) "
+        return False, ("no model credential (no ANTHROPIC_API_KEY / "
+                       "AI_INVESTOR_ANTHROPIC_API_KEY, no session token) "
                        "— the agents cannot run")
 
     body = json.dumps({
@@ -284,9 +280,8 @@ def _check_api_health() -> tuple[bool, str]:
         "max_tokens": 50,
         "messages": [{"role": "user", "content": 'Reply with exactly: {"status":"ok"}'}],
     }).encode()
-    # Same endpoint the SDK would use: it honours ANTHROPIC_BASE_URL.
-    base = os.getenv("ANTHROPIC_BASE_URL") or "https://api.anthropic.com"
-    url = base.rstrip("/") + "/v1/messages"
+    # Same endpoint the agents' SDK client uses.
+    url = base_url() + "/v1/messages"
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:

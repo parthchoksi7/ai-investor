@@ -72,7 +72,7 @@ Branch on GATE_EXIT — do not skip this:
                               place any orders. The next attempt (+60 min) re-checks.
   • 10 (SKIP/RETRY)         → market closed, or (on a rebalance day) the model API is
                               overloaded OR the model credential was refused/missing
-                              (ANTHROPIC_API_KEY in the routine's cloud environment). STOP now — do NOT fetch the portfolio, run any
+                              (AI_INVESTOR_ANTHROPIC_API_KEY in the routine's cloud environment). STOP now — do NOT fetch the portfolio, run any
                               pipeline, or place any orders. The next attempt re-checks.
   • 20 (SKIP/DONE)          → Today's pipeline (either mode) already executed or claimed.
                               STOP now — re-running would risk double-execution.
@@ -171,8 +171,9 @@ Create .env:
 DRY_RUN=true
 
 NO API SECRETS ARE NEEDED HERE — and none should be pasted into this prompt.
-(The model credential, ANTHROPIC_API_KEY, is set as an environment variable on the
-routine's cloud environment — never in this prompt. Since 2026-11-04 the session token
+(The model credential, AI_INVESTOR_ANTHROPIC_API_KEY, is set as an environment variable on
+the routine's cloud environment — never in this prompt. The environment reserves the name
+ANTHROPIC_API_KEY and does not pass it to sessions, hence the different name. Since 2026-11-04 the session token
 is refused for direct model calls, so without that variable the gate returns 10 and no
 rebalance runs.) This cloud
 plane cannot reach Polygon or Supabase (both 403), so:

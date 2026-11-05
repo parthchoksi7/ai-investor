@@ -234,8 +234,8 @@ once-per-week lock right after a credential change. The book simply carries into
   simply held its existing book for the week.
 
 **Fixes shipped (none alters a decision on a healthy day):**
-- The model credential is now `ANTHROPIC_API_KEY`, set on the routine's cloud
-  environment. Same models (Haiku 4.5 / Sonnet 4.6), same code path, same prompts.
+- The model credential is now an API key, `AI_INVESTOR_ANTHROPIC_API_KEY`, set on the
+  routine's cloud environment (that environment reserves the name `ANTHROPIC_API_KEY`). Same models (Haiku 4.5 / Sonnet 4.6), same code path, same prompts.
 - The gate's model-API check now makes a real call using only the standard library. The
   old check imported `anthropic`, which is not installed until after the gate in the
   cloud, so it had silently skipped every week. It now blocks on **any** failure

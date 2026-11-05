@@ -176,7 +176,7 @@ When the gate returns 0, the routine runs the **full Python pipeline** (`main.py
 
 Portfolio data is injected via `mcp_portfolio.json` (written by the routine from MCP data), so `execute.py` never needs to call `robin_stocks` in the cloud.
 
-`POLYGON_API_KEY` is unused in the cloud (the routine reads the committed snapshot). **`ANTHROPIC_API_KEY` is set as an environment variable on the routine's cloud environment** (`env_01GDLLGpT8aNtpTMg2H5zk23`), never in the prompt. Since 2026-11-04 the auto-injected session token is refused for direct model calls (403 `permission_error`); without the key the gate returns 10 and no rebalance runs.
+`POLYGON_API_KEY` is unused in the cloud (the routine reads the committed snapshot). **The routine's model key is `AI_INVESTOR_ANTHROPIC_API_KEY`, set as an environment variable on its cloud environment** (`env_01GDLLGpT8aNtpTMg2H5zk23`), never in the prompt. The environment reserves the name `ANTHROPIC_API_KEY` and does not pass it to sessions. One rule picks the credential for both the agents and the gate: `llm_credentials.py`. Since 2026-11-04 the auto-injected session token is refused for direct model calls (403 `permission_error`); without the key the gate returns 10 and no rebalance runs.
 
 **After `main.py` completes**, the routine MUST commit and push the following files:
 ```
@@ -317,7 +317,7 @@ As a result, the cloud routine sources market data differently than local:
 | Market data | Polygon (210-day OHLCV, live) | **`market_snapshot.json`** — full Polygon 210-day OHLCV, fetched & committed by `market_data.yml` (GH Actions), git-pulled by the routine |
 | Fundamentals | Polygon financials | Whatever `market_snapshot.json` carries |
 | News | Polygon news API | Whatever `market_snapshot.json` carries |
-| Auth | `ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY` on the routine's cloud environment (the session token file `CLAUDE_SESSION_INGRESS_TOKEN_FILE` is still injected and marks the cloud plane, but is refused for model calls since 2026-11-04) |
+| Auth | `ANTHROPIC_API_KEY` | `AI_INVESTOR_ANTHROPIC_API_KEY` on the routine's cloud environment (`llm_credentials.py`) (the session token file `CLAUDE_SESSION_INGRESS_TOKEN_FILE` is still injected and marks the cloud plane, but is refused for model calls since 2026-11-04) |
 
 **Quant scores in cloud (normal path):** the committed `market_snapshot.json` contains the full 210-day history, so quant scores are **real**, identical to local. The `preflight_gate.py` STEP 0 check requires this snapshot dated today with ≥22 bars or it SKIP/RETRYs — so the pipeline only runs against real data. (`main.py` independently aborts if `_data_date != today` or `min_depth < 22`.)
 
@@ -411,7 +411,7 @@ not re-run.
 
 | Change | Why it mattered |
 |--------|-----------------|
-| **Credential:** `ANTHROPIC_API_KEY` on the routine's cloud environment (owner action) | The session token no longer works for model calls. Same models, prompts and code path |
+| **Credential:** `AI_INVESTOR_ANTHROPIC_API_KEY` on the routine's cloud environment (owner action; the environment reserves `ANTHROPIC_API_KEY`). `llm_credentials.py` is the one rule both the agents and the gate use | The session token no longer works for model calls. Same models, prompts and code path |
 | `fix(gate)` **the model-API check makes a real call, stdlib only, and blocks on ANY failure** (refused/missing credential, overload, network, empty) | It imported `anthropic`, which is installed only AFTER the gate in the cloud, so it had returned "skipping" every week; and non-529 errors "proceeded". Final attempt still falls back to risk_watch |
 | `fix(main)` **`llm_outage` aborts before any plan is written** when ≥50% of research calls or the PM call failed at the API | No plan → nothing stamps `last_rebalance.json` → next attempt / Thu-Fri catch-up still runs |
 | `fix(main)` `_is_cloud_plane` keys on the token file only | With an API key in the cloud, the old rule would have re-labelled the expected Supabase block FAILED on every run |

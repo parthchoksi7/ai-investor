@@ -22,7 +22,8 @@ proposed nothing, and that empty plan was recorded as the week's rebalance, so T
 and Friday could not catch up. No trades were placed. W45 is logged as an outage in
 `SCALE_DECISION_RULE.md` §7.
 
-- The routine now uses an `ANTHROPIC_API_KEY` set on its cloud environment.
+- The routine now uses an API key, `AI_INVESTOR_ANTHROPIC_API_KEY`, set on its cloud
+  environment (the environment reserves the name `ANTHROPIC_API_KEY`).
 - The pre-run model check really runs now. It used to need a package that isn't installed
   until after the gate, so in the cloud it had always skipped. It now stops the run on any
   failure, not only on overload.

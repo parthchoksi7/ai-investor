@@ -34,17 +34,17 @@ def _get_client():
         with _client_lock:
             if _client is None:  # double-checked locking — safe under Python's GIL
                 import anthropic  # deferred so tests can import this module without the package
-                api_key = os.getenv("ANTHROPIC_API_KEY")
-                if api_key:
-                    _client = anthropic.Anthropic(api_key=api_key)
+                # One credential rule for the agents AND the preflight canary
+                # (llm_credentials.py): ANTHROPIC_API_KEY, else the routine's
+                # AI_INVESTOR_ANTHROPIC_API_KEY, else the session token.
+                from llm_credentials import model_credential, base_url
+                kind, secret, _src = model_credential()
+                if kind == "api_key":
+                    _client = anthropic.Anthropic(api_key=secret, base_url=base_url())
+                elif kind == "session_token":
+                    _client = anthropic.Anthropic(auth_token=secret, base_url=base_url())
                 else:
-                    token_file = os.getenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", "")
-                    if token_file and os.path.isfile(token_file):
-                        with open(token_file) as _tf:
-                            token = _tf.read().strip()
-                        _client = anthropic.Anthropic(auth_token=token)
-                    else:
-                        _client = anthropic.Anthropic()
+                    _client = anthropic.Anthropic()
     return _client
 
 MODEL_FAST  = "claude-haiku-4-5-20251001"  # per-ticker agents
