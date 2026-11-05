@@ -13,7 +13,41 @@ DEPLOYMENT.md §7.0). Newest first.
 
 ## [Unreleased]
 
-_Nothing unreleased._
+### Fixed — a refused model credential silently used up the week's rebalance (Wed 2026-11-04)
+
+The Wednesday rebalance ran on fresh data, but Anthropic refused every model call: the
+cloud session token the pipeline had always used is no longer accepted for direct API
+calls (`403 permission_error`). Every agent returned its default, the Portfolio Manager
+proposed nothing, and that empty plan was recorded as the week's rebalance, so Thursday
+and Friday could not catch up. No trades were placed. W45 is logged as an outage in
+`SCALE_DECISION_RULE.md` §7.
+
+- The routine now uses an `ANTHROPIC_API_KEY` set on its cloud environment.
+- The pre-run model check really runs now. It used to need a package that isn't installed
+  until after the gate, so in the cloud it had always skipped. It now stops the run on any
+  failure, not only on overload.
+- If half the research calls or the Portfolio Manager call fail at the API, `main.py`
+  stops before writing a plan, so the week stays open for a retry or a Thu/Fri catch-up.
+- `anthropic` is pinned to 2.3.0, and the routines install with `python -m pip`
+  (**live routine prompts need re-pasting from `ROUTINE_DAILY_CYCLE.md` /
+  `ROUTINE_EOD_CLOSE.md`**).
+
+### Fixed — schedules were an hour off after daylight saving ended (Nov 1)
+
+The routine schedules were never moved, and `update_dst.yml` was pinned to Nov 8. From
+Nov 2 to Nov 5 the morning stop check ran at 8:45 AM ET (before the open) and the "4 PM"
+close was taken at about 3:15 PM. Both routines were moved to EST on 2026-11-05;
+`update_dst.yml` now checks every Monday and opens an issue when the routines need moving.
+
+The three wrong closes are corrected for the performance read in
+`evidence/eod_close_corrections.json`. **Supabase still holds the 3 PM values** (owner to
+run, production DB):
+
+```sql
+UPDATE portfolio_snapshots SET close_value = 504.47, total_value = 504.47, cumulative_return_pct = 0.894  WHERE date = '2026-11-02';
+UPDATE portfolio_snapshots SET close_value = 502.01, total_value = 502.01, cumulative_return_pct = 0.402  WHERE date = '2026-11-03';
+UPDATE portfolio_snapshots SET close_value = 510.61, total_value = 510.61, cumulative_return_pct = 2.122  WHERE date = '2026-11-04';
+```
 
 ---
 

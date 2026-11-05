@@ -471,6 +471,17 @@ def _parse_json(text: str, default):
 _PARSE_FAILED = object()  # sentinel: _parse_json returned its default (no real parse)
 
 
+# Text of the most recent call that failed at the API on its final attempt —
+# main.py's outage abort records it so a 403 can be told from a 529 afterwards.
+LAST_API_ERROR = ""
+
+
+def _is_auth_error(e: Exception) -> bool:
+    """401/403: the credential is refused. Retrying the same call cannot succeed
+    (2026-11-04: every agent retried a 403 three times with backoff)."""
+    return getattr(e, "status_code", None) in (401, 403)
+
+
 def _safe_call(model, system, user_msg, default, max_tokens=600, retries=2, return_meta=False):
     """Call an agent and parse its JSON. When return_meta=True, also return a meta
     dict {raw, stop_reason, parsed_ok} so the caller can distinguish a model that
@@ -504,13 +515,15 @@ def _safe_call(model, system, user_msg, default, max_tokens=600, retries=2, retu
                                 "parsed_ok": parsed_ok, "api_failed": False}
             return result
         except Exception as e:
-            if attempt < retries:
+            if attempt < retries and not _is_auth_error(e):
                 err = str(e)
                 # 529 = Anthropic server overloaded; use longer backoff than generic errors
                 delay = 30 * (attempt + 1) if ("529" in err or "overloaded" in err.lower()) else 2 ** attempt
                 print(f"   ⚠ Agent call failed (attempt {attempt + 1}/{retries + 1}), retrying in {delay}s: {e}")
                 time.sleep(delay)
             else:
+                global LAST_API_ERROR
+                LAST_API_ERROR = f"{type(e).__name__}: {str(e)[:400]}"
                 print(f"   ⚠ Agent call failed: {e}")
                 if return_meta:
                     # api_failed=True: the call itself raised on the final attempt
@@ -1848,6 +1861,10 @@ def get_trade_decisions(
         "portfolio_manager_proposed": decisions_proposed,
         "portfolio_manager_raw": pm_meta.get("raw", ""),
         "portfolio_manager_parsed_ok": pm_meta.get("parsed_ok", True),
+        # True when the PM call itself raised on its final attempt (API down /
+        # credential refused), as opposed to a response that failed to parse.
+        # main.llm_outage reads it to abort before an empty plan is written.
+        "portfolio_manager_api_failed": bool(pm_meta.get("api_failed", False)),
         "cro": risk,
         # POST-CRO, PRE-GUARD-CHAIN. These are the CRO-approved decisions as they
         # leave the agent pipeline; main.py's deterministic guards (turnover,

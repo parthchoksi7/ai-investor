@@ -176,7 +176,7 @@ When the gate returns 0, the routine runs the **full Python pipeline** (`main.py
 
 Portfolio data is injected via `mcp_portfolio.json` (written by the routine from MCP data), so `execute.py` never needs to call `robin_stocks` in the cloud.
 
-`POLYGON_API_KEY` is embedded in the routine prompt (stored privately in Anthropic's systems). `ANTHROPIC_API_KEY` is expected to be auto-injected by Anthropic's cloud environment.
+`POLYGON_API_KEY` is unused in the cloud (the routine reads the committed snapshot). **`ANTHROPIC_API_KEY` is set as an environment variable on the routine's cloud environment** (`env_01GDLLGpT8aNtpTMg2H5zk23`), never in the prompt. Since 2026-11-04 the auto-injected session token is refused for direct model calls (403 `permission_error`); without the key the gate returns 10 and no rebalance runs.
 
 **After `main.py` completes**, the routine MUST commit and push the following files:
 ```
@@ -317,7 +317,7 @@ As a result, the cloud routine sources market data differently than local:
 | Market data | Polygon (210-day OHLCV, live) | **`market_snapshot.json`** — full Polygon 210-day OHLCV, fetched & committed by `market_data.yml` (GH Actions), git-pulled by the routine |
 | Fundamentals | Polygon financials | Whatever `market_snapshot.json` carries |
 | News | Polygon news API | Whatever `market_snapshot.json` carries |
-| Auth | `ANTHROPIC_API_KEY` | `CLAUDE_SESSION_INGRESS_TOKEN_FILE` (OAuth token, auto-injected) |
+| Auth | `ANTHROPIC_API_KEY` | `ANTHROPIC_API_KEY` on the routine's cloud environment (the session token file `CLAUDE_SESSION_INGRESS_TOKEN_FILE` is still injected and marks the cloud plane, but is refused for model calls since 2026-11-04) |
 
 **Quant scores in cloud (normal path):** the committed `market_snapshot.json` contains the full 210-day history, so quant scores are **real**, identical to local. The `preflight_gate.py` STEP 0 check requires this snapshot dated today with ≥22 bars or it SKIP/RETRYs — so the pipeline only runs against real data. (`main.py` independently aborts if `_data_date != today` or `min_depth < 22`.)
 
@@ -396,6 +396,28 @@ The pipeline aborts before running any agents if either condition is true:
 This prevents the silent all-50 quant score failure mode where agents run but produce no trades because they have no quantitative signal. When aborted, `system_health.json` is written immediately and the alert fires.
 
 The `_data_date` field is set by `market_data.py` to reflect the actual source date, not `date.today()`, so stale snapshots are detectable even if the file is present.
+
+## Changelog — Nov 5 2026 (W45 rebalance lost to a refused credential · DST)
+
+**What happened.** The Wed 2026-11-04 rebalance (`20261104-145030`) ran on fresh data, but
+every model call returned `403 permission_error — This token belongs to a Claude Code
+session and cannot call the model directly`. The pipeline had always authenticated with the
+cloud session token; Anthropic stopped accepting it for direct calls between Oct 28 and
+Nov 4 (no repo change; reproduced 2026-11-05 on SDK 2.5.0). All agents fell back to
+defaults, the PM proposed nothing, and the empty plan was stamped as the week's rebalance,
+which blocked the Thu/Fri catch-up. The Cursor shadow the same afternoon would have sold
+VRTX and bought MU/NEM/PPG. W45 is logged as an outage in `SCALE_DECISION_RULE.md` §7 and
+not re-run.
+
+| Change | Why it mattered |
+|--------|-----------------|
+| **Credential:** `ANTHROPIC_API_KEY` on the routine's cloud environment (owner action) | The session token no longer works for model calls. Same models, prompts and code path |
+| `fix(gate)` **the model-API check makes a real call, stdlib only, and blocks on ANY failure** (refused/missing credential, overload, network, empty) | It imported `anthropic`, which is installed only AFTER the gate in the cloud, so it had returned "skipping" every week; and non-529 errors "proceeded". Final attempt still falls back to risk_watch |
+| `fix(main)` **`llm_outage` aborts before any plan is written** when ≥50% of research calls or the PM call failed at the API | No plan → nothing stamps `last_rebalance.json` → next attempt / Thu-Fri catch-up still runs |
+| `fix(main)` `_is_cloud_plane` keys on the token file only | With an API key in the cloud, the old rule would have re-labelled the expected Supabase block FAILED on every run |
+| `chore` `anthropic==2.3.0` pinned; routine installs with `python -m pip` | The SDK changed under every run; `pip` installs into Python 3.13 while `python` is 3.11, costing 3-10 min of reinstalls per run (live routine prompts need the re-paste) |
+| `fix(dst)` routine crons moved to EST (done live 2026-11-05); `update_dst.yml` runs **every Monday** and opens an issue to move the routine crons; GH crons flipped to EST | DST ended Nov 1 but the workflow was pinned to Nov 8. Nov 2-5 the stop check ran at 8:45 AM (pre-market) and the EOD close was taken at ~3:15 PM |
+| `fix(perf)` `evidence/eod_close_corrections.json` overrides the Nov 2-4 closes on read (Gate 2) | Those committed closes are 3 PM values ($0.31-0.62 off); git history cannot be rewritten |
 
 ## Changelog — Oct 7 2026 (published benchmark closes one session stale — third occurrence; measurement-only, inside the freeze)
 
@@ -1070,7 +1092,7 @@ Manual checks (GitHub UI / `gh`):
 - **FMP free-tier coverage:** only ~35% of the 100-ticker watchlist (mega-caps: AAPL, MSFT, NVDA, GOOGL, META, JPM, BAC, GS, etc.) returns data on the free plan; the rest 402 "premium only". The alternate-day 50/50 cache + 30-day backoff for empty tickers keeps usage under the 250/day free limit.
 - **Drawdown peak does not account for deposits.** `portfolio_peak.json` tracks raw `total_value`. Funding the account (a deposit) inflates `total_value` → a new apparent peak, so the kill-switch drawdown math (`(peak − current) / peak`) measures from a peak that includes deposited cash, not investment performance. After any deposit/withdrawal, manually reset `portfolio_peak.json["peak"]` to the post-deposit value (see Manual Execution Runbook Scenario C).
 - `market_data.py` makes ~90 API calls per run locally (one per ticker for 210-day history) plus up to 5 Polygon calls for news (1 summary + 4 per-ticker). Polygon free tier = 5 calls/minute — news calls are placed FIRST (before the history loop) to guarantee a fresh budget window.
-- DST: GitHub Actions crons (`market_data.yml`, `health_check.yml`) are auto-updated by `.github/workflows/update_dst.yml` on March 15 and November 8. Both Anthropic routine crons require manual updates — see the EOD note and Daily Cycle note under Automated Execution above.
+- DST: GitHub Actions crons (`market_data.yml`, `health_check.yml`, `shadow_cursor.yml`) are auto-updated by `.github/workflows/update_dst.yml`, which checks **every Sunday** (since 2026-11-05; it used to fire on fixed dates a week after the real change). Both Anthropic routine crons still require a manual update — on the Sunday of a change the workflow opens a GitHub issue with the exact crons.
 - Website shows no live intraday prices. Value is current as of the last routine run (9:45 AM or 4:00 PM ET).
 
 ## Testing
