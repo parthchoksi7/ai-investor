@@ -218,56 +218,93 @@ def data_plane_ready() -> tuple[bool, str]:
     return True, f"fresh (min_depth={min_depth}; dossier {msg})"
 
 
+CANARY_MODEL = "claude-haiku-4-5-20251001"   # = analysis.MODEL_FAST
+CANARY_URL   = "https://api.anthropic.com/v1/messages"   # default; ANTHROPIC_BASE_URL overrides
+
+
 def _check_api_health() -> tuple[bool, str]:
-    """Make a minimal Anthropic API call to verify the API is not overloaded.
-    Returns (healthy: bool, message: str). Rebalance mode only — risk_watch is
-    deterministic (zero LLM) and must never be blocked by an API outage.
+    """Make one minimal model call with the SAME credential the agents will use.
+    Returns (healthy, message). Rebalance mode only — risk_watch is deterministic
+    (zero LLM) and is never gated on this.
+
+    Standard library only (urllib), on purpose. The routine runs this gate in
+    STEP 0, BEFORE `pip install` in STEP 2, so `import anthropic` fails here in the
+    cloud. Until 2026-11-05 this function caught that ImportError and returned
+    "skipping canary check" — healthy — so in the cloud the canary had never made
+    a call, and the PROCEED line printed "API healthy" regardless.
+
+    ANY failure blocks the rebalance (SKIP-RETRY; on the final attempt the gate
+    falls back to risk_watch, so the −25% stop still runs and the week stays
+    open for a Thu/Fri catch-up). Until 2026-11-05 only 529/overloaded blocked and
+    auth/network errors "proceeded": on Wed 2026-11-04 every agent call then failed
+    with 403 permission_error (the cloud session token stopped being accepted for
+    direct API calls), the run produced an empty plan, and that empty plan was
+    stamped as the week's rebalance. A credential the canary cannot use is one the
+    agents cannot use either, so proceeding never helps.
+
+    Credential and endpoint come from llm_credentials.py, the module
+    analysis._get_client() uses too. No credential at all → block.
     """
-    try:
-        import anthropic
-    except ImportError:
-        return True, "anthropic package not installed — skipping canary check"
+    import urllib.error
+    import urllib.request
 
-    # Build the client the SAME way analysis.py:_get_client() does, so the canary
-    # authenticates identically to the real agents:
-    #   • ANTHROPIC_API_KEY when present (local / .env), else
-    #   • the OAuth token file the cloud injects, via auth_token= — this is how
-    #     every scheduled-routine agent call authenticates. A bare Anthropic() does
-    #     NOT pick this token up, so the old canary failed auth in the cloud, fell
-    #     through to the non-529 "proceed" branch, and silently disabled 529
-    #     overload protection on the exact (live) path it was built to guard.
-    # If neither credential is available, skip the check rather than block on it.
-    api_key    = os.getenv("ANTHROPIC_API_KEY")
-    token_file = os.getenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", "")
-    try:
-        if api_key:
-            client = anthropic.Anthropic(api_key=api_key)
-        elif token_file and os.path.isfile(token_file):
-            with open(token_file) as _tf:
-                client = anthropic.Anthropic(auth_token=_tf.read().strip())
-        else:
-            return True, "No API key or OAuth token available — skipping canary check"
-    except Exception as e:
-        return True, f"Could not build Anthropic client (proceeding): {str(e)[:120]}"
+    # Test seam (like PREFLIGHT_DATE_OVERRIDE): the subprocess gate tests pin the
+    # canary result so the suite never makes a live call or depends on the
+    # developer's credentials. "ok" → healthy, anything else → blocked.
+    _canary_override = os.getenv("PREFLIGHT_CANARY_OVERRIDE")
+    if _canary_override:
+        if _canary_override == "ok":
+            return True, "model API healthy (PREFLIGHT_CANARY_OVERRIDE)"
+        return False, f"model API blocked (PREFLIGHT_CANARY_OVERRIDE={_canary_override})"
 
+    # The SAME rule the agents use (llm_credentials.py — one definition).
+    from llm_credentials import model_credential, base_url
+    headers = {"content-type": "application/json", "anthropic-version": "2023-06-01"}
     try:
-        # Use 50 tokens (not 1) to simulate real agent load — under heavy API load,
-        # short requests succeed while 600-token requests silently return empty.
-        resp = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=50,
-            messages=[{"role": "user", "content": 'Reply with exactly: {"status":"ok"}'}],
-        )
-        body = resp.content[0].text.strip() if resp.content else ""
-        if not body:
-            return False, "Anthropic API returned empty response under load — skipping run"
-        return True, "API healthy"
-    except Exception as e:
-        err = str(e)
-        if "529" in err or "overloaded" in err.lower():
-            return False, f"Anthropic API overloaded (529) — {err[:120]}"
-        # Non-529 errors (auth, network) — don't block on them; let main.py surface the real error.
-        return True, f"Canary check non-529 error (proceeding): {err[:120]}"
+        kind, secret, cred = model_credential()
+    except OSError as e:
+        return False, f"model credential unreadable ({e}) — rebalance cannot run"
+    if kind == "api_key":
+        headers["x-api-key"] = secret
+    elif kind == "session_token":
+        headers["authorization"] = f"Bearer {secret}"
+    else:
+        return False, ("no model credential (no ANTHROPIC_API_KEY / "
+                       "AI_INVESTOR_ANTHROPIC_API_KEY, no session token) "
+                       "— the agents cannot run")
+
+    body = json.dumps({
+        # 50 tokens, not 1: under heavy load short requests succeed while
+        # 600-token requests come back empty.
+        "model": CANARY_MODEL,
+        "max_tokens": 50,
+        "messages": [{"role": "user", "content": 'Reply with exactly: {"status":"ok"}'}],
+    }).encode()
+    # Same endpoint the agents' SDK client uses.
+    url = base_url() + "/v1/messages"
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            payload = json.loads(resp.read().decode() or "{}")
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode()[:160]
+        except Exception:
+            detail = ""
+        if e.code == 529 or "overloaded" in detail.lower():
+            return False, f"model API overloaded (529) — {detail}"
+        if e.code in (401, 403):
+            return False, (f"model API rejected the {cred} (HTTP {e.code}) — "
+                           f"the agents would fail the same way. {detail}")
+        return False, f"model API error HTTP {e.code} ({cred}) — {detail}"
+    except Exception as e:  # network, timeout, bad JSON
+        return False, f"model API unreachable ({cred}) — {str(e)[:120]}"
+
+    text = "".join(b.get("text", "") for b in (payload.get("content") or [])
+                   if isinstance(b, dict)).strip()
+    if not text:
+        return False, "model API returned an empty response under load — skipping run"
+    return True, f"model API healthy ({cred})"
 
 
 def main() -> int:
@@ -378,8 +415,9 @@ def main() -> int:
     snap = _read_json("market_snapshot.json") or {}
     min_depth = min((len(h) for h in (snap.get("history") or {}).values()), default=0)
 
-    # 4. API health — canary call to catch Anthropic 529 overloads before burning
-    #    the full pipeline against a degraded API.
+    # 4. API health — one real model call with the agents' credential, so an
+    #    overload OR a rejected/missing credential blocks the run before it burns
+    #    the week on an empty plan (2026-11-04).
     api_ok, api_msg = _check_api_health()
     if not api_ok:
         return _blocked(SKIP_RETRY, api_msg)
@@ -387,7 +425,7 @@ def main() -> int:
     print(
         f"PROCEED/REBALANCE: fresh market_snapshot.json (date={TODAY}, "
         f"{len(snap.get('prices', {}))} tickers, min_depth={min_depth}), "
-        f"data plane {data_msg}, API healthy, and no rebalance this ISO week"
+        f"data plane {data_msg}, {api_msg}, and no rebalance this ISO week"
         f"{' (catch-up)' if catch_up else ''}. Run main.py."
     )
     return PROCEED

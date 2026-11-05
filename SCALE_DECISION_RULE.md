@@ -205,6 +205,55 @@ The measurement is only valid if the thing being measured stops changing:
 
 ## 7. Decisions taken
 
+### Outage + fixes that do not alter decisions — 2026-11-05: week 2026-W45 has no rebalance
+
+**No threshold in this document changed, and nothing that decides a trade changed.**
+
+**What happened.** The Wednesday 2026-11-04 rebalance (run `20261104-145030`) ran with
+fresh data, but **every model call was refused** with `403 permission_error` ("This token
+belongs to a Claude Code session and cannot call the model directly"). The cloud routine
+had always authenticated the agents with its session token; Anthropic stopped accepting
+that token for direct model calls between the Oct 28 rebalance (which worked) and Nov 4.
+No repo change caused it. All 20 research and 20 devil's-advocate calls, the regime call
+and the PM call fell back to defaults, the PM proposed nothing, and the routine stamped
+the empty plan as the week's rebalance (`last_rebalance.json`, W45), which blocked the
+Thu/Fri catch-up.
+
+**How this week is to be read.** W45 is an **infrastructure outage, not a decision to
+hold.** It is not re-run: forcing a Friday catch-up would mean hand-editing the
+once-per-week lock right after a credential change. The book simply carries into W46.
+- **Gate 1b agent signals** — the run's agent forecasts in `forecasts.jsonl` are constant
+  defaults (research confidence 5.0 ×100, devil's-advocate risk 5.0 ×100, position-review
+  hold 6.0 ×45, earnings 5.0 ×15), so `agent_scorecard`'s existing degenerate-day filter
+  already excludes them. No action needed.
+- **Gate 1b counterfactual** — the 300 `decisions_ledger.jsonl` rows for that date are all
+  0 (no PM pick, no DA reject, no CRO veto). They look like a deliberate no-trade day.
+  Ledgers are append-only, so they are not edited. Any reader of this window should know
+  that W45's zero flags are an outage, not agent behavior.
+- **Gate 1a** (quant, no LLM) and **Gate 2** (account vs SPY) are unaffected; the account
+  simply held its existing book for the week.
+
+**Fixes shipped (none alters a decision on a healthy day):**
+- The model credential is now an API key, `AI_INVESTOR_ANTHROPIC_API_KEY`, set on the
+  routine's cloud environment (that environment reserves the name `ANTHROPIC_API_KEY`). Same models (Haiku 4.5 / Sonnet 4.6), same code path, same prompts.
+- The gate's model-API check now makes a real call using only the standard library. The
+  old check imported `anthropic`, which is not installed until after the gate in the
+  cloud, so it had silently skipped every week. It now blocks on **any** failure
+  (refused or missing credential, overload, network), not just on 529.
+- `main.py` aborts **before writing a plan** when half or more of the research calls, or
+  the PM call, failed at the API (`llm_outage`). No plan means the week is not consumed,
+  so the next attempt or a Thu/Fri catch-up can still run the real rebalance.
+- `anthropic` is pinned (`==2.3.0`, the version of the last good live rebalance).
+- Daylight saving: both routine crons were moved to EST on 2026-11-05, and
+  `update_dst.yml` now runs weekly. Between Nov 2 and Nov 5 the morning runs fired at
+  8:45 AM ET (pre-market) and the EOD close was recorded at ~3 PM ET; see the
+  close-value note in `RELEASE_NOTES.md`.
+
+**Why none alters decisions.** On a day the model API works, every agent sees the same
+inputs and the same prompts, and the guard chain, sizing, universe, policy and
+`FORMULA_VERSION` are untouched. The new behavior only applies when the API is failing:
+the run is skipped and retried, never decided.
+
 ### Bug fix that does not alter decisions — 2026-10-07: published benchmark closes are dated
 
 **No threshold in this document changed, and nothing that decides a trade changed.**

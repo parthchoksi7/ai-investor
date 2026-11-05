@@ -1,0 +1,17 @@
+{
+  "_doc": "Corrections to the official 4 PM portfolio close for dates whose committed is_close snapshot was taken at the wrong time. Read by performance._eod_close_curve (Gate 2) and mirrored into Supabase portfolio_snapshots.close_value by the owner (SQL in RELEASE_NOTES.md). Git history is append-only, so the bad snapshot commits stay; this file overrides them on read. Each value = cash + sum(qty x official close), qty and cash from that day's EOD snapshot (unchanged Nov 2-4: no fills), closes from Polygon grouped-daily (adjusted) fetched 2026-11-05.",
+  "corrections": {
+    "2026-11-02": {"total_value": 504.47, "recorded": 505.09, "recorded_at": "2026-11-02T20:19:48Z", "reason": "EOD routine cron not moved for end of DST (Nov 1) - ran 3:19 PM ET, not 4 PM"},
+    "2026-11-03": {"total_value": 502.01, "recorded": 502.54, "recorded_at": "2026-11-03T20:14:10Z", "reason": "EOD routine cron not moved for end of DST (Nov 1) - ran 3:14 PM ET, not 4 PM"},
+    "2026-11-04": {"total_value": 510.61, "recorded": 510.30, "recorded_at": "2026-11-04T20:14:01Z", "reason": "EOD routine cron not moved for end of DST (Nov 1) - ran 3:14 PM ET, not 4 PM"}
+  },
+  "inputs": {
+    "cash": 145.78,
+    "qty": {"JPM": 0.11679, "VRTX": 0.101027, "ABNB": 0.303888, "V": 0.116078, "ADI": 0.059049, "AMP": 0.077908, "AME": 0.152491, "NVDA": 0.182084, "NEM": 0.222658},
+    "closes": {
+      "2026-11-02": {"ABNB": 171.11, "ADI": 412.85, "AME": 241.91, "AMP": 504.31, "JPM": 340.58, "NEM": 109.09, "NVDA": 202.06, "V": 425.51, "VRTX": 553.15},
+      "2026-11-03": {"ABNB": 166.96, "ADI": 419.79, "AME": 248.58, "AMP": 504.88, "JPM": 337.98, "NEM": 107.47, "NVDA": 206.69, "V": 420.42, "VRTX": 530.76},
+      "2026-11-04": {"ABNB": 176.37, "ADI": 406.24, "AME": 237.09, "AMP": 527.41, "JPM": 352.11, "NEM": 118.11, "NVDA": 200.13, "V": 436.57, "VRTX": 549.04}
+    }
+  }
+}

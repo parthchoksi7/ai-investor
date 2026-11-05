@@ -1833,6 +1833,7 @@ class TestPreflightGate:
     def _run(self, tmp_path, date_override=None, time_override=None):
         env = dict(self.os.environ)
         env["PREFLIGHT_DATE_OVERRIDE"] = date_override or self.OPEN_DAY
+        env.setdefault("PREFLIGHT_CANARY_OVERRIDE", "ok")  # never a live call
         env.pop("PREFLIGHT_TIME_OVERRIDE", None)
         if time_override:
             env["PREFLIGHT_TIME_OVERRIDE"] = time_override
@@ -1959,29 +1960,52 @@ class TestPreflightGateMarketClosed(TestPreflightGate):
 
 
 class TestCanaryAuth:
-    """preflight_gate._check_api_health must authenticate the SAME way the real
-    agents do (analysis.py:_get_client) — via the OAuth token file (auth_token=)
-    in the cloud, NOT a bare Anthropic(). The old bare-client path failed auth in
-    the cloud, fell through to the non-529 'proceed' branch, and silently disabled
-    529 overload protection on the live path (Jun 16 fix #3)."""
+    """preflight_gate._check_api_health makes ONE real model call with the same
+    credential the agents use (ANTHROPIC_API_KEY, else the cloud session token),
+    using only the standard library — the gate runs before `pip install`, so an
+    `import anthropic` here silently skipped the canary in the cloud for months.
+    Any failure blocks (2026-11-04: a 403 on the session token used to "proceed",
+    and the empty plan that followed consumed the week's rebalance)."""
 
-    def _fake_anthropic(self, captured):
-        import types
-        mod = types.ModuleType("anthropic")
-        _resp = types.SimpleNamespace(content=[types.SimpleNamespace(text='{"status":"ok"}')])
+    @pytest.fixture(autouse=True)
+    def _no_override(self, monkeypatch):
+        monkeypatch.delenv("PREFLIGHT_CANARY_OVERRIDE", raising=False)
+        monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+        monkeypatch.delenv("AI_INVESTOR_ANTHROPIC_API_KEY", raising=False)
 
-        class _Client:
-            def __init__(self, **kwargs):
-                captured.update(kwargs)
-                self.messages = types.SimpleNamespace(create=lambda **kw: _resp)
+    @staticmethod
+    def _patch_urlopen(monkeypatch, captured, *, body=None, http_error=None, exc=None):
+        import io
+        import json as _json
+        import urllib.error
+        import urllib.request
 
-        mod.Anthropic = _Client
-        return mod
+        class _Resp(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_urlopen(req, timeout=None):
+            captured["url"] = req.full_url
+            captured["headers"] = {k.lower(): v for k, v in req.header_items()}
+            captured["body"] = _json.loads(req.data.decode())
+            if exc is not None:
+                raise exc
+            if http_error is not None:
+                code, text = http_error
+                raise urllib.error.HTTPError(req.full_url, code, "err", {},
+                                             io.BytesIO(text.encode()))
+            payload = body if body is not None else {
+                "content": [{"type": "text", "text": '{"status":"ok"}'}]}
+            return _Resp(_json.dumps(payload).encode())
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
 
     def test_uses_oauth_token_file_when_no_api_key(self, tmp_path, monkeypatch):
-        import sys
         captured = {}
-        monkeypatch.setitem(sys.modules, "anthropic", self._fake_anthropic(captured))
+        self._patch_urlopen(monkeypatch, captured)
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         tok = tmp_path / "token"
         tok.write_text("oauth-xyz")
@@ -1989,30 +2013,140 @@ class TestCanaryAuth:
         import preflight_gate
         healthy, _ = preflight_gate._check_api_health()
         assert healthy is True
-        assert captured.get("auth_token") == "oauth-xyz"  # the fix: token-file auth
-        assert "api_key" not in captured
+        assert captured["headers"].get("authorization") == "Bearer oauth-xyz"
+        assert "x-api-key" not in captured["headers"]
 
-    def test_uses_api_key_when_present(self, monkeypatch):
+    def test_uses_api_key_when_present(self, tmp_path, monkeypatch):
+        captured = {}
+        self._patch_urlopen(monkeypatch, captured)
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        tok = tmp_path / "token"
+        tok.write_text("oauth-xyz")
+        monkeypatch.setenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", str(tok))
+        import preflight_gate
+        healthy, msg = preflight_gate._check_api_health()
+        assert healthy is True
+        assert captured["headers"].get("x-api-key") == "sk-test"
+        assert "authorization" not in captured["headers"]   # key wins over token
+        assert captured["body"]["model"] == preflight_gate.CANARY_MODEL
+        assert "ANTHROPIC_API_KEY" in msg
+
+    def test_does_not_need_the_anthropic_package(self, monkeypatch):
+        """The gate runs before pip install. Make `import anthropic` impossible and
+        prove the canary still makes its call (the old code returned 'skipping')."""
         import sys
         captured = {}
-        monkeypatch.setitem(sys.modules, "anthropic", self._fake_anthropic(captured))
+        self._patch_urlopen(monkeypatch, captured)
+        monkeypatch.setitem(sys.modules, "anthropic", None)  # import → ImportError
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         import preflight_gate
         healthy, _ = preflight_gate._check_api_health()
         assert healthy is True
-        assert captured.get("api_key") == "sk-test"
+        assert captured["url"] == preflight_gate.CANARY_URL
 
-    def test_skips_cleanly_when_no_credentials(self, monkeypatch):
-        import sys
+    def test_blocks_when_no_credentials(self, monkeypatch):
         captured = {}
-        monkeypatch.setitem(sys.modules, "anthropic", self._fake_anthropic(captured))
+        self._patch_urlopen(monkeypatch, captured)
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", raising=False)
         import preflight_gate
         healthy, msg = preflight_gate._check_api_health()
+        assert healthy is False
+        assert "no model credential" in msg
+        assert captured == {}  # no call attempted
+
+    def test_blocks_on_rejected_session_token_nov4(self, tmp_path, monkeypatch):
+        """The exact 2026-11-04 failure: the session token is refused with 403."""
+        captured = {}
+        self._patch_urlopen(monkeypatch, captured, http_error=(
+            403, '{"type":"error","error":{"type":"permission_error","message":'
+                 '"This token belongs to a Claude Code session and cannot call the '
+                 'model directly."}}'))
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        tok = tmp_path / "token"
+        tok.write_text("oauth-xyz")
+        monkeypatch.setenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", str(tok))
+        import preflight_gate
+        healthy, msg = preflight_gate._check_api_health()
+        assert healthy is False
+        assert "403" in msg and "session token" in msg
+
+    def test_blocks_on_overload_529(self, monkeypatch):
+        captured = {}
+        self._patch_urlopen(monkeypatch, captured, http_error=(529, '{"type":"overloaded_error"}'))
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        import preflight_gate
+        healthy, msg = preflight_gate._check_api_health()
+        assert healthy is False
+        assert "overloaded" in msg
+
+    def test_blocks_on_other_http_error_and_network_error(self, monkeypatch):
+        import preflight_gate
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        self._patch_urlopen(monkeypatch, {}, http_error=(
+            400, '{"error":{"message":"Your credit balance is too low"}}'))
+        healthy, msg = preflight_gate._check_api_health()
+        assert healthy is False and "400" in msg and "credit balance" in msg
+        self._patch_urlopen(monkeypatch, {}, exc=OSError("connection refused"))
+        healthy, msg = preflight_gate._check_api_health()
+        assert healthy is False and "unreachable" in msg
+
+    def test_honours_base_url_like_the_sdk(self, monkeypatch):
+        captured = {}
+        self._patch_urlopen(monkeypatch, captured)
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://proxy.example/")
+        import preflight_gate
+        assert preflight_gate._check_api_health()[0] is True
+        assert captured["url"] == "https://proxy.example/v1/messages"
+
+    def test_routine_key_name_is_used_when_anthropic_api_key_is_reserved(self, tmp_path, monkeypatch):
+        """2026-11-05: the cloud environment reserves ANTHROPIC_API_KEY and does
+        not pass it to sessions, so the routine's key is AI_INVESTOR_ANTHROPIC_API_KEY.
+        It must beat the (refused) session token."""
+        captured = {}
+        self._patch_urlopen(monkeypatch, captured)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("AI_INVESTOR_ANTHROPIC_API_KEY", "sk-routine")
+        tok = tmp_path / "token"
+        tok.write_text("oauth-xyz")
+        monkeypatch.setenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", str(tok))
+        import preflight_gate
+        healthy, msg = preflight_gate._check_api_health()
         assert healthy is True
-        assert "skipping" in msg.lower()
-        assert captured == {}  # no client was ever built
+        assert captured["headers"].get("x-api-key") == "sk-routine"
+        assert "authorization" not in captured["headers"]
+        assert "AI_INVESTOR_ANTHROPIC_API_KEY" in msg
+
+    def test_agents_and_canary_share_one_credential_rule(self, tmp_path, monkeypatch):
+        """analysis._get_client() builds its client from the same
+        llm_credentials.model_credential() the canary uses."""
+        import sys
+        import types
+        import analysis
+        captured = {}
+        mod = types.ModuleType("anthropic")
+        mod.Anthropic = lambda **kw: captured.update(kw) or object()
+        monkeypatch.setitem(sys.modules, "anthropic", mod)
+        monkeypatch.setattr(analysis, "_client", None)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("AI_INVESTOR_ANTHROPIC_API_KEY", "sk-routine")
+        monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://proxy.example")
+        analysis._get_client()
+        assert captured == {"api_key": "sk-routine", "base_url": "https://proxy.example"}
+        monkeypatch.setattr(analysis, "_client", None)
+
+    def test_canary_model_is_the_agents_fast_model(self):
+        import analysis
+        import preflight_gate
+        assert preflight_gate.CANARY_MODEL == analysis.MODEL_FAST
+
+    def test_blocks_on_empty_response(self, monkeypatch):
+        self._patch_urlopen(monkeypatch, {}, body={"content": []})
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        import preflight_gate
+        healthy, msg = preflight_gate._check_api_health()
+        assert healthy is False and "empty" in msg
 
 
 # ── publish.py — SPY data source + is_close inheritance ──────────────────────
@@ -7665,19 +7799,22 @@ class TestSupabaseHealthClassification:
         _record_supabase_health(h, Exception("connection reset by peer"))
         assert h.checks["supabase_publish"]["status"] == OK
 
-    def test_cloud_plane_detection_requires_no_api_key(self, tmp_path, monkeypatch):
-        from main import _record_supabase_health
-        from health import FAILED
+    def test_cloud_plane_detected_even_with_api_key(self, tmp_path, monkeypatch):
+        """Since 2026-11-05 the cloud routine carries an ANTHROPIC_API_KEY (the
+        session token is no longer accepted for model calls). It is still the
+        egress-blocked plane, so the expected Supabase block must stay OK — the
+        old rule (key present -> not cloud) would have turned every clean cloud
+        run FAILED again."""
+        from main import _record_supabase_health, _is_cloud_plane
+        from health import OK
         token_file = tmp_path / "token"
         token_file.write_text("fake-oauth-token")
-        # ANTHROPIC_API_KEY present -> NOT the cloud plane (local/CI with a real
-        # key), even if a stale token file happens to exist -> falls through to
-        # the message heuristic, which does not match -> FAILED.
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
         monkeypatch.setenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", str(token_file))
+        assert _is_cloud_plane() is True
         h = self._tracker()
         _record_supabase_health(h, Exception("connection reset by peer"))
-        assert h.checks["supabase_publish"]["status"] == FAILED
+        assert h.checks["supabase_publish"]["status"] == OK
 
     def test_cloud_plane_detection_requires_real_token_file(self, monkeypatch):
         from main import _record_supabase_health
@@ -9799,6 +9936,7 @@ class TestPreflightFinalAttemptFallback:
     def _run(self, tmp_path, date, time=None):
         env = dict(self.os.environ)
         env["PREFLIGHT_DATE_OVERRIDE"] = date
+        env.setdefault("PREFLIGHT_CANARY_OVERRIDE", "ok")  # never a live call
         env.pop("PREFLIGHT_TIME_OVERRIDE", None)
         if time:
             env["PREFLIGHT_TIME_OVERRIDE"] = time
@@ -9849,6 +9987,26 @@ class TestPreflightFinalAttemptFallback:
     def test_catchup_day_final_attempt_runs_risk_watch(self, tmp_path):
         self._snapshot(tmp_path, self.WED)                    # Thursday, stale
         assert self._run(tmp_path, self.THU, "12:45") == 30
+
+    def test_rejected_credential_skips_then_falls_back_nov4(self, tmp_path):
+        """2026-11-04: fresh data, but the model credential is refused. Before the
+        final attempt the gate SKIP-RETRYs (exit 10) instead of letting main.py
+        run blind; on the final attempt it runs risk_watch (exit 30), which never
+        consumes the week — so a Thu/Fri catch-up is still possible."""
+        import os
+        self._snapshot(tmp_path, self.WED)
+        self._dossier(tmp_path, self.WED)
+        os.environ["PREFLIGHT_CANARY_OVERRIDE"] = "fail"
+        try:
+            assert self._run(tmp_path, self.WED, "09:45") == 10
+            assert self._run(tmp_path, self.WED, "12:45") == 30
+            # Thursday: nothing was stamped for the week, so catch-up is due.
+            self._snapshot(tmp_path, self.THU)
+            self._dossier(tmp_path, self.THU)
+            os.environ["PREFLIGHT_CANARY_OVERRIDE"] = "ok"
+            assert self._run(tmp_path, self.THU, "09:45") == 0
+        finally:
+            os.environ.pop("PREFLIGHT_CANARY_OVERRIDE", None)
 
     def test_fallback_risk_watch_does_not_consume_the_week(self, tmp_path):
         """Wednesday's fallback risk_watch envelope (executed) must not lock the
@@ -11761,8 +11919,10 @@ class TestMarketDataConcurrency:
         assert len(crons) == 1, (
             f"expected 1 scheduled cron, found {crons} — each extra trigger adds "
             "~800 min/month of billed idle wall-clock on Polygon's free tier")
-        assert crons[0].strip() == "0 12 * * 1-5", (
-            f"expected the 8:00 AM EDT slot (0 12 * * 1-5), found {crons[0]!r}")
+        # 8:00 AM ET in either season — update_dst.yml rewrites 12 (EDT) ↔ 13 (EST).
+        # (Pinned to 12 only until 2026-11-05: a winter-only failure in waiting.)
+        assert crons[0].strip() in ("0 12 * * 1-5", "0 13 * * 1-5"), (
+            f"expected the 8:00 AM ET slot (0 12 EDT / 0 13 EST), found {crons[0]!r}")
 
     def test_expansion_sweep_fits_the_carry_forward_window(self, wf):
         """Document expansion-sweep latency vs CARRY_FORWARD_MAX_DAYS at the current
@@ -11844,13 +12004,15 @@ class TestMarketDataConcurrency:
         edt_crons = [c for c in dst_crons if "EDT" in c]
         est_crons = [c for c in dst_crons if "EST" in c]
 
-        assert edt_crons == cron_lines, (
-            "update_dst.yml's EDT block does not exactly match this workflow's "
-            f"schedule.\n  market_data.yml: {cron_lines}\n  update_dst.yml:  {edt_crons}\n"
+        # market_data.yml carries whichever block is current (EDT in summer, EST in
+        # winter — update_dst.yml rewrites it in place), so it must equal one of them.
+        assert cron_lines in (edt_crons, est_crons), (
+            "update_dst.yml's EDT/EST blocks do not exactly match this workflow's "
+            f"schedule.\n  market_data.yml: {cron_lines}\n  update_dst.yml:  {edt_crons} / {est_crons}\n"
             "update_dst.yml switches the UTC offset by literal string match, so any "
             "difference — including a changed comment — makes it match nothing and "
             "leave the crons an hour off for half the year (exactly what happened to "
-            "the old 7:00/8:00/8:30 block). Update the mkt_block_edt literal.")
+            "the old 7:00/8:00/8:30 block). Update the mkt_block_edt/mkt_block_est literals.")
 
         # The EST block must mirror it one-for-one, or the November switch writes a
         # schedule the March switch can no longer find its way back from.
@@ -11974,6 +12136,48 @@ class TestRunDailyCycleSmoke:
         health = _j.loads((tmp_path / "system_health.json").read_text())
         assert health["overall_status"] in ("OK", "DEGRADED")
         assert health["checks"]["market_data"]["status"] != "FAILED"
+
+    def test_llm_outage_writes_no_plan_nov4(self, monkeypatch, tmp_path):
+        """2026-11-04 replay: every research call failed at the API and the PM
+        call failed. run_daily_cycle must abort WITHOUT writing
+        pending_decisions.json — an empty plan there is what the routine stamped
+        as the week's rebalance, blocking the Thu/Fri catch-up."""
+        import json as _j
+        state = self._pipeline_state([])
+        state["research"] = {t: {"thesis": "", "_empty_reason": "api_error"}
+                             for t in state["candidates"]}
+        state["portfolio_manager_parsed_ok"] = False
+        state["portfolio_manager_api_failed"] = True
+        self._run(monkeypatch, tmp_path, [], pipeline_state=state)
+        assert not (tmp_path / "pending_decisions.json").exists()
+        assert not (tmp_path / "last_rebalance.json").exists()
+        health = _j.loads((tmp_path / "system_health.json").read_text())
+        assert health["checks"]["llm_api"]["status"] == "FAILED"
+        assert health["checks"]["pipeline"]["status"] == "ABORTED"
+        assert health["actionable_status"] in ("ABORTED", "FAILED")
+
+    def test_llm_outage_keeps_the_agent_log_but_no_ledgers(self, monkeypatch, tmp_path):
+        """The abort still writes agent_log.json (paper trail: per-agent output,
+        PM raw, the last API error) but NO forecast/decision ledger rows —
+        outage defaults are not agent behavior (Nov 4 wrote 2,410 such rows)."""
+        import json as _j
+        import analysis
+        monkeypatch.setattr(analysis, "LAST_API_ERROR",
+                            "PermissionDeniedError: Error code: 403 - permission_error")
+        state = self._pipeline_state([])
+        state["research"] = {t: {"thesis": "", "_empty_reason": "api_error"}
+                             for t in state["candidates"]}
+        state["portfolio_manager_api_failed"] = True
+        self._run(monkeypatch, tmp_path, [], pipeline_state=state)
+        log = _j.loads((tmp_path / "agent_log.json").read_text())
+        last = log[-1] if isinstance(log, list) else log
+        assert last["aborted"] == "llm_outage"
+        assert "403" in last["last_api_error"]
+        assert last["final_decisions"] == []
+        assert not (tmp_path / "forecasts.jsonl").exists()
+        assert not (tmp_path / "decisions_ledger.jsonl").exists()
+        health = _j.loads((tmp_path / "system_health.json").read_text())
+        assert "403" in health["checks"]["llm_api"]["last_api_error"]
 
     def test_no_trade_day_completes(self, monkeypatch, tmp_path):
         import json as _j
@@ -14198,3 +14402,164 @@ class TestBenchmarkReconcileWorkflow:
         apply_src = inspect.getsource(publish.apply_benchmark_changes)
         assert "BENCHMARK_COLUMNS" in apply_src and ".update(" in apply_src
 
+
+
+class TestLlmOutageAbort:
+    """2026-11-04: every agent call failed (403 on the session token), the PM
+    returned nothing, and main.py wrote an EMPTY plan that the routine stamped as
+    the week's rebalance — blocking the Thu/Fri catch-up. main.llm_outage turns
+    that state into an abort before any plan is written."""
+
+    def _research(self, n, n_api_err):
+        out = {}
+        for i in range(n):
+            if i < n_api_err:
+                out[f"T{i}"] = {"thesis": "", "_empty_reason": "api_error"}
+            else:
+                out[f"T{i}"] = {"thesis": "real thesis"}
+        return out
+
+    def test_nov4_state_is_an_outage(self):
+        from main import llm_outage
+        state = {"research": self._research(20, 20), "portfolio_manager_api_failed": True}
+        out, why = llm_outage(state)
+        assert out is True
+        assert "20/20 research" in why and "Portfolio Manager" in why
+
+    def test_half_research_api_errors_is_an_outage(self):
+        from main import llm_outage
+        assert llm_outage({"research": self._research(20, 10)})[0] is True
+
+    def test_a_few_api_errors_is_not_an_outage(self):
+        from main import llm_outage
+        assert llm_outage({"research": self._research(20, 3)}) == (False, "")
+
+    def test_pm_api_failure_alone_is_an_outage(self):
+        from main import llm_outage
+        out, why = llm_outage({"research": self._research(20, 0),
+                               "portfolio_manager_api_failed": True})
+        assert out is True and "Portfolio Manager" in why
+
+    def test_parse_failures_and_deliberate_no_trade_are_not_outages(self):
+        """A PM parse failure (api_failed False) or a genuine empty plan is a
+        decision-quality problem, not an outage — those keep the old behaviour."""
+        from main import llm_outage
+        research = self._research(20, 0)
+        research["T0"] = {"thesis": "", "_empty_reason": "parse_failed"}
+        assert llm_outage({"research": research,
+                           "portfolio_manager_api_failed": False,
+                           "portfolio_manager_parsed_ok": False})[0] is False
+        assert llm_outage({})[0] is False
+
+
+class TestDstWorkflowCadence:
+    """2026-11-05: update_dst.yml fired on fixed dates (Mar 15 / Nov 8) that trail
+    the real DST changes by up to a week. In 2026 DST ended Nov 1 and every
+    ET-pinned job ran an hour early until it would have fired. It now runs every
+    Monday (idempotent) and opens an issue for the Anthropic routine crons."""
+
+    def _wf(self):
+        import yaml
+        with open(".github/workflows/update_dst.yml") as f:
+            return yaml.safe_load(f)
+
+    def test_runs_weekly_not_on_fixed_dates(self):
+        wf = self._wf()
+        crons = [c["cron"] for c in wf[True]["schedule"]]   # PyYAML reads `on:` as True
+        assert crons == ["0 12 * * 0"]   # Sunday, after the 2 AM change
+
+    def test_issue_step_names_both_routine_crons(self):
+        with open(".github/workflows/update_dst.yml") as f:
+            text = f.read()
+        for cron in ("45 13,14,15,16 * * 1-5", "0 20 * * 1-5",
+                     "45 14,15,16,17 * * 1-5", "0 21 * * 1-5"):
+            assert cron in text
+
+    def test_et_pinned_crons_are_consistent_with_one_offset(self):
+        """health_check (1:15 PM ET) and shadow_cursor (1:30 PM ET) must be on the
+        same offset as market_data (8:00 AM ET) — a partial flip is the bug."""
+        import re
+        md = open(".github/workflows/market_data.yml").read()
+        hc = open(".github/workflows/health_check.yml").read()
+        sc = open(".github/workflows/shadow_cursor.yml").read()
+        md_h = int(re.search(r"cron: '0 (\d+) \* \* 1-5'", md).group(1))
+        hc_h = int(re.search(r"cron: '15 (\d+) \* \* 1-5'", hc).group(1))
+        sc_h = int(re.search(r"cron: '30 (\d+) \* \* 3'", sc).group(1))
+        offset = 8 - md_h                       # 8:00 AM ET
+        assert offset in (-4, -5)
+        assert hc_h == 13 - offset and sc_h == 13 - offset
+
+
+class TestEodCloseCorrections:
+    """Nov 2-4 2026: the EOD routine ran at ~3:15 PM ET (cron not moved for the end
+    of DST), so the committed is_close snapshots are not 4 PM closes. Git history
+    is append-only; evidence/eod_close_corrections.json overrides those dates on
+    read so Gate 2's daily curve uses the true close."""
+
+    def test_repo_corrections_file_matches_its_own_inputs(self):
+        import json as _j
+        doc = _j.load(open("evidence/eod_close_corrections.json"))
+        inp = doc["inputs"]
+        for d, rec in doc["corrections"].items():
+            v = inp["cash"] + sum(q * inp["closes"][d][t] for t, q in inp["qty"].items())
+            assert abs(v - rec["total_value"]) < 0.01, (d, v, rec["total_value"])
+
+    def test_corrections_override_the_committed_close(self, tmp_path, monkeypatch):
+        import json as _j
+        import subprocess
+        import performance
+        monkeypatch.chdir(tmp_path)
+        subprocess.run(["git", "init", "-q"], check=True)
+        subprocess.run(["git", "config", "user.email", "t@t"], check=True)
+        subprocess.run(["git", "config", "user.name", "t"], check=True)
+        for d, tv in (("2026-11-02", 505.09), ("2026-11-03", 502.54), ("2026-11-05", 512.0)):
+            (tmp_path / "portfolio_snapshot.json").write_text(_j.dumps(
+                {"is_close": True, "portfolio": {"as_of": f"{d}T16:00:00-05:00",
+                                                 "total_value": tv}}))
+            subprocess.run(["git", "add", "-A"], check=True)
+            subprocess.run(["git", "commit", "-qm", d], check=True)
+        (tmp_path / "evidence").mkdir()
+        (tmp_path / "evidence" / "eod_close_corrections.json").write_text(_j.dumps(
+            {"corrections": {"2026-11-02": {"total_value": 504.47},
+                             "2026-11-03": {"total_value": "bad"}}}))
+        performance._EOD_CACHE.clear()
+        curve = dict(performance._eod_close_curve())
+        assert curve["2026-11-02"] == 504.47      # corrected
+        assert curve["2026-11-03"] == 502.54      # unparseable correction ignored
+        assert curve["2026-11-05"] == 512.0       # untouched
+
+
+class TestSafeCallAuthNoRetry:
+    """A 401/403 is a refused credential: retrying cannot succeed. On 2026-11-04
+    every agent retried a 403 three times with backoff before giving up."""
+
+    def test_403_is_not_retried_and_is_recorded(self, monkeypatch):
+        import analysis
+        calls = []
+
+        class _Denied(Exception):
+            status_code = 403
+
+        def fake_call(*a, **k):
+            calls.append(1)
+            raise _Denied("Error code: 403 - permission_error")
+
+        monkeypatch.setattr(analysis, "_call", fake_call)
+        monkeypatch.setattr(analysis.time, "sleep", lambda s: None)
+        out, meta = analysis._safe_call("m", "s", "u", default={}, retries=2, return_meta=True)
+        assert out == {} and meta["api_failed"] is True
+        assert len(calls) == 1
+        assert "403" in analysis.LAST_API_ERROR
+
+    def test_other_errors_still_retry(self, monkeypatch):
+        import analysis
+        calls = []
+
+        def fake_call(*a, **k):
+            calls.append(1)
+            raise RuntimeError("Error code: 529 - overloaded")
+
+        monkeypatch.setattr(analysis, "_call", fake_call)
+        monkeypatch.setattr(analysis.time, "sleep", lambda s: None)
+        analysis._safe_call("m", "s", "u", default={}, retries=2)
+        assert len(calls) == 3
