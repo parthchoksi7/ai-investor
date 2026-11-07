@@ -46,14 +46,38 @@ def cash_discipline_status(cash_pct: float, net_buy: float,
     return DEGRADED if (cash_pct > threshold and net_buy <= 0) else OK
 
 
+# A rebalance whose agents mostly could not reach the model is an OUTAGE, not a
+# decision. Half the research calls failing at the API, or the PM call failing,
+# means the plan would be built on defaults — on 2026-11-04 that produced an empty
+# plan that was stamped as the week's rebalance and blocked the Thu/Fri catch-up.
+LLM_OUTAGE_RESEARCH_FRACTION = 0.5
+
+
+def llm_outage(pipeline_state: dict) -> tuple[bool, str]:
+    """(outage, reason). Pure — reads only what get_trade_decisions recorded."""
+    research = pipeline_state.get("research") or {}
+    api_errors = sum(1 for v in research.values()
+                     if isinstance(v, dict) and v.get("_empty_reason") == "api_error")
+    reasons = []
+    if research and api_errors / len(research) >= LLM_OUTAGE_RESEARCH_FRACTION:
+        reasons.append(f"{api_errors}/{len(research)} research calls failed at the API")
+    if pipeline_state.get("portfolio_manager_api_failed"):
+        reasons.append("the Portfolio Manager call failed at the API")
+    return bool(reasons), "; ".join(reasons)
+
+
 def _is_cloud_plane() -> bool:
-    """True when running as the Anthropic-hosted scheduled routine: OAuth token
-    injected via CLAUDE_SESSION_INGRESS_TOKEN_FILE and no ANTHROPIC_API_KEY. This
-    is the plane that structurally cannot reach Supabase (egress allowlist) —
-    mirrors the auth detection in analysis._get_client() / preflight_gate's canary,
-    so all three stay consistent about what "cloud" means."""
-    if os.getenv("ANTHROPIC_API_KEY"):
-        return False
+    """True when running as the Anthropic-hosted scheduled routine (the session
+    token file CLAUDE_SESSION_INGRESS_TOKEN_FILE is injected). This
+    is the plane that structurally cannot reach Supabase (egress allowlist).
+    Deliberately NOT the same rule as the model-credential choice in
+    analysis._get_client() / preflight_gate's canary (which prefer
+    ANTHROPIC_API_KEY): since 2026-11-04 the cloud carries an API key too, and
+    "has a key" no longer means "not cloud". Do not re-sync them."""
+    # The token file alone identifies the plane. Until 2026-11-05 an
+    # ANTHROPIC_API_KEY also meant "not cloud"; since the session token stopped
+    # being accepted for model calls (2026-11-04) the cloud routine carries an
+    # API key too, and the plane is still the egress-blocked one.
     token_file = os.getenv("CLAUDE_SESSION_INGRESS_TOKEN_FILE", "")
     return bool(token_file and os.path.isfile(token_file))
 
@@ -776,6 +800,49 @@ def run_daily_cycle():
         ticker_history=ticker_history, recently_exited=exited_map,
         dossier=dossier,
     )
+
+    # ── Model outage → abort BEFORE any plan is written ───────────────────────
+    # No pending_decisions.json for today means: the routine's validation step
+    # stops (or, on the final attempt, runs risk_watch), nothing stamps
+    # last_rebalance.json, and the next attempt / Thu-Fri catch-up can still run
+    # the real rebalance. Writing an empty envelope here would consume the week.
+    _outage, _outage_why = llm_outage(pipeline_state)
+    if _outage:
+        import analysis as _an
+        _last_err = getattr(_an, "LAST_API_ERROR", "") or ""
+        print(f"\n   🚨 PIPELINE ABORTED: model API outage — {_outage_why}.")
+        if _last_err:
+            print(f"   Last API error: {_last_err}")
+        print("   No plan written; the week's rebalance is NOT consumed.")
+        _research = pipeline_state.get("research") or {}
+        health.record("llm_api", FAILED, message=_outage_why[:300],
+                      last_api_error=_last_err[:500],
+                      research_empty_reasons=dict(Counter(
+                          v.get("_empty_reason", "ok") for v in _research.values()
+                          if isinstance(v, dict))),
+                      pm_api_failed=bool(pipeline_state.get("portfolio_manager_api_failed")))
+        # Keep the paper trail (what each agent returned, PM raw output, cost) in
+        # agent_log.json — the routine pushes it with health — but write NO
+        # forecast/decision ledger rows: outage defaults are not agent behavior.
+        pipeline_state.update({"run_id": run_id, "timestamp": run_start,
+                               "kill_switch_active": kill_active,
+                               "market_data_source": source, "market_data_date": data_date,
+                               "aborted": "llm_outage", "aborted_reason": _outage_why,
+                               "last_api_error": _last_err[:500],
+                               "final_decisions": []})
+        try:
+            from analysis import usage_summary
+            pipeline_state["llm_usage"] = usage_summary(portfolio.get("total_value"))
+            record_run(run_id, pipeline_state)
+        except Exception as _e:  # the abort must never fail on bookkeeping
+            print(f"   ⚠ agent_log write failed on outage abort: {_e}")
+        health.record("pipeline", ABORTED,
+                      message=f"Aborted after agents ran — model API outage ({_outage_why}). "
+                              "No plan written; retry / Thu-Fri catch-up remains available.")
+        health.save()
+        print(f"\n   📋 system_health.json written (overall={health.overall_status})")
+        print("=" * 60 + "\n")
+        return
 
     guarded = apply_guard_chain(
         decisions, portfolio, market_data, pipeline_state,

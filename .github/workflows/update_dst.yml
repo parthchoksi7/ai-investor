@@ -2,10 +2,15 @@ name: DST Cron Update
 
 on:
   schedule:
-    # March 15 at 12:00 UTC — after DST spring forward (second Sunday of March, ~Mar 8-14)
-    - cron: '0 12 15 3 *'
-    # November 8 at 07:00 UTC — after DST fall back (first Sunday of November, Nov 1–7)
-    - cron: '0 7 8 11 *'
+    # Every Sunday 12:00 UTC (7–8 AM ET) — hours AFTER the 2 AM Sunday change and a
+    # full day before Monday's first job, so the routine-cron issue lands in time
+    # to act on (GH may defer a cron by hours; a Sunday slot absorbs that). The script below
+    # reads the CURRENT New York offset and is a no-op when the crons already match,
+    # so running weekly costs ~1 min and can never be late. Until 2026-11-05 this
+    # fired on fixed dates (Mar 15 / Nov 8) that trail the real changes (second
+    # Sunday of March / first Sunday of November) by up to a week: in 2026 DST
+    # ended Nov 1 and every ET-pinned job ran an hour early until Nov 8.
+    - cron: '0 12 * * 0'
   workflow_dispatch:
 
 jobs:
@@ -13,12 +18,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      issues: write
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v5
 
       - name: Detect UTC offset and update cron expressions
+        id: dst
         run: |
           python3 - <<'EOF'
           import os
@@ -106,6 +113,11 @@ jobs:
 
           if not changed:
               print("No changes needed — crons already correct for current offset.")
+          # The two Anthropic routines (daily cycle + EOD close) are NOT in this repo
+          # and cannot be rewritten from here. Hand the owner the exact crons.
+          with open(os.environ["GITHUB_OUTPUT"], "a") as _o:
+              _o.write(f"changed={'true' if changed else 'false'}\n")
+              _o.write(f"offset={offset_hours}\n")
 
           # health_check.yml has been given every chance to update before this fires.
           if fatal:
@@ -124,3 +136,27 @@ jobs:
           git add .github/workflows/market_data.yml .github/workflows/health_check.yml .github/workflows/shadow_cursor.yml
           git diff --staged --quiet || git commit -m "chore: DST cron update [skip ci]"
           git push
+
+      - name: Open an issue to move the Anthropic routine crons
+        # Only on the run that actually flipped the GitHub crons — i.e. the Sunday
+        # of a DST change. always(): if the step above fails AFTER flipping some
+        # crons (and the always() commit pushes them), the next run sees no change,
+        # so this is the only chance to open the issue.
+        if: always() && steps.dst.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OFFSET: ${{ steps.dst.outputs.offset }}
+        run: |
+          if [ "$OFFSET" = "-4" ]; then
+            DAILY='45 13,14,15,16 * * 1-5'; EOD='0 20 * * 1-5'; LABEL='EDT (summer)'
+          else
+            DAILY='45 14,15,16,17 * * 1-5'; EOD='0 21 * * 1-5'; LABEL='EST (winter)'
+          fi
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "DST changed: move the Anthropic routine crons to $LABEL" \
+            --body "The GitHub Actions crons were updated for UTC${OFFSET}. The two Anthropic routines live outside this repo and must be updated by hand (claude.ai/code/routines):
+
+          - Daily cycle: \`$DAILY\` (9:45 / 10:45 / 11:45 / 12:45 ET)
+          - EOD close snapshot: \`$EOD\` (4:00 PM ET)
+
+          Until they are moved, the morning stop check runs at the wrong hour and the EOD close_value is recorded an hour off (Nov 2–4 2026 were recorded at 3 PM)."

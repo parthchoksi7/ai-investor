@@ -8,7 +8,7 @@ name: Cursor shadow rebalance
 # for EST (30 18) the same way it rewrites health_check.yml.
 on:
   schedule:
-    - cron: '30 17 * * 3'   # 1:30 PM ET Wednesday (EDT)
+    - cron: '30 18 * * 3'   # 1:30 PM ET Wednesday (EST; update_dst.yml flips the hour)
   workflow_dispatch:
     inputs:
       date:

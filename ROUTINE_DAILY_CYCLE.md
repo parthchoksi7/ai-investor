@@ -70,8 +70,9 @@ Branch on GATE_EXIT — do not skip this:
                               has not landed yet. Request an on-demand data run (below),
                               then STOP — do NOT fetch the portfolio, run any pipeline, or
                               place any orders. The next attempt (+60 min) re-checks.
-  • 10 (SKIP/RETRY)         → market closed, or (on a rebalance day) Anthropic API
-                              overloaded. STOP now — do NOT fetch the portfolio, run any
+  • 10 (SKIP/RETRY)         → market closed, or (on a rebalance day) the model API is
+                              overloaded OR the model credential was refused/missing
+                              (AI_INVESTOR_ANTHROPIC_API_KEY in the routine's cloud environment). STOP now — do NOT fetch the portfolio, run any
                               pipeline, or place any orders. The next attempt re-checks.
   • 20 (SKIP/DONE)          → Today's pipeline (either mode) already executed or claimed.
                               STOP now — re-running would risk double-execution.
@@ -112,7 +113,8 @@ git diff --staged --quiet || (git commit -m 'chore: request market data' && (git
 Then STOP this attempt. (If the push fails, just stop — the scheduled crons still run.)
 
 Only continue past this step when GATE_EXIT == 0 or GATE_EXIT == 30.
-(preflight_gate.py uses only the Python standard library, so it runs before pip install.)
+(preflight_gate.py uses only the Python standard library, so it runs before pip install —
+including its model-API check, which since 2026-11-05 makes a real call over plain HTTP.)
 
 ═══════════════════════════════════════════════
 STEP 1 — Fetch portfolio via Robinhood MCP  (both modes)
@@ -168,7 +170,12 @@ STEP 2 — Set up environment  (both modes)
 Create .env:
 DRY_RUN=true
 
-NO API SECRETS ARE NEEDED HERE — and none should be pasted into this prompt. This cloud
+NO API SECRETS ARE NEEDED HERE — and none should be pasted into this prompt.
+(The model credential, AI_INVESTOR_ANTHROPIC_API_KEY, is set as an environment variable on
+the routine's cloud environment — never in this prompt. The environment reserves the name
+ANTHROPIC_API_KEY and does not pass it to sessions, hence the different name. Since 2026-11-04 the session token
+is refused for direct model calls, so without that variable the gate returns 10 and no
+rebalance runs.) This cloud
 plane cannot reach Polygon or Supabase (both 403), so:
   • POLYGON_API_KEY is unused — market_data.py reads the committed market_snapshot.json
     (get_market_snapshot() checks the local file first); every Polygon call is guarded by
@@ -191,10 +198,10 @@ then VERIFY the imports actually resolve; fall back to --ignore-installed; if th
 imports STILL fail, STOP cleanly (a skipped attempt is the designed failure
 direction — the next cron retries; a half-installed pipeline is not):
 
-pip install -r requirements.txt -q 2>&1 | tail -2 || true
+python -m pip install -r requirements.txt -q 2>&1 | tail -2 || true
 if ! python -c "import anthropic, robin_stocks, pyotp, dotenv, yaml" 2>/dev/null; then
   echo "deps incomplete after first install — retrying with --ignore-installed"
-  pip install -r requirements.txt -q --ignore-installed 2>&1 | tail -2 || true
+  python -m pip install -r requirements.txt -q --ignore-installed 2>&1 | tail -2 || true
 fi
 python -c "import anthropic, robin_stocks, pyotp, dotenv, yaml" || {
   echo "dependencies unavailable — STOP. Push nothing, place no orders. The next scheduled attempt (+60 min) retries."

@@ -80,6 +80,27 @@ PORTFOLIO_SNAPSHOT = "portfolio_snapshot.json"
 _EOD_CACHE: dict = {}
 
 
+EOD_CLOSE_CORRECTIONS = os.path.join("evidence", "eod_close_corrections.json")
+
+
+def _eod_close_corrections(path: str = EOD_CLOSE_CORRECTIONS) -> dict[str, float]:
+    """{date: corrected 4 PM total_value}. Missing/unreadable file → {}."""
+    try:
+        with open(path) as f:
+            raw = (json.load(f) or {}).get("corrections") or {}
+    except (OSError, ValueError):
+        return {}
+    out = {}
+    for d, rec in raw.items():
+        try:
+            v = float(rec["total_value"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if math.isfinite(v) and v > 0:
+            out[str(d)[:10]] = v
+    return out
+
+
 def _eod_close_curve(snapshot_path: str = PORTFOLIO_SNAPSHOT) -> list[tuple[str, float]]:
     """date → 4 PM close total_value, one point per trading day, from the git history
     of portfolio_snapshot.json (Oct 4 2026 review, item 7).
@@ -100,7 +121,14 @@ def _eod_close_curve(snapshot_path: str = PORTFOLIO_SNAPSHOT) -> list[tuple[str,
         mtime = os.path.getmtime(snapshot_path) if os.path.isfile(snapshot_path) else None
     except (OSError, subprocess.SubprocessError):
         head, mtime = "", None
-    key = (os.getcwd(), snapshot_path, head, mtime)
+    # Corrections live beside the snapshot (same repo), not in the caller's cwd.
+    _corrections_path = os.path.join(os.path.dirname(os.path.abspath(snapshot_path)),
+                                     EOD_CLOSE_CORRECTIONS)
+    try:
+        _corr_mtime = os.path.getmtime(_corrections_path)
+    except OSError:
+        _corr_mtime = None
+    key = (os.getcwd(), snapshot_path, head, mtime, _corr_mtime)
     if head and key in _EOD_CACHE:
         return list(_EOD_CACHE[key])
     by_date: dict[str, float] = {}
@@ -149,6 +177,11 @@ def _eod_close_curve(snapshot_path: str = PORTFOLIO_SNAPSHOT) -> list[tuple[str,
                 continue
     except (OSError, ValueError, subprocess.SubprocessError):
         return []
+    # Dated corrections for closes captured at the wrong time (e.g. the EOD cron not
+    # moved for DST, Nov 2-4 2026). Git history is append-only, so the bad commits
+    # stay; the evidence file overrides them on read and documents its inputs.
+    for d, v in _eod_close_corrections(_corrections_path).items():
+        by_date[d] = v
     # The EOD routine also fires (and commits a flat close) on NYSE holidays; a holiday
     # point is a fake zero-return day that dilutes volatility and inflates the day count.
     from market_calendar import is_trading_day

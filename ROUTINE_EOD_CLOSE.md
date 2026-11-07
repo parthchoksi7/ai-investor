@@ -84,9 +84,9 @@ GitHub Actions secret store. POLYGON_API_KEY is likewise unused here. Keep the p
 Install dependencies (the base image has Debian-managed packages a bare install
 cannot uninstall — verify the imports resolve, retry with --ignore-installed,
 else STOP; the EOD snapshot is skippable, a broken run is not):
-pip install -r requirements.txt -q 2>&1 | tail -2 || true
+python -m pip install -r requirements.txt -q 2>&1 | tail -2 || true
 python -c "import robin_stocks, pyotp, dotenv, requests" 2>/dev/null \
-  || pip install -r requirements.txt -q --ignore-installed 2>&1 | tail -2 || true
+  || python -m pip install -r requirements.txt -q --ignore-installed 2>&1 | tail -2 || true
 python -c "import robin_stocks, pyotp, dotenv, requests" \
   || { echo "deps unavailable — STOP; next EOD run retries."; exit 0; }
 
