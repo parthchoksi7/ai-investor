@@ -1,7 +1,7 @@
 {
-  "date": "2026-11-12",
-  "data_date": "2026-11-12",
-  "generated_at": "2026-11-12T20:36:05.113626+00:00",
+  "date": "2026-11-16",
+  "data_date": "2026-11-16",
+  "generated_at": "2026-11-16T22:37:49.027225+00:00",
   "status": "OK",
   "data_quality_score": 100,
   "strategy_shift_ok": true,
@@ -15,13 +15,13 @@
       "abort_below": 80.0
     },
     "min_history_depth": {
-      "value": 207,
+      "value": 208,
       "status": "OK",
       "degraded_below": 60,
       "abort_below": 22
     },
     "fundamental_coverage_pct": {
-      "value": 97.2,
+      "value": 97.8,
       "status": "OK",
       "degraded_below": 80.0,
       "abort_below": null
@@ -51,35 +51,35 @@
   "breaches": [],
   "cik_map_ok": true,
   "price_outlier_count": 3,
-  "hash": "3463602592a19971",
+  "hash": "14821fc959c6e489",
   "event_digest": {
     "chunks": 4,
     "chunks_ok": 4,
     "parse_success_rate": 1.0,
-    "raw_events": 24,
+    "raw_events": 20,
     "capped": false,
     "chunks_available": 4,
     "max_chunks": 15,
-    "as_of": "2026-11-12",
-    "events_written": 24,
+    "as_of": "2026-11-16",
+    "events_written": 20,
     "events_deduped": 0,
     "llm_usage": {
       "by_model": {
         "claude-haiku-4-5-20251001": {
           "n_calls": 4,
-          "input_tokens": 12120,
-          "output_tokens": 1575,
+          "input_tokens": 12035,
+          "output_tokens": 1472,
           "cache_read_tokens": 0,
           "cache_creation_tokens": 0,
-          "est_cost_usd": 0.02
+          "est_cost_usd": 0.0194
         }
       },
-      "est_cost_usd": 0.02,
+      "est_cost_usd": 0.0194,
       "unpriced_models": [],
       "scope": "event_digest (GH plane, metered key) \u2014 THIS run; ~2 runs/weekday",
       "basis": "API list price (subscription OAuth runs are not metered per token)",
-      "cost_pct_aum_per_run": 0.004,
-      "cost_pct_aum_annualized": 2.0,
+      "cost_pct_aum_per_run": 0.0039,
+      "cost_pct_aum_annualized": 1.94,
       "runs_per_year_assumed": 504
     }
   }
