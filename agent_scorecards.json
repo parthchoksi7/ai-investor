@@ -32,7 +32,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9154,
+    "p_value_bh": 0.9505,
     "significant_bh": false
   },
   "earnings.earnings_alpha_score@21d": {
@@ -68,7 +68,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.478,
+    "p_value_bh": 0.4664,
     "significant_bh": false
   },
   "position_review.hold_score@21d": {
@@ -104,7 +104,7 @@
     "horizon_days": 21,
     "formula_version": "2.0-quality-tilt",
     "is_primary": false,
-    "p_value_bh": 0.9154,
+    "p_value_bh": 0.9505,
     "significant_bh": false
   },
   "event_present.flag@21d": {
@@ -140,7 +140,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9154,
+    "p_value_bh": 0.9505,
     "significant_bh": false
   },
   "pm.expected_return@21d": {
@@ -158,7 +158,7 @@
     "horizon_days": 21,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.478,
+    "p_value_bh": 0.4664,
     "significant_bh": false
   },
   "quant.composite_score@63d~unknown": {
@@ -176,25 +176,25 @@
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.478,
+    "p_value_bh": 0.4664,
     "significant_bh": false
   },
   "research.confidence@63d": {
-    "n": 569,
-    "n_effective": 95,
+    "n": 571,
+    "n_effective": 96,
     "n_eff_approx": 9,
-    "ic": 0.009,
-    "ic_block": -0.021,
-    "ic_shrunk": 0.008,
-    "hit_rate": 0.513,
-    "hit_rate_block": 0.526,
-    "ci_halfwidth": 0.201,
-    "p_value": 0.8422,
+    "ic": 0.01,
+    "ic_block": -0.012,
+    "ic_shrunk": 0.009,
+    "hit_rate": 0.515,
+    "hit_rate_block": 0.531,
+    "ci_halfwidth": 0.2,
+    "p_value": 0.9099,
     "orientation": 1,
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9154,
+    "p_value_bh": 0.9505,
     "significant_bh": false
   },
   "earnings.earnings_alpha_score@63d": {
@@ -212,25 +212,25 @@
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.478,
+    "p_value_bh": 0.4664,
     "significant_bh": false
   },
   "devils_advocate.overall_risk_score@63d": {
-    "n": 532,
-    "n_effective": 93,
+    "n": 534,
+    "n_effective": 94,
     "n_eff_approx": 8,
-    "ic": -0.002,
-    "ic_block": 0.019,
-    "ic_shrunk": -0.002,
+    "ic": -0.005,
+    "ic_block": 0.003,
+    "ic_shrunk": -0.005,
     "hit_rate": 0.517,
-    "hit_rate_block": 0.495,
-    "ci_halfwidth": 0.203,
-    "p_value": 0.8519,
+    "hit_rate_block": 0.5,
+    "ci_halfwidth": 0.202,
+    "p_value": 0.9743,
     "orientation": -1,
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9154,
+    "p_value_bh": 0.9743,
     "significant_bh": false
   },
   "position_review.hold_score@63d": {
@@ -266,7 +266,7 @@
     "horizon_days": 21,
     "formula_version": "2.3-valuation-ttm",
     "is_primary": false,
-    "p_value_bh": 0.478,
+    "p_value_bh": 0.4664,
     "significant_bh": false
   },
   "quant.composite_score@63d~2.0-quality-tilt": {
@@ -284,16 +284,16 @@
     "horizon_days": 63,
     "formula_version": "2.0-quality-tilt",
     "is_primary": false,
-    "p_value_bh": 0.9154,
+    "p_value_bh": 0.9505,
     "significant_bh": false
   },
   "event_present.flag@63d": {
-    "n": 1835,
+    "n": 1898,
     "n_effective": 545,
-    "n_eff_approx": 29,
-    "ic": 0.073,
+    "n_eff_approx": 30,
+    "ic": 0.074,
     "ic_block": 0.098,
-    "ic_shrunk": 0.071,
+    "ic_shrunk": 0.072,
     "hit_rate": 0.536,
     "hit_rate_block": 0.561,
     "ci_halfwidth": 0.084,
@@ -306,12 +306,12 @@
     "significant_bh": false
   },
   "persist_mean.composite_7d_mean@63d": {
-    "n": 1835,
+    "n": 1898,
     "n_effective": 545,
-    "n_eff_approx": 29,
-    "ic": -0.06,
+    "n_eff_approx": 30,
+    "ic": -0.055,
     "ic_block": -0.047,
-    "ic_shrunk": -0.058,
+    "ic_shrunk": -0.054,
     "hit_rate": 0.493,
     "hit_rate_block": 0.481,
     "ci_halfwidth": 0.084,
@@ -338,7 +338,7 @@
     "horizon_days": 63,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.478,
+    "p_value_bh": 0.4664,
     "significant_bh": false
   },
   "quant.composite_score@63d~2.3-valuation-ttm": {
@@ -356,7 +356,7 @@
     "horizon_days": 63,
     "formula_version": "2.3-valuation-ttm",
     "is_primary": false,
-    "p_value_bh": 0.9154,
+    "p_value_bh": 0.9505,
     "significant_bh": false
   },
   "quant.composite_score@21d": {
@@ -392,7 +392,7 @@
     "horizon_days": 126,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9154,
+    "p_value_bh": 0.9505,
     "significant_bh": false
   },
   "research.confidence@126d": {
@@ -410,7 +410,7 @@
     "horizon_days": 126,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9154,
+    "p_value_bh": 0.9505,
     "significant_bh": false
   },
   "earnings.earnings_alpha_score@126d": {
@@ -446,7 +446,7 @@
     "horizon_days": 126,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9154,
+    "p_value_bh": 0.9505,
     "significant_bh": false
   },
   "position_review.hold_score@126d": {
@@ -464,7 +464,7 @@
     "horizon_days": 126,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.9188,
+    "p_value_bh": 0.9505,
     "significant_bh": false
   },
   "quant.composite_score@126d~2.0-quality-tilt": {
@@ -486,21 +486,21 @@
     "significant_bh": false
   },
   "quant.composite_score@63d": {
-    "n": 58,
-    "n_effective": 27,
+    "n": 60,
+    "n_effective": 29,
     "n_eff_approx": 1,
-    "ic": -0.247,
-    "ic_block": -0.26,
-    "ic_shrunk": -0.133,
-    "hit_rate": 0.397,
-    "hit_rate_block": 0.407,
-    "ci_halfwidth": 0.377,
-    "p_value": 0.1841,
+    "ic": -0.266,
+    "ic_block": -0.268,
+    "ic_shrunk": -0.145,
+    "hit_rate": 0.383,
+    "hit_rate_block": 0.379,
+    "ci_halfwidth": 0.364,
+    "p_value": 0.1564,
     "orientation": 1,
     "horizon_days": 63,
     "formula_version": "3.0-beta-neutral",
     "is_primary": false,
-    "p_value_bh": 0.478,
+    "p_value_bh": 0.4664,
     "significant_bh": false
   },
   "event_present.flag@126d": {
@@ -518,7 +518,7 @@
     "horizon_days": 126,
     "formula_version": null,
     "is_primary": false,
-    "p_value_bh": 0.478,
+    "p_value_bh": 0.4664,
     "significant_bh": false
   },
   "persist_mean.composite_7d_mean@126d": {
