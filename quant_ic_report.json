@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-25T22:16:27.569614+00:00",
+  "generated_at": "2026-11-26T22:03:37.609062+00:00",
   "formula_version": "3.0-beta-neutral",
   "horizon_days": 21,
   "basis": "next_open \u2192 close on/after entry + horizon calendar days (A1)",
@@ -36,11 +36,12 @@
   "provisional_dates": [
     "2026-10-27",
     "2026-10-28",
-    "2026-10-30"
+    "2026-10-30",
+    "2026-11-03"
   ],
   "all_dates_descriptive": {
-    "n_dates": 37,
-    "mean_ic": -0.0667,
+    "n_dates": 38,
+    "mean_ic": -0.0645,
     "note": "Consecutive dates share most of their 21-day window \u2014 descriptive only, never a significance input."
   },
   "gate_1a": {
@@ -471,38 +472,50 @@
     {
       "date": "2026-10-27",
       "n": 98,
-      "ic": 0.103,
-      "ic_sector_neutral": 0.2496,
+      "ic": 0.1033,
+      "ic_sector_neutral": 0.2482,
       "exit_date": "2026-11-18",
       "population_key": "5a4e24dbd737",
       "formula_version": "3.0-beta-neutral",
       "horizon_days": 21,
       "provisional": true,
-      "computed_at": "2026-11-25T22:16:27.553634+00:00"
+      "computed_at": "2026-11-26T22:03:37.594208+00:00"
     },
     {
       "date": "2026-10-28",
       "n": 98,
-      "ic": 0.0343,
-      "ic_sector_neutral": 0.2121,
+      "ic": 0.0337,
+      "ic_sector_neutral": 0.2114,
       "exit_date": "2026-11-19",
       "population_key": "5a4e24dbd737",
       "formula_version": "3.0-beta-neutral",
       "horizon_days": 21,
       "provisional": true,
-      "computed_at": "2026-11-25T22:16:27.555474+00:00"
+      "computed_at": "2026-11-26T22:03:37.595878+00:00"
     },
     {
       "date": "2026-10-30",
       "n": 98,
       "ic": 0.067,
-      "ic_sector_neutral": 0.2278,
+      "ic_sector_neutral": 0.2288,
       "exit_date": "2026-11-23",
       "population_key": "5a4e24dbd737",
       "formula_version": "3.0-beta-neutral",
       "horizon_days": 21,
       "provisional": true,
-      "computed_at": "2026-11-25T22:16:27.556988+00:00"
+      "computed_at": "2026-11-26T22:03:37.597092+00:00"
+    },
+    {
+      "date": "2026-11-03",
+      "n": 98,
+      "ic": 0.0175,
+      "ic_sector_neutral": 0.0938,
+      "exit_date": "2026-11-25",
+      "population_key": "5a4e24dbd737",
+      "formula_version": "3.0-beta-neutral",
+      "horizon_days": 21,
+      "provisional": true,
+      "computed_at": "2026-11-26T22:03:37.598260+00:00"
     }
   ],
   "caveats": [
