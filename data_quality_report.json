@@ -1,27 +1,27 @@
 {
-  "date": "2026-11-26",
-  "data_date": "2026-11-26",
-  "generated_at": "2026-11-26T22:03:25.653992+00:00",
+  "date": "2026-11-27",
+  "data_date": "2026-11-27",
+  "generated_at": "2026-11-27T21:44:36.841231+00:00",
   "status": "OK",
   "data_quality_score": 100,
   "strategy_shift_ok": true,
-  "expected_universe": 180,
-  "fetched_universe": 176,
+  "expected_universe": 165,
+  "fetched_universe": 163,
   "metrics": {
     "universe_fetched_pct": {
-      "value": 97.8,
+      "value": 98.8,
       "status": "OK",
       "degraded_below": 95.0,
       "abort_below": 80.0
     },
     "min_history_depth": {
-      "value": 208,
+      "value": 207,
       "status": "OK",
       "degraded_below": 60,
       "abort_below": 22
     },
     "fundamental_coverage_pct": {
-      "value": 97.8,
+      "value": 98.8,
       "status": "OK",
       "degraded_below": 80.0,
       "abort_below": null
@@ -50,8 +50,8 @@
   },
   "breaches": [],
   "cik_map_ok": true,
-  "price_outlier_count": 3,
-  "hash": "b52a2e9bafdaac00",
+  "price_outlier_count": 2,
+  "hash": "2a88c05c24172eb7",
   "event_digest": {
     "chunks": 4,
     "chunks_ok": 4,
@@ -60,26 +60,26 @@
     "capped": false,
     "chunks_available": 4,
     "max_chunks": 15,
-    "as_of": "2026-11-26",
-    "events_written": 9,
+    "as_of": "2026-11-27",
+    "events_written": 13,
     "events_deduped": 0,
     "llm_usage": {
       "by_model": {
         "claude-haiku-4-5-20251001": {
           "n_calls": 4,
-          "input_tokens": 11980,
-          "output_tokens": 948,
+          "input_tokens": 12182,
+          "output_tokens": 1003,
           "cache_read_tokens": 0,
           "cache_creation_tokens": 0,
-          "est_cost_usd": 0.0167
+          "est_cost_usd": 0.0172
         }
       },
-      "est_cost_usd": 0.0167,
+      "est_cost_usd": 0.0172,
       "unpriced_models": [],
       "scope": "event_digest (GH plane, metered key) \u2014 THIS run; ~2 runs/weekday",
       "basis": "API list price (subscription OAuth runs are not metered per token)",
-      "cost_pct_aum_per_run": 0.0033,
-      "cost_pct_aum_annualized": 1.67,
+      "cost_pct_aum_per_run": 0.0034,
+      "cost_pct_aum_annualized": 1.72,
       "runs_per_year_assumed": 504
     }
   }
